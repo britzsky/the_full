@@ -6,7 +6,7 @@ import MDButton from "components/MDButton";
 import { TextField } from "@mui/material";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import useSubRestaurantData from "./subRestaurantData"; // ✅ 수정된 훅 사용
 
 function SubRestaurantTab() {
@@ -14,7 +14,6 @@ function SubRestaurantTab() {
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [regionFilter, setRegionFilter] = useState(""); // ✅ 지역 필터 상태
-  const API_BASE_URL = "http://localhost:8080";
 
   // ✅ 지역 목록 (value는 SQL LIKE 패턴)
   const regionOptions = [
@@ -95,8 +94,8 @@ function SubRestaurantTab() {
         return;
       }
 
-      const response = await axios.post(
-        `${API_BASE_URL}/Operate/AccountSubRestaurantSave`,
+      const response = await api.post(
+        `/Operate/AccountSubRestaurantSave`,
         modifiedRows,
         { headers: { "Content-Type": "application/json" } }
       );

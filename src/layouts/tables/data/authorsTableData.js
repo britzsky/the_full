@@ -2,7 +2,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 import MDTypography from "components/MDTypography";
 
 // 🔹 각 행의 클릭 이동용 링크 컴포넌트
@@ -32,7 +32,7 @@ export default function useTableData(accountType) {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await axios.get("http://localhost:8080/Account/AccountList", {
+        const res = await api.get("/Account/AccountList", {
           params: { account_type: accountType || "0" },
         });
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 import { useNavigate } from "react-router-dom";
 import Swal from "sweetalert2";
 
@@ -94,8 +94,8 @@ function SignUp() {
       return;
     }
 
-    axios
-      .post("http://localhost:8080/User/UserRgt", form)
+    api
+      .post("/User/UserRgt", form)
       .then((res) => {
         Swal.fire({
           icon: "success",

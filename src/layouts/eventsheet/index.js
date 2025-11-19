@@ -5,7 +5,7 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import {
   Modal,
   Box,
@@ -129,8 +129,8 @@ function EventSheetTab() {
     };
 
     try {
-      const response = await axios.post(
-        "http://localhost:8080/HeadOffice/EventSave",
+      const response = await api.post(
+        "/HeadOffice/EventSave",
         newEvent,
         { headers: { "Content-Type": "application/json" } }
       );
@@ -164,8 +164,8 @@ function EventSheetTab() {
     };
 
     try {
-      const response = await axios.post(
-        "http://localhost:8080/HeadOffice/EventSave",
+      const response = await api.post(
+        "/HeadOffice/EventSave",
         newEvent,
         { headers: { "Content-Type": "application/json" } }
       );

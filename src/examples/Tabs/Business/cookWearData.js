@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -26,7 +26,7 @@ export default function useCookWearManagerData() {
     setLoading(true);
     try {
       
-      const res = await axios.get("http://localhost:8080/Business/CookWearList");
+      const res = await api.get("/Business/CookWearList");
       const rows = (res.data || []).map((item) => ({
         type: item.type,
         current_qty: formatNumber(item.current_qty),
@@ -48,7 +48,7 @@ export default function useCookWearManagerData() {
   const fetchCookWearOutList = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Business/CookWearOutList");
+      const res = await api.get("/Business/CookWearOutList");
       const rows = (res.data || []).map((item) => ({
         type: item.type,
         account_id: item.account_id || (accountList[0]?.account_id ?? ""), // 기본값 세팅
@@ -69,7 +69,7 @@ export default function useCookWearManagerData() {
   const fetchCookWearNewList = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Business/CookWearNewList");
+      const res = await api.get("/Business/CookWearNewList");
       const rows = (res.data || []).map((item) => ({
         type: item.type,
         account_id: item.account_id || (accountList[0]?.account_id ?? ""), // 기본값 세팅
@@ -89,7 +89,7 @@ export default function useCookWearManagerData() {
   // AccountList 조회 (SelectBox용)
   const fetchAccountList = async () => {
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountList", {
+      const res = await api.get("/Account/AccountList", {
         params: { account_type: 0 },
       });
       setAccountList(res.data || []);

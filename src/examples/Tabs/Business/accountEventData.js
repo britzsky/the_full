@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 포맷이 필요하면 그대로 사용 가능
 const formatNumber = (value) => {
@@ -17,7 +17,7 @@ export default function useAccountEventData() {
   // ✅ 거래처 목록 조회
   const fetchAccountList = async () => {
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountList", {
+      const res = await api.get("/Account/AccountList", {
         params: { account_type: 0 },
       });
       setAccountList(res.data || []);
@@ -37,8 +37,8 @@ export default function useAccountEventData() {
 
     setLoading(true);
     try {
-      const res = await axios.get(
-        "http://localhost:8080/Business/AccountEventList",
+      const res = await api.get(
+        "/Business/AccountEventList",
         { params: { account_id } }
       );
 

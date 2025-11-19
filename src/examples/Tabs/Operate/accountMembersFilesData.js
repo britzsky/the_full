@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -23,7 +23,7 @@ export default function useMembersFilesData() {
   const fetcMembersFilesList = async (account_id) => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Operate/AccountMembersFilesList", {
+      const res = await api.get("/Operate/AccountMembersFilesList", {
         params: { account_id: account_id },
       });
 
@@ -50,7 +50,7 @@ export default function useMembersFilesData() {
   const fetcTypeForFileList = async (account_id) => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Operate/AccountTypeForFileList", {
+      const res = await api.get("/Operate/AccountTypeForFileList", {
         params: { account_id: account_id },
       });
 
@@ -75,8 +75,8 @@ export default function useMembersFilesData() {
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {

@@ -8,8 +8,10 @@ import { TextField } from "@mui/material";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useMembersFilesData from "./accountMembersFilesData";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
+//import { buildUrl } from "config";
+import { API_BASE_URL } from "config";
 
 function AccountMembersFilesTab() {
   const { membersFilesListRows, accountList, loading, fetcMembersFilesList } =
@@ -19,7 +21,6 @@ function AccountMembersFilesTab() {
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
-  const API_BASE_URL = "http://localhost:8080";
 
   // ✅ 계정 변경 시 조회
   useEffect(() => {
@@ -97,7 +98,7 @@ function AccountMembersFilesTab() {
     if (!memberId) return;
 
     try {
-      const res = await axios.get(`${API_BASE_URL}/Operate/AccountTypeForFileList`, {
+      const res = await api.get(`/Operate/AccountTypeForFileList`, {
         params: { member_id: memberId, doc_type_id: newDocType },
       });
 
@@ -208,8 +209,8 @@ function AccountMembersFilesTab() {
         return;
       }
 
-      const res = await axios.post(
-        `${API_BASE_URL}/Operate/AccountMembersFilesSave`,
+      const res = await api.post(
+        `/Operate/AccountMembersFilesSave`,
         payload,
         { headers: { "Content-Type": "application/json" } }
       );
@@ -234,7 +235,7 @@ function AccountMembersFilesTab() {
       formData.append("gubun", member_id);
       formData.append("folder", account_id);
 
-      const res = await axios.post(`${API_BASE_URL}/Operate/OperateImgUpload`, formData, {
+      const res = await api.post(`/Operate/OperateImgUpload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 

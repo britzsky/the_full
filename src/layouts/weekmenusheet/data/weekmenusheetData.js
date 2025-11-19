@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 export default function useWeekMenusheetData(currentYear, currentMonth) {
   const [weekMenuListRows, setWeekMenuListRows] = useState([]);
@@ -14,7 +14,7 @@ export default function useWeekMenusheetData(currentYear, currentMonth) {
       // ✅ 월이 한 자리일 경우 앞에 0 붙이기
       const formattedMonth = currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
 
-      const res = await axios.get("http://localhost:8080/HeadOffice/WeekMenuList", {
+      const res = await api.get("/HeadOffice/WeekMenuList", {
         params: { year: currentYear, month: formattedMonth, type: 1 },
       });
 

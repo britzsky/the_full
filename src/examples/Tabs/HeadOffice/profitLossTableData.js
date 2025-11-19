@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { useState, useCallback, useEffect } from "react";
-import axios from "axios";
+import api from "api/api";
 
 export const parseNumber = (val) => {
   if (val === "" || val == null) return 0;
@@ -21,7 +21,7 @@ export default function useProfitLossTableData(year, account_id) {
   const fetchProfitLossTableList = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/HeadOffice/ProfitLossTableList", {
+      const res = await api.get("/HeadOffice/ProfitLossTableList", {
         params: { year, account_id },
       });
       if (res.data && Array.isArray(res.data)) {
@@ -39,8 +39,8 @@ export default function useProfitLossTableData(year, account_id) {
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {

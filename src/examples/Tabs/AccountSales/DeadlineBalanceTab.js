@@ -15,7 +15,7 @@ import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 
 // 🔹 데이터 훅 import
 import useDeadlineBalanceData, { parseNumber, formatNumber } from "./deadlineBalanceData";
@@ -294,7 +294,7 @@ export default function DeadlineBalanceTab() {
         year,
         month,
       };
-      await axios.post("http://localhost:8080/Account/AccountDepositHistorySave", payload);
+      await api.post("/Account/AccountDepositHistorySave", payload);
       Swal.fire("입금 내역이 저장되었습니다.", "", "success");
       await fetchDeadlineBalanceList();
       await fetchDepositHistoryList(selectedCustomer.account_id, year);
@@ -339,7 +339,7 @@ export default function DeadlineBalanceTab() {
     }
 
     try {
-      await axios.post("http://localhost:8080/Account/AccountDeadlineBalanceSave", { rows: modifiedRows });
+      await api.post("/Account/AccountDeadlineBalanceSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
       fetchDeadlineBalanceList();
     } catch (err) {

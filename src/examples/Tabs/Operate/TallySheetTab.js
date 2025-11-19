@@ -10,7 +10,7 @@ import { TextField, Select, MenuItem } from "@mui/material";
 import useTallysheetData, { parseNumber, formatNumber } from "./tallysheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 
 function TallySheetTab() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -122,7 +122,7 @@ function TallySheetTab() {
     const payload = { nowList: changedNowList, beforeList: changedBeforeList };
 
     try {
-      const response = await axios.post("http://localhost:8080/Operate/TallySheetSave", payload, {
+      const response = await api.post("/Operate/TallySheetSave", payload, {
         headers: { "Content-Type": "application/json" },
       });
 

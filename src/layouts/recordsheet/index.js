@@ -13,7 +13,7 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import { Modal, Box, Select, MenuItem, Button, TextField } from "@mui/material";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import axios from "axios";
+import api from "api/api";
 import dayjs from "dayjs";
 import PropTypes from "prop-types";
 import Icon from "@mui/material/Icon";
@@ -217,8 +217,8 @@ function RecordSheet() {
       });
       return;
     }
-    axios
-      .post("http://localhost:8080/Account/AccountDispatchMemberSave", formData, {
+    api
+      .post("/Account/AccountDispatchMemberSave", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
       .then((response) => {
@@ -486,7 +486,7 @@ const handleSave = async () => {
         });
     });
     try {
-      const res = await axios.post("http://localhost:8080/Account/AccountRecordSave", { normalRecords, type5Records });
+      const res = await api.post("/Account/AccountRecordSave", { normalRecords, type5Records });
       Swal.fire({ 
         title: "저장", 
         text: "저장 완료", 

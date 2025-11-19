@@ -8,7 +8,7 @@ import { Modal, Box, Typography, Button, TextField } from "@mui/material";
 
 import useCookWearManagerData from "./cookWearData";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
 
 function CookWearTabStyled() {
@@ -219,8 +219,8 @@ function CookWearTabStyled() {
         newList: { list: formattedNewList },
       };
       
-      const response = await axios.post(
-        "http://localhost:8080/Business/CookWearSave",
+      const response = await api.post(
+        "/Business/CookWearSave",
         payload,
         {
           headers: {

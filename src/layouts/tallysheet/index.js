@@ -11,7 +11,7 @@ import LoadingScreen from "../loading/loadingscreen";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import useTallysheetData, { parseNumber, formatNumber } from "./data/tallysheetData";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import PropTypes from "prop-types";
 
 // ======================== 선택 테이블 컴포넌트 ========================
@@ -203,8 +203,7 @@ function TallySheet() {
     formData.append('type', receiptType);
     formData.append('account_id', selectedAccountId);
 
-    const url = "http://localhost:8080/receipt-scan";
-    const res = await axios.post(url, formData, {
+    const res = await api.post("/receipt-scan", formData, {
       headers: { "Content-Type": "multipart/form-data", "Accept": "application/json" },
     });
     
@@ -240,7 +239,7 @@ function TallySheet() {
 
     try {
       const payload = { nowList: changedNow, beforeList: changedBefore };
-      const res = await axios.post("http://localhost:8080/Operate/TallySheetSave", payload);
+      const res = await api.post("/Operate/TallySheetSave", payload);
       if (res.data.code === 200) {
 
         Swal.fire({
@@ -285,10 +284,10 @@ function TallySheet() {
     setSelectedLeft([]);
     setSelectedRight([]);
     try {
-      const leftRes = await axios.get("http://localhost:8080/Operate/AccountMappingList");
+      const leftRes = await axios.get("/Operate/AccountMappingList");
       setLeftItems(leftRes.data || []);
       if (selectedAccountId) {
-        const rightRes = await axios.get("http://localhost:8080/Operate/AccountMappingV2List", {
+        const rightRes = await axios.get("/Operate/AccountMappingV2List", {
           params: { account_id: selectedAccountId },
         });
         setRightItems(rightRes.data || []);
@@ -342,7 +341,7 @@ function TallySheet() {
 
     try {
       const payload = rightItems; // rightItems 배열 전체를 서버에 전달
-      const response = await axios.post("http://localhost:8080/Operate/AccountMappingSave", payload);
+      const response = await api.post("/Operate/AccountMappingSave", payload);
       
       if (response.data.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
@@ -431,7 +430,7 @@ function TallySheet() {
           formDataToSend.append("gubun", field);
           formDataToSend.append("folder", selectedAccountId);
 
-          const res = await axios.post("http://localhost:8080/Operate/OperateImgUpload", formDataToSend, {
+          const res = await api.post("/Operate/OperateImgUpload", formDataToSend, {
             headers: { "Content-Type": "multipart/form-data" },
           });
 
@@ -470,7 +469,7 @@ function TallySheet() {
       };
 
       // ✅ Step 3. 거래처 저장 API 호출
-      const response = await axios.post("http://localhost:8080/Operate/AccountRetailBusinessSave", payload);
+      const response = await api.post("/Operate/AccountRetailBusinessSave", payload);
       if (response.data.code === 200) {
         Swal.fire({
           title: "성공",
@@ -530,8 +529,7 @@ function TallySheet() {
 
     try {
       // 서버 업로드 요청 (엔드포인트는 예시)
-      const uploadUrl = "http://localhost:8080/Operate/OperateImgUpload";
-      const res = await axios.post(uploadUrl, formDataToSend, {
+      const res = await api.post("/Operate/OperateImgUpload", formDataToSend, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 

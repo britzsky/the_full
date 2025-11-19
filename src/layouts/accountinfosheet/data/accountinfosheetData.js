@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "api/api"; // ✅ axios 대신 공통 client import
 
 export default function useAccountInfosheetData(initialAccountId) {
   const [basicInfo, setBasicInfo] = useState({});
@@ -24,12 +24,12 @@ export default function useAccountInfosheetData(initialAccountId) {
         eventRes,
         imgRes,
       ] = await Promise.all([
-        axios.get("http://localhost:8080/Account/AccountInfoList", { params: { account_id: id } }),
-        axios.get("http://localhost:8080/Account/AccountInfoList_2", { params: { account_id: id } }),
-        axios.get("http://localhost:8080/Account/AccountInfoList_3", { params: { account_id: id } }),
-        axios.get("http://localhost:8080/Account/AccountInfoList_4", { params: { account_id: id } }),
-        axios.get("http://localhost:8080/Account/AccountInfoList_5", { params: { account_id: id } }),
-        axios.get("http://localhost:8080/Account/AccountBusinessImgList", { params: { account_id: id } }),
+        api.get("/Account/AccountInfoList", { params: { account_id: id } }),
+        api.get("/Account/AccountInfoList_2", { params: { account_id: id } }),
+        api.get("/Account/AccountInfoList_3", { params: { account_id: id } }),
+        api.get("/Account/AccountInfoList_4", { params: { account_id: id } }),
+        api.get("/Account/AccountInfoList_5", { params: { account_id: id } }),
+        api.get("/Account/AccountBusinessImgList", { params: { account_id: id } }),
       ]);
 
       setBasicInfo(basicRes.data?.[0] || {});
@@ -47,8 +47,8 @@ export default function useAccountInfosheetData(initialAccountId) {
 
   // ✅ 계정 목록 최초 1회 조회
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", { params: { account_type: "0" } })
+    api
+      .get("/Account/AccountList", { params: { account_type: "0" } })
       .then((res) => {
         const rows = (res.data || []).map((item) => ({
           account_id: item.account_id,
@@ -61,7 +61,7 @@ export default function useAccountInfosheetData(initialAccountId) {
 
   const saveData = async () => {
     try {
-      await axios.post("http://localhost:8080/account/membersheetSave", {
+      await api.post("/account/membersheetSave", {
         account_id: initialAccountId,
         basicInfo,
         priceRows,

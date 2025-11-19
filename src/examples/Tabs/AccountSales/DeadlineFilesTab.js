@@ -6,7 +6,7 @@ import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { Download, Trash2 } from "lucide-react"; // 🔹 아이콘
 
@@ -58,8 +58,8 @@ export default function DeadlineFilesTab() {
     formData.append("file_yn", "Y");
 
     try {
-      const res = await axios.post(
-        "http://localhost:8080/Account/AccountDeadlineFilesSave",
+      const res = await api.post(
+        "/Account/AccountDeadlineFilesSave",
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
@@ -97,7 +97,7 @@ export default function DeadlineFilesTab() {
 
     try {
       // ✅ month, filePath 같이 전송
-      const res = await axios.delete("http://localhost:8080/Account/AccountDeadlineFilesDelete", {
+      const res = await api.delete("/Account/AccountDeadlineFilesDelete", {
         params: { account_id, year, month, filePath, file_yn:"N" },
       });
 

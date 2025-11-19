@@ -6,16 +6,15 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import useRetailBusinessData from "./retailBusinessData";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
+import { API_BASE_URL } from "config";
 
 function RetailBusinessTab() {
   const { activeRows, loading, fetcRetailBusinessList } = useRetailBusinessData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
-
-  const API_BASE_URL = "http://localhost:8080";
 
   // ✅ 초기 데이터 조회 (기본 조회)
   useEffect(() => {
@@ -65,7 +64,7 @@ function RetailBusinessTab() {
       formData.append("gubun", field);
       formData.append("folder", "retail"); // ✅ accountId 대신 type 값
 
-      const res = await axios.post(`${API_BASE_URL}/Operate/OperateImgUpload`, formData, {
+      const res = await api.post(`/Operate/OperateImgUpload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       if (res.data.code === 200) return res.data.image_path;
@@ -109,7 +108,7 @@ function RetailBusinessTab() {
         return;
       }
 
-      const response = await axios.post(`${API_BASE_URL}/Operate/AccountRetailBusinessSaveV2`, payload, {
+      const response = await api.post(`/Operate/AccountRetailBusinessSaveV2`, payload, {
         headers: { "Content-Type": "application/json" },
       });
 
@@ -259,7 +258,7 @@ function RetailBusinessTab() {
           formDataToSend.append("gubun", field);
           formDataToSend.append("folder", "retail");
 
-          const res = await axios.post("http://localhost:8080/Operate/OperateImgUpload", formDataToSend, {
+          const res = await api.post("/Operate/OperateImgUpload", formDataToSend, {
             headers: { "Content-Type": "multipart/form-data" },
           });
 
@@ -298,7 +297,7 @@ function RetailBusinessTab() {
       };
 
       // ✅ Step 3. 거래처 저장 API 호출
-      const response = await axios.post("http://localhost:8080/Operate/AccountRetailBusinessSave", payload);
+      const response = await api.post("/Operate/AccountRetailBusinessSave", payload);
       if (response.data.code === 200) {
         Swal.fire({
           title: "성공",

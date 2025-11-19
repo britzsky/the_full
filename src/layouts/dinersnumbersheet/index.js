@@ -11,7 +11,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import useDinersNumbersheetData, { parseNumber, formatNumber } from "./data/dinersnumbersheetData";
 import LoadingScreen from "../loading/loadingscreen";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import "./dinersnumbersheet.css";
 import { useLocation } from "react-router-dom";
 
@@ -148,8 +148,8 @@ function DinersNumberSheet() {
     }));
 
     try {
-      const res = await axios.post(
-        "http://localhost:8080/Operate/AccountDinnersNumberSave",
+      const res = await api.post(
+        "/Operate/AccountDinnersNumberSave",
         payload
       );
       if (res.data.code === 200) {

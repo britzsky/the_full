@@ -234,8 +234,8 @@ function TeleManagerTab() {
     if (payload.length === 0) return;
 
     try {
-      await axios.post(
-        "http://localhost:8080/Business/BusinessTeleAccountSave",
+      await api.post(
+        "/Business/BusinessTeleAccountSave",
         payload,
         { headers: { "Content-Type": "application/json" } }
       );

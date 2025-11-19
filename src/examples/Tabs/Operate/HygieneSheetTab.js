@@ -5,10 +5,9 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import { Modal, Box, Typography, Button, TextField, Select, MenuItem } from "@mui/material";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import useHygienesheetData  from "./hygienesheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
 
 function HygieneSheetTab() {
@@ -149,8 +148,7 @@ function HygieneSheetTab() {
       formData.append("gubun", imageDt);
       formData.append("folder", account_id);
 
-      const url = "http://localhost:8080/Operate/OperateImgUpload";
-      const res = await axios.post(url, formData, {
+      const res = await api.post("/Operate/OperateImgUpload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -235,8 +233,8 @@ function HygieneSheetTab() {
         return;
       }
 
-      const response = await axios.post(
-        "http://localhost:8080/Operate/HygieneSave",
+      const response = await api.post(
+        "/Operate/HygieneSave",
         payload,
         {
           headers: {

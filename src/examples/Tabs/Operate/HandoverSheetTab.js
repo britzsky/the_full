@@ -4,9 +4,8 @@ import { TextField } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import useHandOversheetData from "./handoverheetData";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
 import XlsxPopulate from "xlsx-populate/browser/xlsx-populate";
 import FileSaver from "file-saver";
@@ -79,8 +78,8 @@ export default function HandoverSheetTab() {
     form.account_id = selectedAccountId;
     form.user_id = localStorage.getItem("user_id");
     try {
-      const response = await axios.post(
-        "http://localhost:8080/Operate/HandOverSave",
+      const response = await api.post(
+        "/Operate/HandOverSave",
         form
       );
       if (response.data.code === 200) {

@@ -12,7 +12,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DaumPostcode from "react-daum-postcode";
 import LoadingScreen from "../loading/loadingscreen";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 
 import useTableData from "layouts/tables/data/authorsTableData";
 import "./tables.css";
@@ -60,7 +60,7 @@ export default function Tables() {
     if (!formData.account_name || !formData.account_address || !formData.phone || formData.meal_type === "" || formData.account_type === "") {
       return Swal.fire({ title: "경고", text: "필수항목을 확인하세요.", icon: "error", confirmButtonColor: "#d33", confirmButtonText: "확인" });
     }
-    axios.post("http://localhost:8080/Account/AccountSave", formData, { headers: { "Content-Type": "multipart/form-data" } })
+    api.post("/Account/AccountSave", formData, { headers: { "Content-Type": "multipart/form-data" } })
       .then((res) => { if (res.data.code === 200) Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success", confirmButtonColor: "#d33", confirmButtonText: "확인" }).then((result) => { if (result.isConfirmed) handleModalClose(); }); })
       .catch(() => Swal.fire({ title: "실패", text: "저장을 실패했습니다.", icon: "error", confirmButtonColor: "#d33", confirmButtonText: "확인" }));
 

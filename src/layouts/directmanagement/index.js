@@ -21,7 +21,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DaumPostcode from "react-daum-postcode";
 import authorsTableData from "layouts/directmanagement/data/authorsTableData";
 
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
 import "./tables.css";
 
@@ -108,8 +108,8 @@ function DirectTable() {
       });
       return;
     }
-    axios
-      .post("http://localhost:8080/Account/AccountSave", formData, {
+    api
+      .post("/Account/AccountSave", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
       .then((response) => {

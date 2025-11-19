@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -23,7 +23,7 @@ export default function useAccountIssueData(year, month) {
     setLoading(true);
     const startTime = Date.now();
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountIssueList", {
+      const res = await api.get("/Account/AccountIssueList", {
         params: { year, month, type : 2 },
       });
       

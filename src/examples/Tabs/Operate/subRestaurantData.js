@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -21,7 +21,7 @@ export default function useSubRestaurantData() {
   const fetcSubRestaurantList  = async (region) => {
     setLoading(true);
       try {
-        const res = await axios.get("http://localhost:8080/Operate/AccountSubRestaurantList", {
+        const res = await api.get("/Operate/AccountSubRestaurantList", {
           params: { region },
         });
         const rows = (res.data || []).map((item) => ({

@@ -17,7 +17,7 @@ Coded by www.creative-tim.com
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 
 // Material Dashboard 2 React components
 import MDTypography from "components/MDTypography";
@@ -29,8 +29,8 @@ export default function useTableData() {
 
   // API 조회
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountDirectList") // 👉 실제 API 엔드포인트로 교체
+    api
+      .get("/Account/AccountDirectList") // 👉 실제 API 엔드포인트로 교체
       .then((res) => {
         // res.data 예시:
         // [{ account_id:"20250819193455", account_name:"한결", account_address:"인천..." }]

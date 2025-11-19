@@ -6,7 +6,7 @@ import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import useDeadlineIssueData, { formatNumber } from "./deadlineIssueData";
 
@@ -88,7 +88,7 @@ export default function DeadlineIssueTab() {
       return;
     }
     try {
-      const res = await axios.post("http://localhost:8080/Account/AccountIssueSave", {
+      const res = await api.post("/Account/AccountIssueSave", {
         data:modified,
       });
 

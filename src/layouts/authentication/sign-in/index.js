@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // react-router-dom components
 import { Link, useNavigate } from "react-router-dom";
@@ -29,8 +29,8 @@ function Basic() {
   const navigate = useNavigate();
 
   const handleLogin = () => {
-    axios
-      .post("http://localhost:8080/User/Login",
+    api
+      .post("/User/Login",
       {
         userId: userId,
         password: password

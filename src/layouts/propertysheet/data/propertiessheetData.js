@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -18,8 +18,8 @@ export default function usePropertiessheetData() {
   const { account_id } = useParams();
 
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountPropertiesList", {
+    api
+      .get("/Account/AccountPropertiesList", {
         params: { account_id },
       })
       .then((res) => {
@@ -44,7 +44,7 @@ export default function usePropertiessheetData() {
   }, [account_id]);
 
   const saveData = (activeData) => {
-    axios
+    api
       .post("/account/membersheetSave", {
         account_id,
         data: activeData,

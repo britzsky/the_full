@@ -5,7 +5,7 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import {
   Modal,
   Box,
@@ -101,8 +101,8 @@ function WeekMenuSheetTab() {
     };
 
     try {
-      const response = await axios.post(
-        "http://localhost:8080/HeadOffice/WeekMenuSave",
+      const response = await api.post(
+        "/HeadOffice/WeekMenuSave",
         newEvent,
         { headers: { "Content-Type": "application/json" } }
       );
@@ -136,8 +136,8 @@ function WeekMenuSheetTab() {
     };
 
     try {
-      const response = await axios.post(
-        "http://localhost:8080/HeadOffice/WeekMenuSave",
+      const response = await api.post(
+        "/HeadOffice/WeekMenuSave",
         newEvent,
         { headers: { "Content-Type": "application/json" } }
       );

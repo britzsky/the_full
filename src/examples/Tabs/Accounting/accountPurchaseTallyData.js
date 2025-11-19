@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -23,7 +23,7 @@ export default function useAccountPurchaseTallyData() {
   const fetchCarList = async (car_number) => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Business/CarList", {
+      const res = await api.get("/Business/CarList", {
         params: { car_number: car_number },
       });
 
@@ -52,7 +52,7 @@ export default function useAccountPurchaseTallyData() {
   // 차량 선택 리스트 조회
   const fetchCarSelectList = async () => {
     try {
-      const res = await axios.get("http://localhost:8080/Business/CarSelectList");
+      const res = await api.get("/Business/CarSelectList");
       setCarSelectList(res.data || []);
     } catch (err) {
       console.error("차량 선택 리스트 조회 실패:", err);

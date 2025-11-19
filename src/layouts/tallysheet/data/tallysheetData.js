@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -38,7 +38,7 @@ export default function useTallysheetData(account_id, year, month) {
       if (year) params.year = year;
       if (month) params.month = month;
 
-      const res = await axios.get("http://localhost:8080/Operate/TallySheetList", { params });
+      const res = await api.get("/Operate/TallySheetList", { params });
       const list = res.data || [];
 
       if (list.length > 0 && list[0].count_month) {
@@ -93,7 +93,7 @@ export default function useTallysheetData(account_id, year, month) {
       if (year) params.year = year;
       if (month) params.month = month - 1;
 
-      const res = await axios.get("http://localhost:8080/Operate/TallySheetList", { params });
+      const res = await api.get("/Operate/TallySheetList", { params });
       const list = res.data || [];
 
       if (list.length > 0 && list[0].count_month) {
@@ -144,8 +144,8 @@ export default function useTallysheetData(account_id, year, month) {
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {

@@ -8,7 +8,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import useCarManagerData from "./corCarData";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
 
 function CorCarTabStyled() {
@@ -154,8 +154,7 @@ function CorCarTabStyled() {
       formData.append("gubun", serviceDt);
       formData.append("folder", carNumber);
 
-      const url = "http://localhost:8080/Business/BusinessImgUpload";
-      const res = await axios.post(url, formData, {
+      const res = await api.post("/Business/BusinessImgUpload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -192,7 +191,7 @@ function CorCarTabStyled() {
     if (!formData.car_number || !formData.car_name ) {
       return Swal.fire({ title: "경고", text: "필수항목을 확인하세요.", icon: "error", confirmButtonColor: "#d33", confirmButtonText: "확인" });
     }
-    axios.post("http://localhost:8080/Business/CarNewSave", formData, { headers: { "Content-Type": "multipart/form-data" } })
+    api.post("/Business/CarNewSave", formData, { headers: { "Content-Type": "multipart/form-data" } })
       .then((res) => { 
         if (res.data.code === 200) 
           Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success", confirmButtonColor: "#d33", confirmButtonText: "확인" })
@@ -253,8 +252,8 @@ function CorCarTabStyled() {
         return;
       }
 
-      const response = await axios.post(
-        "http://localhost:8080/Business/CarSave",
+      const response = await api.post(
+        "/Business/CarSave",
         payload,
         {
           headers: {

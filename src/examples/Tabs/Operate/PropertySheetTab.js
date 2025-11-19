@@ -7,9 +7,10 @@ import { TextField } from "@mui/material";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiessheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import axios from "axios";
+import api from "api/api";
 import Swal from "sweetalert2";
 import dayjs from "dayjs"; // 🟧 감가상각 계산용
+import { API_BASE_URL } from "config";
 
 function PropertySheetTab() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -20,7 +21,6 @@ function PropertySheetTab() {
   const [viewImageSrc, setViewImageSrc] = useState(null);
 
   const numericCols = ["purchase_price"];
-  const API_BASE_URL = "http://localhost:8080";
 
   useEffect(() => {
     if (selectedAccountId) {
@@ -130,7 +130,7 @@ function PropertySheetTab() {
       formData.append("gubun", purchaseDt);
       formData.append("folder", account_id);
 
-      const res = await axios.post(`${API_BASE_URL}/Operate/OperateImgUpload`, formData, {
+      const res = await api.post(`/Operate/OperateImgUpload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -232,7 +232,7 @@ function PropertySheetTab() {
         return;
       }
 
-      const response = await axios.post(`${API_BASE_URL}/Operate/PropertiesSave`, payload, {
+      const response = await api.post(`/Operate/PropertiesSave`, payload, {
         headers: { "Content-Type": "application/json" },
       });
 

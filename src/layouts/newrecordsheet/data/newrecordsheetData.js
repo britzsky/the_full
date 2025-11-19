@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -23,8 +23,8 @@ export default function useNewRecordsheetData() {
 
   useEffect(() => {
     // 직원정보
-    axios
-      .get("http://localhost:8080/User/UserMemberList", {
+    api
+      .get("/User/UserMemberList", {
         params: { account_id },
       })
       .then((res) => {
@@ -42,8 +42,8 @@ export default function useNewRecordsheetData() {
       .catch((err) => console.error("직원정보 조회 실패:", err));
 
     // 출근현황
-    axios
-      .get("http://localhost:8080/User/UserRecordSheetList", {
+    api
+      .get("/User/UserRecordSheetList", {
         params: { account_id },
       })
       .then((res) => {

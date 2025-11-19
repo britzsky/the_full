@@ -8,8 +8,7 @@ import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import useProfitLossTableData, { formatNumber } from "./profitLossTableData";
 import Swal from "sweetalert2";
-import axios from "axios";
-import zIndex from "@mui/material/styles/zIndex";
+import api from "api/api";
 
 export default function ProfitLossTableTab() {
   const today = dayjs();
@@ -154,7 +153,7 @@ export default function ProfitLossTableTab() {
 
     // ✅ 2) 백엔드 저장 API 호출 (예시)
     try {
-      await axios.post("http://localhost:8080/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
+      await api.post("/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
       fetchProfitLossTableList();
     } catch (err) {

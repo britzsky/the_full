@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -23,8 +23,8 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
     if (activeStatus) params.del_yn = activeStatus;
     setLoading(true);
     try {
-      const res = await axios.get(
-        "http://localhost:8080/Operate/AccountMemberAllList",
+      const res = await api.get(
+        "/Operate/AccountMemberAllList",
         { params }     // ✅ 핵심 수정: params를 감싸지 않음
       );
 
@@ -69,8 +69,8 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
   };
 
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {
@@ -84,7 +84,7 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
   }, []);
 
   const saveData = (activeData) => {
-    axios
+    api
       .post("/account/membersheetSave", {
         account_id,
         data: activeData,

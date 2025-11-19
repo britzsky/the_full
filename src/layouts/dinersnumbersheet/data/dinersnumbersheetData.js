@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -27,7 +27,7 @@ export default function useDinersNumbersheetData(year, month) {
 
     try {
       const params = { account_id, year, month };
-      const res = await axios.get("http://localhost:8080/Operate/AccountDinnersNumberList", { params });
+      const res = await api.get("/Operate/AccountDinnersNumberList", { params });
 
       const rows = (res.data || []).map((item) => {
         const { diner_year, diner_month, diner_date } = item;

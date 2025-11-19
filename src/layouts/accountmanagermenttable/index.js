@@ -12,7 +12,7 @@ import LoadingScreen from "../loading/loadingscreen";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import useAccountManagermentTableData, { parseNumber, formatNumber } from "./data/accountmanagermenttableData";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import PropTypes from "prop-types";
 
 // ======================== 선택 테이블 컴포넌트 ========================
@@ -184,7 +184,7 @@ function AccountManagermentTable() {
 
     try {
       const payload = { nowList: changedNow, beforeList: changedBefore };
-      const res = await axios.post("http://localhost:8080/Operate/TallySheetSave", payload);
+      const res = await api.post("/Operate/TallySheetSave", payload);
       if (res.data.code === 200) {
         Swal.fire({
           title: "저장",
@@ -223,12 +223,12 @@ function AccountManagermentTable() {
     setSelectedLeft([]);
     setSelectedRight([]);
     try {
-      const leftRes = await axios.get("http://localhost:8080/Operate/AccountMappingList");
+      const leftRes = await api.get("/Operate/AccountMappingList");
       const safeLeft = Array.isArray(leftRes.data) ? leftRes.data : leftRes.data?.data || [];
       setLeftItems(safeLeft);
 
       if (selectedAccountId) {
-        const rightRes = await axios.get("http://localhost:8080/Operate/AccountMappingV2List", {
+        const rightRes = await api.get("/Operate/AccountMappingV2List", {
           params: { account_id: selectedAccountId },
         });
         const safeRight = Array.isArray(rightRes.data) ? rightRes.data : rightRes.data?.data || [];
@@ -279,7 +279,7 @@ function AccountManagermentTable() {
 
     try {
       const payload = rightItems;
-      const response = await axios.post("http://localhost:8080/Operate/AccountMappingSave", payload);
+      const response = await api.post("/Operate/AccountMappingSave", payload);
       if (response.data.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
         setOpen(false);
@@ -312,7 +312,7 @@ function AccountManagermentTable() {
       });
     }
     try {
-      const response = await axios.post("http://localhost:8080/Operate/AccountCreateSave", formData);
+      const response = await api.post("/Operate/AccountCreateSave", formData);
       if (response.data.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
         setOpen2(false);

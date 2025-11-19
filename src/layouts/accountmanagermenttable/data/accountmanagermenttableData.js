@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // ✅ 숫자 변환 유틸
 const parseNumber = (value) => {
@@ -35,7 +35,7 @@ export default function useAccountManagermentTableData(account_id, year, month) 
       if (year) params.year = year;
       if (month) params.month = month;
 
-      const res = await axios.get("http://localhost:8080/HeadOffice/AccountManagermentTableList", { params });
+      const res = await api.get("/HeadOffice/AccountManagermentTableList", { params });
 
       // 응답 형태에 따른 방어 코드
       const list = Array.isArray(res.data)
@@ -84,7 +84,7 @@ export default function useAccountManagermentTableData(account_id, year, month) 
   useEffect(() => {
     const fetchAccountList = async () => {
       try {
-        const res = await axios.get("http://localhost:8080/Account/AccountList", {
+        const res = await api.get("/Account/AccountList", {
           params: { account_type: "0" },
         });
 

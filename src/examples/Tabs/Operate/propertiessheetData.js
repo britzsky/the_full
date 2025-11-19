@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -22,7 +22,7 @@ export default function usePropertiessheetData() {
   const fetcPropertyList  = async (account_id) => {
     setLoading(true);
       try {
-        const res = await axios.get("http://localhost:8080/Operate/PropertiesList", {
+        const res = await api.get("/Operate/PropertiesList", {
           params: { account_id },
         });
         const rows = (res.data || []).map((item) => ({
@@ -51,8 +51,8 @@ export default function usePropertiessheetData() {
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {

@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { useLocation  } from "react-router-dom";
-import axios from "axios";
-
+import api from "api/api";
+import { API_BASE_URL } from "config";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
@@ -15,7 +15,6 @@ import usePropertiessheetData, { parseNumber, formatNumber } from "./data/proper
 function PropertiesSheet() {
   const { activeRows, setActiveRows, saveData } = usePropertiessheetData();
   const [originalRows, setOriginalRows] = useState([]);
-  const API_BASE_URL = "http://localhost:8080"; // api 서버 주소
   const UPLOAD_URL = `${API_BASE_URL}/image/hangyeol/properties`;
 
   const numericCols = ["purchase_price"];
@@ -41,7 +40,7 @@ function PropertiesSheet() {
     formData.append("file", file);
 
     try {
-      const res = await axios.post(UPLOAD_URL, formData, {
+      const res = await api.post("/image/hangyeol/properties", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 

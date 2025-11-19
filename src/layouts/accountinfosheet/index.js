@@ -17,7 +17,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import useAccountInfosheetData from "./data/accountinfosheetData";
 import PropTypes from "prop-types";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import { useParams } from "react-router-dom"; // ✅ 추가
 
 // 숫자 컬럼만 천단위 콤마 포맷
@@ -101,7 +101,7 @@ function AccountInfoSheet() {
     if (!hasFile) return alert("업로드할 파일을 선택하세요!");
 
     try {
-      await axios.post("http://localhost:8080/Account/AccountBusinessImgUpload", formData, {
+      await api.post("/Account/AccountBusinessImgUpload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       alert("모든 파일 업로드 완료!");
@@ -562,7 +562,7 @@ function AccountInfoSheet() {
     const payload = { formData, priceData, etcData, managerData, eventData };
     
     try {
-      const res = await axios.post("http://localhost:8080/Account/AccountInfoSave", payload);
+      const res = await api.post("/Account/AccountInfoSave", payload);
       if (res.data.code === 200) {
         Swal.fire({
           title: "저장",

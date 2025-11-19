@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -22,7 +22,7 @@ export default function usePeopleCountingData(year, month) {
   const fetchPeopleCountingList = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/HeadOffice/PeopleCountingList", {
+      const res = await api.get("/HeadOffice/PeopleCountingList", {
         params: { year, month },
       });
 

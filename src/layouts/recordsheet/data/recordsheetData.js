@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "api/api";
 
 export default function useRecordsheetData(account_id, year, month) {
   const [memberRows, setMemberRows] = useState([]);
@@ -15,19 +15,19 @@ export default function useRecordsheetData(account_id, year, month) {
     setLoading(true);
 
     try {
-      const memberReq = axios.get("http://localhost:8080/Account/AccountRecordMemberList", {
+      const memberReq = api.get("/Account/AccountRecordMemberList", {
         params: { account_id, year, month },
       });
 
-      const dispatchReq = axios.get("http://localhost:8080/Account/AccountRecordDispatchList", {
+      const dispatchReq = api.get("/Account/AccountRecordDispatchList", {
         params: { account_id, year, month },
       });
 
-      const timesReq = axios.get("http://localhost:8080/Account/AccountMemberRecordTime", {
+      const timesReq = api.get("/Account/AccountMemberRecordTime", {
         params: { account_id },
       });
 
-      const sheetReq = axios.get("http://localhost:8080/Account/AccountRecordSheetList", {
+      const sheetReq = api.get("/Account/AccountRecordSheetList", {
         params: { account_id, year, month },
       });
 
@@ -132,8 +132,8 @@ export default function useRecordsheetData(account_id, year, month) {
 
   // ✅ 계정 목록 최초 1회 조회
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {

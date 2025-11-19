@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect, useCallback } from "react";
-import axios from "axios";
+import api from "api/api";
 
 export default function useHandOversheetData() {
   const [handOverListRows, setHandOverListRows] = useState([]);
@@ -12,7 +12,7 @@ export default function useHandOversheetData() {
     if (!account_id) return;
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Operate/HandOverSearch", {
+      const res = await api.get("/Operate/HandOverSearch", {
         params: { account_id },
       });
 
@@ -63,8 +63,8 @@ export default function useHandOversheetData() {
 
   // ✅ 계정 목록 조회
   useEffect(() => {
-    axios
-      .get("http://localhost:8080/Account/AccountList", {
+    api
+      .get("/Account/AccountList", {
         params: { account_type: "0" },
       })
       .then((res) => {

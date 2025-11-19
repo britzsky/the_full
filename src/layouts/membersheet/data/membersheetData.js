@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -23,12 +23,12 @@ export default function useMembersheetData() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const resActive = await axios.get(
-          "http://localhost:8080/Operate/AccountMemberSheetList",
+        const resActive = await api.get(
+          "/Operate/AccountMemberSheetList",
           { params: { account_id, del_yn: "N" } }
         );
-        const resInactive = await axios.get(
-          "http://localhost:8080/Operate/AccountMemberSheetList",
+        const resInactive = await api.get(
+          "/Operate/AccountMemberSheetList",
           { params: { account_id, del_yn: "Y" } }
         );
 

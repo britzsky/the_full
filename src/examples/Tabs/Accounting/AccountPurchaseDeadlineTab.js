@@ -14,7 +14,7 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api"; // ✅ axios 대신 공통 client import
 
 function AccountPurchaseDeadlineTab() {
   // ✅ 조회조건 상태
@@ -43,7 +43,7 @@ function AccountPurchaseDeadlineTab() {
     try {
       setLoading(true);
       const params = { ...filters };
-      const res = await axios.post("http://localhost:8080/Account/PurchaseTallyList", params);
+      const res = await api.post("/Account/PurchaseTallyList", params);
       if (res.data.code === 200) {
         setRows(res.data.rows || []);
         setOriginalRows(res.data.rows || []);

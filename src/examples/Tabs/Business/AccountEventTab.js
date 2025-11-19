@@ -13,7 +13,7 @@ import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { Download, Trash2, Image as ImageIcon, Plus, RotateCcw } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -264,8 +264,8 @@ export default function AccountEventTab() {
       for (const row of eventRows) {
         // 1) 신규행 INSERT
         if (!row.event_id) {
-          const res = await axios.post(
-            "http://localhost:8080/Business/AccountEventSave",
+          const res = await api.post(
+            "/Business/AccountEventSave",
             {
               account_id: selectedAccountId,
               event_name: row.event_name,
@@ -286,8 +286,8 @@ export default function AccountEventTab() {
           (origin.event_name !== row.event_name ||
             origin.event_dt !== row.event_dt)
         ) {
-          await axios.post(
-            "http://localhost:8080/Business/AccountEventUpdate",
+          await api.post(
+            "/Business/AccountEventUpdate",
             {
               event_id: row.event_id,
               account_id: row.account_id,
@@ -300,8 +300,8 @@ export default function AccountEventTab() {
 
         // 3) 기존 이미지 삭제 처리
         for (const delImg of row.deletedImages) {
-          await axios.delete(
-            "http://localhost:8080/Business/AccountEventFileDelete",
+          await api.delete(
+            "/Business/AccountEventFileDelete",
             {
               params: {
                 event_id: row.event_id,
@@ -321,8 +321,8 @@ export default function AccountEventTab() {
             formData.append("files", pf.file)
           );
 
-          await axios.post(
-            "http://localhost:8080/Business/AccountEventFilesUpload",
+          await api.post(
+            "/Business/AccountEventFilesUpload",
             formData,
             { headers: { "Content-Type": "multipart/form-data" } }
           );

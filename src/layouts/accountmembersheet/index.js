@@ -7,7 +7,7 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import { TextField } from "@mui/material";
 import Swal from "sweetalert2";
-import axios from "axios";
+import api from "api/api";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./data/accountmembersheetData";
 import LoadingScreen from "../loading/loadingscreen";
@@ -189,7 +189,7 @@ function AccountMemberSheet() {
         user_id: userId,
       }));
 
-      const res = await axios.post("http://localhost:8080/Operate/AccountMembersSave", {
+      const res = await api.post("/Operate/AccountMembersSave", {
         data: changedRowsWithUser,
       });
 

@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -24,7 +24,7 @@ export default function useDeadlineBalanceData(year, month) {
   const fetchDeadlineBalanceList = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountDeadlineBalanceList", {
+      const res = await api.get("/Account/AccountDeadlineBalanceList", {
         params: { year, month },
       });
 
@@ -56,7 +56,7 @@ export default function useDeadlineBalanceData(year, month) {
   const fetchDepositHistoryList = async (account_id) => {
     setLoading(true);
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountDepositHistoryList", {
+      const res = await api.get("/Account/AccountDepositHistoryList", {
         params: { account_id, year },
       });
 
@@ -82,7 +82,7 @@ export default function useDeadlineBalanceData(year, month) {
   // ✅ 계정 목록 조회
   const fetchAccountList = async () => {
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountList", {
+      const res = await api.get("/Account/AccountList", {
         params: { account_type: 0 },
       });
       setAccountList(res.data || []);
@@ -95,7 +95,7 @@ export default function useDeadlineBalanceData(year, month) {
   // ✅ 차액 조회 함수 (selectbox 변경 시 호출)
   const fetchAccountDeadlineDifferencePriceSearch = async (account_id, year, month, type) => {
     try {
-      const res = await axios.get("http://localhost:8080/Account/AccountDeadlineDifferencePriceSearch", {
+      const res = await api.get("/Account/AccountDeadlineDifferencePriceSearch", {
         params: { account_id, year, month, type },
       });
 

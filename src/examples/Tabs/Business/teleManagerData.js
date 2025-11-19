@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import api from "api/api";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -24,8 +24,8 @@ export default function useTeleManagerData(year) {
     console.log(year)
 
     // 직원정보
-    axios
-      .get("http://localhost:8080/Business/BusinessTeleAccountList", {
+    api
+      .get("/Business/BusinessTeleAccountList", {
         params: { account_id, year },
       })
       .then((res) => {

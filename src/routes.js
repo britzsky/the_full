@@ -199,7 +199,7 @@ const routes = [
       },
       {
         type: "collapse",
-        name: "🧑‍🍳 현장직원 관리",
+        name: "🧑‍🔧 현장직원 관리",
         key: "account_member",
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/accountmembersheet",

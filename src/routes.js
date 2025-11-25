@@ -36,19 +36,16 @@ Coded by www.creative-tim.com
 */
 
 // Material Dashboard 2 React layouts
-import Dashboard from "layouts/dashboard";
+//import Dashboard from "layouts/dashboard";
+import HomeSwitcher from "layouts/dashboard/HomeSwitcher";
 import Tables from "layouts/tables";
-import DirectTable from "layouts/directmanagement"
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
-import NewRecordSheet from "layouts/newrecordsheet";
 import AccountMemberSheet from "layouts/accountmembersheet";
 // 본사
 import PeopleCountingManager from "layouts/headoffice/headofficetab";
 import WeekMenuManager from "layouts/weekmenusheet";
 import EventManager from "layouts/eventsheet";
-// 신사업
-import Cost from "layouts/analysis/cost";
 // 영업
 import TeleManager from "layouts/business/telemanager";
 import ContractManager from "layouts/accountinfosheet/index";
@@ -62,56 +59,75 @@ import PurchaseTally from "layouts/accounting/accountpurchasetally"
 // 현장
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
-import HandOverManager from "examples/Tabs/Operate/HandoverSheetTab";
 // @mui icons
 import Icon from "@mui/material/Icon";
+import HomeIcon from "@mui/icons-material/Home";
 
 const routes = [
   {
     type: "collapse",
-    name: "Dashboard",
+    name: "홈",
     key: "dashboard",
-    icon: <Icon fontSize="small">dashboard</Icon>,
+    icon: <HomeIcon style={{color: "white"}} />,
     route: "/dashboard",
-    component: <Dashboard />,
+    component: <HomeSwitcher />,
   },
   {
+    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
     type: "collapse",
     name: "본사",
     key: "tables",
     icon: <Icon fontSize="small">table_view</Icon>,
+    allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+    accessMode: "AND",
     collapse: [
       {
         type: "collapse",
-        name: "관리표",
+        name: "🗂️ 관리표",
         key: "account_managerment",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/HeadOffice/PeopleCountingTab",
         component: <PeopleCountingManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "행사",
+        name: "🎉 행사",
         key: "event",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/event",
         component: <EventManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "본사 식단표",
+        name: "🍚 본사 식단표",
         key: "weekmenu",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/weekmenu",
         component: <WeekMenuManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
     ]
   },
   {
+    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
     type: "collapse",
     name: "영업",
     key: "business",
     icon: <Icon fontSize="small">table_view</Icon>,
+    allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한
+    accessMode: "AND",
     collapse: [
       {
         type: "collapse",
@@ -120,110 +136,144 @@ const routes = [
         icon: <Icon fontSize="small">*</Icon>,
         route: "/accountmembersheet",
         component: <AccountMemberSheet />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "고객사 정보",
-        key: "business",
-        icon: <Icon fontSize="small">*</Icon>,
+        name: "ℹ️ 고객사 정보",
+        key: "accountinfosheet",
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/accountinfosheet/index",
         component: <ContractManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "고객사 관리",
+        name: "📁 고객사 관리",
         key: "business",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/business/telemanager",
         component: <TeleManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한
+        accessMode: "AND",
       },
     ]
   },
   {
+    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
     type: "collapse",
     name: "운영",
     key: "operate",
     icon: <Icon fontSize="small">table_view</Icon>,
+    allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+    accessMode: "AND",
     collapse: [
       {
         type: "collapse",
-        name: "매입",
+        name: "🏢 고객사 목록",
         key: "account",
-        icon: <Icon fontSize="small">*</Icon>,
-        route: "/tables",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/account",
         component: <Tables />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "교육",
+        name: "📑 예산",
         key: "business",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/business/telemanager",
         component: <TeleManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "현장직원 관리",
+        name: "🧑‍🍳 현장직원 관리",
         key: "account_member",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/accountmembersheet",
         component: <AccountMemberSheet />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "고객사 관리",
+        name: "📁 고객사 관리",
         key: "account_management",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/Operate/OperateTabs",
         component: <OperateTab />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
-        name: "고객사 소통",
+        name: "📋 고객사 소통",
         key: "business",
-        icon: <Icon fontSize="small">*</Icon>,
-        route: "/operate/accountissuesheet",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/Operate/accountissuesheet",
         component: <AccountIssueManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
     ]
   },
   {
+    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
     type: "collapse",
     name: "회계",
     key: "accounting",
     icon: <Icon fontSize="small">table_view</Icon>,
+    allowedDepartments: [0, 2, 6],   // 🔹 부서권한
+    accessMode: "OR",
     collapse: [
       {
         type: "collapse",
-        name: "손익 분석표",
-        key: "account",
-        icon: <Icon fontSize="small">*</Icon>,
-        route: "/tables",
-        component: <Tables />,
-      },
-      {
-        type: "collapse",
-        name: "매출",
+        name: "💰 매출",
         key: "deadline",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/AccountSales/AccountSalesTab",
         component: <AccountSales />,
+        allowedDepartments: [0, 2, 6],   // 🔹 부서권한
+        accessMode: "OR",
       },
       {
         type: "collapse",
-        name: "매입",
+        name: "📦 매입",
         key: "accounting",
-        icon: <Icon fontSize="small">*</Icon>,
-        route: "/accounting/purchasetally",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/purchase/purchasetally",
         component: <PurchaseTally />,
+        allowedDepartments: [0, 2, 6],   // 🔹 부서권한
+        accessMode: "OR",
       },
     ]
   },
   {
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
+    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
     type: "collapse",
     name: "인사",
     key: "human",
     icon: <Icon fontSize="small">table_view</Icon>,
+    allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+    accessMode: "AND",
     collapse: [
       {
         type: "collapse",
@@ -232,6 +282,9 @@ const routes = [
         icon: <Icon fontSize="small">*</Icon>,
         route: "/tables",
         component: <Tables />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
@@ -240,6 +293,7 @@ const routes = [
         icon: <Icon fontSize="small">*</Icon>,
         route: "/accountmembersheet",
         component: <AccountMemberSheet />,
+        allowedDepartments: [0, 3, 6],   // 🔹 부서권한
       },
       {
         type: "collapse",
@@ -248,6 +302,7 @@ const routes = [
         icon: <Icon fontSize="small">*</Icon>,
         route: "/business/telemanager",
         component: <TeleManager />,
+        allowedDepartments: [0, 3, 6],   // 🔹 부서권한
       },
       {
         type: "collapse",
@@ -256,6 +311,9 @@ const routes = [
         icon: <Icon fontSize="small">*</Icon>,
         route: "/business/telemanager",
         component: <TeleManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",
@@ -264,10 +322,15 @@ const routes = [
         icon: <Icon fontSize="small">*</Icon>,
         route: "/business/telemanager",
         component: <TeleManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1],   // 🔹 직책권한
+        accessMode: "AND",
       },
     ]
   },
   {
+    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
     type: "collapse",
     name: "현장",
     key: "site",
@@ -275,142 +338,33 @@ const routes = [
     collapse: [
       {
         type: "collapse",
-        name: "집계표",
+        name: "📋 집계표",
         key: "account",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/layouts/tallysheet",
         component: <TallyManager />,
       },
       {
         type: "collapse",
-        name: "출근부",
+        name: "📅 출근부",
         key: "account_member",
-        icon: <Icon fontSize="small">*</Icon>,
+        //icon: <Icon fontSize="small">*</Icon>,
         route: "/layouts/recordsheet",
         component: <RecordManager />,
       },
-      {
-        type: "collapse",
-        name: "인수인계",
-        key: "hand_over",
-        icon: <Icon fontSize="small">*</Icon>,
-        route: "/Operate/HandoverSheetTab",
-        component: <HandOverManager />,
-      },
+      // {
+      //   type: "collapse",
+      //   name: "인수인계",
+      //   key: "hand_over",
+      //   icon: <Icon fontSize="small">*</Icon>,
+      //   route: "/Operate/HandoverSheetTab",
+      //   component: <HandOverManager />,
+      // },
     ]
   },
-  // {
-  //   type: "collapse",
-  //   name: "급식사업부",
-  //   key: "tables",
-  //   icon: <Icon fontSize="small">table_view</Icon>,
-  //   collapse: [
-  //     {
-  //       type: "collapse",
-  //       name: "거래처",
-  //       key: "account",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/tables",
-  //       component: <Tables />,
-  //     },
-  //     {
-  //       type: "collapse",
-  //       name: "직원관리",
-  //       key: "account_member",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/accountmembersheet",
-  //       component: <AccountMemberSheet />,
-  //     },
-  //     {
-  //       type: "collapse",
-  //       name: "영업관리",
-  //       key: "business",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/business/telemanager",
-  //       component: <TeleManager />,
-  //     },
-  //     {
-  //       type: "collapse",
-  //       name: "운영관리",
-  //       key: "operate",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/operate/tallysheet",
-  //       component: <TallyManager />,
-  //     },
-  //   ]
-  // },
-  // {
-  //   type: "collapse",
-  //   name: "신사업팀",
-  //   key: "new_business",
-  //   icon: <Icon fontSize="small">table_view</Icon>,
-  //   collapse: [
-  //     {
-  //       type: "collapse",
-  //       name: "신사업관리",
-  //       key: "new_business_management",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/tables",
-  //       component: <Tables />,
-  //     },
-  //     {
-  //       type: "collapse",
-  //       name: "근태관리",
-  //       key: "newrecordsheet",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/newrecordsheet",
-  //       component: <NewRecordSheet />,
-  //     },
-  //     {
-  //       name: "통계 / 분석",
-  //       key: "analysis",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/analysis/cost",
-  //       component: <Cost />,
-  //     },
-  //     {
-  //       name: "직영점",
-  //       key: "direct_store",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/directmanagement",
-  //       component: <DirectTable />,
-  //     },
-  //     {
-  //       name: "가맹점",
-  //       key: "franchise_store",
-  //       icon: <Icon fontSize="small">*</Icon>,
-  //       route: "/tables",
-  //       component: <Tables />,
-  //     },
-  //   ],
-  // },
-  // {
-  //   type: "collapse",
-  //   name: "RTL",
-  //   key: "rtl",
-  //   icon: <Icon fontSize="small">format_textdirection_r_to_l</Icon>,
-  //   route: "/rtl",
-  //   component: <RTL />,
-  // },
-  // {
-  //   type: "collapse",
-  //   name: "Notifications",
-  //   key: "notifications",
-  //   icon: <Icon fontSize="small">notifications</Icon>,
-  //   route: "/notifications",
-  //   component: <Notifications />,
-  // },
-  // {
-  //   type: "collapse",
-  //   name: "Profile",
-  //   key: "profile",
-  //   icon: <Icon fontSize="small">person</Icon>,
-  //   route: "/profile",
-  //   component: <Profile />,
-  // },
   {
     type: "collapse",
-    name: "Sign In",
+    name: "로그인",
     key: "sign-in",
     icon: <Icon fontSize="small">login</Icon>,
     route: "/authentication/sign-in",
@@ -418,7 +372,7 @@ const routes = [
   },
   {
     type: "collapse",
-    name: "Sign Up",
+    name: "회원가입",
     key: "sign-up",
     icon: <Icon fontSize="small">assignment</Icon>,
     route: "/authentication/sign-up",

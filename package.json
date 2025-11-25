@@ -21,7 +21,7 @@
     "@fullcalendar/google-calendar": "^6.1.19",
     "@fullcalendar/interaction": "^6.1.19",
     "@fullcalendar/react": "^6.1.19",
-    "@mui/icons-material": "5.11.16",
+    "@mui/icons-material": "^5.11.16",
     "@mui/material": "5.12.3",
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.11.0",

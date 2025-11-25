@@ -265,8 +265,8 @@ function AccountMembersFilesTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0,
-      zIndex: 2,
+      top: 130,
+      zIndex: 10,
     },
   };
 
@@ -275,7 +275,18 @@ function AccountMembersFilesTab() {
   return (
     <>
       {/* ✅ 상단 메뉴 */}
-      <MDBox pb={1} sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+      <MDBox 
+        pb={1} 
+        sx={{ 
+          display: "flex", 
+          justifyContent: "flex-end", 
+          gap: 1, 
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
+          }}
+      >
         <TextField
           select size="small"
           value={selectedAccountId}
@@ -293,15 +304,15 @@ function AccountMembersFilesTab() {
       </MDBox>
 
       {/* ✅ 테이블 */}
-      <MDBox pt={4} pb={3} sx={tableSx}>
-        <MDBox
+      <MDBox pt={1} pb={3} sx={tableSx}>
+        {/* <MDBox
           mx={0} mt={-3} py={1} px={2}
           variant="gradient" bgColor="info"
           borderRadius="lg" coloredShadow="info"
           display="flex" justifyContent="space-between" alignItems="center"
         >
           <MDTypography variant="h6" color="white">자격증 관리</MDTypography>
-        </MDBox>
+        </MDBox> */}
 
         <table>
           <thead>

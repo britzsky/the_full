@@ -375,7 +375,7 @@ export default function DeadlineBalanceTab() {
 
   const tableSx = {
     flex: 1,
-    maxHeight: "80vh", 
+    maxHeight: "70vh", 
     overflowY: "auto",
     "& table": {
       borderCollapse: "separate",

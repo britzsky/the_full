@@ -19,6 +19,7 @@ import {
 // ✅ 커스텀 훅 import
 import useEventsheetData from "./data/eventsheetData";
 import "./fullcalendar-custom.css";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
 function EventSheetTab() {
@@ -188,9 +189,8 @@ function EventSheetTab() {
 
   return (
     <DashboardLayout>
-      <Typography variant="h5" sx={{ mb: -1, fontWeight: "bold" }}>
-        🏠 행사 달력 (내부 관리용)
-      </Typography>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="🎉 행사 달력 (내부 관리용)" />
 
       {loading && <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>}
 
@@ -251,7 +251,7 @@ function EventSheetTab() {
         eventClick={handleEventClick} // ✅ 이벤트 클릭시 내용 보기
         eventColor="#F2921D"
         eventTextColor="#fff"
-        height="85vh"
+        height="80vh"
         dayMaxEventRows={5}
         eventContent={(arg) => (
           <div

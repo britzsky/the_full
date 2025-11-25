@@ -148,8 +148,8 @@ function SubRestaurantTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0,
-      zIndex: 2,
+      top: 130,
+      zIndex: 10,
     },
   };
 
@@ -167,6 +167,10 @@ function SubRestaurantTab() {
           justifyContent: "flex-end",
           alignItems: "center",
           gap: 2,
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
         }}
       >
         {/* ✅ 지역 선택 SelectBox */}
@@ -191,8 +195,8 @@ function SubRestaurantTab() {
       </MDBox>
 
       {/* 테이블 렌더링 */}
-      <MDBox pt={4} pb={3} sx={tableSx}>
-        <MDBox
+      <MDBox pt={1} pb={3} sx={tableSx}>
+        {/* <MDBox
           mx={0}
           mt={-3}
           py={1}
@@ -207,7 +211,7 @@ function SubRestaurantTab() {
           <MDTypography variant="h6" color="white">
             서브식당 관리
           </MDTypography>
-        </MDBox>
+        </MDBox> */}
 
         <table>
           <thead>

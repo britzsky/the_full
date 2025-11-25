@@ -37,14 +37,16 @@ const tableSx = {
 };
 
 export default function HandoverSheetTab() {
+
+  // ✅ localStorage 에서 account_id 가져오기
+  const storedAccountId = localStorage.getItem("account_id") || "";
+
   const [form, setForm] = useState({});
   const [originalForm, setOriginalForm] = useState({});
-  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [selectedAccountId, setSelectedAccountId] = useState(storedAccountId);
 
   const { handOverListRows, accountList, loading, fetcHandOverList } =
     useHandOversheetData(selectedAccountId);
-
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   useEffect(() => {
     if (accountList.length > 0 && !selectedAccountId) {
@@ -321,33 +323,7 @@ export default function HandoverSheetTab() {
 
   return (
     <>
-      <MDBox 
-        pt={1} 
-        gap={1} 
-        pb={1} 
-        sx={{ 
-          display: "flex", 
-          justifyContent: "flex-end",
-          position: "sticky",
-          zIndex: 10,
-          top: 78,
-          backgroundColor: "#ffffff",
-        }}
-      >
-        <TextField
-          select
-          size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{ minWidth: 150 }}
-          SelectProps={{ native: true }}
-        >
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+      <MDBox pt={1} gap={1} pb={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
         <MDButton variant="gradient" color="info" onClick={handleSave}>
           저장
         </MDButton>

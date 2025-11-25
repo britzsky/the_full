@@ -10,6 +10,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./data/accountmembersheetData";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
 function AccountMemberSheet() {
@@ -510,7 +511,9 @@ function AccountMemberSheet() {
 
   return (
     <DashboardLayout>
-      <MDBox pt={0} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="🧑‍🍳 현장 직원관리" />
+      <MDBox pt={1} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
         <TextField
           select
           size="small"
@@ -551,17 +554,17 @@ function AccountMemberSheet() {
         </MDButton>
       </MDBox>
 
-      <MDBox pt={4} pb={3}>
+      <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card
               sx={{
-                height: "calc(100vh - 160px)",
+                height: "calc(98vh - 160px)",
                 display: "flex",
                 flexDirection: "column",
               }}
             >
-              <MDBox
+              {/* <MDBox
                 mx={0}
                 mt={-3}
                 py={1}
@@ -577,7 +580,7 @@ function AccountMemberSheet() {
                 <MDTypography variant="h6" color="white">
                   현장 직원관리
                 </MDTypography>
-              </MDBox>
+              </MDBox> */}
 
               {renderTable(table, activeRows, originalRows)}
             </Card>

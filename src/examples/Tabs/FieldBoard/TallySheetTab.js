@@ -13,7 +13,10 @@ import Swal from "sweetalert2";
 import api from "api/api";
 
 function TallySheetTab() {
-  const [selectedAccountId, setSelectedAccountId] = useState("");
+  // ✅ localStorage 에서 account_id 가져오기
+  const storedAccountId = localStorage.getItem("account_id") || "";
+
+  const [selectedAccountId, setSelectedAccountId] = useState(storedAccountId);
   const [originalRows, setOriginalRows] = useState([]);
   const [original2Rows, setOriginal2Rows] = useState([]);
   const today = dayjs();
@@ -138,8 +141,6 @@ function TallySheetTab() {
 
   const ratioData = useMemo(() => Array.from({ length: 31 }, (_, i) => (((i + 1) / 31) * 100).toFixed(2) + "%"), []);
 
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
-
   if (loading) return <LoadingScreen />;
 
   // 테이블 렌더링
@@ -227,14 +228,19 @@ function TallySheetTab() {
 
   return (
     <>
-      <MDBox pt={1} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
-        <TextField select size="small" value={selectedAccountId} onChange={onSearchList} sx={{ minWidth: 150 }} SelectProps={{ native: true }}>
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+      <MDBox 
+        pt={1} 
+        pb={1} 
+        gap={1} 
+        sx={{ 
+          display: "flex", 
+          justifyContent: "flex-end",
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
+        }}
+      >
         <Select value={year} onChange={handleYearChange} size="small">
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
             <MenuItem key={y} value={y}>
@@ -259,11 +265,11 @@ function TallySheetTab() {
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card>
-              {/* <MDBox mx={0} mt={-3} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
+              <MDBox mx={0} mt={-3} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
                 <MDTypography variant="h6" color="white">
                   집계표 {countMonth ? `(${countMonth})` : ""}
                 </MDTypography>
-              </MDBox> */}
+              </MDBox>
               {renderTable(table, originalRows, handleCellChange, dataRows)}
             </Card>
           </Grid>

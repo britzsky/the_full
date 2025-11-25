@@ -213,7 +213,7 @@ export default function ProfitLossTableTab() {
       {/* 메인 테이블 */}
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          <MDBox
+          {/* <MDBox
             py={1}
             px={2}
             variant="gradient"
@@ -226,11 +226,12 @@ export default function ProfitLossTableTab() {
             <MDTypography variant="h6" color="white">
               월별 손익표
             </MDTypography>
-          </MDBox>
+          </MDBox> */}
 
           <Box
             sx={{
-              overflowX: "auto",
+              maxHeight: "75vh",
+              overflowY: "auto",
               "& table": {
                 borderCollapse: "collapse",
                 width: "100%",

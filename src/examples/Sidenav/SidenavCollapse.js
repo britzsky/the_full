@@ -29,6 +29,8 @@ import {
 import { useMaterialUIController } from "context";
 
 function SidenavCollapse({ icon, name, active, subMenu, openKey, setOpenKey, myKey, ...rest }) {
+  const location = useLocation();
+  const currentPath = location.pathname;
   const [controller] = useMaterialUIController();
   const { miniSidenav, transparentSidenav, whiteSidenav, darkMode, sidenavColor } = controller;
   const isOpen = openKey === myKey;   // ✅ 열린 상태 여부
@@ -44,15 +46,21 @@ function SidenavCollapse({ icon, name, active, subMenu, openKey, setOpenKey, myK
       <ListItem component="li" onClick={handleClick} sx={{ cursor: subMenu ? "pointer" : "default" }}>
         <MDBox
           {...rest}
-          sx={(theme) =>
-            collapseItem(theme, {
+          sx={(theme) => ({
+            // 기존 스타일 먼저
+            ...collapseItem(theme, {
               active,
               transparentSidenav,
               whiteSidenav,
               darkMode,
               sidenavColor,
-            })
-          }
+            }),
+            // ✅ active일 때만 덮어쓸 스타일
+            ...(active && {
+              backgroundColor: "rgba(255, 255, 255, 0.16)", // 눌린 메뉴 배경
+              borderRadius: "8px",
+            }),
+          })}
         >
           <ListItemIcon
             sx={(theme) =>
@@ -80,7 +88,7 @@ function SidenavCollapse({ icon, name, active, subMenu, openKey, setOpenKey, myK
         </MDBox>
       </ListItem>
 
-      {subMenu && isOpen && (   // ✅ open 대신 isOpen 사용
+      {subMenu && isOpen && (
         <List sx={{ pl: 4 }}>
           {subMenu.map((item) => (
             <NavLink
@@ -91,7 +99,8 @@ function SidenavCollapse({ icon, name, active, subMenu, openKey, setOpenKey, myK
               <SidenavCollapse
                 name={item.name}
                 icon={item.icon}
-                active={item.key === active}
+                // ✅ 현재 URL과 route 비교해서 active 결정
+                active={item.route === currentPath}
                 subMenu={item.collapse}
                 openKey={openKey}
                 setOpenKey={setOpenKey}

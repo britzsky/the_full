@@ -14,6 +14,7 @@ import MDButton from "components/MDButton";
 import MDInput from "components/MDInput";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useAccountInfosheetData from "./data/accountinfosheetData";
 import PropTypes from "prop-types";
 import Swal from "sweetalert2";
@@ -588,9 +589,11 @@ function AccountInfoSheet() {
 
   return (
     <DashboardLayout>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="📋 고객사 상세관리" />
       {/* 버튼's */}
       <MDBox
-        pt={0}
+        pt={1}
         pb={2}
         sx={{
           display: "flex",

@@ -115,7 +115,7 @@ export default function DeadlineFilesTab() {
 
   const tableSx = {
     flex: 1,
-    maxHeight: "75vh",
+    maxHeight: "70vh",
     overflowY: "auto",
     "& table": {
       borderCollapse: "separate",

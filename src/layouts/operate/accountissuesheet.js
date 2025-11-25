@@ -9,6 +9,7 @@ import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import Swal from "sweetalert2";
 import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useAccountIssueData, { formatNumber } from "./data/AccountIssueData";
 
 export default function AccountIssueSheet() {
@@ -156,6 +157,8 @@ export default function AccountIssueSheet() {
 
   return (
     <DashboardLayout>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="📋 고객사 이슈 현황" />
       <Grid container spacing={6}>
         {/* 거래처 테이블 */}
         <Grid item xs={12}>
@@ -174,7 +177,6 @@ export default function AccountIssueSheet() {
                   새로고침
                 </MDButton> */}
               </Box>
-
               <MDButton variant="gradient" color="info" onClick={handleSave}>
                 저장
               </MDButton>
@@ -183,7 +185,7 @@ export default function AccountIssueSheet() {
             {/* 메인 테이블 */}
             <Grid container spacing={2}>
               <Grid item xs={12}>
-                <MDBox
+                {/* <MDBox
                   py={1}
                   px={2}
                   variant="gradient"
@@ -199,7 +201,7 @@ export default function AccountIssueSheet() {
                   <MDTypography variant="h6" color="white">
                     거래처별 이슈 현황
                   </MDTypography>
-                </MDBox>
+                </MDBox> */}
 
                 <Box sx={tableSx}>
                   <table>

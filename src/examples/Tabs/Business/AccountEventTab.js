@@ -376,7 +376,7 @@ export default function AccountEventTab() {
       backgroundColor: "#f0f0f0",
       position: "sticky",
       top: 0,
-      zIndex: 2,
+      zIndex: 10,
       padding: "6px",
     },
   };
@@ -405,7 +405,15 @@ export default function AccountEventTab() {
       <MDBox
         pt={1}
         pb={1}
-        sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center" }}
+        sx={{ 
+          display: "flex", 
+          justifyContent: "flex-end", 
+          alignItems: "center" ,
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
+        }}
       >
         <Box sx={{ display: "flex", gap: 1 }}>
           <Select
@@ -444,7 +452,7 @@ export default function AccountEventTab() {
       {/* 메인 테이블 */}
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          <MDBox
+          {/* <MDBox
             py={1}
             px={2}
             variant="gradient"
@@ -460,7 +468,7 @@ export default function AccountEventTab() {
             <MDTypography variant="h6" color="white">
               행사별 사진 관리
             </MDTypography>
-          </MDBox>
+          </MDBox> */}
 
           <Box sx={tableSx}>
             <table>

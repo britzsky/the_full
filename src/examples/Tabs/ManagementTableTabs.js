@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Tabs, Tab, Box, Card, Grid } from "@mui/material";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 
 // 탭용 서브 컴포넌트 import
 import TeleManagerTab from "./Business/TeleManagerTab";
@@ -31,6 +31,8 @@ function ManagementTableTabs() {
   ];
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="현장 업무 보드" />
       {/* 탭 상단 */}
       <Tabs
         value={tabIndex}

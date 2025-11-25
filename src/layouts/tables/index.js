@@ -14,6 +14,8 @@ import LoadingScreen from "../loading/loadingscreen";
 import Swal from "sweetalert2";
 import api from "api/api";
 
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
+
 import useTableData from "layouts/tables/data/authorsTableData";
 import "./tables.css";
 
@@ -70,6 +72,8 @@ export default function Tables() {
 
   return (
     <DashboardLayout>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="🏢 고객사 목록" />
       <Grid container spacing={6}>
         <Grid item xs={12}>
           <Card>
@@ -87,9 +91,9 @@ export default function Tables() {
             </MDBox>
 
             {/* 테이블 헤더 */}
-            <MDBox mx={0} mt={0} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info" display="flex" justifyContent="space-between" alignItems="center">
+            {/* <MDBox mx={0} mt={0} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info" display="flex" justifyContent="space-between" alignItems="center">
               <MDTypography variant="h6" color="white">거래처</MDTypography>
-            </MDBox>
+            </MDBox> */}
 
             {/* 테이블 */}
             <MDBox pt={0} sx={{ overflowX: "auto", "& table": { borderCollapse: "collapse", width: "max-content", minWidth: "100%" }, "& th, & td": { border: "1px solid #ddd", textAlign: "center", padding: "6px", whiteSpace: "nowrap" }, "& th": { backgroundColor: "#f0f0f0", position: "sticky", top: 0, zIndex: 10 }, "& td:first-of-type, & th:first-of-type": { position: "sticky", left: 0, background: "#f0f0f0", zIndex: 20 } }}>

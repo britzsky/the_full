@@ -158,8 +158,8 @@ function RetailBusinessTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0,
-      zIndex: 2,
+      top: 130,
+      zIndex: 10,
     },
   };
   // ========================== Modal 관련 시작 ==========================
@@ -324,7 +324,19 @@ function RetailBusinessTab() {
   return (
     <>
       {/* ✅ 저장 버튼만 유지 (거래처 select 삭제됨) */}
-      <MDBox pt={1} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
+      <MDBox 
+        pt={1} 
+        pb={1} 
+        gap={1} 
+        sx={{ display: "flex", 
+          justifyContent: "flex-end",
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
+        }}
+        
+      >
         <MDButton variant="gradient" color="info" onClick={handleModalOpen2}>
           거래처 등록
         </MDButton>
@@ -333,8 +345,8 @@ function RetailBusinessTab() {
         </MDButton>
       </MDBox>
       {/* ✅ 테이블 렌더 */}
-      <MDBox pt={4} pb={3} sx={tableSx}>
-        <MDBox
+      <MDBox pt={1} pb={3} sx={tableSx}>
+        {/* <MDBox
           mx={0}
           mt={-3}
           py={1}
@@ -349,7 +361,7 @@ function RetailBusinessTab() {
           <MDTypography variant="h6" color="white">
             거래처 관리
           </MDTypography>
-        </MDBox>
+        </MDBox> */}
 
         <table>
           <thead>

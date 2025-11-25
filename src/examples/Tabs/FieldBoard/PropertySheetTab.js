@@ -295,8 +295,8 @@ function PropertySheetTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 130,
-      zIndex: 10,
+      top: 0,
+      zIndex: 2,
     },
     "& input[type='date'], & input[type='text']": {
       fontSize: "12px",
@@ -311,19 +311,7 @@ function PropertySheetTab() {
 
   return (
     <>
-      <MDBox 
-        pt={1} 
-        pb={1} 
-        sx={{ 
-          display: "flex", 
-          justifyContent: "flex-end", 
-          gap: 1 ,
-          position: "sticky",
-          zIndex: 10,
-          top: 78,
-          backgroundColor: "#ffffff",
-          }}
-      >
+      <MDBox pt={1} pb={1} sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
         <TextField
           select
           size="small"

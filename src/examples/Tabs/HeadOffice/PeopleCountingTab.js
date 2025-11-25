@@ -35,7 +35,7 @@ export default function PeopleCountingTab() {
 
   // ✅ 테이블 스타일
   const tableWrapperSx = {
-    maxHeight: "80vh",
+    maxHeight: "75vh",
     overflowY: "auto",
   };
 
@@ -102,7 +102,7 @@ export default function PeopleCountingTab() {
       {/* 메인 테이블 */}
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          <MDBox
+          {/* <MDBox
             py={1}
             px={2}
             variant="gradient"
@@ -118,7 +118,7 @@ export default function PeopleCountingTab() {
             <MDTypography variant="h6" color="white">
               거래처별 일자별 인원 현황
             </MDTypography>
-          </MDBox>
+          </MDBox> */}
           <Box sx={tableWrapperSx}>
             <Box sx={tableSx}>
               <table>

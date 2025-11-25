@@ -13,6 +13,7 @@ import LoadingScreen from "../loading/loadingscreen";
 import Swal from "sweetalert2";
 import api from "api/api";
 import "./dinersnumbersheet.css";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { useLocation } from "react-router-dom";
 
 function DinersNumberSheet() {
@@ -165,6 +166,8 @@ function DinersNumberSheet() {
 
   return (
     <DashboardLayout>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="🍽️ 식수관리" />
       {/* ✅ 상단 컨트롤 */}
       <MDBox pt={1} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
         <Select value={year} onChange={(e) => setYear(e.target.value)} size="small">
@@ -187,12 +190,12 @@ function DinersNumberSheet() {
       </MDBox>
 
       {/* ✅ 본문 테이블 */}
-      <MDBox pt={4} pb={3}>
+      <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card sx={{ height: "calc(100vh - 160px)", display: "flex", flexDirection: "column" }}>
               {/* ✅ 헤더 영역 */}
-              <MDBox
+              {/* <MDBox
                 mx={0}
                 mt={-3}
                 py={1}
@@ -208,7 +211,7 @@ function DinersNumberSheet() {
                 <MDTypography variant="h6" color="white">
                   식수현황 (업장명 : {account_name || "미지정"})
                 </MDTypography>
-              </MDBox>
+              </MDBox> */}
 
               {/* ✅ 테이블 스타일 (디자인 유지) */}
               <MDBox

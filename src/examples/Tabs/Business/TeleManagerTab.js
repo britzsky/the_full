@@ -10,7 +10,6 @@ import dayjs from "dayjs";
 import isSameOrAfter from "dayjs/plugin/isSameOrAfter";
 import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import useTeleManagerData from "./teleManagerData";
-import axios from "axios";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 
@@ -91,7 +90,7 @@ function TeleManagerTab() {
   }, [teleAccountRows]);
 
   const tableSx = {
-    maxHeight: "80vh",
+    maxHeight: "75vh",
     overflow: "auto",
     whiteSpace: "nowrap",
     "& table": {

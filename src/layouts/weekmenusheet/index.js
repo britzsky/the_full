@@ -17,6 +17,7 @@ import {
 // ✅ 커스텀 훅 import
 import useWeekMenusheetData from "./data/weekmenusheetData";
 import "./fullcalendar-custom.css";
+import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
 function WeekMenuSheetTab() {
@@ -160,9 +161,8 @@ function WeekMenuSheetTab() {
 
   return (
     <DashboardLayout>
-      <Typography variant="h5" sx={{ mb: -1, fontWeight: "bold" }}>
-        🍊 주간 식단 달력 (내부 관리용)
-      </Typography>
+      {/* 🔹 공통 헤더 사용 */}
+      <HeaderWithLogout title="🍚 사내 식단 달력 (내부 관리용)" />
 
       {loading && <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>}
 
@@ -226,7 +226,7 @@ function WeekMenuSheetTab() {
         }}
         eventColor="#F2921D"
         eventTextColor="#fff"
-        height="85vh"
+        height="80vh"
         dayMaxEventRows={5}
         eventContent={(arg) => (
           <div

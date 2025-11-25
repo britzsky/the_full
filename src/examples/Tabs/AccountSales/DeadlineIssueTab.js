@@ -110,7 +110,7 @@ export default function DeadlineIssueTab() {
 
   const tableSx = {
     flex: 1,
-    maxHeight: "70vh",
+    maxHeight: "68vh",
     overflow: "auto",
     "& table": {
       borderCollapse: "collapse",

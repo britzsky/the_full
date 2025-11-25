@@ -15,6 +15,7 @@ import SidenavRoot from "examples/Sidenav/SidenavRoot";
 import sidenavLogoLabel from "examples/Sidenav/styles/sidenav";
 
 import logoImage from "assets/images/thefull-Photoroom.png";
+import logoImage2 from "assets/images/thefull.png";
 
 import {
   useMaterialUIController,
@@ -27,7 +28,8 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const [controller, dispatch] = useMaterialUIController();
   const { miniSidenav, transparentSidenav, whiteSidenav, darkMode } = controller;
   const location = useLocation();
-  const collapseName = location.pathname.replace("/", "");
+  //const collapseName = location.pathname.replace("/", "");
+  const collapseName = location.pathname.split("/")[1] || "";
 
   // ✅ 현재 열린 메뉴 key 저장
   const [openKey, setOpenKey] = useState(null);
@@ -72,15 +74,25 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             />
           </Link>
         ) : (
-          <NavLink key={key} to={route || "#"} style={{ textDecoration: "none", color: "inherit" }}>
+          <NavLink
+            key={key}
+            to={route || "#"}
+            style={{ textDecoration: "none", color: "inherit" }}
+            onClick={() => {
+              // ✅ 홈(대시보드) 눌렀을 때 열려있는 메뉴 전부 닫기
+              if (key === "dashboard") {
+                setOpenKey(null);
+              }
+            }}
+          >
             <SidenavCollapse
               name={name}
               icon={icon}
               active={key === collapseName}
               subMenu={collapse}
-              openKey={openKey}        // ✅ 전달
-              setOpenKey={setOpenKey}  // ✅ 전달
-              myKey={key}              // ✅ 자기 key 전달
+              openKey={openKey}
+              setOpenKey={setOpenKey}
+              myKey={key}
             />
           </NavLink>
         );
@@ -120,7 +132,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           position="absolute"
           top={0}
           right={0}
-          p={1.625}
+          p={1.4}
           onClick={closeSidenav}
           sx={{ cursor: "pointer" }}
         >
@@ -131,7 +143,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
         <MDBox component={NavLink} to="/" display="flex" alignItems="center">
           <MDBox width={!brandName && "100%"} sx={(theme) => sidenavLogoLabel(theme, { miniSidenav })}>
             <MDTypography component="h6" variant="button" fontWeight="medium" color={textColor}>
-              <img src={logoImage} alt="logo" />
+              <img src={logoImage2} alt="logo" />
             </MDTypography>
           </MDBox>
         </MDBox>

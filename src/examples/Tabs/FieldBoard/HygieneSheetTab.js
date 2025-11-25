@@ -12,7 +12,9 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 
 function HygieneSheetTab() {
-  const [selectedAccountId, setSelectedAccountId] = useState("");
+  // ✅ localStorage 에서 account_id 가져오기
+  const storedAccountId = localStorage.getItem("account_id") || "";
+  const [selectedAccountId, setSelectedAccountId] = useState(storedAccountId);
   const { hygieneListRows, setHygieneListRows, accountList, loading, fetcHygieneList } =
   useHygienesheetData(); // ✅ 교체
 
@@ -49,8 +51,6 @@ function HygieneSheetTab() {
     setRows(deepCopy);
     setOriginalRows(deepCopy);
   }, [hygieneListRows]);
-
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   // cell 값 변경 처리
   const handleCellChange = (rowIndex, key, value) => {
@@ -94,8 +94,8 @@ function HygieneSheetTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 130,
-      zIndex: 10,
+      top: 0,
+      zIndex: 2,
     },
     "& input[type='date'], & input[type='text']": {
       fontSize: "12px",
@@ -227,8 +227,6 @@ function HygieneSheetTab() {
 
       const payload = modifiedRows.filter(Boolean);
 
-      console.log(payload);
-
       if (payload.length === 0) {
         console.log("변경된 내용이 없습니다.");
         return;
@@ -283,35 +281,7 @@ function HygieneSheetTab() {
 
   return (
     <>
-      <MDBox 
-        pt={1} 
-        pb={1} 
-        gap={1} 
-        sx={{ display: "flex", 
-          justifyContent: "flex-end",
-          position: "sticky",
-          zIndex: 10,
-          top: 78,
-          backgroundColor: "#ffffff",
-          }}
-      >
-        {accountList.length > 0 && (
-          <TextField
-            select
-            size="small"
-            value={selectedAccountId}
-            onChange={onSearchList}
-            sx={{ minWidth: 150 }}
-            SelectProps={{ native: true }}
-          >
-            {(accountList || []).map((row) => (
-              <option key={row.account_id} value={row.account_id}>
-                {row.account_name}
-              </option>
-            ))}
-          </TextField>
-        )}
-
+      <MDBox pt={1} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
         <MDButton variant="gradient" color="info" onClick={handleAddRow}>
           행 추가
         </MDButton>

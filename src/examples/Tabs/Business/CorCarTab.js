@@ -130,8 +130,8 @@ function CorCarTabStyled() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0,
-      zIndex: 2,
+      top: 130,
+      zIndex: 10,
     },
     "& input[type='date'], & input[type='text']": {
       fontSize: "12px",
@@ -535,7 +535,19 @@ function CorCarTabStyled() {
 
   return (
     <>
-      <MDBox pt={1} pb={1} gap={1} sx={{ display: "flex", justifyContent: "flex-end" }}>
+      <MDBox 
+        pt={1} 
+        pb={1} 
+        gap={1} 
+        sx={{ 
+          display: "flex", 
+          justifyContent: "flex-end",
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
+          }}
+      >
         {carSelectList.length > 0 && (
           <TextField
             select
@@ -564,8 +576,8 @@ function CorCarTabStyled() {
         </MDButton>
       </MDBox>
 
-      <MDBox pt={4} pb={3} sx={tableSx}>
-        <MDBox
+      <MDBox pt={1} pb={3} sx={tableSx}>
+        {/* <MDBox
           mx={0}
           mt={-3}
           py={1}
@@ -581,7 +593,7 @@ function CorCarTabStyled() {
           <MDTypography variant="h6" color="white">
             법인차량 관리
           </MDTypography>
-        </MDBox>
+        </MDBox> */}
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <table>

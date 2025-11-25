@@ -55,7 +55,14 @@ function Basic() {
           localStorage.setItem("position", response.data.position);
           localStorage.setItem("department", response.data.department);
           localStorage.setItem("account_id", response.data.account_id);
-          navigate("/Dashboard");
+
+          const department = response.data.department;
+          
+          if (department == '7') {
+            navigate("/fieldboard/fieldbordtab");  
+          } else {
+            navigate("/Dashboard");
+          }
         }
       })
       .catch((error) => {

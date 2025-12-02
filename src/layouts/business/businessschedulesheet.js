@@ -50,15 +50,46 @@ function BusinessScheduleSheet() {
         return "#FF5F00";
       case "2": // 미팅
         return "#0046FF";
-      case "3": // 계약
+      case "3": // 오픈
         return "#527853";
-      case "4": // 관리/방문
+      case "4": // 오픈준비
         return "#F266AB";
-      case "5": // 오픈준비
+      case "5": // 외근
         return "#A459D1";
+      case "6": // 출장
+        return "#D71313";
+      case "7": // 체크
+        return "#364F6B";
+      case "8": // 연차
+        return "#1A0841";
+      case "9": // 오전반차
+        return "#1A0841";
+      case "10": // 오후반차
+        return "#1A0841";
       default:
-        return "#F2921D";
+      return "#F2921D";
     }
+  };
+
+  // ✅ 행사 종류 정의 (getTypeColor 주석과 동일하게)
+  const TYPE_OPTIONS = [
+    { value: "1", label: "행사" },
+    { value: "2", label: "미팅" },
+    { value: "3", label: "오픈" },
+    { value: "4", label: "오픈준비" },
+    { value: "5", label: "외근" },
+    { value: "6", label: "출장" },
+    { value: "7", label: "체크" },
+    { value: "8", label: "연차" },
+    { value: "9", label: "오전반차" },
+    { value: "10", label: "오후반차" },
+  ];
+
+  // 🔽 TYPE_OPTIONS 아래 즈음에 추가
+  const getTypeLabel = (typeValue) => {
+    const v = String(typeValue ?? "");
+    const found = TYPE_OPTIONS.find((t) => t.value === v);
+    return found ? found.label : "";
   };
 
   // ✅ BusinessMemberList 조회 함수
@@ -373,6 +404,7 @@ function BusinessScheduleSheet() {
         eventContent={(arg) => {
           const isCanceled = arg.event.extendedProps?.isCanceled;
           const userName = arg.event.extendedProps?.user_name; // ✅ 담당자 이름
+          const typeLabel = getTypeLabel(arg.event.extendedProps?.type); // ⬅️ 추가
           return (
             <div
               style={{
@@ -397,12 +429,12 @@ function BusinessScheduleSheet() {
                   textDecoration: isCanceled ? "line-through" : "none",
                 }}
               >
-                {arg.event.title}
-                {userName && (
-                  <span style={{ marginLeft: 2 }}>
-                    ({userName})
-                  </span>
+                {/* [타입] 내용 (이름) */}
+                {typeLabel && (
+                  <span style={{ marginRight: 2 }}>[{typeLabel}] </span>
                 )}
+                {arg.event.title}
+                {userName && <span style={{ marginLeft: 2 }}>({userName})</span>}
               </div>
             </div>
           );
@@ -454,72 +486,23 @@ function BusinessScheduleSheet() {
                 },
               }}
             >
-              <MenuItem value="1">
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      bgcolor: "#F6B1CE",
-                    }}
-                  />
-                  행사
-                </Box>
-              </MenuItem>
-              <MenuItem value="2">
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      bgcolor: "#F5C857",
-                    }}
-                  />
-                  미팅
-                </Box>
-              </MenuItem>
-              <MenuItem value="3">
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      bgcolor: "#1581BF",
-                    }}
-                  />
-                  계약
-                </Box>
-              </MenuItem>
-              <MenuItem value="4">
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      bgcolor: "#C1E59F",
-                    }}
-                  />
-                  관리/방문
-                </Box>
-              </MenuItem>
-              <MenuItem value="5">
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      bgcolor: "#D7C097",
-                    }}
-                  />
-                  오픈준비
-                </Box>
-              </MenuItem>
+              {TYPE_OPTIONS.map((type) => (
+                <MenuItem key={type.value} value={type.value}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        bgcolor: getTypeColor(type.value), // ✅ 위에서 정의한 색상 그대로 사용
+                      }}
+                    />
+                    {type.label}
+                  </Box>
+                </MenuItem>
+              ))}
             </Select>
+
 
             {/* 담당자 선택 */}
             <Select

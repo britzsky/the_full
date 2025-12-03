@@ -12,6 +12,7 @@ import isSameOrBefore from "dayjs/plugin/isSameOrBefore";
 import useTeleManagerData from "./teleManagerData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
+import api from "api/api";
 
 function TeleManagerTab() {
   

@@ -298,9 +298,7 @@ function TeleManagerTab() {
             act_type: 0,
             memo: "",
           };
-          return (
-            val.act_type !== orig.act_type || val.memo !== orig.memo
-          );
+          return val.act_type !== orig.act_type || val.memo !== orig.memo;
         })
         .map(([date, val]) => ({
           idx: row.idx,
@@ -320,7 +318,25 @@ function TeleManagerTab() {
       await api.post("/Business/BusinessTeleAccountSave", payload, {
         headers: { "Content-Type": "application/json" },
       });
+
       Swal.fire({ icon: "success", title: "저장", text: "저장되었습니다." });
+
+      // ✅ 여기서 현재 상태를 "원본"으로 갱신
+      setEditedRows((prev) =>
+        prev.map((row) => ({
+          ...row,
+          originalLeft: {
+            account_name: row.account_name,
+            sales_root: row.sales_root,
+            manager: row.manager,
+            region: row.region,
+            now_consignor: row.now_consignor,
+            end_dt: row.end_dt,
+            contract_type: row.contract_type,
+          },
+          originalDailyStatus: { ...(row.dailyStatus || {}) },
+        }))
+      );
     } catch (err) {
       Swal.fire({
         title: "실패",

@@ -321,7 +321,7 @@ function TeleManagerTab() {
 
       Swal.fire({ icon: "success", title: "저장", text: "저장되었습니다." });
 
-      // ✅ 여기서 현재 상태를 "원본"으로 갱신
+      // ✅ 저장 후 현재 상태를 "원본"으로 갱신 → 다음부터는 변경분만 다시 나감
       setEditedRows((prev) =>
         prev.map((row) => ({
           ...row,
@@ -476,6 +476,7 @@ function TeleManagerTab() {
 
                 {/* THEAD */}
                 <thead>
+                  {/* 1줄째: 월 헤더 */}
                   <tr>
                     {colWidths.map((_, i) => (
                       <th
@@ -504,6 +505,12 @@ function TeleManagerTab() {
                           top: 0,
                           background: "#f0f0f0",
                           zIndex: 4,
+                          // 원하면 여기에도 굵은 세로줄 줄 수 있음
+                          borderLeft: "2px solid #000",
+                          borderRight:
+                            idx === quarterMonths.length - 1
+                              ? "2px solid #000"
+                              : undefined,
                         }}
                       >
                         {m.format("M월")}
@@ -511,6 +518,7 @@ function TeleManagerTab() {
                     ))}
                   </tr>
 
+                  {/* 2줄째: 왼쪽 헤더 + 일자 숫자 */}
                   <tr>
                     {colWidths.map((_, i) => (
                       <th
@@ -548,20 +556,32 @@ function TeleManagerTab() {
                     ))}
 
                     {quarterMonths.map((m, idx) =>
-                      Array.from({ length: m.daysInMonth() }, (_, d) => (
-                        <th
-                          key={`${idx}-${d}`}
-                          style={{
-                            position: "sticky",
-                            top: 21,
-                            background: "#f0f0f0",
-                            borderBottom: "1px solid",
-                            zIndex: 5,
-                          }}
-                        >
-                          {d + 1}
-                        </th>
-                      ))
+                      Array.from({ length: m.daysInMonth() }, (_, d) => {
+                        const isMonthStart = d === 0;
+                        const isMonthEnd = d === m.daysInMonth() - 1;
+
+                        return (
+                          <th
+                            key={`${idx}-${d}`}
+                            style={{
+                              position: "sticky",
+                              top: 21,
+                              background: "#f0f0f0",
+                              borderBottom: "1px solid",
+                              zIndex: 5,
+                              // 🔹 월 시작/끝 구분선
+                              borderLeft: isMonthStart
+                                ? "2px solid #000"
+                                : undefined,
+                              borderRight: isMonthEnd
+                                ? "2px solid #000"
+                                : undefined,
+                            }}
+                          >
+                            {d + 1}
+                          </th>
+                        );
+                      })
                     )}
                   </tr>
                 </thead>
@@ -721,6 +741,10 @@ function TeleManagerTab() {
                               date
                             );
 
+                            const isMonthStart = d === 0;
+                            const isMonthEnd =
+                              d === m.daysInMonth() - 1;
+
                             return (
                               <td
                                 key={`${row.idx}-${midx}-${d}`}
@@ -729,8 +753,17 @@ function TeleManagerTab() {
                                     ? "#FFE082" // 선택 영역 하이라이트
                                     : statusColors[cellData.act_type],
                                   position: "relative",
-                                  cursor: isDisabled ? "default" : "pointer",
+                                  cursor: isDisabled
+                                    ? "default"
+                                    : "pointer",
                                   opacity: isDisabled ? 0.7 : 1,
+                                  // 🔹 월 시작/끝 구분선
+                                  borderLeft: isMonthStart
+                                    ? "2px solid #000"
+                                    : undefined,
+                                  borderRight: isMonthEnd
+                                    ? "2px solid #000"
+                                    : undefined,
                                 }}
                                 onMouseDown={(e) => {
                                   if (isDisabled) return;

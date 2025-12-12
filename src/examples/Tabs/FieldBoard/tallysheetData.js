@@ -6,6 +6,7 @@ const parseNumber = (value) => {
   if (!value) return 0;
   return Number(String(value).replace(/,/g, "")) || 0;
 };
+
 const formatNumber = (value) => {
   if (!value && value !== 0) return "";
   return Number(value).toLocaleString();
@@ -14,17 +15,23 @@ const formatNumber = (value) => {
 export default function useTallysheetData(account_id, year, month) {
   const [dataRows, setDataRows] = useState([]);
   const [data2Rows, setData2Rows] = useState([]);
+  const [originalRows, setOriginalRows] = useState([]);
+  const [original2Rows, setOriginal2Rows] = useState([]);
   const [countMonth, setCountMonth] = useState("");
   const [count2Month, setCount2Month] = useState("");
-  const [accountList, setAccountList] = useState([]); // ✅ select box 리스트
+  const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const MIN_LOADING_TIME = 1000; // 최소 1초
-  const startTime = Date.now();
+  const MIN_LOADING_TIME = 1000; // 최소 로딩 시간 1초
 
-  // ✅ 이번 달 조회
+  // ✅ 이번 달 데이터 조회
   const fetchDataRows = useCallback(async () => {
+    const startTime = Date.now();
     setLoading(true);
+
+    // ✅ 조회 시작 시 기존 비교 기준 초기화
+    setOriginalRows([]);
+
     try {
       const params = {};
       if (account_id) params.account_id = account_id;
@@ -35,7 +42,7 @@ export default function useTallysheetData(account_id, year, month) {
       const list = res.data || [];
 
       if (list.length > 0 && list[0].count_month) {
-        setCountMonth(list[0].count_year + "-" + list[0].count_month);
+        setCountMonth(`${list[0].count_year}-${list[0].count_month}`);
       } else {
         setCountMonth("");
       }
@@ -53,7 +60,12 @@ export default function useTallysheetData(account_id, year, month) {
         }
         return row;
       });
+
+      // ✅ 조회된 데이터 세팅
       setDataRows(initialRows);
+
+      // ✅ 비교 기준(원본) 데이터 세팅
+      setOriginalRows(initialRows.map((r) => ({ ...r })));
     } catch (err) {
       console.error("데이터 조회 실패 (이번 달):", err);
     } finally {
@@ -67,9 +79,14 @@ export default function useTallysheetData(account_id, year, month) {
     }
   }, [account_id, year, month]);
 
-  // ✅ 지난 달 조회
+  // ✅ 지난 달 데이터 조회
   const fetchData2Rows = useCallback(async () => {
+    const startTime = Date.now();
     setLoading(true);
+
+    // ✅ 조회 시작 시 기존 비교 기준 초기화
+    setOriginal2Rows([]);
+
     try {
       const params = {};
       if (account_id) params.account_id = account_id;
@@ -80,7 +97,7 @@ export default function useTallysheetData(account_id, year, month) {
       const list = res.data || [];
 
       if (list.length > 0 && list[0].count_month) {
-        setCount2Month(list[0].count_year + "-" + list[0].count_month);
+        setCount2Month(`${list[0].count_year}-${list[0].count_month}`);
       } else {
         setCount2Month("");
       }
@@ -98,7 +115,12 @@ export default function useTallysheetData(account_id, year, month) {
         }
         return row;
       });
+
+      // ✅ 조회된 데이터 세팅
       setData2Rows(initialRows);
+
+      // ✅ 비교 기준(원본) 데이터 세팅
+      setOriginal2Rows(initialRows.map((r) => ({ ...r })));
     } catch (err) {
       console.error("데이터 조회 실패 (지난 달):", err);
     } finally {
@@ -112,12 +134,11 @@ export default function useTallysheetData(account_id, year, month) {
     }
   }, [account_id, year, month]);
 
+  // ✅ 두 달 데이터 동시 조회
   useEffect(() => {
     const fetchAll = async () => {
       await Promise.all([fetchDataRows(), fetchData2Rows()]);
-      // 두 테이블 조회 완료
     };
-
     fetchAll();
   }, [fetchDataRows, fetchData2Rows]);
 
@@ -142,6 +163,8 @@ export default function useTallysheetData(account_id, year, month) {
     setDataRows,
     data2Rows,
     setData2Rows,
+    originalRows,
+    original2Rows,
     accountList,
     countMonth,
     count2Month,

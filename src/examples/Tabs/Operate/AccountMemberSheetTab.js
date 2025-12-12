@@ -20,10 +20,18 @@ function AccountMemberSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const { activeRows, setActiveRows, accountList, saveData, fetchAccountMembersAllList } =
-    useAccountMembersheetData(selectedAccountId, activeStatus);
+  const { 
+    activeRows, 
+    setActiveRows, 
+    originalRows, 
+    setOriginalRows,  
+    accountList, 
+    saveData, 
+    fetchAccountMembersAllList, 
+    loading: hookLoading 
+  } = useAccountMembersheetData(selectedAccountId, activeStatus);
 
-  const [originalRows, setOriginalRows] = useState([]);
+  //const [originalRows, setOriginalRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const numericCols = ["salary"];
@@ -210,10 +218,13 @@ function AccountMemberSheet() {
 
 
   const handleAddRow = () => {
+    const defaultAccountId =
+      selectedAccountId || (accountList?.[0]?.account_id ?? "");
+
     const newRow = {
       name: "",
       rrn: "",
-      account_id: selectedAccountId || "",
+      account_id: defaultAccountId,
       position_type: 1,
       account_number: "",
       phone: "",
@@ -240,6 +251,7 @@ function AccountMemberSheet() {
     };
     
     setActiveRows((prev) => [newRow, ...prev]);
+    setOriginalRows((prev) => [newRow, ...prev]);
 
     // setTimeout(() => {
     //   if (tableContainerRef.current) {

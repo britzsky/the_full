@@ -87,7 +87,7 @@ function TallySheet() {
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
   const [images, setImages] = useState(Array(31).fill(null)); // 1~31일 이미지  
-  const [receiptType, setReceiptType] = useState("");
+  const [receiptType, setReceiptType] = useState([]);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -187,28 +187,122 @@ function TallySheet() {
   };
 
   const handleImageUpload = async (e, dayIndex) => {
+    const typeForDay = receiptType[dayIndex];
 
-    if (receiptType == "") {
+    if (!typeForDay) {
       return Swal.fire("경고", "영수증 유형을 선택하세요.", "info");
     }
 
     const file = e.target.files[0];
     if (!file) return;
-    
-    setImages(prev => {
+
+    setImages((prev) => {
       const newImages = [...prev];
       newImages[dayIndex] = file;
       return newImages;
     });
-    
-    const formData = new FormData();
-    formData.append('file', file); // 'file'은 Spring의 @RequestParam 이름과 일치
-    formData.append('type', receiptType);
-    formData.append('account_id', selectedAccountId);
 
-    const res = await api.post("/receipt-scan", formData, {
-      headers: { "Content-Type": "multipart/form-data", "Accept": "application/json" },
-    });
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("type", typeForDay);  // 🔹 이 일자의 유형
+    formData.append("account_id", selectedAccountId);
+
+    try {
+      Swal.fire({
+        title: "영수증 확인 중 입니다.",
+        text: "잠시만 기다려 주세요...",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => {
+          Swal.showLoading();
+        },
+      });
+
+      const res = await api.post("/receipt-scan", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Accept: "application/json",
+        },
+        validateStatus: () => true,
+      });
+
+      Swal.close();
+
+      if (res.status === 200) {
+        Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
+        console.log(res.data);
+
+        // 🔽 여기서 집계표에 자동 반영
+        const { total, saleDate, type } = res.data;
+
+        // 1) 날짜 체크 (선택한 연월과 다르면 안내만)
+        const sale = dayjs(saleDate);
+        if (sale.isValid()) {
+          if (sale.year() !== year || sale.month() + 1 !== month) {
+            Swal.fire(
+              "주의",
+              `영수증 날짜(${sale.format(
+                "YYYY-MM-DD"
+              )})가 선택된 연월(${year}-${String(month).padStart(2, "0")})과 다릅니다.`,
+              "warning"
+            );
+            return;
+          }
+        }
+
+        // 2) dayIndex → day_n 컬럼 키
+        const colKey = `day_${dayIndex + 1}`;
+
+        // 3) type으로 해당 행 찾고 해당 칸에 total 더하기
+        setDataRows((prev) => {
+          if (!prev || prev.length === 0) return prev;
+
+          // 🔹 dataRows 안에 row.type 이 있다고 가정
+          const targetIndex = prev.findIndex(
+            (row) => String(row.type) === String(type)
+          );
+
+          if (targetIndex === -1) {
+            Swal.fire(
+              "매핑 필요",
+              "해당 영수증 유형이 집계표 항목과 매핑되어 있지 않습니다.\n'거래처 연결'에서 먼저 매핑을 설정해주세요.",
+              "info"
+            );
+            return prev;
+          }
+
+          const numericTotal = parseNumber(total); // total: 85600
+
+          return prev.map((row, idx) => {
+            if (idx !== targetIndex) return row;
+
+            const prevVal = parseNumber(row[colKey]);
+            return {
+              ...row,
+              [colKey]: prevVal + numericTotal, // 🔹 기존 값 + 영수증 금액
+            };
+          });
+        });
+      } else if (res.status === 400) {
+        Swal.fire(
+          "실패",
+          res.data?.message || "영수증 인식에 실패했습니다.",
+          "error"
+        );
+      } else {
+        Swal.fire(
+          "오류",
+          res.data?.message ||
+            `예상치 못한 오류가 발생했습니다. (code: ${res.status})`,
+          "error"
+        );
+      }
+    } catch (err) {
+      Swal.close();
+      Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
+    } finally {
+      e.target.value = "";
+    }
   };
 
   // ✅ 저장

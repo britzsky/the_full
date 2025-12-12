@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import api from "api/api";
 
 // 숫자 파싱
@@ -15,52 +15,78 @@ const formatNumber = (value) => {
 };
 
 export default function useAccountPurchaseDeadlineData() {
-  const [carListRows, setCarListRows] = useState([]);
-  const [carSelectList, setCarSelectList] = useState([]);
+  // 🔹 매입 집계 테이블 데이터
+  const [rows, setRows] = useState([]);
+  const [originalRows, setOriginalRows] = useState([]);
+
+  // 🔹 조회 조건에서 쓸 거래처 리스트 (필요시 사용)
+  const [partnerList, setPartnerList] = useState([]);
+
   const [loading, setLoading] = useState(false);
 
-  // 차량 정비 이력 조회
-  const fetchCarList = async (car_number) => {
+  /**
+   * 매입 집계 조회
+   * @param {Object} filters - { bizType, type, fromDate, toDate, account_id, payType, ... }
+   */
+  const fetchPurchaseList = async (filters) => {
     setLoading(true);
     try {
-      const res = await api.get("/Business/CarList", {
-        params: { car_number: car_number },
+      // ✅ GET 파라미터는 반드시 params 로 감싸기
+      const res = await api.get("/Account/AccountPurchaseTallyList", {
+        params: filters,
       });
 
-      const rows = (res.data || []).map((item) => ({
-        car_number: item.car_number,
-        car_name: item.car_name || "",
-        full_name: item.full_name || "",
-        service_dt: item.service_dt || "",
-        service_note: item.service_note || "",
-        service_amt: formatNumber(item.service_amt),
-        mileage: formatNumber(item.mileage),
-        comment: item.comment || "",
-        exterior_image: item.exterior_image,
-        exterior_note: item.exterior_note,
+      let list = [];
+
+      // ✅ 1) 백엔드가 배열로 바로 주는 경우 (지금 너가 보여준 형태)
+      if (Array.isArray(res.data)) {
+        list = res.data;
+      }
+      // ✅ 2) 혹시 나중에 { code: 200, rows: [...] } 구조로 바꾸더라도 대응
+      else if (res.data && res.data.code === 200) {
+        list = res.data.rows || [];
+        setPartnerList(res.data.partners || []);
+      }
+
+      // 숫자 포맷 등 프론트에서 가공하고 싶다면 여기서 처리
+      const mapped = (list || []).map((item) => ({
+        account_id: item.account_id,
+        account_name: item.account_name || "",
+        name: item.name || "",
+        saleDate: item.saleDate || "",
+        total: formatNumber(item.total),
+        vat: formatNumber(item.vat),
+        taxFree: formatNumber(item.taxFree),
+        totalCash: formatNumber(item.totalCash),
+        totalCard: formatNumber(item.totalCard),
+        payType: String(item.payType ?? ""), // select에서 쓰기 위해 문자열화
+        receipt_image: item.receipt_image || "",
+        note: item.note || "",
+        type: item.type,
+        bizNo: item.bizNo,
+        ceo_name: item.ceo_name
       }));
 
-      setCarListRows(rows.map((row) => ({ ...row })));
+      setRows(mapped);
+      setOriginalRows(mapped.map((r) => ({ ...r })));
     } catch (err) {
-      console.error("차량 정보 조회 실패:", err);
-      setCarListRows([]);
+      console.error("매입 집계 조회 실패:", err);
+      setRows([]);
+      setOriginalRows([]);
+      setPartnerList([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // 차량 선택 리스트 조회
-  const fetchCarSelectList = async () => {
-    try {
-      const res = await api.get("/Business/CarSelectList");
-      setCarSelectList(res.data || []);
-    } catch (err) {
-      console.error("차량 선택 리스트 조회 실패:", err);
-      setCarSelectList([]);
-    }
+  return {
+    rows,
+    setRows,
+    originalRows,
+    partnerList,
+    loading,
+    fetchPurchaseList,
   };
-
-  return { carListRows, setCarListRows, carSelectList, loading, fetchCarList, fetchCarSelectList };
 }
 
 export { parseNumber, formatNumber };

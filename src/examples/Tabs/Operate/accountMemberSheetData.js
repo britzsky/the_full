@@ -14,19 +14,21 @@ const formatNumber = (value) => {
 
 export default function useAccountMembersheetData(account_id, activeStatus) {
   const [activeRows, setActiveRows] = useState([]);
+  const [originalRows, setOriginalRows] = useState([]); // ✅ 추가
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchAccountMembersAllList = async () => {
+  const fetchAccountMembersAllList = async (opts = { snapshot: true }) => {
     const params = {};
     if (account_id) params.account_id = account_id;
     if (activeStatus) params.del_yn = activeStatus;
+
     setLoading(true);
+
+    const start = Date.now(); // ✅ 로딩 시작 시각
+
     try {
-      const res = await api.get(
-        "/Operate/AccountMemberAllList",
-        { params }     // ✅ 핵심 수정: params를 감싸지 않음
-      );
+      const res = await api.get("/Operate/AccountMemberAllList", { params });
 
       const rows = (res.data || []).map((item) => ({
         account_id: item.account_id,
@@ -57,14 +59,17 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
         subsidy: item.subsidy,
         note: item.note,
       }));
-
       setActiveRows(rows);
-
+      if (opts.snapshot) setOriginalRows(rows); // ✅ 재조회 시 원본도 같이 갱신
+       return rows;
     } catch (err) {
       console.error("AccountMemberAllList 조회 실패:", err);
       setActiveRows([]);
     } finally {
-      setLoading(false);
+      // ✅ 최소 1초 로딩 보장
+      const elapsed = Date.now() - start;
+      const remain = Math.max(0, 1000 - elapsed);
+      setTimeout(() => setLoading(false), remain);
     }
   };
 
@@ -93,7 +98,16 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
       .catch((err) => console.error("저장 실패:", err));
   };
 
-  return { activeRows, setActiveRows, accountList, saveData, fetchAccountMembersAllList };
+  return { 
+    activeRows, 
+    setActiveRows, 
+    originalRows,       // ✅ 추가
+    setOriginalRows,    // ✅ 추가 (행추가 때 같이 맞추려고)
+    accountList, 
+    saveData, 
+    fetchAccountMembersAllList, 
+    loading 
+  };
 }
 
 export { parseNumber, formatNumber };

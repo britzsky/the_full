@@ -208,10 +208,14 @@ function AccountMemberSheet() {
 
 
   const handleAddRow = () => {
+
+    const defaultAccountId =
+      selectedAccountId || (accountList?.[0]?.account_id ?? "");
+
     const newRow = {
       name: "",
       rrn: "",
-      account_id: selectedAccountId || "",
+      account_id: defaultAccountId,
       position_type: 1,
       account_number: "",
       phone: "",

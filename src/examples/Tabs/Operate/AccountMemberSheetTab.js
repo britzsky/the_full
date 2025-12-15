@@ -358,6 +358,10 @@ function AccountMemberSheet() {
             outline: "none",
             cursor: "pointer",
           },
+          "& select.edited-cell": {
+            color: "#d32f2f",
+            fontWeight: 500,
+          },
           "& input[type='date']": {
             fontSize: "12px",
             padding: "4px",
@@ -458,6 +462,7 @@ function AccountMemberSheet() {
                         <select
                           value={currentValue ?? ""}
                           onChange={(e) => handleCellChange(e.target.value)}
+                          className={isChanged ? "edited-cell" : ""}   // ✅ 추가
                           style={{ width: "100%", background: "transparent", cursor: "pointer", border: "none" }}
                         >
                           {colKey === "account_id" &&

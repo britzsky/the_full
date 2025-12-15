@@ -40,6 +40,7 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
         phone: item.phone,
         address: item.address,
         contract_type: item.contract_type,
+        join_dt: item.join_dt,
         act_join_dt: item.act_join_dt,
         ret_set_dt: item.ret_set_dt,
         loss_major_insurances: item.loss_major_insurances,

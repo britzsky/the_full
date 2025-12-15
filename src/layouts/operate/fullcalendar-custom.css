@@ -1,0 +1,56 @@
+.fc {
+  max-width: 100%;
+  height: 95vh;
+  margin: 0 auto;
+}
+
+/* 날짜 셀 기본 높이 */
+.fc .fc-daygrid-day-frame {
+  min-height: 120px !important;
+}
+
+/* 전달 날짜 흐리게 */
+.fc .fc-day-other {
+  background-color: #fafafa;
+  opacity: 0.6;
+}
+
+/* 오늘 날짜 강조 */
+.fc .fc-day-today {
+  border: 2px solid #F2921D !important;
+  background-color: #fffbe8 !important;
+}
+
+/* 이벤트 스타일 */
+.fc .fc-daygrid-event {
+  font-size: 13px;
+  border-radius: 6px;
+  line-height: 1.4;
+}
+
+.fc .fc-day-other {
+  opacity: 0.4;
+  background-color: #f9f9f9;
+}
+
+/* 전달/다음달 날짜 회색 처리 (기본 구조 유지) */
+.fc .fc-day-other {
+  background-color: #f8f9fa !important;
+  opacity: 0.6;
+}
+
+/* 오늘 날짜 강조 */
+.fc .fc-day-today {
+  background-color: #fffce8 !important;
+  border: 2px solid #F2921D !important;
+}
+
+.fc-daygrid-day-top {
+    font-size: 13px;
+    font-weight: bold;
+}
+
+.fc-scrollgrid-sync-inner {
+    font-size: 13px;
+    font-weight: bold;
+}

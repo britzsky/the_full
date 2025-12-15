@@ -16,16 +16,16 @@ import {
   MenuItem,
 } from "@mui/material";
 
-import useBusinessSchedulesheetData from "./data/BusinessScheduleSheetData";
+import useOperateSchedulesheetData from "./data/OperateScheduleSheetData";
 import "./fullcalendar-custom.css";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
-function BusinessScheduleSheet() {
+function OperateScheduleSheet() {
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
   const { eventListRows, eventList, loading } =
-    useBusinessSchedulesheetData(currentYear, currentMonth);
+    useOperateSchedulesheetData(currentYear, currentMonth);
 
   const [displayDate, setDisplayDate] = useState(dayjs());
   const [events, setEvents] = useState([]);
@@ -40,7 +40,7 @@ function BusinessScheduleSheet() {
   const [selectedType, setSelectedType] = useState("1"); // 1: 행사 기본값
 
   // 🔹 담당자(BusinessMember) 리스트 + 선택값
-  const [businessMemberList, setBusinessMemberList] = useState([]);
+  const [operateMemberList, setoperateMemberList] = useState([]);
   const [selectedMemberId, setSelectedMemberId] = useState("");
 
   // ✅ 행사 종류별 색상 매핑
@@ -49,23 +49,25 @@ function BusinessScheduleSheet() {
     switch (t) {
       case "1": // 행사
         return "#FF5F00";
-      case "2": // 미팅
+      case "2": // 위생관리
+        return "#F2921D";
+      case "3": // 미팅
         return "#0046FF";
-      case "3": // 오픈
+      case "4": // 오픈
         return "#527853";
-      case "4": // 오픈준비
+      case "5": // 오픈준비
         return "#F266AB";
-      case "5": // 외근
+      case "6": // 외근
         return "#A459D1";
-      case "6": // 출장
+      case "7": // 출장
         return "#D71313";
-      case "7": // 체크
+      case "8": // 체크
         return "#364F6B";
-      case "8": // 연차
+      case "9": // 연차
         return "#1A0841";
-      case "9": // 오전반차
+      case "10": // 오전반차
         return "#1A0841";
-      case "10": // 오후반차
+      case "11": // 오후반차
         return "#1A0841";
       default:
       return "#F2921D";
@@ -75,15 +77,16 @@ function BusinessScheduleSheet() {
   // ✅ 행사 종류 정의 (getTypeColor 주석과 동일하게)
   const TYPE_OPTIONS = [
     { value: "1", label: "행사" },
-    { value: "2", label: "미팅" },
-    { value: "3", label: "오픈" },
-    { value: "4", label: "오픈준비" },
-    { value: "5", label: "외근" },
-    { value: "6", label: "출장" },
-    { value: "7", label: "체크" },
-    { value: "8", label: "연차" },
-    { value: "9", label: "오전반차" },
-    { value: "10", label: "오후반차" },
+    { value: "2", label: "위생관리" },
+    { value: "3", label: "미팅" },
+    { value: "4", label: "오픈" },
+    { value: "5", label: "오픈준비" },
+    { value: "6", label: "외근" },
+    { value: "7", label: "출장" },
+    { value: "8", label: "체크" },
+    { value: "9", label: "연차" },
+    { value: "10", label: "오전반차" },
+    { value: "11", label: "오후반차" },
   ];
 
   // 🔽 TYPE_OPTIONS 아래 즈음에 추가
@@ -93,18 +96,18 @@ function BusinessScheduleSheet() {
     return found ? found.label : "";
   };
 
-  // ✅ BusinessMemberList 조회 함수
-  const fetchBusinessMemberList = async () => {
+  // ✅ operateMemberList 조회 함수
+  const fetchOperateMemberList = async () => {
     try {
-      if (businessMemberList.length > 0) return;
+      if (operateMemberList.length > 0) return;
 
-      const res = await api.get("/Business/BusinessMemberList", {
+      const res = await api.get("/Operate/OperateMemberList", {
         headers: { "Content-Type": "application/json" },
       });
 
-      setBusinessMemberList(res.data || []);
+      setoperateMemberList(res.data || []);
     } catch (error) {
-      console.error("BusinessMemberList 조회 실패:", error);
+      console.error("OperateMemberList 조회 실패:", error);
       Swal.fire("실패", "담당자 목록을 가져오지 못했습니다.", "error");
     }
   };
@@ -166,7 +169,7 @@ function BusinessScheduleSheet() {
     setSelectedType("1");
     setSelectedMemberId("");
 
-    await fetchBusinessMemberList();
+    await fetchOperateMemberList();
     setOpen(true);
   };
 
@@ -183,7 +186,7 @@ function BusinessScheduleSheet() {
     setSelectedType("1");
     setSelectedMemberId("");
 
-    await fetchBusinessMemberList();
+    await fetchOperateMemberList();
     setOpen(true);
   };
 
@@ -216,7 +219,7 @@ function BusinessScheduleSheet() {
     setSelectedType(clickedEvent.extendedProps?.type?.toString() || "1");
     setSelectedMemberId(clickedEvent.extendedProps?.user_id?.toString() || "");
 
-    await fetchBusinessMemberList();
+    await fetchOperateMemberList();
     setOpen(true);
   };
 
@@ -252,7 +255,7 @@ function BusinessScheduleSheet() {
 
     try {
       const response = await api.post(
-        "/Business/BusinessScheduleSave",
+        "/Operate/OperateScheduleSave",
         newEvent,
         {
           headers: { "Content-Type": "application/json" },
@@ -303,7 +306,7 @@ function BusinessScheduleSheet() {
 
       try {
         const response = await api.post(
-          "/Business/BusinessScheduleSave",
+          "/Operate/OperateScheduleSave",
           cancelEvent,
           { headers: { "Content-Type": "application/json" } }
         );
@@ -353,7 +356,7 @@ function BusinessScheduleSheet() {
 
       try {
         const response = await api.post(
-          "/Business/BusinessScheduleSave",
+          "/Operate/OperateScheduleSave",
           restoreEvent,
           { headers: { "Content-Type": "application/json" } }
         );
@@ -397,7 +400,7 @@ function BusinessScheduleSheet() {
 
   return (
     <DashboardLayout>
-      <HeaderWithLogout showMenuButton title="📅 영업 일정관리 (내부 관리용)" />
+      <HeaderWithLogout showMenuButton title="📅 운영 일정관리 (내부 관리용)" />
 
       {loading && (
         <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>
@@ -589,7 +592,7 @@ function BusinessScheduleSheet() {
               <MenuItem value="">
                 <em>담당자 선택</em>
               </MenuItem>
-              {businessMemberList.map((member) => (
+              {operateMemberList.map((member) => (
                 <MenuItem key={member.user_id} value={member.user_id}>
                   {member.user_name}{" "}[{getPositionLabel(member.position)}]
                 </MenuItem>
@@ -669,4 +672,4 @@ function BusinessScheduleSheet() {
   );
 }
 
-export default BusinessScheduleSheet;
+export default OperateScheduleSheet;

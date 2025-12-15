@@ -221,6 +221,7 @@ function AccountMemberSheet() {
       phone: "",
       address: "",
       contract_type: 1,
+      join_dt: "",
       act_join_dt: "",
       ret_set_dt: "",
       loss_major_insurances: "",
@@ -257,6 +258,7 @@ function AccountMemberSheet() {
 
   const renderTable = (table, rows, originals) => {
     const dateFields = new Set([
+      "join_dt",
       "act_join_dt",
       "ret_set_dt",
       "loss_major_insurances",
@@ -412,6 +414,7 @@ function AccountMemberSheet() {
                             "phone",
                             "name",
                             "contract_type",
+                            "join_dt",
                             "act_join_dt",
                             "ret_set_dt",
                             "loss_major_insurances",

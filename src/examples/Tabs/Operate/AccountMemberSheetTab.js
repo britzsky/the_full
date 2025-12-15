@@ -128,6 +128,7 @@ function AccountMemberSheet() {
       { header: "연락처", accessorKey: "phone", size: 100 },
       { header: "주소", accessorKey: "address", size: 150 },
       { header: "계약형태", accessorKey: "contract_type", size: 50 },
+      { header: "입사일", accessorKey: "join_dt", size: 80 },
       { header: "실입사일", accessorKey: "act_join_dt", size: 80 },
       { header: "퇴직정산일", accessorKey: "ret_set_dt", size: 80 },
       { header: "4대보험 상실일", accessorKey: "loss_major_insurances", size: 80 },
@@ -230,6 +231,7 @@ function AccountMemberSheet() {
       phone: "",
       address: "",
       contract_type: 1,
+      join_dt: "",
       act_join_dt: "",
       ret_set_dt: "",
       loss_major_insurances: "",
@@ -267,6 +269,7 @@ function AccountMemberSheet() {
 
   const renderTable = (table, rows, originals) => {
     const dateFields = new Set([
+      "join_dt",
       "act_join_dt",
       "ret_set_dt",
       "loss_major_insurances",
@@ -426,6 +429,7 @@ function AccountMemberSheet() {
                             "phone",
                             "name",
                             "contract_type",
+                            "join_dt",
                             "act_join_dt",
                             "ret_set_dt",
                             "loss_major_insurances",

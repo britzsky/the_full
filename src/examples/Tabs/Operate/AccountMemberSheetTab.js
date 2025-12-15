@@ -489,18 +489,23 @@ function AccountMemberSheet() {
                                 {opt.label}
                               </option>
                             ))}
-                          {colKey === "start_time" &&
-                            startTimes.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          {colKey === "end_time" &&
-                            endTimes.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
+                          {colKey === "start_time" && (
+                            <>
+                              <option value="">없음</option> {/* value 빈값, text 없음 */}
+                              {startTimes.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </>
+                          )}
+
+                          {colKey === "end_time" && (
+                            <>
+                              <option value="">없음</option> {/* value 빈값, text 없음 */}
+                              {endTimes.map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </>
+                          )}
                         </select>
                       ) : isDate ? (
                         <input

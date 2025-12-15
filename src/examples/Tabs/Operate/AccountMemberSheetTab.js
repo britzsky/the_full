@@ -85,7 +85,7 @@ function AccountMemberSheet() {
     }
     return arr;
   };
-  const startTimes = generateTimeOptions("6:00", "14:00", 30);
+  const startTimes = generateTimeOptions("6:00", "15:00", 30);
   const endTimes = generateTimeOptions("10:00", "20:00", 30);
 
   const positionOptions = [

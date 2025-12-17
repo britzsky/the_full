@@ -20,6 +20,7 @@ export default function useRetailBusinessData() {
 
   // 차량 정비 이력 조회
   const fetcRetailBusinessList  = async (account_id) => {
+    const MIN_LOADING_TIME = 1000; // 최소 1초
     const startTime = Date.now();
     setLoading(true);
       try {

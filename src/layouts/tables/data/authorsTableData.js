@@ -139,9 +139,9 @@ export default function useTableData(accountType) {
     { Header: "상세보기", accessor: "info", align: "center" },
     { Header: "인사기록카드", accessor: "members", align: "center" },
     { Header: "출근부", accessor: "record", align: "center" },
-    { Header: "경관식", accessor: "ceremony", align: "center" },
+    // { Header: "경관식", accessor: "ceremony", align: "center" },
     { Header: "식수현황", accessor: "dinners", align: "center" },
-    { Header: "재고조사", accessor: "inventory", align: "center" },
+    // { Header: "재고조사", accessor: "inventory", align: "center" },
   ];
 
   return { columns, rows, loading };

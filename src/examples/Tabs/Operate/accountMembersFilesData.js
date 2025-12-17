@@ -2,16 +2,14 @@
 import { useState, useEffect } from "react";
 import api from "api/api";
 
-// 숫자 파싱
-const parseNumber = (value) => {
-  if (!value) return 0;
-  return Number(String(value).replace(/,/g, "")) || 0;
-};
+// ✅ 문자열로 통일 (null/undefined → "")
+const toStr = (v) => (v === null || v === undefined ? "" : String(v));
 
-// 숫자 포맷
-const formatNumber = (value) => {
-  if (!value && value !== 0) return "";
-  return Number(value).toLocaleString();
+// ✅ 날짜 통일 (YYYY-MM-DD만)
+const toDateStr = (v) => {
+  if (!v) return "";
+  const s = String(v);
+  return s.length >= 10 ? s.slice(0, 10) : s;
 };
 
 export default function useMembersFilesData() {
@@ -19,54 +17,49 @@ export default function useMembersFilesData() {
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // 현장 직원 파일 조회
+  // ✅ 공통 row 표준화
+  const normalizeRow = (item) => ({
+    member_id: toStr(item.member_id),
+    name: toStr(item.name),
+    position: toStr(item.position),
+    doc_type_id: toStr(item.doc_type_id), // ✅ 문자열로
+    doc_id: toStr(item.doc_id),
+    file_path: toStr(item.file_path),
+    issue_dt: toDateStr(item.issue_dt),
+    expiry_dt: toDateStr(item.expiry_dt),
+    note: toStr(item.note), // ✅ 반드시 포함
+  });
+
+  // ✅ 현장 직원 파일 조회
   const fetcMembersFilesList = async (account_id) => {
     setLoading(true);
     try {
       const res = await api.get("/Operate/AccountMembersFilesList", {
-        params: { account_id: account_id },
+        params: { account_id },
       });
 
-      const rows = (res.data || []).map((item) => ({
-        member_id: item.member_id,
-        name: item.name,
-        position: item.position,
-        doc_type_id: item.doc_type_id,
-        doc_id: item.doc_id,
-        file_path: item.file_path,
-        issue_dt: item.issue_dt,
-        expiry_dt: item.expiry_dt,
-      }));
-
-      setMembersFilesListRows(rows.map((row) => ({ ...row })));
+      const rows = (res.data || []).map(normalizeRow);
+      setMembersFilesListRows(rows.map((r) => ({ ...r })));
     } catch (err) {
-      console.error("차량 정보 조회 실패:", err);
+      console.error("직원 파일 조회 실패:", err);
       setMembersFilesListRows([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ (필요시) 타입별 조회
   const fetcTypeForFileList = async (account_id) => {
     setLoading(true);
     try {
       const res = await api.get("/Operate/AccountTypeForFileList", {
-        params: { account_id: account_id },
+        params: { account_id },
       });
 
-      const rows = (res.data || []).map((item) => ({
-        member_id: item.member_id,
-        doc_type_id: item.doc_type_id,
-        doc_id: item.doc_id,
-        file_path: item.file_path,
-        issue_dt: item.issue_dt,
-        expiry_dt: item.expiry_dt,
-        note: item.note
-      }));
-
-      setMembersFilesListRows(rows.map((row) => ({ ...row })));
+      const rows = (res.data || []).map(normalizeRow);
+      setMembersFilesListRows(rows.map((r) => ({ ...r })));
     } catch (err) {
-      console.error("차량 정보 조회 실패:", err);
+      console.error("타입별 파일 조회 실패:", err);
       setMembersFilesListRows([]);
     } finally {
       setLoading(false);
@@ -76,20 +69,23 @@ export default function useMembersFilesData() {
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
     api
-      .get("/Account/AccountList", {
-        params: { account_type: "0" },
-      })
+      .get("/Account/AccountList", { params: { account_type: "0" } })
       .then((res) => {
         const rows = (res.data || []).map((item) => ({
-          account_id: item.account_id,
-          account_name: item.account_name,
+          account_id: toStr(item.account_id),
+          account_name: toStr(item.account_name),
         }));
         setAccountList(rows);
       })
       .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
   }, []);
 
-  return { membersFilesListRows, setMembersFilesListRows, accountList, loading, fetcMembersFilesList, fetcTypeForFileList };
+  return {
+    membersFilesListRows,
+    setMembersFilesListRows,
+    accountList,
+    loading,
+    fetcMembersFilesList,
+    fetcTypeForFileList,
+  };
 }
-
-export { parseNumber, formatNumber };

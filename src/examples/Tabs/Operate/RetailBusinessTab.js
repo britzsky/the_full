@@ -1,19 +1,21 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
 import {
   Modal,
   Box,
-  Select,
-  MenuItem,
   Typography,
   Button,
   TextField,
   useTheme,
   useMediaQuery,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
+import DownloadIcon from "@mui/icons-material/Download";
+import ImageSearchIcon from "@mui/icons-material/ImageSearch";
+
 import useRetailBusinessData from "./retailBusinessData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
@@ -36,7 +38,7 @@ function RetailBusinessTab() {
 
   // ✅ activeRows → rows / originalRows 복사
   useEffect(() => {
-    const deepCopy = activeRows.map((r) => ({ ...r }));
+    const deepCopy = (activeRows || []).map((r) => ({ ...r }));
     setRows(deepCopy);
     setOriginalRows(deepCopy);
   }, [activeRows]);
@@ -48,7 +50,9 @@ function RetailBusinessTab() {
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
     if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value) ? { color: "red" } : { color: "black" };
+      return normalize(original) !== normalize(value)
+        ? { color: "red" }
+        : { color: "black" };
     }
     return original !== value ? { color: "red" } : { color: "black" };
   };
@@ -64,7 +68,9 @@ function RetailBusinessTab() {
   const handleViewImage = (value) => {
     if (!value) return;
     setViewImageSrc(
-      typeof value === "object" ? URL.createObjectURL(value) : `${API_BASE_URL}${value}`
+      typeof value === "object"
+        ? URL.createObjectURL(value)
+        : `${API_BASE_URL}${value}`
     );
   };
   const handleCloseViewer = () => setViewImageSrc(null);
@@ -77,7 +83,7 @@ function RetailBusinessTab() {
       formData.append("file", file);
       formData.append("type", "account");
       formData.append("gubun", field);
-      formData.append("folder", "retail"); // ✅ accountId 대신 retail 고정
+      formData.append("folder", "retail");
 
       const res = await api.post(`/Operate/OperateImgUpload`, formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -87,6 +93,25 @@ function RetailBusinessTab() {
       Swal.fire("오류", "이미지 업로드 실패", "error");
     }
   };
+
+  // ✅ (NEW) 다운로드 (문자열 path일 때만)
+  const handleDownload = useCallback((path) => {
+    if (!path || typeof path !== "string") return;
+    const url = `${API_BASE_URL}${path}`;
+    const filename = path.split("/").pop() || "download";
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, []);
+
+  // ✅ (NEW) 아이콘 파란색 공통
+  const fileIconSx = { color: "#1e88e5" };
 
   // ✅ 저장 (account_id 제거 + type 기반 이미지업로드)
   const handleSave = async () => {
@@ -108,12 +133,12 @@ function RetailBusinessTab() {
 
           for (const field of ["bank_image", "biz_image"]) {
             if (row[field] && typeof row[field] === "object") {
-              const uploadedPath = await uploadImage(row[field], row.type, field); // ✅ type으로 업로드
+              const uploadedPath = await uploadImage(row[field], row.type, field);
               updatedRow[field] = uploadedPath;
             }
           }
 
-          return updatedRow; // ✅ account_id 강제 입력 제거
+          return updatedRow;
         })
       );
 
@@ -123,9 +148,11 @@ function RetailBusinessTab() {
         return;
       }
 
-      const response = await api.post(`/Operate/AccountRetailBusinessSaveV2`, payload, {
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await api.post(
+        `/Operate/AccountRetailBusinessSaveV2`,
+        payload,
+        { headers: { "Content-Type": "application/json" } }
+      );
 
       if (response.data.code === 200) {
         Swal.fire("성공", "저장되었습니다.", "success");
@@ -179,11 +206,9 @@ function RetailBusinessTab() {
   };
 
   // ========================== Modal 관련 시작 ==========================
-  // 모달 상태
   const [open, setOpen] = useState(false); // (현재는 사용 안 하지만 유지)
   const [open2, setOpen2] = useState(false);
 
-  // 거래처 등록 부분
   const [formData, setFormData] = useState({
     name: "",
   });
@@ -218,7 +243,7 @@ function RetailBusinessTab() {
     const { name, value, files } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: files ? files[0] : value, // 파일은 files[0], 나머지는 value
+      [name]: files ? files[0] : value,
     }));
   };
 
@@ -228,11 +253,8 @@ function RetailBusinessTab() {
     const file = files?.[0];
     if (!file) return;
 
-    // 미리보기 설정
     const previewUrl = URL.createObjectURL(file);
     setImagePreviews((prev) => ({ ...prev, [name]: previewUrl }));
-
-    // formData에 파일 객체 저장
     setFormData((prev) => ({ ...prev, [name]: file }));
   };
 
@@ -261,11 +283,10 @@ function RetailBusinessTab() {
     }
 
     try {
-      // ✅ Step 1. 이미지 업로드
       const imageFields = ["bank_image", "biz_image"];
       const uploadPromises = imageFields.map(async (field) => {
         const file = formData[field];
-        if (!file || typeof file === "string") return file; // 이미 경로일 경우
+        if (!file || typeof file === "string") return file;
 
         try {
           const formDataToSend = new FormData();
@@ -289,14 +310,12 @@ function RetailBusinessTab() {
             confirmButtonColor: "#d33",
             confirmButtonText: "확인",
           });
-
           throw err;
         }
       });
 
       const [bankPath, bizPath] = await Promise.all(uploadPromises);
 
-      // ✅ Step 2. 최종 formData 구성
       const payload = {
         ...formData,
         bank_image: bankPath,
@@ -304,7 +323,6 @@ function RetailBusinessTab() {
         del_yn: "N",
       };
 
-      // ✅ Step 3. 거래처 저장 API 호출
       const response = await api.post("/Operate/AccountRetailBusinessSave", payload);
       if (response.data.code === 200) {
         Swal.fire({
@@ -382,6 +400,7 @@ function RetailBusinessTab() {
               ))}
             </tr>
           </thead>
+
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
@@ -396,7 +415,9 @@ function RetailBusinessTab() {
                       <td key={key} style={{ width: col.size }}>
                         <select
                           value={value || "N"}
-                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
+                          onChange={(e) =>
+                            handleCellChange(rowIndex, key, e.target.value)
+                          }
                           style={{
                             width: "100%",
                             border: "none",
@@ -412,10 +433,15 @@ function RetailBusinessTab() {
                     );
                   }
 
-                  // ✅ 이미지 필드 (오른쪽 버튼 + 정렬 유지)
+                  // ✅ 이미지 필드: 있으면 (다운로드/미리보기 파란아이콘), 없으면 업로드 버튼
                   if (["bank_image", "biz_image"].includes(key)) {
+                    const hasImage = !!value;
+
                     return (
-                      <td key={key} style={{ verticalAlign: "middle", width: col.size }}>
+                      <td
+                        key={key}
+                        style={{ verticalAlign: "middle", width: col.size }}
+                      >
                         <div
                           style={{
                             display: "flex",
@@ -431,28 +457,43 @@ function RetailBusinessTab() {
                             id={`upload-${key}-${rowIndex}`}
                             style={{ display: "none" }}
                             onChange={(e) =>
-                              handleCellChange(rowIndex, key, e.target.files[0])
+                              handleCellChange(rowIndex, key, e.target.files?.[0])
                             }
                           />
 
-                          {value && (
-                            <img
-                              src={
-                                typeof value === "object"
-                                  ? URL.createObjectURL(value)
-                                  : `${API_BASE_URL}${value}`
-                              }
-                              alt="preview"
-                              style={{ maxWidth: "60px", maxHeight: "60px", cursor: "pointer" }}
-                              onClick={() => handleViewImage(value)}
-                            />
-                          )}
+                          {hasImage ? (
+                            <>
+                              {/* ✅ 다운로드: 서버 경로(문자열)일 때만 */}
+                              {typeof value === "string" && (
+                                <Tooltip title="다운로드">
+                                  <IconButton
+                                    size="small"
+                                    sx={fileIconSx}
+                                    onClick={() => handleDownload(value)}
+                                  >
+                                    <DownloadIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
 
-                          <label htmlFor={`upload-${key}-${rowIndex}`}>
-                            <MDButton component="span" size="small" color="info">
-                              업로드
-                            </MDButton>
-                          </label>
+                              {/* ✅ 미리보기: 서버/로컬(File) 모두 */}
+                              <Tooltip title="미리보기">
+                                <IconButton
+                                  size="small"
+                                  sx={fileIconSx}
+                                  onClick={() => handleViewImage(value)}
+                                >
+                                  <ImageSearchIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </>
+                          ) : (
+                            <label htmlFor={`upload-${key}-${rowIndex}`}>
+                              <MDButton component="span" size="small" color="info">
+                                업로드
+                              </MDButton>
+                            </label>
+                          )}
                         </div>
                       </td>
                     );
@@ -467,7 +508,11 @@ function RetailBusinessTab() {
                       style={{ ...style, width: col.size }}
                       onBlur={(e) => {
                         if (key !== "account_name") {
-                          handleCellChange(rowIndex, key, e.target.innerText.trim());
+                          handleCellChange(
+                            rowIndex,
+                            key,
+                            e.currentTarget.innerText.trim()
+                          );
                         }
                       }}
                     >
@@ -525,7 +570,6 @@ function RetailBusinessTab() {
             거래처 등록
           </Typography>
 
-          {/* 거래처명 */}
           <TextField
             fullWidth
             required
@@ -533,11 +577,10 @@ function RetailBusinessTab() {
             label="거래처명"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="name"
-            value={formData.name}
+            value={formData.name || ""}
             onChange={handleChange2}
           />
 
-          {/* 사업자번호 */}
           <TextField
             fullWidth
             required
@@ -545,12 +588,11 @@ function RetailBusinessTab() {
             label="사업자번호"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="biz_no"
-            value={formData.biz_no}
+            value={formData.biz_no || ""}
             onChange={handleChange2}
             placeholder="예: 123-45-67890"
           />
 
-          {/* 대표자명 */}
           <TextField
             fullWidth
             required
@@ -558,11 +600,10 @@ function RetailBusinessTab() {
             label="대표자명"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="ceo_name"
-            value={formData.ceo_name}
+            value={formData.ceo_name || ""}
             onChange={handleChange2}
           />
 
-          {/* 연락처 */}
           <TextField
             fullWidth
             required
@@ -570,12 +611,11 @@ function RetailBusinessTab() {
             label="연락처"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="tel"
-            value={formData.tel}
+            value={formData.tel || ""}
             onChange={handleChange2}
             placeholder="예: 010-1234-5678"
           />
 
-          {/* 은행명 */}
           <TextField
             fullWidth
             required
@@ -583,11 +623,10 @@ function RetailBusinessTab() {
             label="은행명"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="bank_name"
-            value={formData.bank_name}
+            value={formData.bank_name || ""}
             onChange={handleChange2}
           />
 
-          {/* 계좌번호 */}
           <TextField
             fullWidth
             required
@@ -595,7 +634,7 @@ function RetailBusinessTab() {
             label="계좌번호"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="bank_no"
-            value={formData.bank_no}
+            value={formData.bank_no || ""}
             onChange={handleChange2}
           />
 
@@ -627,7 +666,6 @@ function RetailBusinessTab() {
                 />
               </Button>
 
-              {/* 파일명 및 미리보기 */}
               {imagePreviews.bank_image && (
                 <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
                   <img
@@ -640,7 +678,6 @@ function RetailBusinessTab() {
                       borderRadius: 4,
                       border: "1px solid #ddd",
                       cursor: "pointer",
-                      transition: "transform 0.2s",
                     }}
                     onClick={() => handleImagePreviewOpen(imagePreviews.bank_image)}
                   />
@@ -680,7 +717,6 @@ function RetailBusinessTab() {
                 />
               </Button>
 
-              {/* 파일명 및 미리보기 */}
               {imagePreviews.biz_image && (
                 <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
                   <img
@@ -693,7 +729,6 @@ function RetailBusinessTab() {
                       borderRadius: 4,
                       border: "1px solid #ddd",
                       cursor: "pointer",
-                      transition: "transform 0.2s",
                     }}
                     onClick={() => handleImagePreviewOpen(imagePreviews.biz_image)}
                   />
@@ -718,11 +753,7 @@ function RetailBusinessTab() {
             >
               취소
             </Button>
-            <Button
-              variant="contained"
-              onClick={handleSubmit2}
-              sx={{ color: "#ffffff" }}
-            >
+            <Button variant="contained" onClick={handleSubmit2} sx={{ color: "#ffffff" }}>
               저장
             </Button>
           </Box>

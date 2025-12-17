@@ -1,9 +1,18 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import { Box, TextField, useTheme, useMediaQuery } from "@mui/material";
+import {
+  Box,
+  TextField,
+  useTheme,
+  useMediaQuery,
+  IconButton,
+  Tooltip,
+} from "@mui/material";
+import DownloadIcon from "@mui/icons-material/Download";
+import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useHygienesheetData from "./hygienesheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
@@ -16,13 +25,8 @@ function HygieneSheetTab() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const {
-    hygieneListRows,
-    setHygieneListRows,
-    accountList,
-    loading,
-    fetcHygieneList,
-  } = useHygienesheetData();
+  const { hygieneListRows, accountList, loading, fetcHygieneList } =
+    useHygienesheetData();
 
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -47,7 +51,7 @@ function HygieneSheetTab() {
 
   // 서버 rows → 로컬 rows / originalRows 복사
   useEffect(() => {
-    const deepCopy = hygieneListRows.map((row) => ({ ...row }));
+    const deepCopy = (hygieneListRows || []).map((row) => ({ ...row }));
     setRows(deepCopy);
     setOriginalRows(deepCopy);
   }, [hygieneListRows]);
@@ -106,7 +110,7 @@ function HygieneSheetTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0, // 🔁 스크롤 박스 내부 상단 고정
+      top: 0,
       zIndex: 10,
     },
     "& input[type='date'], & input[type='text']": {
@@ -117,13 +121,6 @@ function HygieneSheetTab() {
       background: "transparent",
       outline: "none",
     },
-  };
-
-  // 숫자 입력 시 콤마 적용 (현재는 사용 안 하지만, 혹시 추가용으로 남김)
-  const handleNumberChange = (rowIndex, key, value) => {
-    let num = value.replace(/,/g, "").replace(/[^\d]/g, "");
-    const formatted = num ? Number(num).toLocaleString() : "";
-    handleCellChange(rowIndex, key, formatted);
   };
 
   // 행추가
@@ -191,6 +188,25 @@ function HygieneSheetTab() {
       throw err;
     }
   };
+
+  // ✅ (NEW) 다운로드 (서버 경로 문자열일 때만)
+  const handleDownload = useCallback((path) => {
+    if (!path || typeof path !== "string") return;
+    const url = `${API_BASE_URL}${path}`;
+    const filename = path.split("/").pop() || "download";
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, []);
+
+  // ✅ (NEW) 아이콘 파란색
+  const fileIconSx = { color: "#1e88e5" };
 
   // 저장
   const handleSave = async () => {
@@ -355,8 +371,6 @@ function HygieneSheetTab() {
 
       {/* 테이블 영역 */}
       <MDBox pt={1} pb={3} sx={tableSx}>
-        {/* 필요하면 제목 박스 다시 살려도 됨 */}
-        {/* <MDBox ...>위생관리</MDBox> */}
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <table>
@@ -371,21 +385,18 @@ function HygieneSheetTab() {
                 {rows.map((row, rowIndex) => (
                   <tr key={rowIndex}>
                     {columns.map((col) => {
-                      const value = row[col.accessorKey] || "";
+                      const key = col.accessorKey;
+                      const value = row[key] ?? "";
 
-                      // 이미지 컬럼 처리
-                      if (
-                        ["problem_image", "clean_image"].includes(col.accessorKey)
-                      ) {
+                      // ✅ (CHANGED) 이미지: 있으면 다운로드/미리보기(파란색), 없으면 업로드 버튼
+                      if (["problem_image", "clean_image"].includes(key)) {
+                        const hasImage = !!value;
+
                         return (
                           <td
-                            key={col.accessorKey}
+                            key={key}
                             style={{
-                              ...getCellStyle(
-                                rowIndex,
-                                col.accessorKey,
-                                value
-                              ),
+                              ...getCellStyle(rowIndex, key, value),
                               width: `${col.size}px`,
                               textAlign: "center",
                               verticalAlign: "middle",
@@ -394,68 +405,73 @@ function HygieneSheetTab() {
                             <input
                               type="file"
                               accept="image/*"
-                              id={`upload-${col.accessorKey}-${rowIndex}`}
+                              id={`upload-${key}-${rowIndex}`}
                               style={{ display: "none" }}
                               onChange={(e) => {
-                                const file = e.target.files[0];
-                                handleCellChange(
-                                  rowIndex,
-                                  col.accessorKey,
-                                  file
-                                );
+                                const file = e.target.files?.[0];
+                                handleCellChange(rowIndex, key, file);
                               }}
                             />
-                            {value && (
-                              <img
-                                src={
-                                  typeof value === "object"
-                                    ? URL.createObjectURL(value)
-                                    : `${API_BASE_URL}${value}`
-                                }
-                                alt="preview"
-                                style={{
-                                  display: "block",
-                                  margin: "6px auto",
-                                  maxWidth: isMobile ? "120px" : "200px",
-                                  maxHeight: isMobile ? "120px" : "200px",
-                                  objectFit: "cover",
-                                  borderRadius: 4,
-                                  cursor: "pointer",
-                                }}
-                                onClick={() => handleViewImage(value)}
-                              />
-                            )}
 
-                            <label
-                              htmlFor={`upload-${col.accessorKey}-${rowIndex}`}
-                            >
-                              <MDButton
-                                size="small"
-                                component="span"
-                                color="info"
-                                sx={{ fontSize: isMobile ? "10px" : "12px" }}
+                            {hasImage ? (
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: 6,
+                                  flexWrap: isMobile ? "wrap" : "nowrap",
+                                }}
                               >
-                                이미지 업로드
-                              </MDButton>
-                            </label>
+                                {/* 다운로드: 서버 문자열일 때만 */}
+                                {typeof value === "string" && (
+                                  <Tooltip title="다운로드">
+                                    <IconButton
+                                      size="small"
+                                      sx={fileIconSx}
+                                      onClick={() => handleDownload(value)}
+                                    >
+                                      <DownloadIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+
+                                {/* 미리보기: 서버/로컬 모두 */}
+                                <Tooltip title="미리보기">
+                                  <IconButton
+                                    size="small"
+                                    sx={fileIconSx}
+                                    onClick={() => handleViewImage(value)}
+                                  >
+                                    <ImageSearchIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </div>
+                            ) : (
+                              <label htmlFor={`upload-${key}-${rowIndex}`}>
+                                <MDButton
+                                  size="small"
+                                  component="span"
+                                  color="info"
+                                  sx={{
+                                    fontSize: isMobile ? "10px" : "12px",
+                                  }}
+                                >
+                                  이미지 업로드
+                                </MDButton>
+                              </label>
+                            )}
                           </td>
                         );
                       }
 
-                      const isDate = ["reg_dt", "mod_dt"].includes(
-                        col.accessorKey
-                      );
-
+                      const isDate = ["reg_dt", "mod_dt"].includes(key);
                       if (isDate) {
                         return (
                           <td
-                            key={col.accessorKey}
+                            key={key}
                             style={{
-                              ...getCellStyle(
-                                rowIndex,
-                                col.accessorKey,
-                                value
-                              ),
+                              ...getCellStyle(rowIndex, key, value),
                               width: `${col.size}px`,
                             }}
                           >
@@ -463,18 +479,10 @@ function HygieneSheetTab() {
                               type="date"
                               value={value || ""}
                               onChange={(e) =>
-                                handleCellChange(
-                                  rowIndex,
-                                  col.accessorKey,
-                                  e.target.value
-                                )
+                                handleCellChange(rowIndex, key, e.target.value)
                               }
                               style={{
-                                ...getCellStyle(
-                                  rowIndex,
-                                  col.accessorKey,
-                                  value
-                                ),
+                                ...getCellStyle(rowIndex, key, value),
                                 width: "100%",
                               }}
                             />
@@ -484,22 +492,18 @@ function HygieneSheetTab() {
 
                       return (
                         <td
-                          key={col.accessorKey}
+                          key={key}
                           contentEditable
                           suppressContentEditableWarning
                           onBlur={(e) =>
                             handleCellChange(
                               rowIndex,
-                              col.accessorKey,
+                              key,
                               e.target.innerText
                             )
                           }
                           style={{
-                            ...getCellStyle(
-                              rowIndex,
-                              col.accessorKey,
-                              value
-                            ),
+                            ...getCellStyle(rowIndex, key, value),
                             width: `${col.size}px`,
                           }}
                         >

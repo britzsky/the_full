@@ -86,6 +86,7 @@ export default function DeadlineBalanceTab() {
         living_cost: parseNumber(r.living_cost),
         basic_cost: parseNumber(r.basic_cost),
         employ_cost: parseNumber(r.employ_cost),
+        integrity_cost: parseNumber(r.integrity_cost),
         balance_price: parseNumber(r.balance_price),
         input_exp: r.input_exp ?? "",
       }))
@@ -106,7 +107,7 @@ export default function DeadlineBalanceTab() {
         const updated = { ...r };
         const original = balanceRows.find((o) => o.account_name === accountName);
 
-        if (["living_cost", "basic_cost", "employ_cost"].includes(key)) {
+        if (["living_cost", "basic_cost", "employ_cost", "integrity_cost"].includes(key)) {
           const numericValue = parseNumber(rawValue);
           updated[key] = numericValue;
 
@@ -116,9 +117,11 @@ export default function DeadlineBalanceTab() {
             parseNumber(updated.basic_cost) - parseNumber(original.basic_cost);
           const employDiff =
             parseNumber(updated.employ_cost) - parseNumber(original.employ_cost);
+          const integrityDiff =
+            parseNumber(updated.integrity_cost) - parseNumber(original.integrity_cost);
 
           updated.balance_price =
-            parseNumber(original.balance_price) + livingDiff + basicDiff + employDiff;
+            parseNumber(original.balance_price) + livingDiff + basicDiff + employDiff + integrityDiff;
         } else {
           updated[key] = rawValue;
         }
@@ -148,7 +151,7 @@ export default function DeadlineBalanceTab() {
         : { color: "black" };
     }
 
-    if (["living_cost", "basic_cost", "employ_cost"].includes(key)) {
+    if (["living_cost", "basic_cost", "employ_cost", "integrity_cost"].includes(key)) {
       const originalValue = Number(parseNumber(originalRow[key]));
       const currentValue = Number(parseNumber(currentRow[key]));
       return originalValue === currentValue
@@ -232,7 +235,7 @@ export default function DeadlineBalanceTab() {
       updated.deposit_amount = "";
       updated.balance_dt = dayjs().format("YYYY-MM-DD");
 
-      if (selectedCustomer && ["1", "2", "3"].includes(value)) {
+      if (selectedCustomer && ["1", "2", "3", "5"].includes(value)) {
         const diff = await fetchAccountDeadlineDifferencePriceSearch(
           selectedCustomer.account_id,
           year,
@@ -252,6 +255,9 @@ export default function DeadlineBalanceTab() {
           else if (value === "3")
             updated.deposit_amount =
               formatNumber(selectedCustomer.employ_cost) || "";
+           else if (value === "5")
+            updated.deposit_amount =
+              formatNumber(selectedCustomer.integrity_cost) || "";
         }
       } else if (value === "4") {
         updated.deposit_amount =
@@ -282,6 +288,13 @@ export default function DeadlineBalanceTab() {
     if (depositForm.type == 3) {
       if (parseNumber(depositForm.deposit_amount) === 0) {
         Swal.fire("직원식대 잔액이 0원 입니다.", "", "success");
+        return;
+      }
+    }
+
+    if (depositForm.type == 5) {
+      if (parseNumber(depositForm.deposit_amount) === 0) {
+        Swal.fire("보전 잔액이 0원 입니다.", "", "success");
         return;
       }
     }
@@ -325,6 +338,7 @@ export default function DeadlineBalanceTab() {
           parseNumber(originalRow.living_cost) !== parseNumber(r.living_cost) ||
           parseNumber(originalRow.basic_cost) !== parseNumber(r.basic_cost) ||
           parseNumber(originalRow.employ_cost) !== parseNumber(r.employ_cost) ||
+          parseNumber(originalRow.integrity_cost) !== parseNumber(r.integrity_cost) ||
           originalRow.input_exp !== r.input_exp;
         if (!changed) return null;
 
@@ -333,6 +347,7 @@ export default function DeadlineBalanceTab() {
           living_cost: parseNumber(r.living_cost),
           basic_cost: parseNumber(r.basic_cost),
           employ_cost: parseNumber(r.employ_cost),
+          integrity_cost: parseNumber(r.integrity_cost),
           balance_price: parseNumber(r.balance_price),
           before_price: parseNumber(r.before_price),
           year,
@@ -362,6 +377,7 @@ export default function DeadlineBalanceTab() {
       { header: "생계비", accessorKey: "living_cost" },
       { header: "일반식대", accessorKey: "basic_cost" },
       { header: "직원식대", accessorKey: "employ_cost" },
+      { header: "보전", accessorKey: "integrity_cost" },
       { header: "이전 미수잔액", accessorKey: "before_price2" },
       { header: "총 미수잔액", accessorKey: "balance_price" },
       { header: "입금예정일", accessorKey: "input_exp" },
@@ -545,7 +561,7 @@ export default function DeadlineBalanceTab() {
                       }
 
                       if (
-                        ["living_cost", "basic_cost", "employ_cost", "input_exp", "balance_price"].includes(
+                        ["living_cost", "basic_cost", "employ_cost", "integrity_cost", "input_exp", "balance_price"].includes(
                           key
                         )
                       ) {
@@ -709,6 +725,7 @@ export default function DeadlineBalanceTab() {
               <option value="1">생계비</option>
               <option value="2">일반식대</option>
               <option value="3">직원식대</option>
+              <option value="5">보전</option>
               <option value="4">미수잔액</option>
             </TextField>
           </Box>

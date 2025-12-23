@@ -2,7 +2,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import {
   Modal,
@@ -16,12 +15,21 @@ import {
 } from "@mui/material";
 import Dialog from "@mui/material/Dialog";
 import DialogContent from "@mui/material/DialogContent";
+import Backdrop from "@mui/material/Backdrop";
+import CircularProgress from "@mui/material/CircularProgress";
+
 import { API_BASE_URL } from "config";
 import useCarManagerData from "./corCarData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
-import { Download, Trash2, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  Download,
+  Trash2,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 const MAX_FILES = 5;
 
@@ -36,6 +44,10 @@ function CorCarTabStyled() {
   const [rows, setRows] = useState([]);
   const [open, setOpen] = useState(false);
   const [originalRows, setOriginalRows] = useState([]);
+
+  // ✅ 저장/업로드 로딩
+  const [saving, setSaving] = useState(false);
+  const [savingText, setSavingText] = useState("");
 
   // 미리보기 Dialog
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -79,7 +91,7 @@ function CorCarTabStyled() {
   // images / pendingFiles / deletedImages 세팅
   // ================================
   useEffect(() => {
-    const deepCopy = carListRows.map((row) => ({
+    const deepCopy = (carListRows || []).map((row) => ({
       ...row,
       images: row.images || [],
       pendingFiles: [],
@@ -94,9 +106,7 @@ function CorCarTabStyled() {
   // ================================
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
-      prevRows.map((row, idx) =>
-        idx === rowIndex ? { ...row, [key]: value } : row
-      )
+      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
     );
   };
 
@@ -108,7 +118,9 @@ function CorCarTabStyled() {
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
     if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value) ? { color: "red" } : { color: "black" };
+      return normalize(original) !== normalize(value)
+        ? { color: "red" }
+        : { color: "black" };
     }
     return original !== value ? { color: "red" } : { color: "black" };
   };
@@ -138,7 +150,7 @@ function CorCarTabStyled() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0,          // 🔴 이 줄만 이렇게 수정
+      top: 0,
       zIndex: 10,
     },
     "& input[type='date'], & input[type='text']": {
@@ -148,13 +160,6 @@ function CorCarTabStyled() {
       border: "none",
       background: "transparent",
     },
-  };
-
-  // 숫자 입력 시 콤마 적용
-  const handleNumberChange = (rowIndex, key, value) => {
-    let num = value.replace(/,/g, "").replace(/[^\d]/g, "");
-    const formatted = num ? Number(num).toLocaleString() : "";
-    handleCellChange(rowIndex, key, formatted);
   };
 
   // 행추가
@@ -292,42 +297,6 @@ function CorCarTabStyled() {
     setCurrentIndex(0);
   };
 
-  const uploadImage = async (file, serviceDt, carNumber) => {
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("type", "car");
-      formData.append("gubun", serviceDt);
-      formData.append("folder", carNumber);
-
-      const res = await api.post("/Business/BusinessImgUpload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      if (res.data.code === 200) {
-        Swal.fire({
-          title: "성공",
-          text: "저장되었습니다.",
-          icon: "success",
-          confirmButtonColor: "#d33",
-          confirmButtonText: "확인",
-        });
-
-        return res.data.image_path;
-      }
-    } catch (err) {
-      Swal.fire({
-        title: "실패",
-        text: err,
-        icon: "error",
-        confirmButtonColor: "#d33",
-        confirmButtonText: "확인",
-      });
-
-      throw err;
-    }
-  };
-
   // ================================
   // 차량 등록 Modal
   // ================================
@@ -379,11 +348,45 @@ function CorCarTabStyled() {
       );
   };
 
+  const columns = useMemo(
+    () => [
+      { header: "날짜", accessorKey: "service_dt", size: isMobile ? 80 : 100 },
+      { header: "정비내용", accessorKey: "service_note", size: isMobile ? 220 : 300 },
+      { header: "정비시\n주행거리", accessorKey: "mileage", size: isMobile ? 70 : 80 },
+      { header: "정비 비용", accessorKey: "service_amt", size: isMobile ? 70 : 80 },
+      { header: "정비시 특이사항", accessorKey: "comment", size: isMobile ? 230 : 350 },
+      { header: "외관 이미지", accessorKey: "exterior_image", size: isMobile ? 220 : 260 },
+      { header: "외관내용", accessorKey: "exterior_note", size: isMobile ? 230 : 350 },
+    ],
+    [isMobile]
+  );
+
   // ================================
-  // 저장 (이미지 업로드 먼저, 그다음 CarSave)
+  // ✅ 저장 헬퍼 (신규 행이면 CarSave 먼저 → 이미지 업로드)
+  // ================================
+  const isRowNew = (orig) => !orig?.service_dt;
+
+  const buildSaveRow = (row) => {
+    const saveRow = { ...row };
+
+    if (saveRow.service_amt) saveRow.service_amt = saveRow.service_amt.toString().replace(/,/g, "");
+    if (saveRow.mileage) saveRow.mileage = saveRow.mileage.toString().replace(/,/g, "");
+
+    delete saveRow.images;
+    delete saveRow.pendingFiles;
+    delete saveRow.deletedImages;
+
+    return saveRow;
+  };
+
+  // ================================
+  // ✅ 저장 (신규 행이면 정비 저장 먼저 -> 이미지 업로드/삭제)
   // ================================
   const handleSave = async () => {
     const user_id = localStorage.getItem("user_id") || "admin";
+
+    setSaving(true);
+    setSavingText("저장 준비중...");
 
     try {
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
@@ -408,103 +411,93 @@ function CorCarTabStyled() {
         if (!hasFieldChanges && !hasImageChanges) continue;
 
         if (hasImageChanges && !row.service_dt) {
-          await Swal.fire(
-            "경고",
-            "이미지를 업로드/삭제하려면 먼저 날짜를 입력해주세요.",
-            "warning"
-          );
+          await Swal.fire("경고", "이미지를 업로드/삭제하려면 먼저 날짜를 입력해주세요.", "warning");
           continue;
         }
 
-        // (1) 기존 이미지 삭제
-        if (row.deletedImages && row.deletedImages.length > 0) {
-          try {
-            for (const img of row.deletedImages) {
-              await api.delete("/Business/CarFileDelete", {
-                params: {
-                  car_number: selectedCar,
-                  service_dt: row.service_dt,
-                  image_id: img.image_id,
-                  image_path: img.image_path,
-                  exterior_image: img.exterior_image,
-                  user_id,
-                },
-              });
-            }
-          } catch (err) {
-            console.error("이미지 삭제 실패:", err);
-            throw err;
-          }
-        }
+        const newRow = isRowNew(original);
 
-        // (2) 새로 추가된 이미지 업로드
-        if (row.pendingFiles && row.pendingFiles.length > 0) {
-          const formData = new FormData();
-          formData.append("car_number", selectedCar);
-          formData.append("service_dt", row.service_dt);
-          formData.append("user_id", user_id);
+        // ✅ 신규행이면 먼저 정비이력 저장(부모 생성) -> 그 다음 이미지 업로드/삭제
+        if (newRow && (hasFieldChanges || hasImageChanges)) {
+          setSavingText(`정비이력 저장중... (${rowIndex + 1}/${rows.length})`);
 
-          row.pendingFiles.forEach((pf) => {
-            formData.append("files", pf.file);
-          });
-
-          await api.post("/Business/CarFilesUpload", formData, {
-            headers: { "Content-Type": "multipart/form-data" },
-          });
-        }
-
-        // (3) 정비 데이터 저장
-        if (hasFieldChanges) {
-          const saveRow = { ...row };
-
-          if (saveRow.service_amt) {
-            saveRow.service_amt = saveRow.service_amt.toString().replace(/,/g, "");
-          }
-          if (saveRow.mileage) {
-            saveRow.mileage = saveRow.mileage.toString().replace(/,/g, "");
-          }
-
-          delete saveRow.images;
-          delete saveRow.pendingFiles;
-          delete saveRow.deletedImages;
-
+          const saveRow = buildSaveRow(row);
           saveRow.car_number = selectedCar;
           saveRow.user_id = user_id;
 
           await api.post("/Business/CarSave", [saveRow], {
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+
+        // (1) 기존 이미지 삭제
+        if (row.deletedImages && row.deletedImages.length > 0) {
+          setSavingText(`이미지 삭제중... (${rowIndex + 1}/${rows.length})`);
+
+          for (const img of row.deletedImages) {
+            await api.delete("/Business/CarFileDelete", {
+              params: {
+                car_number: selectedCar,
+                service_dt: row.service_dt,
+                image_id: img.image_id,
+                image_path: img.image_path,
+                exterior_image: img.exterior_image,
+                user_id,
+              },
+            });
+          }
+        }
+
+        // (2) 새 이미지 업로드
+        if (row.pendingFiles && row.pendingFiles.length > 0) {
+          setSavingText(
+            `이미지 업로드중... (${rowIndex + 1}/${rows.length}) ${row.pendingFiles.length}장`
+          );
+
+          const fd = new FormData();
+          fd.append("car_number", selectedCar);
+          fd.append("service_dt", row.service_dt);
+          fd.append("user_id", user_id);
+
+          row.pendingFiles.forEach((pf) => {
+            fd.append("files", pf.file);
+          });
+
+          await api.post("/Business/CarFilesUpload", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+        }
+
+        // (3) 신규행이 아닌 경우에만 정비 데이터 저장
+        if (!newRow && hasFieldChanges) {
+          setSavingText(`정비이력 저장중... (${rowIndex + 1}/${rows.length})`);
+
+          const saveRow = buildSaveRow(row);
+          saveRow.car_number = selectedCar;
+          saveRow.user_id = user_id;
+
+          await api.post("/Business/CarSave", [saveRow], {
+            headers: { "Content-Type": "application/json" },
           });
         }
       }
 
+      // pending previewUrl 정리
       rows.forEach((row) =>
         (row.pendingFiles || []).forEach((pf) => {
           if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
         })
       );
 
-      await Swal.fire("저장 완료", "모든 변경이 저장되었습니다.", "success");
-
       await fetchCarList(selectedCar);
+      await Swal.fire("저장 완료", "모든 변경이 저장되었습니다.", "success");
     } catch (e) {
-      Swal.fire("저장 실패", e.message || e, "error");
+      Swal.fire("저장 실패", e?.message || String(e), "error");
+    } finally {
+      setSaving(false);
+      setSavingText("");
     }
   };
-
-  const columns = useMemo(
-    () => [
-      { header: "날짜", accessorKey: "service_dt", size: isMobile ? 80 : 100 },
-      { header: "정비내용", accessorKey: "service_note", size: isMobile ? 220 : 300 },
-      { header: "정비시\n주행거리", accessorKey: "mileage", size: isMobile ? 70 : 80 },
-      { header: "정비 비용", accessorKey: "service_amt", size: isMobile ? 70 : 80 },
-      { header: "정비시 특이사항", accessorKey: "comment", size: isMobile ? 230 : 350 },
-      { header: "외관 이미지", accessorKey: "exterior_image", size: isMobile ? 220 : 260 },
-      { header: "외관내용", accessorKey: "exterior_note", size: isMobile ? 230 : 350 },
-    ],
-    [isMobile]
-  );
 
   if (loading) return <LoadingScreen />;
 
@@ -534,6 +527,7 @@ function CorCarTabStyled() {
             onChange={(e) => setSelectedCar(e.target.value)}
             sx={{ minWidth: isMobile ? 140 : 150 }}
             SelectProps={{ native: true }}
+            disabled={saving}
           >
             {carSelectList.map((car) => (
               <option key={car.car_number} value={car.car_number}>
@@ -554,6 +548,7 @@ function CorCarTabStyled() {
             variant="gradient"
             color="info"
             onClick={handleAddRow}
+            disabled={saving}
             sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
           >
             행 추가
@@ -562,6 +557,7 @@ function CorCarTabStyled() {
             variant="gradient"
             color="info"
             onClick={handleModalOpen}
+            disabled={saving}
             sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
           >
             차량등록
@@ -570,6 +566,7 @@ function CorCarTabStyled() {
             variant="gradient"
             color="info"
             onClick={handleSave}
+            disabled={saving}
             sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
           >
             저장
@@ -700,6 +697,7 @@ function CorCarTabStyled() {
                                           target="_blank"
                                           rel="noopener noreferrer"
                                           sx={{ p: 0.5 }}
+                                          disabled={saving}
                                         >
                                           <Download size={14} />
                                         </IconButton>
@@ -707,15 +705,10 @@ function CorCarTabStyled() {
                                           size="small"
                                           color={isDeleted ? "warning" : "error"}
                                           sx={{ p: 0.5 }}
-                                          onClick={() =>
-                                            toggleImageDeleted(rowIndex, imgIndex)
-                                          }
+                                          onClick={() => toggleImageDeleted(rowIndex, imgIndex)}
+                                          disabled={saving}
                                         >
-                                          {isDeleted ? (
-                                            <RotateCcw size={14} />
-                                          ) : (
-                                            <Trash2 size={14} />
-                                          )}
+                                          {isDeleted ? <RotateCcw size={14} /> : <Trash2 size={14} />}
                                         </IconButton>
                                       </Box>
                                     </Box>
@@ -781,6 +774,7 @@ function CorCarTabStyled() {
                                       color="error"
                                       sx={{ p: 0.5 }}
                                       onClick={() => removePendingFile(rowIndex, idx2)}
+                                      disabled={saving}
                                     >
                                       <Trash2 size={14} />
                                     </IconButton>
@@ -794,6 +788,7 @@ function CorCarTabStyled() {
                                   type="file"
                                   accept="image/*"
                                   multiple
+                                  disabled={saving}
                                   style={{ width: "120px", fontSize: "11px" }}
                                   onChange={(e) => {
                                     handleFileSelect(rowIndex, e.target.files);
@@ -811,8 +806,7 @@ function CorCarTabStyled() {
 
                       const isDate = col.accessorKey === "service_dt";
                       const isNumber =
-                        col.accessorKey === "service_amt" ||
-                        col.accessorKey === "mileage";
+                        col.accessorKey === "service_amt" || col.accessorKey === "mileage";
 
                       if (isDate) {
                         return (
@@ -826,12 +820,9 @@ function CorCarTabStyled() {
                             <input
                               type="date"
                               value={value || ""}
+                              disabled={saving}
                               onChange={(e) =>
-                                handleCellChange(
-                                  rowIndex,
-                                  col.accessorKey,
-                                  e.target.value
-                                )
+                                handleCellChange(rowIndex, col.accessorKey, e.target.value)
                               }
                               style={{
                                 ...getCellStyle(rowIndex, col.accessorKey, value),
@@ -853,10 +844,9 @@ function CorCarTabStyled() {
                           >
                             <input
                               type="text"
+                              disabled={saving}
                               value={
-                                value
-                                  ? Number(value.replace(/,/g, "")).toLocaleString()
-                                  : ""
+                                value ? Number(value.replace(/,/g, "")).toLocaleString() : ""
                               }
                               onChange={(e) => {
                                 const raw = e.target.value
@@ -876,14 +866,11 @@ function CorCarTabStyled() {
                       return (
                         <td
                           key={col.accessorKey}
-                          contentEditable
+                          contentEditable={!saving}
                           suppressContentEditableWarning
                           onBlur={(e) =>
-                            handleCellChange(
-                              rowIndex,
-                              col.accessorKey,
-                              e.target.innerText
-                            )
+                            !saving &&
+                            handleCellChange(rowIndex, col.accessorKey, e.target.innerText)
                           }
                           style={{
                             ...getCellStyle(rowIndex, col.accessorKey, value),
@@ -1000,9 +987,7 @@ function CorCarTabStyled() {
 
           <IconButton
             onClick={() =>
-              setCurrentIndex((prev) =>
-                Math.min(prev + 1, previewList.length - 1)
-              )
+              setCurrentIndex((prev) => Math.min(prev + 1, previewList.length - 1))
             }
             disabled={currentIndex === previewList.length - 1}
             sx={{
@@ -1021,6 +1006,22 @@ function CorCarTabStyled() {
           </IconButton>
         </DialogContent>
       </Dialog>
+
+      {/* ✅ 저장/업로드 로딩 */}
+      <Backdrop
+        open={saving}
+        sx={{
+          color: "#fff",
+          zIndex: (t) => t.zIndex.modal + 20,
+          flexDirection: "column",
+          gap: 1,
+        }}
+      >
+        <CircularProgress color="inherit" />
+        <Typography sx={{ color: "#fff", fontSize: isMobile ? 12 : 14 }}>
+          {savingText || "이미지 등록중..."}
+        </Typography>
+      </Backdrop>
     </>
   );
 }

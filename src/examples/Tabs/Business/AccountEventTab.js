@@ -17,7 +17,7 @@ import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
 import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import { Download, Trash2, Image as ImageIcon, Plus, RotateCcw } from "lucide-react";
+import { Download, Trash2, Plus, RotateCcw } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "config";
 import useAccountEventData from "./accountEventData";
@@ -40,9 +40,8 @@ export default function AccountEventTab() {
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewImageUrl, setPreviewImageUrl] = useState("");
-  const [previewList, setPreviewList] = useState([]);   // 이미지 리스트
-  const [currentIndex, setCurrentIndex] = useState(0);  // 현재 인덱스
+  const [previewList, setPreviewList] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   // ================================
   // 초기 로드
@@ -143,8 +142,7 @@ export default function AccountEventTab() {
   };
 
   // ================================
-  // 파일 선택 시 → pendingFiles에 저장 (업로드 X)
-  // 썸네일용 previewUrl 같이 저장
+  // 파일 선택 → pendingFiles에만 저장
   // ================================
   const handleFileSelect = (rowIndex, fileList) => {
     if (!fileList || fileList.length === 0) return;
@@ -193,8 +191,8 @@ export default function AccountEventTab() {
   const openPreview = (rowIndex, imgOrder) => {
     const row = eventRows[rowIndex];
 
-    // 기존 이미지만 슬라이드 (pendingFiles 제외)
-    const list = row.images
+    const list = (row.images || [])
+      .slice()
       .sort((a, b) => a.image_order - b.image_order)
       .map((img) => ({
         url: `${API_BASE_URL}${img.image_path}`,
@@ -210,24 +208,19 @@ export default function AccountEventTab() {
   };
 
   // ================================
-  // 기존 이미지 삭제 → 삭제 예약 목록에 저장
-  // (다시 클릭 시 복구)
+  // 기존 이미지 삭제 토글
   // ================================
   const toggleImageDeleted = (rowIndex, img) => {
     setEventRows((prev) =>
       prev.map((row, i) => {
         if (i !== rowIndex) return row;
 
-        const exists = row.deletedImages.some(
-          (d) => d.image_order === img.image_order
-        );
+        const exists = row.deletedImages.some((d) => d.image_order === img.image_order);
 
         return exists
           ? {
               ...row,
-              deletedImages: row.deletedImages.filter(
-                (d) => d.image_order !== img.image_order
-              ),
+              deletedImages: row.deletedImages.filter((d) => d.image_order !== img.image_order),
             }
           : {
               ...row,
@@ -238,7 +231,7 @@ export default function AccountEventTab() {
   };
 
   // ================================
-  // pendingFiles 에서 제거 (썸네일 URL revoke)
+  // pendingFiles 제거
   // ================================
   const removePendingFile = (rowIndex, indexInPending) => {
     setEventRows((prev) =>
@@ -246,104 +239,122 @@ export default function AccountEventTab() {
         if (i !== rowIndex) return row;
 
         const target = row.pendingFiles[indexInPending];
-        if (target && target.previewUrl) {
-          URL.revokeObjectURL(target.previewUrl);
-        }
+        if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
 
         return {
           ...row,
-          pendingFiles: row.pendingFiles.filter(
-            (_, idx) => idx !== indexInPending
-          ),
+          pendingFiles: row.pendingFiles.filter((_, idx) => idx !== indexInPending),
         };
       })
     );
   };
 
   // ================================
-  // 전체 저장 버튼 → 핵심 로직
+  // ✅ "이미지 등록중..." 로딩 Swal
+  // ================================
+  const showUploadingSwal = (text = "이미지 등록중...") => {
+    Swal.fire({
+      title: "저장 중",
+      text,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => {
+        Swal.showLoading();
+      },
+    });
+  };
+
+  // ================================
+  // 전체 저장
   // ================================
   const handleSaveAll = async () => {
     const user_id = localStorage.getItem("user_id") || "admin";
+
+    // ✅ 업로드/삭제 등 시간이 걸릴 수 있어서 로딩 표시
+    showUploadingSwal("이미지 등록중...");
+
     try {
-      for (const row of eventRows) {
+      // ⚠️ setState 배열 원소를 직접 수정하지 않도록 "복사본"으로 처리
+      const workingRows = eventRows.map((r) => ({ ...r }));
+
+      for (let idx = 0; idx < workingRows.length; idx++) {
+        const row = workingRows[idx];
+
+        // 진행표시(행사명, 업로드 장수)
+        const pendingCount = row.pendingFiles?.length || 0;
+        const deleteCount = row.deletedImages?.length || 0;
+        const label = row.event_name ? ` (${row.event_name})` : "";
+        const progressText =
+          pendingCount > 0 || deleteCount > 0
+            ? `이미지 처리 중${label} - 추가 ${pendingCount}장 / 삭제 ${deleteCount}장`
+            : `저장 중${label}`;
+
+        Swal.update({ text: progressText });
+
         // 1) 신규행 INSERT
         if (!row.event_id) {
-          const res = await api.post(
-            "/Business/AccountEventSave",
-            {
-              account_id: selectedAccountId,
-              event_name: row.event_name,
-              event_dt: row.event_dt,
-              user_id,
-            }
-          );
+          const res = await api.post("/Business/AccountEventSave", {
+            account_id: selectedAccountId,
+            event_name: row.event_name,
+            event_dt: row.event_dt,
+            user_id,
+          });
           row.event_id = res.data.event_id;
         }
 
         // 2) 기존행 UPDATE (변경된 경우만)
-        const origin = originalEventRows.find(
-          (o) => o.event_id === row.event_id
-        );
+        const origin = originalEventRows.find((o) => o.event_id === row.event_id);
 
         if (
           origin &&
-          (origin.event_name !== row.event_name ||
-            origin.event_dt !== row.event_dt)
+          (origin.event_name !== row.event_name || origin.event_dt !== row.event_dt)
         ) {
-          await api.post(
-            "/Business/AccountEventUpdate",
-            {
-              event_id: row.event_id,
-              account_id: row.account_id,
-              event_name: row.event_name,
-              event_dt: row.event_dt,
-              user_id,
-            }
-          );
+          await api.post("/Business/AccountEventUpdate", {
+            event_id: row.event_id,
+            account_id: row.account_id,
+            event_name: row.event_name,
+            event_dt: row.event_dt,
+            user_id,
+          });
         }
 
-        // 3) 기존 이미지 삭제 처리
-        for (const delImg of row.deletedImages) {
-          await api.delete(
-            "/Business/AccountEventFileDelete",
-            {
-              params: {
-                event_id: row.event_id,
-                image_order: delImg.image_order,
-                image_path: delImg.image_path,
-              },
-            }
-          );
+        // 3) 기존 이미지 삭제
+        for (const delImg of row.deletedImages || []) {
+          await api.delete("/Business/AccountEventFileDelete", {
+            params: {
+              event_id: row.event_id,
+              image_order: delImg.image_order,
+              image_path: delImg.image_path,
+            },
+          });
         }
 
         // 4) pendingFiles 업로드
-        if (row.pendingFiles.length > 0) {
+        if ((row.pendingFiles || []).length > 0) {
           const formData = new FormData();
           formData.append("event_id", row.event_id);
+          row.pendingFiles.forEach((pf) => formData.append("files", pf.file));
 
-          row.pendingFiles.forEach((pf) =>
-            formData.append("files", pf.file)
-          );
-
-          await api.post(
-            "/Business/AccountEventFilesUpload",
-            formData,
-            { headers: { "Content-Type": "multipart/form-data" } }
-          );
+          await api.post("/Business/AccountEventFilesUpload", formData, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
         }
       }
 
-      // 저장 완료 후 pendingFiles URL 정리
+      // ✅ 로딩 닫기
+      Swal.close();
+
+      // pendingFiles URL 정리
       eventRows.forEach((row) =>
-        row.pendingFiles.forEach((pf) => {
+        (row.pendingFiles || []).forEach((pf) => {
           if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
         })
       );
 
-      Swal.fire("저장 완료", "모든 변경이 저장되었습니다.", "success");
+      await Swal.fire("저장 완료", "모든 변경이 저장되었습니다.", "success");
 
       // 새로고침
+      setLoading(true);
       const refreshed = await fetchEventList(selectedAccountId);
       const updated = refreshed.map((r) => ({
         ...r,
@@ -352,19 +363,21 @@ export default function AccountEventTab() {
       }));
       setEventRows(updated);
       setOriginalEventRows(JSON.parse(JSON.stringify(updated)));
+      setLoading(false);
     } catch (e) {
-      Swal.fire("저장 실패", e.message, "error");
+      Swal.close();
+      Swal.fire("저장 실패", e?.message || String(e), "error");
     }
   };
 
   // ================================
-  // 테이블 스타일 (모바일 대응)
+  // 테이블 스타일
   // ================================
   const tableSx = {
     flex: 1,
     maxHeight: isMobile ? "55vh" : "75vh",
     overflowY: "auto",
-    overflowX: "auto",             // ✅ 가로 스크롤
+    overflowX: "auto",
     WebkitOverflowScrolling: "touch",
     "& table": {
       borderCollapse: "separate",
@@ -403,12 +416,9 @@ export default function AccountEventTab() {
 
   if (loading) return <LoadingScreen />;
 
-  // =================================================================================
-  // 🟢 전체 UI 렌더링
-  // =================================================================================
   return (
     <>
-      {/* 상단 필터 + 버튼 (모바일 줄바꿈) */}
+      {/* 상단 */}
       <MDBox
         pt={1}
         pb={1}
@@ -446,6 +456,7 @@ export default function AccountEventTab() {
               </MenuItem>
             ))}
           </Select>
+
           <MDButton
             variant="gradient"
             color="success"
@@ -467,7 +478,7 @@ export default function AccountEventTab() {
         </Box>
       </MDBox>
 
-      {/* 메인 테이블 */}
+      {/* 테이블 */}
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <Box sx={tableSx}>
@@ -490,9 +501,7 @@ export default function AccountEventTab() {
                       <input
                         type="text"
                         value={row.event_name || ""}
-                        onChange={(e) =>
-                          handleEventFieldChange(index, "event_name", e.target.value)
-                        }
+                        onChange={(e) => handleEventFieldChange(index, "event_name", e.target.value)}
                         style={cellInputStyle(isCellChanged(index, "event_name"))}
                       />
                     </td>
@@ -502,28 +511,22 @@ export default function AccountEventTab() {
                       <input
                         type="date"
                         value={formatDateForInput(row.event_dt)}
-                        onChange={(e) =>
-                          handleEventFieldChange(index, "event_dt", e.target.value)
-                        }
+                        onChange={(e) => handleEventFieldChange(index, "event_dt", e.target.value)}
                         style={cellInputStyle(isCellChanged(index, "event_dt"))}
                       />
                     </td>
 
-                    {/* 기존 이미지 목록 */}
+                    {/* 기존 이미지 */}
                     <td>
                       <Box
                         sx={{
                           display: "grid",
-                          gridTemplateColumns: {
-                            xs: "repeat(2, 1fr)",
-                            sm: "repeat(3, 1fr)",
-                            md: "repeat(4, 1fr)",
-                          },
+                          gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", md: "repeat(4, 1fr)" },
                           gap: 1,
                         }}
                       >
-                        {row.images.map((img) => {
-                          const isDeleted = row.deletedImages.some(
+                        {(row.images || []).map((img) => {
+                          const isDeleted = (row.deletedImages || []).some(
                             (d) => d.image_order === img.image_order
                           );
 
@@ -541,7 +544,6 @@ export default function AccountEventTab() {
                                 filter: isDeleted ? "blur(1px)" : "none",
                               }}
                             >
-                              {/* 썸네일 */}
                               <Box
                                 sx={{
                                   width: "100%",
@@ -556,15 +558,10 @@ export default function AccountEventTab() {
                                 <img
                                   src={`${API_BASE_URL}${img.image_path}`}
                                   alt={img.image_name}
-                                  style={{
-                                    width: "100%",
-                                    height: "100%",
-                                    objectFit: "cover",
-                                  }}
+                                  style={{ width: "100%", height: "100%", objectFit: "cover" }}
                                 />
                               </Box>
 
-                              {/* 파일명 */}
                               <button
                                 type="button"
                                 onClick={() => openPreview(index, img.image_order)}
@@ -584,14 +581,7 @@ export default function AccountEventTab() {
                                 {img.image_name}
                               </button>
 
-                              {/* 버튼 영역 */}
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                }}
-                              >
+                              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                 <IconButton
                                   size="small"
                                   color="success"
@@ -620,16 +610,10 @@ export default function AccountEventTab() {
                       </Box>
                     </td>
 
-                    {/* 추가될 이미지 미리보기 (pendingFiles) */}
+                    {/* pending 미리보기 */}
                     <td>
-                      <Box
-                        sx={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 1,
-                        }}
-                      >
-                        {row.pendingFiles.map((pf, idx2) => (
+                      <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                        {(row.pendingFiles || []).map((pf, idx2) => (
                           <Box
                             key={idx2}
                             sx={{
@@ -671,12 +655,7 @@ export default function AccountEventTab() {
                               {pf.file.name}
                             </span>
 
-                            <IconButton
-                              size="small"
-                              color="error"
-                              sx={{ p: 0.5 }}
-                              onClick={() => removePendingFile(index, idx2)}
-                            >
+                            <IconButton size="small" color="error" sx={{ p: 0.5 }} onClick={() => removePendingFile(index, idx2)}>
                               <Trash2 size={14} />
                             </IconButton>
                           </Box>
@@ -696,9 +675,7 @@ export default function AccountEventTab() {
                           e.target.value = null;
                         }}
                       />
-                      <div style={{ fontSize: "10px", color: "#999" }}>
-                        (최대 10장)
-                      </div>
+                      <div style={{ fontSize: "10px", color: "#999" }}>(최대 10장)</div>
                     </td>
                   </tr>
                 ))}
@@ -708,7 +685,7 @@ export default function AccountEventTab() {
         </Grid>
       </Grid>
 
-      {/* 이미지 미리보기 Dialog */}
+      {/* 미리보기 */}
       <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md">
         <DialogContent
           sx={{
@@ -719,7 +696,6 @@ export default function AccountEventTab() {
             p: 2,
           }}
         >
-          {/* 이전 버튼 */}
           <IconButton
             onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))}
             disabled={currentIndex === 0}
@@ -730,32 +706,22 @@ export default function AccountEventTab() {
               transform: "translateY(-50%)",
               background: "rgba(0,0,0,0.35)",
               color: "white",
-              "&:hover": {
-                background: "rgba(0,0,0,0.55)",
-              },
+              "&:hover": { background: "rgba(0,0,0,0.55)" },
             }}
           >
             <ChevronLeft size={32} />
           </IconButton>
 
-          {/* 이미지 */}
           {previewList.length > 0 && (
             <img
               src={previewList[currentIndex].url}
               alt="preview"
-              style={{
-                maxWidth: "100%",
-                maxHeight: "80vh",
-                objectFit: "contain",
-              }}
+              style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }}
             />
           )}
 
-          {/* 다음 버튼 */}
           <IconButton
-            onClick={() =>
-              setCurrentIndex((prev) => Math.min(prev + 1, previewList.length - 1))
-            }
+            onClick={() => setCurrentIndex((prev) => Math.min(prev + 1, previewList.length - 1))}
             disabled={currentIndex === previewList.length - 1}
             sx={{
               position: "absolute",
@@ -764,9 +730,7 @@ export default function AccountEventTab() {
               transform: "translateY(-50%)",
               background: "rgba(0,0,0,0.35)",
               color: "white",
-              "&:hover": {
-                background: "rgba(0,0,0,0.55)",
-              },
+              "&:hover": { background: "rgba(0,0,0,0.55)" },
             }}
           >
             <ChevronRight size={32} />

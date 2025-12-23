@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
@@ -14,7 +14,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 
-import useCookWearManagerData from "./cookWearData";
+import useCookWearManagerData, { parseNumber } from "./cookWearData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
@@ -31,6 +31,11 @@ function CookWearTabStyled() {
     cookWearNewRows,
     accountList,
     loading,
+
+    stockLoaded,
+    outLoaded,
+    newLoaded,
+
     fetchCookWearList,
     fetchCookWearOutList,
     fetchCookWearNewList,
@@ -40,26 +45,32 @@ function CookWearTabStyled() {
     setCookWearNewRows,
   } = useCookWearManagerData();
 
-  // 원본 데이터
+  // ✅ 원본 데이터(스냅샷) - "조회 완료 시점"에만 세팅
   const [originalRows1, setOriginalRows1] = useState([]);
   const [originalRows2, setOriginalRows2] = useState([]);
   const [originalRows3, setOriginalRows3] = useState([]);
+  const needOriginalSyncRef = useRef(true);
 
   const [open, setOpen] = useState(false);
 
-  // 등록 폼
+  // ✅ 품목 등록 폼 (type_name, current_qty)
   const [formData, setFormData] = useState({
-    cook_id: "",
-    cook_name: "",
+    type_name: "",
+    current_qty: "",
   });
 
+  // =========================================
   // 최초 로딩
+  // =========================================
   useEffect(() => {
     const init = async () => {
+      needOriginalSyncRef.current = true;
       await fetchAccountList();
-      await fetchCookWearList();
-      await fetchCookWearOutList();
-      await fetchCookWearNewList();
+      await Promise.all([
+        fetchCookWearList(),
+        fetchCookWearOutList(),
+        fetchCookWearNewList(),
+      ]);
     };
     init();
   }, []);
@@ -71,28 +82,62 @@ function CookWearTabStyled() {
     }
   }, [accountList]);
 
-  // 원본 저장
+  // ✅ 3개 테이블이 전부 로드 완료 되었을 때만 원본 스냅샷 저장
   useEffect(() => {
-    setOriginalRows1(cookWearRows.map((r) => ({ ...r })));
-  }, [cookWearRows]);
-  useEffect(() => {
-    setOriginalRows2(cookWearOutRows.map((r) => ({ ...r })));
-  }, [cookWearOutRows]);
-  useEffect(() => {
-    setOriginalRows3(cookWearNewRows.map((r) => ({ ...r })));
-  }, [cookWearNewRows]);
+    if (!needOriginalSyncRef.current) return;
+    if (!stockLoaded || !outLoaded || !newLoaded) return;
 
-  // normalize
+    setOriginalRows1((cookWearRows || []).map((r) => ({ ...r })));
+    setOriginalRows2((cookWearOutRows || []).map((r) => ({ ...r })));
+    setOriginalRows3((cookWearNewRows || []).map((r) => ({ ...r })));
+    needOriginalSyncRef.current = false;
+  }, [
+    stockLoaded,
+    outLoaded,
+    newLoaded,
+    cookWearRows,
+    cookWearOutRows,
+    cookWearNewRows,
+  ]);
+
+  // =========================================
+  // ✅ 사이즈 옵션: value=type / label=type_name
+  // (조회 데이터에 있는 type_name 기반)
+  // =========================================
+  const sizeOptions = useMemo(() => {
+    const base = (originalRows1?.length ? originalRows1 : cookWearRows) || [];
+    const map = new Map();
+
+    base.forEach((r) => {
+      const type = r?.type;
+      const name = r?.type_name;
+      if (type === undefined || type === null || String(type) === "") return;
+      map.set(String(type), name || String(type));
+    });
+
+    // out/new 쪽에도 혹시 type_name이 있으면 합쳐줌(안전)
+    (cookWearOutRows || []).forEach((r) => {
+      const type = r?.type;
+      const name = r?.type_name;
+      if (!type) return;
+      if (!map.has(String(type))) map.set(String(type), name || String(type));
+    });
+    (cookWearNewRows || []).forEach((r) => {
+      const type = r?.type;
+      const name = r?.type_name;
+      if (!type) return;
+      if (!map.has(String(type))) map.set(String(type), name || String(type));
+    });
+
+    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+  }, [cookWearRows, cookWearOutRows, cookWearNewRows, originalRows1]);
+
   const normalize = (value) =>
     typeof value === "string" ? value.replace(/\s+/g, " ").trim() : value;
 
-  // 셀 스타일 (새 행 빨강, 수정 시 빨강)
-  const getCellStyle = (originalRows) => (rowIndex, key, value, row) => {
-    if (row?.modified) return { color: "red" }; // 플래그 우선
+  const getCellStyle = (originalRows) => (rowIndex, key, value) => {
+    if (originalRows[rowIndex] === undefined) return { color: "red" }; // 새 행
     const original = originalRows[rowIndex]?.[key];
-
-    // 새로 추가된 행
-    if (original === undefined) return { color: "red" };
 
     if (typeof original === "string" && typeof value === "string") {
       return normalize(original) !== normalize(value)
@@ -104,7 +149,6 @@ function CookWearTabStyled() {
       : { color: "black" };
   };
 
-  // ✅ 모바일 대응 테이블 스타일
   const tableSx = {
     flex: 1,
     minHeight: 0,
@@ -144,71 +188,92 @@ function CookWearTabStyled() {
     },
   };
 
-  // 셀 변경 + 자동계산
-  const handleCellChange = (setRows, type) => (rowIndex, key, value) => {
+  /**
+   * ✅ 핵심: "원본(조회값)"은 건드리지 않고,
+   * out/new 테이블에서 변경된 것(현재 - 원본)만 Δ로 계산해서
+   * 재고현황을 "원본 + Δ" 로 미리보기만 만든다.
+   */
+  const stockViewRows = useMemo(() => {
+    const base = (originalRows1.length ? originalRows1 : cookWearRows) || [];
+
+    const deltaOutByType = {};
+    const deltaNewByType = {};
+
+    // out delta 계산 (현재 - 원본)
+    (cookWearOutRows || []).forEach((row, i) => {
+      const type = String(row.type || "");
+      if (!type) return;
+
+      const cur = parseNumber(row.out_qty);
+      const orig = parseNumber(originalRows2[i]?.out_qty); // 원본 없으면 0
+      const delta = cur - orig;
+
+      deltaOutByType[type] = (deltaOutByType[type] || 0) + delta;
+    });
+
+    // new delta 계산 (현재 - 원본)
+    (cookWearNewRows || []).forEach((row, i) => {
+      const type = String(row.type || "");
+      if (!type) return;
+
+      const cur = parseNumber(row.new_qty);
+      const orig = parseNumber(originalRows3[i]?.new_qty);
+      const delta = cur - orig;
+
+      deltaNewByType[type] = (deltaNewByType[type] || 0) + delta;
+    });
+
+    return base.map((r) => {
+      const type = String(r.type || "");
+      const baseNew = parseNumber(r.new_qty);
+      const baseOut = parseNumber(r.out_qty);
+      const baseRemain = parseNumber(r.remain_qty);
+
+      const dNew = deltaNewByType[type] || 0;
+      const dOut = deltaOutByType[type] || 0;
+
+      const viewNew = baseNew + dNew;
+      const viewOut = baseOut + dOut;
+      const viewRemain = baseRemain + dNew - dOut;
+
+      return {
+        ...r,
+        new_qty: viewNew.toLocaleString(),
+        out_qty: viewOut.toLocaleString(),
+        remain_qty: viewRemain.toLocaleString(),
+      };
+    });
+  }, [
+    cookWearRows,
+    cookWearOutRows,
+    cookWearNewRows,
+    originalRows1,
+    originalRows2,
+    originalRows3,
+  ]);
+
+  // ✅ out/new 값만 변경
+  const handleCellChange = (setRows) => (rowIndex, key, value) => {
     setRows((prevRows) =>
       prevRows.map((row, idx) =>
         idx === rowIndex ? { ...row, [key]: value } : row
       )
     );
-
-    if (type === "out") {
-      if (key === "out_qty" || key === "type") {
-        const selectedType = String(
-          cookWearOutRows[rowIndex]?.type || ""
-        );
-        const qty =
-          key === "out_qty" ? Number(value || 0) : Number(cookWearOutRows[rowIndex]?.out_qty || 0);
-
-        setCookWearRows((prev) =>
-          prev.map((r, i) =>
-            String(r.type) === selectedType
-              ? {
-                  ...r,
-                  out_qty: qty,
-                  remain_qty:
-                    (Number(r.current_qty || 0) +
-                      Number(r.new_qty || 0)) -
-                    qty,
-                  modified: String(
-                    (Number(r.current_qty || 0) +
-                      Number(r.new_qty || 0)) -
-                      qty
-                  ),
-                }
-              : r
-          )
-        );
-      }
-    } else if (type === "new") {
-      if (key === "new_qty" || key === "type") {
-        const selectedType = String(
-          cookWearNewRows[rowIndex]?.type || ""
-        );
-        const qty =
-          key === "new_qty" ? Number(value || 0) : Number(cookWearNewRows[rowIndex]?.new_qty || 0);
-
-        setCookWearRows((prev) =>
-          prev.map((r, i) =>
-            String(r.type) === selectedType
-              ? {
-                  ...r,
-                  new_qty: qty,
-                  remain_qty:
-                    (Number(r.current_qty || 0) + qty) -
-                    Number(r.out_qty || 0),
-                  modified: String(
-                    (Number(r.current_qty || 0) + qty) -
-                      Number(r.out_qty || 0)
-                  ),
-                }
-              : r
-          )
-        );
-      }
-    }
   };
 
+  // =========================================
+  // ✅ 공통 저장 함수 (CookWearSave 호출)
+  // =========================================
+  const postCookWearSave = useCallback(async (payload) => {
+    const response = await api.post("/Business/CookWearSave", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+    return response;
+  }, []);
+
+  // =========================================
+  // ✅ 메인 저장
+  // =========================================
   const handleSave = async () => {
     try {
       const formattedOutList = cookWearOutRows.map((row) => ({
@@ -226,23 +291,15 @@ function CookWearTabStyled() {
       }));
 
       const payload = {
-        stockList: { list: cookWearRows },
+        stockList: { list: stockViewRows },
         outList: { list: formattedOutList },
         newList: { list: formattedNewList },
       };
 
-      const response = await api.post(
-        "/Business/CookWearSave",
-        payload,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const response = await postCookWearSave(payload);
 
       if (response.data.code === 200) {
-        Swal.fire({
+        await Swal.fire({
           title: "저장",
           text: "저장되었습니다.",
           icon: "success",
@@ -250,9 +307,12 @@ function CookWearTabStyled() {
           confirmButtonText: "확인",
         });
 
-        await fetchCookWearList();
-        await fetchCookWearOutList();
-        await fetchCookWearNewList();
+        needOriginalSyncRef.current = true;
+        await Promise.all([
+          fetchCookWearList(),
+          fetchCookWearOutList(),
+          fetchCookWearNewList(),
+        ]);
       }
     } catch (error) {
       Swal.fire({
@@ -265,15 +325,49 @@ function CookWearTabStyled() {
     }
   };
 
-  const handleModalOpen = () => setOpen(true);
+  // =========================================
+  // ✅ 품목등록 모달 저장 함수 (요구사항)
+  // - CookWearSave로 저장
+  // =========================================
+  const handleRegisterItemSave = async () => {
+    try {
+      const name = (formData.type_name || "").trim();
+      const qty = parseNumber(formData.current_qty);
 
-  const itemOptions = [
-    { value: "1", label: "M" },
-    { value: "2", label: "L" },
-    { value: "3", label: "XL" },
-    { value: "4", label: "XXL" },
-    { value: "5", label: "조리모" },
-  ];
+      if (!name) {
+        Swal.fire("품목명(type_name)을 입력하세요.", "", "warning");
+        return;
+      }
+
+     const response = await api.post("/Business/CookWearSaveV2", formData, {
+      headers: { "Content-Type": "application/json" },
+    });
+
+      if (response.data.code === 200) {
+        await Swal.fire({
+          title: "저장",
+          text: "품목이 등록되었습니다.",
+          icon: "success",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+
+        setOpen(false);
+        setFormData({ type_name: "", current_qty: "" });
+
+        needOriginalSyncRef.current = true;
+        await Promise.all([
+          fetchCookWearList(),
+          fetchCookWearOutList(),
+          fetchCookWearNewList(),
+        ]);
+      } else {
+        Swal.fire("실패", response.data.message || "등록 실패", "error");
+      }
+    } catch (error) {
+      Swal.fire("실패", error.message || "등록 중 오류 발생", "error");
+    }
+  };
 
   const columns1 = useMemo(
     () => [
@@ -309,25 +403,16 @@ function CookWearTabStyled() {
 
   if (loading) return <LoadingScreen />;
 
-  const renderTable = (
-    title,
-    rows,
-    setRows,
-    originalRows,
-    columns,
-    readOnly = false,
-    type
-  ) => {
-    const handleChangeCellFunc = handleCellChange(setRows, type);
-    const styleFn = (rowIndex, key, value, row) =>
-      getCellStyle(originalRows)(rowIndex, key, value, row);
+  const renderTable = (title, rows, setRows, originalRows, columns, readOnly = false) => {
+    const styleFn = (rowIndex, key, value) => getCellStyle(originalRows)(rowIndex, key, value);
+
+    const getTypeLabel = (typeValue) => {
+      const found = sizeOptions.find((o) => String(o.value) === String(typeValue));
+      return found?.label || "";
+    };
 
     return (
-      <MDBox
-        pt={isMobile ? 2 : 4}
-        pb={3}
-        sx={tableSx}
-      >
+      <MDBox pt={isMobile ? 2 : 4} pb={3} sx={tableSx}>
         <MDBox
           mx={0}
           mt={-1}
@@ -346,6 +431,7 @@ function CookWearTabStyled() {
             {title}
           </MDTypography>
         </MDBox>
+
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <table>
@@ -361,119 +447,89 @@ function CookWearTabStyled() {
                   <tr key={rowIndex}>
                     {columns.map((col) => {
                       const value = row[col.accessorKey] || "";
-                      let cellContent;
 
                       if (col.type === "date") {
-                        cellContent = (
-                          <input
-                            type="date"
-                            value={value}
-                            disabled={readOnly}
-                            style={styleFn(
-                              rowIndex,
-                              col.accessorKey,
-                              value,
-                              row
-                            )}
-                            onChange={(e) =>
-                              handleChangeCellFunc(
-                                rowIndex,
-                                col.accessorKey,
-                                e.target.value
-                              )
-                            }
-                          />
-                        );
-                      } else if (col.type === "selectItem") {
-                        cellContent = (
-                          <select
-                            value={value}
-                            disabled={readOnly}
-                            style={styleFn(
-                              rowIndex,
-                              col.accessorKey,
-                              value,
-                              row
-                            )}
-                            onChange={(e) =>
-                              handleChangeCellFunc(
-                                rowIndex,
-                                col.accessorKey,
-                                e.target.value
-                              )
-                            }
-                          >
-                            <option value="">선택</option>
-                            {itemOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      } else if (col.type === "selectAccount") {
-                        cellContent = (
-                          <select
-                            value={value}
-                            disabled={readOnly}
-                            style={styleFn(
-                              rowIndex,
-                              col.accessorKey,
-                              value,
-                              row
-                            )}
-                            onChange={(e) =>
-                              handleChangeCellFunc(
-                                rowIndex,
-                                col.accessorKey,
-                                e.target.value
-                              )
-                            }
-                          >
-                            {accountList.map((acc) => (
-                              <option
-                                key={acc.account_id}
-                                value={acc.account_id}
-                              >
-                                {acc.account_name}
-                              </option>
-                            ))}
-                          </select>
-                        );
-                      } else {
-                        cellContent = readOnly ? (
-                          <span
-                            style={styleFn(
-                              rowIndex,
-                              col.accessorKey,
-                              value,
-                              row
-                            )}
-                          >
-                            {value}
-                          </span>
-                        ) : (
-                          <input
-                            type="text"
-                            value={value}
-                            style={styleFn(
-                              rowIndex,
-                              col.accessorKey,
-                              value,
-                              row
-                            )}
-                            onChange={(e) =>
-                              handleChangeCellFunc(
-                                rowIndex,
-                                col.accessorKey,
-                                e.target.value
-                              )
-                            }
-                          />
+                        return (
+                          <td key={col.accessorKey}>
+                            <input
+                              type="date"
+                              value={value}
+                              disabled={readOnly}
+                              style={styleFn(rowIndex, col.accessorKey, value)}
+                              onChange={(e) =>
+                                handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
+                              }
+                            />
+                          </td>
                         );
                       }
 
-                      return <td key={col.accessorKey}>{cellContent}</td>;
+                      // ✅ 사이즈: value=type, label=type_name
+                      if (col.type === "selectItem") {
+                        return (
+                          <td key={col.accessorKey}>
+                            {readOnly ? (
+                              <span style={styleFn(rowIndex, col.accessorKey, value)}>
+                                {getTypeLabel(value) || row.type_name || value}
+                              </span>
+                            ) : (
+                              <select
+                                value={value}
+                                disabled={readOnly}
+                                style={styleFn(rowIndex, col.accessorKey, value)}
+                                onChange={(e) =>
+                                  handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
+                                }
+                              >
+                                <option value="">선택</option>
+                                {sizeOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
+                        );
+                      }
+
+                      if (col.type === "selectAccount") {
+                        return (
+                          <td key={col.accessorKey}>
+                            <select
+                              value={value}
+                              disabled={readOnly}
+                              style={styleFn(rowIndex, col.accessorKey, value)}
+                              onChange={(e) =>
+                                handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
+                              }
+                            >
+                              {accountList.map((acc) => (
+                                <option key={acc.account_id} value={acc.account_id}>
+                                  {acc.account_name}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        );
+                      }
+
+                      return (
+                        <td key={col.accessorKey}>
+                          {readOnly ? (
+                            <span style={styleFn(rowIndex, col.accessorKey, value)}>{value}</span>
+                          ) : (
+                            <input
+                              type="text"
+                              value={value}
+                              style={styleFn(rowIndex, col.accessorKey, value)}
+                              onChange={(e) =>
+                                handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
+                              }
+                            />
+                          )}
+                        </td>
+                      );
                     })}
                   </tr>
                 ))}
@@ -487,7 +543,6 @@ function CookWearTabStyled() {
 
   return (
     <>
-      {/* 상단 버튼 영역 - 모바일에서 줄바꿈 */}
       <MDBox
         pt={1}
         pb={1}
@@ -505,46 +560,37 @@ function CookWearTabStyled() {
           onClick={() =>
             setCookWearOutRows([
               ...cookWearOutRows,
-              {
-                type: "",
-                account_id: accountList[0]?.account_id ?? "",
-                out_qty: "",
-                out_dt: "",
-                note: "",
-              },
+              { type: "", type_name: "", account_id: accountList[0]?.account_id ?? "", out_qty: "", out_dt: "", note: "" },
             ])
           }
           sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : undefined }}
         >
           분출현황 행 추가
         </MDButton>
+
         <MDButton
           variant="gradient"
           color="info"
           onClick={() =>
             setCookWearNewRows([
               ...cookWearNewRows,
-              {
-                type: "",
-                account_id: accountList[0]?.account_id ?? "",
-                new_qty: "",
-                new_dt: "",
-                note: "",
-              },
+              { type: "", type_name: "", account_id: accountList[0]?.account_id ?? "", new_qty: "", new_dt: "", note: "" },
             ])
           }
           sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : undefined }}
         >
           주문현황 행 추가
         </MDButton>
+
         <MDButton
           variant="gradient"
           color="info"
-          onClick={handleModalOpen}
+          onClick={() => setOpen(true)}
           sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 80 : undefined }}
         >
           품목 등록
         </MDButton>
+
         <MDButton
           variant="gradient"
           color="info"
@@ -555,43 +601,19 @@ function CookWearTabStyled() {
         </MDButton>
       </MDBox>
 
-      {/* 테이블들 – 모바일에서 세로로, 데스크탑에서 3열 */}
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
-          {renderTable(
-            "조리복 재고현황",
-            cookWearRows,
-            setCookWearRows,
-            originalRows1,
-            columns1,
-            true
-          )}
+          {/* ✅ 재고현황은 stockViewRows 보여줌 */}
+          {renderTable("조리복 재고현황", stockViewRows, setCookWearRows, originalRows1, columns1, true)}
         </Grid>
         <Grid item xs={12} md={4}>
-          {renderTable(
-            "조리복 분출현황",
-            cookWearOutRows,
-            setCookWearOutRows,
-            originalRows2,
-            columns2,
-            false,
-            "out"
-          )}
+          {renderTable("조리복 분출현황", cookWearOutRows, setCookWearOutRows, originalRows2, columns2, false)}
         </Grid>
         <Grid item xs={12} md={4}>
-          {renderTable(
-            "조리복 주문현황",
-            cookWearNewRows,
-            setCookWearNewRows,
-            originalRows3,
-            columns3,
-            false,
-            "new"
-          )}
+          {renderTable("조리복 주문현황", cookWearNewRows, setCookWearNewRows, originalRows3, columns3, false)}
         </Grid>
       </Grid>
 
-      {/* 모달 */}
       <Modal open={open} onClose={() => setOpen(false)}>
         <Box
           sx={{
@@ -607,30 +629,29 @@ function CookWearTabStyled() {
           }}
         >
           <Typography variant="h6" gutterBottom>
-            조리도구 등록
+            품목 등록
           </Typography>
+
           <TextField
             fullWidth
             margin="normal"
-            label="도구ID"
-            name="cook_id"
-            value={formData.cook_id}
-            onChange={(e) =>
-              setFormData({ ...formData, cook_id: e.target.value })
-            }
+            label="품목명"
+            name="type_name"
+            value={formData.type_name}
+            onChange={(e) => setFormData({ ...formData, type_name: e.target.value })}
             InputLabelProps={{ style: { fontSize: "0.8rem" } }}
           />
+
           <TextField
             fullWidth
             margin="normal"
-            label="도구명"
-            name="cook_name"
-            value={formData.cook_name}
-            onChange={(e) =>
-              setFormData({ ...formData, cook_name: e.target.value })
-            }
+            label="현재고"
+            name="current_qty"
+            value={formData.current_qty}
+            onChange={(e) => setFormData({ ...formData, current_qty: e.target.value })}
             InputLabelProps={{ style: { fontSize: "0.8rem" } }}
           />
+
           <Box mt={3} display="flex" justifyContent="flex-end" gap={1}>
             <Button
               variant="contained"
@@ -643,7 +664,13 @@ function CookWearTabStyled() {
             >
               취소
             </Button>
-            <Button variant="contained" sx={{ color: "#ffffff" }}>
+
+            {/* ✅ 모달 저장 버튼 → 별도 함수 */}
+            <Button
+              variant="contained"
+              sx={{ color: "#ffffff" }}
+              onClick={handleRegisterItemSave}
+            >
               저장
             </Button>
           </Box>

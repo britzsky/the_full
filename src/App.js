@@ -242,6 +242,7 @@ export default function App() {
 
   // Change the openConfigurator state
   const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
+  const isAuthed = !!localStorage.getItem("token"); // 프로젝트 기준에 맞게 (user_id 등)
 
   // Setting the dir attribute for the body element
   useEffect(() => {
@@ -348,9 +349,25 @@ export default function App() {
           {/* {configsButton} */}
         </>
       )}
+
       {layout === "vr" && <Configurator />}
       <Routes>
         {getRoutes(filteredRoutes)}
+
+        {/* ✅ 첫 접속(/) 기본 화면 */}
+        <Route
+          path="/"
+          element={
+            <Navigate
+              to={isAuthed ? "/dashboard" : "/authentication/sign-in"}
+              replace
+            />
+          }
+        />
+
+        {/* ✅ 나머지 못 찾는 경로는 전부 /로 */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+
         <Route path="/tallysheet/:account_id" element={<TallySheet />} />
         <Route path="/recordsheet/:account_id" element={<RecordSheet />} />
         <Route path="/membersheet/:account_id" element={<MemberSheet />} />
@@ -366,7 +383,7 @@ export default function App() {
         <Route path="/analysis/branchprofit/:account_id" element={<BranchProfitSheet />} />
         <Route path="/analysis/monthlysales/:account_id" element={<MonthlySalesSheet />} />
         <Route path="/analysis/investment/:account_id" element={<InvestMentSheet />} />
-        <Route path="*" element={<Navigate to="/authentication/sign-in" />} />
+        {/* <Route path="*" element={<Navigate to="/authentication/sign-in" />} /> */}
         {/* 영업 메뉴 */}
         <Route path="/business/telemanager/:account_id" element={<TeleManagerSheet />}/>
         <Route path="/business/corcar/:account_id" element={<CorCarSheet />}/>

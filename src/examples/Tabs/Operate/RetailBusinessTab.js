@@ -4,6 +4,8 @@ import MDBox from "components/MDBox";
 import {
   Modal,
   Box,
+  Select,
+  MenuItem,
   Typography,
   Button,
   TextField,
@@ -21,6 +23,102 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
+
+// ======================== 은행/포맷 유틸 ========================
+const KOREAN_BANKS = [
+  "KB국민은행",
+  "신한은행",
+  "우리은행",
+  "하나은행",
+  "IBK기업은행",
+  "NH농협은행",
+  "수협은행",
+  "KDB산업은행",
+  "SC제일은행",
+  "씨티은행",
+  "카카오뱅크",
+  "토스뱅크",
+  "케이뱅크",
+  "우체국",
+  "새마을금고",
+  "신협",
+  "저축은행",
+  "부산은행",
+  "대구은행",
+  "광주은행",
+  "전북은행",
+  "경남은행",
+  "제주은행",
+  "기타(직접입력)",
+];
+
+const onlyDigits = (v = "") => String(v).replace(/\D/g, "");
+
+const formatByGroups = (digits, groups) => {
+  let idx = 0;
+  const parts = [];
+  for (const g of groups) {
+    if (digits.length <= idx) break;
+    parts.push(digits.slice(idx, idx + g));
+    idx += g;
+  }
+  if (digits.length > idx) parts.push(digits.slice(idx));
+  return parts.filter(Boolean).join("-");
+};
+
+// 은행별 대표 포맷(현실적으로 케이스가 많아서 “대표 패턴 + fallback” 방식)
+const BANK_MASKS_BY_NAME = {
+  "KB국민은행": [[3, 2, 6], [3, 3, 6]],
+  "신한은행": [[3, 3, 6], [3, 2, 6]],
+  "우리은행": [[4, 3, 6], [3, 3, 6]],
+  "하나은행": [[3, 6, 5], [3, 3, 6]],
+  "IBK기업은행": [[3, 6, 2, 3], [3, 3, 6]],
+  "NH농협은행": [[3, 4, 4, 2], [3, 3, 6]],
+  "카카오뱅크": [[4, 2, 7], [3, 3, 6]],
+  "토스뱅크": [[3, 3, 6], [4, 3, 6]],
+  "케이뱅크": [[3, 3, 6], [4, 2, 7]],
+  우체국: [[4, 4, 4], [3, 3, 6]],
+};
+
+const pickBestMask = (bankName, len) => {
+  const masks = BANK_MASKS_BY_NAME[bankName] || [];
+  if (!masks.length) return null;
+
+  let best = masks[0];
+  let bestScore = Infinity;
+  for (const m of masks) {
+    const sum = m.reduce((a, b) => a + b, 0);
+    const score = Math.abs(sum - len);
+    if (score < bestScore) {
+      bestScore = score;
+      best = m;
+    }
+  }
+  return best;
+};
+
+const formatAccountNumber = (bankName, value) => {
+  const digits = onlyDigits(value).slice(0, 16);
+  const mask = pickBestMask(bankName, digits.length);
+
+  if (mask) return formatByGroups(digits, mask);
+
+  // fallback (보기 좋은 일반 포맷)
+  if (digits.length <= 9) return formatByGroups(digits, [3, 3, 3]);
+  if (digits.length <= 12) return formatByGroups(digits, [3, 3, 6]);
+  return formatByGroups(digits, [4, 4, 4, 4]);
+};
+
+// 사업자번호: 10자리 -> 000-00-00000
+const formatBizNo = (value) => {
+  const digits = onlyDigits(value).slice(0, 10);
+  const a = digits.slice(0, 3);
+  const b = digits.slice(3, 5);
+  const c = digits.slice(5, 10);
+  if (digits.length <= 3) return a;
+  if (digits.length <= 5) return `${a}-${b}`;
+  return `${a}-${b}-${c}`;
+};
 
 function RetailBusinessTab() {
   const theme = useTheme();
@@ -245,6 +343,46 @@ function RetailBusinessTab() {
       ...prev,
       [name]: files ? files[0] : value,
     }));
+  };
+
+  // ✅ 계좌번호 입력 시 은행명 기준으로 자동 포맷
+  const handleBankNoChange = (e) => {
+    const { value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      bank_no: formatAccountNumber(prev.bank_name || "", value),
+    }));
+  };
+
+  // ✅ 사업자번호 입력 시 자동 포맷
+  const handleBizNoChange = (e) => {
+    const { value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      biz_no: formatBizNo(value),
+    }));
+  };
+
+  // ✅ 은행 Select (은행명 문자열로 저장)
+  const handleBankSelect = (e) => {
+    const bankName = e.target.value;
+
+    setFormData((prev) => {
+      // 기타(직접입력)면 bank_name 유지(직접 입력 텍스트필드로)
+      if (bankName === "기타(직접입력)") {
+        return {
+          ...prev,
+          bank_name: prev.bank_name || "",
+          bank_no: formatAccountNumber(prev.bank_name || "", prev.bank_no || ""),
+        };
+      }
+
+      return {
+        ...prev,
+        bank_name: bankName,
+        bank_no: formatAccountNumber(bankName, prev.bank_no || ""),
+      };
+    });
   };
 
   // ======================= 이미지 미리보기 =======================
@@ -551,7 +689,7 @@ function RetailBusinessTab() {
         </div>
       )}
 
-      {/* 🔹 거래처 등록 모달 */}
+       {/* ================= 거래처 등록 모달(open2) ================= */}
       <Modal open={open2} onClose={handleModalClose2}>
         <Box
           sx={{
@@ -559,7 +697,7 @@ function RetailBusinessTab() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: { xs: "90vw", sm: 500 },
+            width: 500,
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
@@ -589,8 +727,9 @@ function RetailBusinessTab() {
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="biz_no"
             value={formData.biz_no || ""}
-            onChange={handleChange2}
+            onChange={handleBizNoChange}
             placeholder="예: 123-45-67890"
+            inputProps={{ inputMode: "numeric" }}
           />
 
           <TextField
@@ -616,17 +755,43 @@ function RetailBusinessTab() {
             placeholder="예: 010-1234-5678"
           />
 
-          <TextField
-            fullWidth
-            required
-            margin="normal"
-            label="은행명"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-            name="bank_name"
-            value={formData.bank_name || ""}
-            onChange={handleChange2}
-          />
+          {/* ✅ 은행명: Select로 변경 */}
+          <Box mt={2}>
+            <Typography sx={{ fontSize: "0.8rem", mb: 0.5 }}>은행명 (필수)</Typography>
+            <Select
+              fullWidth
+              size="small"
+              value={KOREAN_BANKS.includes(formData.bank_name) ? formData.bank_name : (formData.bank_name ? "기타(직접입력)" : "")}
+              onChange={handleBankSelect}
+              displayEmpty
+              sx={{ fontSize: "0.85rem" }}
+            >
+              <MenuItem value="">
+                <em>은행 선택</em>
+              </MenuItem>
+              {KOREAN_BANKS.map((b) => (
+                <MenuItem key={b} value={b}>
+                  {b}
+                </MenuItem>
+              ))}
+            </Select>
 
+            {/* 기타(직접입력) 선택 시 직접입력 */}
+            {(!KOREAN_BANKS.includes(formData.bank_name) || formData.bank_name === "기타(직접입력)") && (
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                label="은행명 직접입력"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="bank_name"
+                value={formData.bank_name === "기타(직접입력)" ? "" : (formData.bank_name || "")}
+                onChange={handleChange2}
+              />
+            )}
+          </Box>
+
+          {/* ✅ 계좌번호: 은행명에 맞춰 자동 포맷 */}
           <TextField
             fullWidth
             required
@@ -635,14 +800,14 @@ function RetailBusinessTab() {
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             name="bank_no"
             value={formData.bank_no || ""}
-            onChange={handleChange2}
+            onChange={handleBankNoChange}
+            placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다."
+            inputProps={{ inputMode: "numeric" }}
           />
 
           {/* 통장사본 첨부 */}
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>
-              통장사본 (필수)
-            </Typography>
+            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>통장사본 (필수)</Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
               <Button
                 variant="outlined"
@@ -652,18 +817,10 @@ function RetailBusinessTab() {
                   borderColor: "#e8a500",
                   fontSize: "12px",
                   height: "32px",
-                  "&:hover": {
-                    borderColor: "#e8a500",
-                    backgroundColor: "rgba(232, 165, 0, 0.1)",
-                  },
+                  "&:hover": { borderColor: "#e8a500", backgroundColor: "rgba(232, 165, 0, 0.1)" },
                 }}
               >
-                <input
-                  type="file"
-                  accept="image/*"
-                  name="bank_image"
-                  onChange={handleImageUploadPreview}
-                />
+                <input type="file" accept="image/*" name="bank_image" onChange={handleImageUploadPreview} />
               </Button>
 
               {imagePreviews.bank_image && (
@@ -678,6 +835,7 @@ function RetailBusinessTab() {
                       borderRadius: 4,
                       border: "1px solid #ddd",
                       cursor: "pointer",
+                      transition: "transform 0.2s",
                     }}
                     onClick={() => handleImagePreviewOpen(imagePreviews.bank_image)}
                   />
@@ -691,9 +849,7 @@ function RetailBusinessTab() {
 
           {/* 사업자등록증 첨부 */}
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>
-              사업자등록증 (필수)
-            </Typography>
+            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>사업자등록증 (필수)</Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
               <Button
                 variant="outlined"
@@ -703,18 +859,10 @@ function RetailBusinessTab() {
                   borderColor: "#e8a500",
                   fontSize: "12px",
                   height: "32px",
-                  "&:hover": {
-                    borderColor: "#e8a500",
-                    backgroundColor: "rgba(232, 165, 0, 0.1)",
-                  },
+                  "&:hover": { borderColor: "#e8a500", backgroundColor: "rgba(232, 165, 0, 0.1)" },
                 }}
               >
-                <input
-                  type="file"
-                  accept="image/*"
-                  name="biz_image"
-                  onChange={handleImageUploadPreview}
-                />
+                <input type="file" accept="image/*" name="biz_image" onChange={handleImageUploadPreview} />
               </Button>
 
               {imagePreviews.biz_image && (
@@ -729,6 +877,7 @@ function RetailBusinessTab() {
                       borderRadius: 4,
                       border: "1px solid #ddd",
                       cursor: "pointer",
+                      transition: "transform 0.2s",
                     }}
                     onClick={() => handleImagePreviewOpen(imagePreviews.biz_image)}
                   />
@@ -740,16 +889,11 @@ function RetailBusinessTab() {
             </Box>
           </Box>
 
-          {/* 하단 버튼 */}
           <Box mt={4} display="flex" justifyContent="flex-end" gap={1}>
             <Button
               variant="contained"
               onClick={handleModalClose2}
-              sx={{
-                bgcolor: "#e8a500",
-                color: "#ffffff",
-                "&:hover": { bgcolor: "#e8a500", color: "#ffffff" },
-              }}
+              sx={{ bgcolor: "#e8a500", color: "#ffffff", "&:hover": { bgcolor: "#e8a500", color: "#ffffff" } }}
             >
               취소
             </Button>

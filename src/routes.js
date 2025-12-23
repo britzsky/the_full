@@ -379,6 +379,15 @@ const routes = [
   },
   {
     type: "collapse",
+    name: "로그아웃",
+    key: "log-out",
+    icon: <Icon fontSize="small">logout</Icon>,
+    route: "components/Common/headerWithLogout",
+    component: <SignIn />,
+  },
+
+  {
+    //type: "collapse",
     name: "로그인",
     key: "sign-in",
     icon: <Icon fontSize="small">login</Icon>,

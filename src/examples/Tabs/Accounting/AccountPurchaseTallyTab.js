@@ -203,7 +203,7 @@ function AccountPurchaseTallyTab() {
         flexDirection={isMobile ? "column" : "row"}
         justifyContent={isMobile ? "flex-start" : "flex-end"}
         alignItems={isMobile ? "stretch" : "center"}
-        gap={isMobile ? 1 : 2}
+        gap={isMobile ? 1 : 1}
         my={1}
         mx={1}
         sx={{
@@ -221,7 +221,7 @@ function AccountPurchaseTallyTab() {
           size="small"
           name="type"
           onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 120 : 150 }}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
           SelectProps={{ native: true }}
           value={filters.type}
         >
@@ -230,7 +230,19 @@ function AccountPurchaseTallyTab() {
           <option value="3">프랜차이즈</option>
           <option value="4">산업체</option>
         </TextField>
-
+        <TextField
+          select
+          label="조회구분"
+          size="small"
+          name="payType"
+          onChange={handleFilterChange}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
+          SelectProps={{ native: true }}
+          value={filters.payType}
+        >
+          <option value="1">현금</option>
+          <option value="2">카드</option>
+        </TextField>
         <TextField
           type="date"
           name="fromDate"
@@ -239,7 +251,7 @@ function AccountPurchaseTallyTab() {
           size="small"
           label="조회기간(From)"
           InputLabelProps={{ shrink: true }}
-          sx={{ minWidth: isMobile ? 150 : 170 }}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
         />
 
         <TextField
@@ -250,7 +262,7 @@ function AccountPurchaseTallyTab() {
           size="small"
           label="조회기간(To)"
           InputLabelProps={{ shrink: true }}
-          sx={{ minWidth: isMobile ? 150 : 170 }}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
         />
 
         {/* 🔹 거래처(사업장) select - account_id 사용 */}
@@ -260,7 +272,7 @@ function AccountPurchaseTallyTab() {
           size="small"
           name="account_id"
           onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 160 : 180 }}
+          sx={{ minWidth: isMobile ? 120 : 150 }}
           SelectProps={{ native: true }}
           value={filters.account_id}
         >
@@ -274,21 +286,6 @@ function AccountPurchaseTallyTab() {
             ))
           )}
         </TextField>
-
-        <TextField
-          select
-          label="조회구분"
-          size="small"
-          name="payType"
-          onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 120 : 150 }}
-          SelectProps={{ native: true }}
-          value={filters.payType}
-        >
-          <option value="1">현금</option>
-          <option value="2">카드</option>
-        </TextField>
-
         <MDButton
           variant="gradient"
           color="info"

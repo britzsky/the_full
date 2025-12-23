@@ -460,7 +460,7 @@ function AccountPurchaseDeadlineTab() {
         flexDirection={isMobile ? "column" : "row"}
         justifyContent={isMobile ? "flex-start" : "flex-end"}
         alignItems={isMobile ? "stretch" : "center"}
-        gap={isMobile ? 1 : 2}
+        gap={isMobile ? 1 : 1}
         my={1}
         mx={1}
         sx={{
@@ -478,7 +478,7 @@ function AccountPurchaseDeadlineTab() {
           size="small"
           name="type"
           onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 120 : 150 }}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
           SelectProps={{ native: true }}
           value={filters.type}
         >
@@ -487,7 +487,19 @@ function AccountPurchaseDeadlineTab() {
           <option value="3">프랜차이즈</option>
           <option value="4">산업체</option>
         </TextField>
-
+        <TextField
+          select
+          label="조회구분"
+          size="small"
+          name="payType"
+          onChange={handleFilterChange}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
+          SelectProps={{ native: true }}
+          value={filters.payType}
+        >
+          <option value="1">현금</option>
+          <option value="2">카드</option>
+        </TextField>
         <TextField
           type="date"
           name="fromDate"
@@ -496,7 +508,7 @@ function AccountPurchaseDeadlineTab() {
           size="small"
           label="조회기간(From)"
           InputLabelProps={{ shrink: true }}
-          sx={{ minWidth: isMobile ? 150 : 170 }}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
         />
 
         <TextField
@@ -507,9 +519,8 @@ function AccountPurchaseDeadlineTab() {
           size="small"
           label="조회기간(To)"
           InputLabelProps={{ shrink: true }}
-          sx={{ minWidth: isMobile ? 150 : 170 }}
+          sx={{ minWidth: isMobile ? 100 : 120 }}
         />
-
         {/* 🔹 거래처(사업장) select - account_id 사용 */}
         <TextField
           select
@@ -517,7 +528,7 @@ function AccountPurchaseDeadlineTab() {
           size="small"
           name="account_id"
           onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 160 : 180 }}
+          sx={{ minWidth: isMobile ? 120 : 150 }}
           SelectProps={{ native: true }}
           value={filters.account_id}
         >
@@ -531,21 +542,6 @@ function AccountPurchaseDeadlineTab() {
             ))
           )}
         </TextField>
-
-        <TextField
-          select
-          label="조회구분"
-          size="small"
-          name="payType"
-          onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 120 : 150 }}
-          SelectProps={{ native: true }}
-          value={filters.payType}
-        >
-          <option value="1">현금</option>
-          <option value="2">카드</option>
-        </TextField>
-
         <MDButton
           variant="gradient"
           color="info"

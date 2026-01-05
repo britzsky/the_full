@@ -17,8 +17,21 @@ import {
   TextField,
 } from "@mui/material";
 
+import Paper from "@mui/material/Paper";
+import Draggable from "react-draggable";
+
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
+import CloseIcon from "@mui/icons-material/Close";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import ZoomInIcon from "@mui/icons-material/ZoomIn";
+import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
@@ -45,11 +58,12 @@ const CARD_BRANDS = [
 
 // ✅ 영수증 타입(상단 테이블용)
 const RECEIPT_TYPES = [
-  { value: "", label: "유형" },
-  { value: "mart", label: "마트" },
-  { value: "convenience", label: "편의점" },
-  { value: "coupang", label: "쿠팡" },
-  { value: "delivery", label: "배달앱" },
+  { value: "UNKNOWN", label: "알수없음" },
+  { value: "CARD_SLIP_GENERIC", label: "카드전표" },
+  { value: "MART_ITEMIZED", label: "마트" },
+  { value: "CONVENIENCE", label: "편의점" },
+  { value: "COUPANG_APP", label: "쿠팡" },
+  { value: "COUPANG_CARD", label: "배달앱" },
 ];
 
 // ✅ 하단 셀렉트 옵션
@@ -99,6 +113,11 @@ const cleanMasterRow = (r) => {
 };
 const cleanCardRow = (r) => {
   const { isNew, ...rest } = r;
+  return rest;
+};
+// ✅ (추가) 상세 row 정리
+const cleanDetailRow = (r) => {
+  const { isNew, isForcedRed, ...rest } = r;
   return rest;
 };
 
@@ -226,15 +245,19 @@ function AccountCorporateCardSheet() {
     });
   }, []);
 
-  const [viewImageSrc, setViewImageSrc] = useState(null);
+  // ✅ (추가) 상세 스크롤 ref
+  const detailWrapRef = useRef(null);
+  const scrollDetailToBottom = useCallback((smooth = true) => {
+    const el = detailWrapRef.current;
+    if (!el) return;
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }, []);
+
   const fileIconSx = { color: "#1e88e5" };
   const [cardNoEditingIndex, setCardNoEditingIndex] = useState(null);
-
-  const handleViewImage = useCallback((path) => {
-    if (!path) return;
-    setViewImageSrc(`${API_BASE_URL}${path}`);
-  }, []);
-  const handleCloseViewer = () => setViewImageSrc(null);
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
@@ -352,6 +375,7 @@ function AccountCorporateCardSheet() {
     const copy = (paymentDetailRows || []).map((r) => ({
       ...r,
       isForcedRed: false,
+      isNew: false,
     }));
     setDetailRows(copy);
     setOrigDetailRows(copy);
@@ -407,7 +431,7 @@ function AccountCorporateCardSheet() {
     [cardsByAccount, selectedAccountId]
   );
 
-  // ✅ 행추가
+  // ✅ 행추가(상단)
   const addMasterRow = useCallback(() => {
     if (!selectedAccountId) {
       return Swal.fire("안내", "거래처를 먼저 선택해주세요.", "info");
@@ -432,7 +456,7 @@ function AccountCorporateCardSheet() {
       cardBrand: DEFAULT_CARD_BRAND,
 
       // ✅ 영수증 타입(추가)
-      receipt_type: "",
+      receipt_type: "UNKNOWN",
 
       receipt_image: "",
       note: "",
@@ -445,6 +469,37 @@ function AccountCorporateCardSheet() {
     setMasterRows((prev) => [...prev, newRow]);
     requestAnimationFrame(() => scrollMasterToBottom(true));
   }, [year, month, scrollMasterToBottom, selectedAccountId]);
+
+  // ✅ (추가) 행추가(하단) - 선택된 상단 sale_id로 상세행 추가
+  const addDetailRow = useCallback(() => {
+    if (!selectedMaster) {
+      return Swal.fire("안내", "상단 결제내역에서 행을 먼저 선택해주세요.", "info");
+    }
+    const sid = String(selectedMaster.sale_id || "").trim();
+    if (!sid) {
+      // 저장 전 임시행이면 sale_id가 없을 가능성이 큼
+      return Swal.fire("안내", "선택한 상단 행이 아직 저장되지 않아 상세를 추가할 수 없습니다.\n상단을 먼저 저장한 후 다시 추가해주세요.", "info");
+    }
+
+    const newDetail = {
+      sale_id: sid,
+      name: "",
+      qty: 0,
+      amount: 0,
+      unitPrice: 0,
+      taxType: "",
+      itemType: "",
+      isForcedRed: false,
+      isNew: true,
+    };
+
+    setDetailRows((prev) => [...(prev || []), newDetail]);
+    // index 정렬을 위해 orig에도 placeholder 추가
+    setOrigDetailRows((prev) => [...(prev || []), {}]);
+    setDetailRenderKey((k) => k + 1);
+
+    requestAnimationFrame(() => scrollDetailToBottom(true));
+  }, [selectedMaster, scrollDetailToBottom]);
 
   // ========================= 영수증 업로드/스캔 =========================
   const handleImageUpload = useCallback(
@@ -483,6 +538,7 @@ function AccountCorporateCardSheet() {
         formData.append("folderValue", "acnCorporate");
         formData.append("cardNo", row.cardNo);
         formData.append("cardBrand", row.cardBrand);
+        formData.append("saveType", "account");
 
         const res = await api.post("/card-receipt/parse", formData, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
@@ -538,6 +594,7 @@ function AccountCorporateCardSheet() {
             taxType: it.taxType ?? "",
             itemType: it.itemType ?? "",
             isForcedRed: true,
+            isNew: false,
           }));
 
           const patchedSelected = {
@@ -590,7 +647,6 @@ function AccountCorporateCardSheet() {
     MASTER_NUMBER_KEYS.forEach((k) => {
       if (row[k] !== undefined) row[k] = parseNumber(row[k]);
     });
-    // ✅ receipt_type도 저장되도록(그냥 남겨두면 같이 포함됩니다)
     return row;
   }, []);
 
@@ -614,11 +670,15 @@ function AccountCorporateCardSheet() {
 
     const item = detailRows
       .map((r, i) => {
-        if (isForcedRedRow(r)) return r;
+        // ✅ 신규 상세행은 무조건 저장 대상
+        if (r?.isNew) return cleanDetailRow(r);
+
+        // ✅ 스캔(강제 빨강)은 무조건 저장 대상
+        if (isForcedRedRow(r)) return cleanDetailRow(r);
 
         const o = origDetailRows[i] || {};
         const changed = Object.keys(r).some((k) => isDetailFieldChanged(k, o[k], r[k]));
-        return changed ? r : null;
+        return changed ? cleanDetailRow(r) : null;
       })
       .filter(Boolean);
 
@@ -652,6 +712,7 @@ function AccountCorporateCardSheet() {
       skipPendingNewMergeRef.current = true;
       await handleFetchMaster();
 
+      // ✅ 저장 후 선택된 상단행이 있다면 다시 상세조회(서버데이터로 리셋)
       if (selectedMaster?.sale_id) {
         await fetchAccountCorporateCardPaymentDetailList({
           sale_id: selectedMaster.sale_id,
@@ -659,8 +720,9 @@ function AccountCorporateCardSheet() {
           payment_dt: selectedMaster.payment_dt,
         });
       } else {
-        setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false })));
-        setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false })));
+        // 안전장치: 선택행 없으면 로컬기준 리셋
+        setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
+        setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
         setDetailRenderKey((k) => k + 1);
       }
     } catch (e) {
@@ -678,17 +740,91 @@ function AccountCorporateCardSheet() {
     normalizeMasterForSave,
   ]);
 
+  // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  // ✅ (추가) Draggable nodeRef
+  const viewerNodeRef = useRef(null);
+
+  // ✅ 테이블에 있는 영수증 이미지 목록(순서대로)
+  const imageItems = useMemo(() => {
+    return (masterRows || [])
+      .filter((r) => !!r?.receipt_image)
+      .map((r) => ({
+        path: r.receipt_image,
+        src: `${API_BASE_URL}${r.receipt_image}`,
+        title: `${r.use_name || ""} ${toDateInputValue(r.payment_dt) || ""}`.trim(),
+      }));
+  }, [masterRows]);
+
+  const handleViewImage = useCallback(
+    (path) => {
+      if (!path) return;
+      const idx = imageItems.findIndex((x) => x.path === path);
+      setViewerIndex(idx >= 0 ? idx : 0);
+      setViewerOpen(true);
+    },
+    [imageItems]
+  );
+
+  const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
+
+  const goPrev = useCallback(() => {
+    setViewerIndex((i) => (imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0));
+  }, [imageItems.length]);
+
+  const goNext = useCallback(() => {
+    setViewerIndex((i) => (imageItems.length ? (i + 1) % imageItems.length : 0));
+  }, [imageItems.length]);
+
+  // ✅ 이미지 목록이 바뀌면 index 보정
+  useEffect(() => {
+    if (!viewerOpen) return;
+    if (!imageItems.length) {
+      setViewerIndex(0);
+      return;
+    }
+    if (viewerIndex > imageItems.length - 1) setViewerIndex(imageItems.length - 1);
+  }, [viewerOpen, imageItems.length, viewerIndex]);
+
+  // ✅ 키보드로 이동(좌/우/ESC) - 입력 중에는 방해 안되게
+  useEffect(() => {
+    if (!viewerOpen) return;
+
+    const onKeyDown = (e) => {
+      const tag = (e.target?.tagName || "").toLowerCase();
+      const isTyping = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
+      if (isTyping) return;
+
+      if (e.key === "Escape") handleCloseViewer();
+      if (e.key === "ArrowLeft") goPrev();
+      if (e.key === "ArrowRight") goNext();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
+
+  const currentImg = imageItems[viewerIndex];
+
   // ========================= 법인카드관리 모달 =========================
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [cardRows, setCardRows] = useState([]);
   const [origCardRows, setOrigCardRows] = useState([]);
+  // ✅ 모달에서 조회할 거래처(모달 전용)
+  const [modalAccountId, setModalAccountId] = useState("");
 
   const openCardModal = useCallback(async () => {
     setCardModalOpen(true);
-    if (selectedAccountId) {
-      await fetchAccountCorporateCardList(selectedAccountId);
+
+    const acct = selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
+    setModalAccountId(acct);
+
+    if (acct) {
+      await fetchAccountCorporateCardList(acct);
     }
-  }, [fetchAccountCorporateCardList, selectedAccountId]);
+  }, [fetchAccountCorporateCardList, selectedAccountId, accountList]);
 
   useEffect(() => {
     if (!cardModalOpen) return;
@@ -697,11 +833,18 @@ function AccountCorporateCardSheet() {
     setOrigCardRows(copy);
   }, [activeRows, cardModalOpen]);
 
+  // ✅ 모달 거래처 변경 시 해당 거래처 카드 목록 재조회
+  useEffect(() => {
+    if (!cardModalOpen) return;
+    if (!modalAccountId) return;
+
+    fetchAccountCorporateCardList(modalAccountId);
+  }, [cardModalOpen, modalAccountId, fetchAccountCorporateCardList]);
+
   const closeCardModal = () => setCardModalOpen(false);
 
   const addCardRow = useCallback(() => {
-    const defaultAcct =
-      selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
+    const defaultAcct = selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
     setCardRows((prev) => [
       ...prev,
       {
@@ -820,50 +963,61 @@ function AccountCorporateCardSheet() {
             backgroundColor: "#ffffff",
           }}
         >
-          <Select
-            size="small"
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            sx={{ minWidth: isMobile ? 160 : 220, mr: 1 }}
+          <Box
+            sx={{
+              flexWrap: isMobile ? "wrap" : "nowrap",
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "right",
+              gap: 1,
+            }}
           >
-            {(accountList || []).map((acc) => (
-              <MenuItem key={acc.account_id} value={acc.account_id}>
-                {acc.account_name}
-              </MenuItem>
-            ))}
-          </Select>
+            <Select
+              size="small"
+              value={selectedAccountId}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              sx={{ minWidth: isMobile ? 100 : 150, mr: 1 }}
+            >
+              {(accountList || []).map((acc) => (
+                <MenuItem key={acc.account_id} value={acc.account_id}>
+                  {acc.account_name}
+                </MenuItem>
+              ))}
+            </Select>
 
-          <Select size="small" value={year} onChange={(e) => setYear(e.target.value)} sx={{ minWidth: 110 }}>
-            {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
-              <MenuItem key={y} value={y}>
-                {y}년
-              </MenuItem>
-            ))}
-          </Select>
+            <Select size="small" value={year} onChange={(e) => setYear(e.target.value)} sx={{ minWidth: 110 }}>
+              {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
+                <MenuItem key={y} value={y}>
+                  {y}년
+                </MenuItem>
+              ))}
+            </Select>
 
-          <Select size="small" value={month} onChange={(e) => setMonth(e.target.value)} sx={{ minWidth: 90 }}>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <MenuItem key={m} value={m}>
-                {m}월
-              </MenuItem>
-            ))}
-          </Select>
+            <Select size="small" value={month} onChange={(e) => setMonth(e.target.value)} sx={{ minWidth: 90 }}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <MenuItem key={m} value={m}>
+                  {m}월
+                </MenuItem>
+              ))}
+            </Select>
 
-          <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
-            행추가
-          </MDButton>
+            <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
+              행추가
+            </MDButton>
 
-          <MDButton color="info" onClick={handleFetchMaster} sx={{ minWidth: 80 }}>
-            조회
-          </MDButton>
+            <MDButton color="info" onClick={handleFetchMaster} sx={{ minWidth: 80 }}>
+              조회
+            </MDButton>
 
-          <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
-            저장
-          </MDButton>
+            <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
+              저장
+            </MDButton>
 
-          <MDButton variant="gradient" color="info" onClick={openCardModal} sx={{ minWidth: 120 }}>
-            법인카드관리
-          </MDButton>
+            <MDButton variant="gradient" color="info" onClick={openCardModal} sx={{ minWidth: 120 }}>
+              법인카드관리
+            </MDButton>
+          </Box>
         </MDBox>
       </MDBox>
 
@@ -1035,14 +1189,13 @@ function AccountCorporateCardSheet() {
                           <Select
                             size="small"
                             fullWidth
-                            value={String(row.receipt_type ?? "")}
+                            value={String(row.receipt_type ?? "UNKNOWN")}
                             onChange={(e) => handleMasterCellChange(rowIndex, "receipt_type", e.target.value)}
                             onClick={(ev) => ev.stopPropagation()}
                             displayEmpty
                             sx={{
                               fontSize: 12,
                               height: 28,
-                              // ✅ 표시 텍스트까지 빨간색 적용(안 먹는 케이스 방지)
                               "& .MuiSelect-select": { color: changed ? "red" : "black" },
                               "& .MuiSvgIcon-root": { color: changed ? "red" : "black" },
                             }}
@@ -1091,7 +1244,7 @@ function AccountCorporateCardSheet() {
                                   </IconButton>
                                 </Tooltip>
 
-                                <Tooltip title="미리보기">
+                                <Tooltip title="미리보기(창)">
                                   <IconButton
                                     size="small"
                                     sx={fileIconSx}
@@ -1172,7 +1325,36 @@ function AccountCorporateCardSheet() {
             overflow: "hidden",
           }}
         >
+          {/* ✅ (추가) 하단 상단바: 선택된 결제정보 + 행추가 버튼 */}
           <MDBox
+            sx={{
+              px: 1,
+              py: 0.8,
+              borderBottom: "1px solid #eee",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              gap: 1,
+              backgroundColor: "#fff",
+            }}
+          >
+            {/* <Typography variant="caption" sx={{ color: "#444" }}>
+              상세내역
+              {selectedMaster?.sale_id ? ` (sale_id: ${selectedMaster.sale_id})` : selectedMaster ? " (미저장 선택행)" : ""}
+            </Typography> */}
+
+            <MDButton
+              color="info"
+              size="small"
+              onClick={addDetailRow}
+              sx={{ minWidth: 90 }}
+            >
+              행추가
+            </MDButton>
+          </MDBox>
+
+          <MDBox
+            ref={detailWrapRef}
             sx={{
               flex: 1,
               overflow: "auto",
@@ -1215,13 +1397,14 @@ function AccountCorporateCardSheet() {
                       const rawVal = row[key] ?? "";
                       const orig = origDetailRows[rowIndex]?.[key];
 
-                      const changed = isForcedRedRow(row) ? true : isDetailFieldChanged(key, orig, rawVal);
+                      // ✅ 신규 상세행은 무조건 빨강(변경표시)
+                      const changed = row?.isNew ? true : isForcedRedRow(row) ? true : isDetailFieldChanged(key, orig, rawVal);
 
                       // ✅ 숫자 컬럼(수량/금액/단가)만 콤마 표시
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
 
-                      // ✅ select 컬럼 (빨간글씨가 "표시 텍스트"에도 적용되도록 sx 보강)
+                      // ✅ select 컬럼
                       if (c.type === "select") {
                         const curNum = parseNumMaybe(rawVal);
                         const curStr = curNum == null ? "" : String(curNum);
@@ -1263,19 +1446,15 @@ function AccountCorporateCardSheet() {
                             contentEditable
                             suppressContentEditableWarning
                             style={{ width: c.size, color: changed ? "red" : "black" }}
-
                             onMouseDown={(ev) => {
                               if (!isNumCol) return;
 
-                              // ✅ 먼저 el을 잡아두기 (RAF에서 ev.currentTarget 쓰지 않기)
                               const el = ev.currentTarget;
                               ev.preventDefault();
 
                               requestAnimationFrame(() => {
-                                // ✅ 안전가드
                                 if (!el || !el.isConnected) return;
 
-                                // focus가 없는 엘리먼트면 에러날 수 있어 try/catch
                                 try {
                                   el.focus();
                                 } catch (e) {
@@ -1286,7 +1465,6 @@ function AccountCorporateCardSheet() {
                                 selectAllContent(el);
                               });
                             }}
-
                             onFocus={(ev) => {
                               if (!isNumCol) return;
                               const el = ev.currentTarget;
@@ -1297,9 +1475,7 @@ function AccountCorporateCardSheet() {
                                 selectAllContent(el);
                               });
                             }}
-
                             onClick={(ev) => ev.stopPropagation()}
-
                             onBlur={(e) => {
                               const text = e.currentTarget.innerText.trim();
 
@@ -1316,6 +1492,7 @@ function AccountCorporateCardSheet() {
                           </td>
                         );
                       }
+
                       return (
                         <td key={key} style={{ width: c.size, color: changed ? "red" : "black" }}>
                           {displayVal}
@@ -1330,25 +1507,235 @@ function AccountCorporateCardSheet() {
         </MDBox>
       </MDBox>
 
-      {/* ========================= 이미지 확대 팝업 ========================= */}
-      {viewImageSrc && (
-        <div
-          style={{
+      {/* ========================= ✅ 떠있는 창 미리보기: 뒤 테이블 입력 가능 ========================= */}
+      {viewerOpen && (
+        <Box
+          sx={{
             position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            background: "rgba(0,0,0,0.8)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
+            inset: 0,
+            zIndex: 2000,
+            pointerEvents: "none", // ✅ 전체 화면은 클릭 통과
           }}
-          onClick={handleCloseViewer}
         >
-          <img src={viewImageSrc} alt="미리보기" style={{ maxWidth: "80%", maxHeight: "80%" }} />
-        </div>
+          <Draggable
+            nodeRef={viewerNodeRef}
+            handle="#receipt-viewer-titlebar"
+            bounds="parent"
+            cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
+          >
+            <Paper
+              ref={viewerNodeRef}
+              sx={{
+                position: "absolute",
+                top: 120,
+                left: 120,
+                m: 0,
+                width: "450px",
+                height: "650px",
+                maxWidth: "95vw",
+                maxHeight: "90vh",
+                borderRadius: 1.2,
+                border: "1px solid rgba(0,0,0,0.25)",
+                boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+                overflow: "hidden",
+                resize: "both",
+
+                pointerEvents: "auto", // ✅ 창만 클릭 가능
+                backgroundColor: "#000",
+              }}
+            >
+              {/* 타이틀바(드래그 핸들) */}
+              <Box
+                id="receipt-viewer-titlebar"
+                sx={{
+                  height: 42,
+                  bgcolor: "#1b1b1b",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 1,
+                  cursor: "move",
+                  userSelect: "none",
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    flex: 1,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    pr: 1,
+                  }}
+                >
+                  {currentImg?.title || "영수증 미리보기"}
+                  {imageItems.length ? `  (${viewerIndex + 1}/${imageItems.length})` : ""}
+                </Typography>
+
+                <Tooltip title="이전(←)">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goPrev();
+                      }}
+                      disabled={imageItems.length <= 1}
+                    >
+                      <ChevronLeftIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="다음(→)">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goNext();
+                      }}
+                      disabled={imageItems.length <= 1}
+                    >
+                      <ChevronRightIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="새 탭으로 열기">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const src = currentImg?.src;
+                        if (src) window.open(src, "_blank", "noopener,noreferrer");
+                      }}
+                      disabled={!currentImg?.src}
+                    >
+                      <OpenInNewIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="다운로드">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const path = currentImg?.path;
+                        if (path) handleDownload(path);
+                      }}
+                      disabled={!currentImg?.path}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="닫기(ESC)">
+                  <IconButton
+                    size="small"
+                    sx={{ color: "#fff" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCloseViewer();
+                    }}
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+
+              {/* 컨텐츠 영역 */}
+              <Box
+                sx={{
+                  height: "calc(100% - 42px)",
+                  bgcolor: "#000",
+                  position: "relative",
+                }}
+              >
+                {currentImg?.src ? (
+                  <TransformWrapper
+                    initialScale={1}
+                    minScale={0.5}
+                    maxScale={6}
+                    centerOnInit
+                    wheel={{ step: 0.12 }}
+                    doubleClick={{ mode: "zoomIn" }}
+                  >
+                    {({ zoomIn, zoomOut, resetTransform }) => (
+                      <>
+                        {/* 줌 컨트롤(우상단) */}
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            right: 10,
+                            top: 10,
+                            zIndex: 3,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1,
+                          }}
+                        >
+                          <Tooltip title="확대">
+                            <IconButton size="small" onClick={zoomIn} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                              <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="축소">
+                            <IconButton size="small" onClick={zoomOut} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                              <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="리셋">
+                            <IconButton size="small" onClick={resetTransform} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                              <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+
+                        {/* 이미지 */}
+                        <TransformComponent
+                          wrapperStyle={{ width: "100%", height: "100%" }}
+                          contentStyle={{ width: "100%", height: "100%" }}
+                        >
+                          <Box
+                            sx={{
+                              width: "100%",
+                              height: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <img
+                              src={currentImg.src}
+                              alt="미리보기"
+                              style={{
+                                maxWidth: "95%",
+                                maxHeight: "95%",
+                                userSelect: "none",
+                              }}
+                            />
+                          </Box>
+                        </TransformComponent>
+                      </>
+                    )}
+                  </TransformWrapper>
+                ) : (
+                  <Typography sx={{ color: "#fff", p: 2 }}>이미지가 없습니다.</Typography>
+                )}
+              </Box>
+            </Paper>
+          </Draggable>
+        </Box>
       )}
 
       {/* ========================= 법인카드관리 모달 ========================= */}
@@ -1368,12 +1755,25 @@ function AccountCorporateCardSheet() {
             overflow: "auto",
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2, gap: 1 }}>
             <Typography variant="h6">법인카드관리</Typography>
-
-            <MDButton color="info" size="small" onClick={addCardRow}>
-              행추가
-            </MDButton>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "right", gap: 1 }}>
+              <Select
+                size="small"
+                value={modalAccountId}
+                onChange={(e) => setModalAccountId(e.target.value)}
+                sx={{ minWidth: 150 }}
+              >
+                {(accountList || []).map((acc) => (
+                  <MenuItem key={acc.account_id} value={acc.account_id}>
+                    {acc.account_name}
+                  </MenuItem>
+                ))}
+              </Select>
+              <MDButton color="info" size="small" onClick={addCardRow}>
+                행추가
+              </MDButton>
+            </Box>
           </Box>
 
           <Box

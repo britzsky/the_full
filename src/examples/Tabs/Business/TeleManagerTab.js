@@ -406,14 +406,7 @@ function TeleManagerTab() {
           gap: 1,
         }}
       >
-        <Box
-          sx={{
-            display: "flex",
-            gap: 1,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <Box sx={{ flexWrap: isMobile ? "wrap" : "nowrap", justifyContent: isMobile ? "flex-start" : "flex-end", display: "flex", justifyContent: "space-between", alignItems: "right"}}>
           <Select
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
@@ -428,6 +421,11 @@ function TeleManagerTab() {
               )
             )}
           </Select>
+          <MDButton
+            color="info"
+            sx={{ minWidth: 0, visibility: "hidden" }}
+          >
+          </MDButton>
         </Box>
 
         {/* 🔹 드래그 범위에 일괄 적용할 타입/메모 설정 */}

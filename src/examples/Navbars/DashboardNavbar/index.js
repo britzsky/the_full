@@ -6,9 +6,6 @@
 
 import { useState, useEffect } from "react";
 
-// react-router components
-import { Link } from "react-router-dom";
-
 // prop-types is a library for typechecking of props.
 import PropTypes from "prop-types";
 
@@ -19,7 +16,7 @@ import IconButton from "@mui/material/IconButton";
 import Menu from "@mui/material/Menu";
 import Icon from "@mui/material/Icon";
 import Badge from "@mui/material/Badge";
-import ArrowRightIcon from '@mui/icons-material/ArrowRight';
+import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 
 // Material Dashboard 2 React components
 import MDBox from "components/MDBox";
@@ -29,6 +26,9 @@ import MDTypography from "components/MDTypography";
 // Material Dashboard 2 React example components
 import NotificationItem from "examples/Items/NotificationItem";
 import api from "api/api";
+
+// ✅ 프로필 모달
+import UserProfileModal from "examples/Navbars/DefaultNavbar/UserProfileModal";
 
 // Custom styles for DashboardNavbar
 import {
@@ -53,6 +53,9 @@ function DashboardNavbar({ absolute, light, isMini }) {
   const { miniSidenav, transparentNavbar, fixedNavbar, openConfigurator, darkMode } = controller;
 
   const [openMenu, setOpenMenu] = useState(null);
+
+  // ✅ 프로필 모달 오픈 상태
+  const [openProfile, setOpenProfile] = useState(false);
 
   // 🔹 알림 상태
   const [notifications, setNotifications] = useState([]);
@@ -107,8 +110,6 @@ function DashboardNavbar({ absolute, light, isMini }) {
       setNotifLoading(true);
 
       // 👉 실제 백엔드 규격에 맞춰서 수정
-      //   /User/ContractEndAccountList 가
-      //   user_id 기준으로 "계약 종료 임박/만료 고객사" 리스트를 준다는 가정
       const res = await api.get("/User/ContractEndAccountList", {
         params: { user_id: userId },
       });
@@ -155,14 +156,8 @@ function DashboardNavbar({ absolute, light, isMini }) {
         notifications.map((n, idx) => (
           <NotificationItem
             key={n.id || n.account_id || idx}
-            icon={<ArrowRightIcon></ArrowRightIcon>}
-            title={
-              n.title ||
-              n.message ||
-              n.account_name + "(" + n.contract_end + ")" ||
-              "알림"
-            }
-            // 필요하면 description, date 같은 prop 도 내려줄 수 있음
+            icon={<ArrowRightIcon />}
+            title={n.title || n.message || `${n.account_name}(${n.contract_end})` || "알림"}
           />
         ))}
     </Menu>
@@ -184,85 +179,90 @@ function DashboardNavbar({ absolute, light, isMini }) {
   const notificationCount = notifications.length;
 
   return (
-    <AppBar
-      position={absolute ? "absolute" : navbarType}
-      color="inherit"
-      sx={(theme) => navbar(theme, { transparentNavbar, absolute, light, darkMode })}
-    >
-      <Toolbar sx={(theme) => navbarContainer(theme)}>
-        <MDBox
-          color="inherit"
-          mb={{ xs: 1, md: 0 }}
-          sx={(theme) => navbarRow(theme, { isMini })}
-        >
-          {/* 지금은 breadcrumb 안 쓰는 상태라 비워둠 */}
-        </MDBox>
+    <>
+      <AppBar
+        position={absolute ? "absolute" : navbarType}
+        color="inherit"
+        sx={(theme) => navbar(theme, { transparentNavbar, absolute, light, darkMode })}
+      >
+        <Toolbar sx={(theme) => navbarContainer(theme)}>
+          <MDBox
+            color="inherit"
+            mb={{ xs: 1, md: 0 }}
+            sx={(theme) => navbarRow(theme, { isMini })}
+          >
+            {/* 지금은 breadcrumb 안 쓰는 상태라 비워둠 */}
+          </MDBox>
 
-        {isMini ? null : (
-          <MDBox sx={(theme) => navbarRow(theme, { isMini })}>
-            <MDBox pr={1}>
-              <MDInput label="Search here" />
-            </MDBox>
-            <MDBox color={light ? "white" : "inherit"}>
-              {/* 계정 아이콘 */}
-              <Link to="/authentication/sign-in/basic">
-                <IconButton sx={navbarIconButton} size="small" disableRipple>
+          {isMini ? null : (
+            <MDBox sx={(theme) => navbarRow(theme, { isMini })}>
+              <MDBox color={light ? "white" : "inherit"}>
+                {/* ✅ 계정 아이콘: 클릭 시 프로필 모달 */}
+                <IconButton
+                  sx={navbarIconButton}
+                  size="small"
+                  disableRipple
+                  onClick={() => setOpenProfile(true)}
+                >
                   <Icon sx={iconsStyle}>account_circle</Icon>
                 </IconButton>
-              </Link>
 
-              {/* 사이드바 토글 아이콘 */}
-              <IconButton
-                size="small"
-                disableRipple
-                color="inherit"
-                sx={navbarMobileMenu}
-                onClick={handleMiniSidenav}
-              >
-                <Icon sx={iconsStyle} fontSize="medium">
-                  {miniSidenav ? "menu_open" : "menu"}
-                </Icon>
-              </IconButton>
-
-              {/* 설정 아이콘 */}
-              <IconButton
-                size="small"
-                disableRipple
-                color="inherit"
-                sx={navbarIconButton}
-                onClick={handleConfiguratorOpen}
-              >
-                <Icon sx={iconsStyle}>settings</Icon>
-              </IconButton>
-
-              {/* 알림 아이콘 + 뱃지 */}
-              <IconButton
-                size="small"
-                disableRipple
-                color="inherit"
-                sx={navbarIconButton}
-                aria-controls="notification-menu"
-                aria-haspopup="true"
-                variant="contained"
-                onClick={handleOpenMenu}
-              >
-                <Badge
-                  badgeContent={notificationCount}
-                  color="error"
-                  max={99}
-                  // 0개면 뱃지 안 보이게
-                  invisible={notificationCount === 0}
+                {/* 사이드바 토글 아이콘 */}
+                <IconButton
+                  size="small"
+                  disableRipple
+                  color="inherit"
+                  sx={navbarMobileMenu}
+                  onClick={handleMiniSidenav}
                 >
-                  <Icon sx={iconsStyle}>notifications</Icon>
-                </Badge>
-              </IconButton>
+                  <Icon sx={iconsStyle} fontSize="medium">
+                    {miniSidenav ? "menu_open" : "menu"}
+                  </Icon>
+                </IconButton>
 
-              {renderMenu()}
+                {/* 설정 아이콘 */}
+                <IconButton
+                  size="small"
+                  disableRipple
+                  color="inherit"
+                  sx={navbarIconButton}
+                  onClick={handleConfiguratorOpen}
+                >
+                  <Icon sx={iconsStyle}>settings</Icon>
+                </IconButton>
+
+                {/* 알림 아이콘 + 뱃지 */}
+                <IconButton
+                  size="small"
+                  disableRipple
+                  color="inherit"
+                  sx={navbarIconButton}
+                  aria-controls="notification-menu"
+                  aria-haspopup="true"
+                  variant="contained"
+                  onClick={handleOpenMenu}
+                >
+                  <Badge
+                    badgeContent={notificationCount}
+                    color="error"
+                    max={99}
+                    // 0개면 뱃지 안 보이게
+                    invisible={notificationCount === 0}
+                  >
+                    <Icon sx={iconsStyle}>notifications</Icon>
+                  </Badge>
+                </IconButton>
+
+                {renderMenu()}
+              </MDBox>
             </MDBox>
-          </MDBox>
-        )}
-      </Toolbar>
-    </AppBar>
+          )}
+        </Toolbar>
+      </AppBar>
+
+      {/* ✅ 프로필 모달 */}
+      <UserProfileModal open={openProfile} onClose={() => setOpenProfile(false)} />
+    </>
   );
 }
 

@@ -62,6 +62,8 @@ import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseTally from "layouts/accounting/accountpurchasetally"
 import HeadOfficeCorporateCardManager from "layouts/accounting/corporatecardsheet";
 import AccountCorporateCardManager from "layouts/accounting/accountcorporatecardsheet";
+// 인사
+import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
 // 현장
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
@@ -312,6 +314,17 @@ const routes = [
     allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
     accessMode: "AND",
     collapse: [
+      {
+        type: "collapse",
+        name: "🧑‍🔧 현장관리",
+        key: "fieldstaff_1",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/fieldstaff_1",
+        component: <HumanResourceTab_1 />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+        accessMode: "AND",
+      },
       {
         type: "collapse",
         name: "본사 교육",

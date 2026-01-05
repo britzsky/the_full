@@ -1,50 +1,52 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
-import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import { TextField, useTheme, useMediaQuery  } from "@mui/material";
+import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "api/api";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
+import useAccountDispatchMembersheetData, {
+  parseNumber,
+  formatNumber,
+} from "./accountDispatchMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 
-function AccountMemberSheet() {
+function AccountDispatchMemberSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
+
+  // ✅ 년/월 추가 (기본값: 현재 년/월)
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState(String(now.getFullYear()));
+  const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1));
+
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const { 
-    activeRows, 
-    setActiveRows, 
-    originalRows, 
-    setOriginalRows,  
-    accountList, 
-    saveData, 
-    fetchAccountMembersAllList, 
-    loading: hookLoading 
-  } = useAccountMembersheetData(selectedAccountId, activeStatus);
+  const {
+    activeRows,
+    setActiveRows,
+    originalRows,
+    setOriginalRows,
+    accountList,
+    fetchAccountMembersAllList,
+  } = useAccountDispatchMembersheetData(selectedAccountId, activeStatus, selectedYear, selectedMonth);
 
-  //const [originalRows, setOriginalRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const numericCols = ["salary"];
 
-  // ★★★★★ 조회 useEffect 추가 (핵심)
+  // ✅ 조회: account / 재직여부 / 년도 / 월 변경 시 즉시 재조회
   useEffect(() => {
     setLoading(true);
     fetchAccountMembersAllList().then(() => {
       setLoading(false);
     });
-  }, [selectedAccountId, activeStatus]);
+  }, [selectedAccountId, activeStatus, selectedYear, selectedMonth]);
 
-  // 합계 계산
+  // (기존 코드 유지) - 현재 시트에선 breakfast/lunch/dinner 등이 없어도 0 처리됨
   const calculateTotal = (row) => {
     const breakfast = parseNumber(row.breakfast);
     const lunch = parseNumber(row.lunch);
@@ -54,7 +56,6 @@ function AccountMemberSheet() {
     return Math.round(avgMeals + ceremony);
   };
 
-  // ★★★★★ activeRows 변경 시 loading false 제거
   useEffect(() => {
     if (activeRows && activeRows.length > 0) {
       const updated = activeRows.map((row) => ({
@@ -68,87 +69,17 @@ function AccountMemberSheet() {
     }
   }, [activeRows?.length]);
 
-  // 시간 옵션
-  const generateTimeOptions = (startHHMM, endHHMM, stepMinutes = 30) => {
-    const toMinutes = (hhmm) => {
-      const [h, m] = hhmm.split(":").map(Number);
-      return h * 60 + m;
-    };
-    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
-    const start = toMinutes(startHHMM);
-    const end = toMinutes(endHHMM);
-    const arr = [];
-    for (let t = start; t <= end; t += stepMinutes) {
-      const hh = Math.floor(t / 60);
-      const mm = t % 60;
-      arr.push(`${hh}:${pad(mm)}`);
-    }
-    return arr;
-  };
-  const startTimes = generateTimeOptions("6:00", "16:00", 30);
-  const endTimes = generateTimeOptions("10:00", "20:00", 30);
-
-  const positionOptions = [
-    { value: "1", label: "영양사" },
-    { value: "2", label: "조리팀장" },
-    { value: "3", label: "조리장" },
-    { value: "4", label: "조리사" },
-    { value: "5", label: "조리원" },
-  ];
-
-  const contractOptions = [
-    { value: "1", label: "4대보험" },
-    { value: "2", label: "프리랜서" },
-  ];
-
-  const delOptions = [
-    { value: "N", label: "재직" },
-    { value: "Y", label: "퇴사" },
-  ];
-
-  const formatDateForInput = (val) => {
-    if (!val && val !== 0) return "";
-    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
-    try {
-      const d = new Date(val);
-      if (Number.isNaN(d.getTime())) return "";
-      return d.toISOString().slice(0, 10);
-    } catch {
-      return "";
-    }
-  };
-
-  const columns = useMemo(
-    () => [
-      { header: "성명", accessorKey: "name", size: 50 },
-      { header: "주민번호", accessorKey: "rrn", size: 100 },
-      { header: "업장명", accessorKey: "account_id", size: 150 },
-      { header: "직책", accessorKey: "position_type", size: 65 },
-      { header: "계좌번호", accessorKey: "account_number", size: 160 },
-      { header: "연락처", accessorKey: "phone", size: 100 },
-      { header: "주소", accessorKey: "address", size: 150 },
-      { header: "계약형태", accessorKey: "contract_type", size: 50 },
-      { header: "실입사일", accessorKey: "act_join_dt", size: 80 },
-      { header: "입사일", accessorKey: "join_dt", size: 80 },
-      { header: "퇴직정산일", accessorKey: "ret_set_dt", size: 80 },
-      { header: "4대보험 상실일", accessorKey: "loss_major_insurances", size: 80 },
-      { header: "퇴사여부", accessorKey: "del_yn", size: 80 },
-      { header: "퇴사일", accessorKey: "del_dt", size: 80 },
-      { header: "퇴사사유", accessorKey: "del_note", size: 100 },
-      { header: "급여(월)", accessorKey: "salary", size: 80, cell: (info) => formatNumber(info.getValue()) },
-      { header: "근무형태", accessorKey: "work_system", size: 100 },
-      { header: "시작", accessorKey: "start_time", size: 60 },
-      { header: "마감", accessorKey: "end_time", size: 60 },
-      { header: "국민연금", accessorKey: "national_pension", size: 80 },
-      { header: "건강보험", accessorKey: "health_insurance", size: 80 },
-      { header: "산재보험", accessorKey: "industrial_insurance", size: 80 },
-      { header: "고용보험", accessorKey: "employment_insurance", size: 80 },
-      { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
-      { header: "본사노트", accessorKey: "headoffice_note", minWidth: 80, maxWidth: 150 },
-      { header: "지원금", accessorKey: "subsidy", minWidth: 80, maxWidth: 150 },
-    ],
-    []
-  );
+  const columns = useMemo(() => [
+    { header: "성명", accessorKey: "name", size: 50, meta: { align: "left" } },
+    { header: "주민번호", accessorKey: "rrn", size: 100, meta: { align: "center" } },
+    { header: "업장명", accessorKey: "account_id", size: 120, meta: { align: "left" } },
+    { header: "계좌번호", accessorKey: "account_number", size: 120, meta: { align: "center" } },
+    { header: "근무횟수", accessorKey: "cnt", size: 50, meta: { align: "right" } },
+    { header: "총 금액", accessorKey: "salary", size: 50, meta: { align: "right" } },
+    { header: "퇴사여부", accessorKey: "del_yn", size: 50, meta: { align: "center" } },
+    { header: "퇴사일", accessorKey: "del_dt", size: 80, meta: { align: "center" } },
+    { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150, meta: { align: "left" } },
+  ], []);
 
   const onSearchList = (e) => {
     setLoading(true);
@@ -182,26 +113,22 @@ function AccountMemberSheet() {
     try {
       const userId = localStorage.getItem("user_id");
 
-      // ⭐ 빈 문자열 제거 → null 값으로 변환
       const cleanRow = (row) => {
         const newRow = { ...row };
-
         Object.keys(newRow).forEach((key) => {
           if (newRow[key] === "" || newRow[key] === undefined) {
             newRow[key] = null;
           }
         });
-
         return newRow;
       };
 
-      // 🔥 row 내부에 user_id 추가 + null 변환
       const changedRowsWithUser = changedRows.map((row) => ({
         ...cleanRow(row),
         user_id: userId,
       }));
 
-      const res = await api.post("/Operate/AccountMembersSave", {
+      const res = await api.post("/Operate/AccountDispatchMembersSave", {
         data: changedRowsWithUser,
       });
 
@@ -217,59 +144,45 @@ function AccountMemberSheet() {
     }
   };
 
-
   const handleAddRow = () => {
-    const defaultAccountId =
-      selectedAccountId || (accountList?.[0]?.account_id ?? "");
+    const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
 
     const newRow = {
       name: "",
       rrn: "",
       account_id: defaultAccountId,
-      position_type: 1,
       account_number: "",
-      phone: "",
-      address: "",
-      contract_type: 1,
-      join_dt: "",
-      act_join_dt: "",
-      ret_set_dt: "",
-      loss_major_insurances: "",
       del_yn: activeStatus,
       del_dt: "",
-      del_note: "",
-      salary: "",
-      work_system: "",
-      start_time: startTimes?.[0] ?? "6:00",
-      end_time: endTimes?.[0] ?? "10:00",
-      national_pension: "",
-      health_insurance: "",
-      industrial_insurance: "",
-      employment_insurance: "",
       note: "",
-      headoffice_note: "",
-      subsidy: "",
-      total: 0,
     };
-    
+
     setActiveRows((prev) => [newRow, ...prev]);
     setOriginalRows((prev) => [newRow, ...prev]);
   };
 
-  const renderTable = (table, rows, originals) => {
-    const dateFields = new Set([
-      "join_dt",
-      "act_join_dt",
-      "ret_set_dt",
-      "loss_major_insurances",
-      "del_dt",
-      "national_pension",
-      "health_insurance",
-      "industrial_insurance",
-      "employment_insurance",
-    ]);
-    const selectFields = new Set(["position_type", "del_yn", "contract_type", "start_time", "end_time", "account_id"]);
-    const nonEditableCols = new Set(["diner_date", "total"]);
+  const formatDateForInput = (val) => {
+    if (!val && val !== 0) return "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+    try {
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) return "";
+      return d.toISOString().slice(0, 10);
+    } catch {
+      return "";
+    }
+  };
+
+  const renderTable = (tableInst, rows, originals) => {
+    const dateFields = new Set(["del_dt"]);
+    // ✅ del_yn도 select로 처리되도록 추가
+    const selectFields = new Set(["account_id", "del_yn"]);
+    const nonEditableCols = new Set(["cnt", "salary"]);
+
+    const delOptions = [
+      { value: "N", label: "재직" },
+      { value: "Y", label: "퇴사" },
+    ];
 
     return (
       <MDBox
@@ -278,7 +191,7 @@ function AccountMemberSheet() {
         sx={{
           flex: 1,
           minHeight: 0,
-          maxHeight: isMobile ? "55vh" : "75vh",
+          maxHeight: isMobile ? "55vh" : "70vh",
           overflowX: "auto",
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
@@ -311,31 +224,31 @@ function AccountMemberSheet() {
           },
           "& td:nth-of-type(2), & th:nth-of-type(2)": {
             position: "sticky",
-            left: "80px",
+            left: "85px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(3), & th:nth-of-type(3)": {
             position: "sticky",
-            left: "180px",
+            left: "185px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(4), & th:nth-of-type(4)": {
             position: "sticky",
-            left: "330px",
+            left: "300px",
             background: "#f0f0f0",
-            z59: 3,
+            zIndex: 3, // ✅ z59 오타 수정
           },
           "& td:nth-of-type(5), & th:nth-of-type(5)": {
             position: "sticky",
-            left: "415px",
+            left: "470px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(6), & th:nth-of-type(6)": {
             position: "sticky",
-            left: "575px",
+            left: "550px",
             background: "#f0f0f0",
             zIndex: 3,
           },
@@ -348,7 +261,6 @@ function AccountMemberSheet() {
             minWidth: "80px",
             cursor: "text",
           },
-          // select / date 등 폼 컨트롤 스타일(간단)
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -369,12 +281,11 @@ function AccountMemberSheet() {
             border: "none",
             background: "transparent",
           },
-
         }}
       >
         <table className="dinersheet-table">
           <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
+            {tableInst.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th key={header.id} style={{ width: header.column.columnDef.size }}>
@@ -386,7 +297,7 @@ function AccountMemberSheet() {
           </thead>
 
           <tbody>
-            {table.getRowModel().rows.map((row, rowIndex) => (
+            {tableInst.getRowModel().rows.map((row, rowIndex) => (
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
@@ -416,27 +327,9 @@ function AccountMemberSheet() {
                       key={cell.id}
                       style={{
                         textAlign:
-                          [
-                            "rrn",
-                            "account_number",
-                            "phone",
-                            "contract_type",
-                            "join_dt",
-                            "act_join_dt",
-                            "ret_set_dt",
-                            "loss_major_insurances",
-                            "del_yn",
-                            "del_dt",
-                            "work_system",
-                            "start_time",
-                            "end_time",
-                            "national_pension",
-                            "health_insurance",
-                            "industrial_insurance",
-                            "employment_insurance",
-                          ].includes(colKey)
+                          ["rrn", "account_number", "del_yn", "del_dt"].includes(colKey)
                             ? "center"
-                            : colKey === "salary"
+                            : colKey === "salary" || colKey === "cnt"
                             ? "right"
                             : "left",
                       }}
@@ -450,9 +343,7 @@ function AccountMemberSheet() {
                               if (isNumeric) newValue = parseNumber(newValue);
                               handleCellChange(newValue);
 
-                              if (isNumeric) {
-                                e.currentTarget.innerText = formatNumber(newValue);
-                              }
+                              if (isNumeric) e.currentTarget.innerText = formatNumber(newValue);
                             }
                           : undefined
                       }
@@ -461,7 +352,7 @@ function AccountMemberSheet() {
                         <select
                           value={currentValue ?? ""}
                           onChange={(e) => handleCellChange(e.target.value)}
-                          className={isChanged ? "edited-cell" : ""}   // ✅ 추가
+                          className={isChanged ? "edited-cell" : ""}
                           style={{ width: "100%", background: "transparent", cursor: "pointer", border: "none" }}
                         >
                           {colKey === "account_id" &&
@@ -470,41 +361,13 @@ function AccountMemberSheet() {
                                 {acc.account_name}
                               </option>
                             ))}
+
                           {colKey === "del_yn" &&
                             delOptions.map((opt) => (
                               <option key={opt.value} value={opt.value}>
                                 {opt.label}
                               </option>
                             ))}
-                          {colKey === "position_type" &&
-                            positionOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          {colKey === "contract_type" &&
-                            contractOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          {colKey === "start_time" && (
-                            <>
-                              <option value="">없음</option> {/* value 빈값, text 없음 */}
-                              {startTimes.map((t) => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </>
-                          )}
-
-                          {colKey === "end_time" && (
-                            <>
-                              <option value="">없음</option> {/* value 빈값, text 없음 */}
-                              {endTimes.map((t) => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </>
-                          )}
                         </select>
                       ) : isDate ? (
                         <input
@@ -527,11 +390,21 @@ function AccountMemberSheet() {
     );
   };
 
+  // ✅ 년/월 옵션 생성
+  const yearOptions = (() => {
+    const y = now.getFullYear();
+    const years = [];
+    for (let i = y - 3; i <= y + 1; i += 1) years.push(String(i));
+    return years;
+  })();
+
+  const monthOptions = Array.from({ length: 12 }, (_, i) => String(i + 1));
+
   if (loading) return <LoadingScreen />;
 
   return (
-      <>
-      {/* 상단 필터 + 버튼 (모바일 대응) */}
+    <>
+      {/* 상단 필터 + 버튼 */}
       <MDBox
         pt={1}
         pb={1}
@@ -578,6 +451,43 @@ function AccountMemberSheet() {
           ))}
         </TextField>
 
+        {/* ✅ 거래처 뒤에 년도/월 select 추가 */}
+        <TextField
+          select
+          size="small"
+          value={selectedYear}
+          onChange={(e) => {
+            setLoading(true);
+            setSelectedYear(e.target.value);
+          }}
+          sx={{ minWidth: 120 }}
+          SelectProps={{ native: true }}
+        >
+          {yearOptions.map((y) => (
+            <option key={y} value={y}>
+              {y}년
+            </option>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          size="small"
+          value={selectedMonth}
+          onChange={(e) => {
+            setLoading(true);
+            setSelectedMonth(e.target.value);
+          }}
+          sx={{ minWidth: 100 }}
+          SelectProps={{ native: true }}
+        >
+          {monthOptions.map((m) => (
+            <option key={m} value={m}>
+              {m}월
+            </option>
+          ))}
+        </TextField>
+
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>
           행추가
         </MDButton>
@@ -586,27 +496,10 @@ function AccountMemberSheet() {
           저장
         </MDButton>
       </MDBox>
+
       <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
-              {/* <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-                display="flex"
-                justifyContent="space-between"
-                alignItems="center"
-              >
-                <MDTypography variant="h6" color="white">
-                  현장 직원관리
-                </MDTypography>
-              </MDBox> */}
-
             {renderTable(table, activeRows, originalRows)}
           </Grid>
         </Grid>
@@ -615,4 +508,4 @@ function AccountMemberSheet() {
   );
 }
 
-export default AccountMemberSheet;
+export default AccountDispatchMemberSheet;

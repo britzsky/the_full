@@ -877,101 +877,103 @@ function RecordSheet() {
             gap: isMobile ? 1 : 2,
           }}
         >
-          <TextField
-            select
-            size="small"
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
-            SelectProps={{ native: true }}
-          >
-            {(accountList || []).map((row) => (
-              <option key={row.account_id} value={row.account_id}>
-                {row.account_name}
-              </option>
-            ))}
-          </TextField>
+          <Box sx={{ flexWrap: isMobile ? "wrap" : "nowrap", justifyContent: isMobile ? "flex-start" : "flex-end", display: "flex", justifyContent: "space-between", alignItems: "right", gap: 1 }}>
+            <TextField
+              select
+              size="small"
+              value={selectedAccountId}
+              onChange={(e) => setSelectedAccountId(e.target.value)}
+              sx={{ minWidth: isMobile ? 140 : 150 }}
+              SelectProps={{ native: true }}
+            >
+              {(accountList || []).map((row) => (
+                <option key={row.account_id} value={row.account_id}>
+                  {row.account_name}
+                </option>
+              ))}
+            </TextField>
 
-          <Select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            size="small"
-            sx={{
-              minWidth: isMobile ? 90 : 110,
-              "& .MuiSelect-select": {
-                fontSize: isMobile ? "0.75rem" : "0.875rem",
-              },
-            }}
-          >
-            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map(
-              (y) => (
-                <MenuItem key={y} value={y}>
-                  {y}년
+            <Select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              size="small"
+              sx={{
+                minWidth: isMobile ? 90 : 110,
+                "& .MuiSelect-select": {
+                  fontSize: isMobile ? "0.75rem" : "0.875rem",
+                },
+              }}
+            >
+              {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map(
+                (y) => (
+                  <MenuItem key={y} value={y}>
+                    {y}년
+                  </MenuItem>
+                )
+              )}
+            </Select>
+
+            <Select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              size="small"
+              sx={{
+                minWidth: isMobile ? 80 : 100,
+                "& .MuiSelect-select": {
+                  fontSize: isMobile ? "0.75rem" : "0.875rem",
+                },
+              }}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <MenuItem key={m} value={m}>
+                  {m}월
                 </MenuItem>
-              )
-            )}
-          </Select>
+              ))}
+            </Select>
 
-          <Select
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-            size="small"
-            sx={{
-              minWidth: isMobile ? 80 : 100,
-              "& .MuiSelect-select": {
-                fontSize: isMobile ? "0.75rem" : "0.875rem",
-              },
-            }}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <MenuItem key={m} value={m}>
-                {m}월
-              </MenuItem>
-            ))}
-          </Select>
+            <MDButton
+              variant="gradient"
+              color="success"
+              onClick={handleApplyDefaultTime}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 110 : 130,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              출퇴근 일괄 적용
+            </MDButton>
 
-          <MDButton
-            variant="gradient"
-            color="success"
-            onClick={handleApplyDefaultTime}
-            sx={{
-              fontSize: isMobile ? "0.7rem" : "0.8rem",
-              minWidth: isMobile ? 110 : 130,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            출퇴근 일괄 적용
-          </MDButton>
+            {/* ✅ 조회: 전체 조회 + 파출은 필터로 다시 맞춤 */}
+            <MDButton
+              variant="gradient"
+              color="warning"
+              onClick={async () => {
+                await fetchAllData?.();
+                await fetchDispatchOnly(dispatchDelFilter);
+              }}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 70 : 90,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              조회
+            </MDButton>
 
-          {/* ✅ 조회: 전체 조회 + 파출은 필터로 다시 맞춤 */}
-          <MDButton
-            variant="gradient"
-            color="warning"
-            onClick={async () => {
-              await fetchAllData?.();
-              await fetchDispatchOnly(dispatchDelFilter);
-            }}
-            sx={{
-              fontSize: isMobile ? "0.7rem" : "0.8rem",
-              minWidth: isMobile ? 70 : 90,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            조회
-          </MDButton>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleSave}
-            sx={{
-              fontSize: isMobile ? "0.7rem" : "0.8rem",
-              minWidth: isMobile ? 70 : 90,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            저장
-          </MDButton>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleSave}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 70 : 90,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              저장
+            </MDButton>
+          </Box>
         </MDBox>
       </MDBox>
 

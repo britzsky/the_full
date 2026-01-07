@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -190,8 +191,8 @@ function EventSheetTab() {
   return (
     <DashboardLayout>
       {/* 🔹 공통 헤더 사용 */}
-      <HeaderWithLogout showMenuButton title="🎉 행사 달력 (내부 관리용)" />
-
+      {/* <HeaderWithLogout showMenuButton title="🎉 행사 달력 (내부 관리용)" /> */}
+      <DashboardNavbar title="🎉 행사 달력 (내부 관리용)" />
       {loading && <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>}
 
       {/* ✅ 커스텀 헤더 */}

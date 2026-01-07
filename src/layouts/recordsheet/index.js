@@ -22,6 +22,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import api from "api/api";
 import dayjs from "dayjs";
@@ -713,7 +714,7 @@ function RecordSheet() {
   });
 
   const tableSx = {
-    maxHeight: "440px",
+    maxHeight: "430px",
     overflow: "auto",
     "& table": {
       width: "max-content",
@@ -865,7 +866,8 @@ function RecordSheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-        <HeaderWithLogout showMenuButton title="🚌 출근부" />
+        {/* <HeaderWithLogout showMenuButton title="🚌 출근부" /> */}
+        <DashboardNavbar title="🚌 출근부" />
         <MDBox
           pt={1}
           pb={3}

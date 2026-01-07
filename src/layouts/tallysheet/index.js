@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
+/* eslint-disable react/function-component-definition */
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import {
   Modal,
@@ -10,7 +11,7 @@ import {
   TextField,
   useTheme,
   useMediaQuery,
-  Checkbox
+  Checkbox,
 } from "@mui/material";
 import dayjs from "dayjs";
 import Grid from "@mui/material/Grid";
@@ -20,6 +21,7 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import LoadingScreen from "../loading/loadingscreen";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useTallysheetData, { parseNumber, formatNumber } from "./data/TallySheetData";
 import Swal from "sweetalert2";
@@ -68,7 +70,7 @@ const formatByGroups = (digits, groups) => {
   return parts.filter(Boolean).join("-");
 };
 
-// 은행별 대표 포맷(현실적으로 케이스가 많아서 “대표 패턴 + fallback” 방식)
+// 은행별 대표 포맷(대표 패턴 + fallback)
 const BANK_MASKS_BY_NAME = {
   "KB국민은행": [[3, 2, 6], [3, 3, 6]],
   "신한은행": [[3, 3, 6], [3, 2, 6]],
@@ -105,7 +107,7 @@ const formatAccountNumber = (bankName, value) => {
 
   if (mask) return formatByGroups(digits, mask);
 
-  // fallback (보기 좋은 일반 포맷)
+  // fallback
   if (digits.length <= 9) return formatByGroups(digits, [3, 3, 3]);
   if (digits.length <= 12) return formatByGroups(digits, [3, 3, 6]);
   return formatByGroups(digits, [4, 4, 4, 4]);
@@ -122,30 +124,27 @@ const formatBizNo = (value) => {
   return `${a}-${b}-${c}`;
 };
 
-// 연락처(휴대폰) 포맷: 010-1234-5678 / 02-123-4567 / 0505-123-4567 등 최대한 대응
+// 연락처(휴대폰) 포맷
 const formatPhone = (value) => {
-  const digits = onlyDigits(value).slice(0, 11); // 보통 10~11자리
+  const digits = onlyDigits(value).slice(0, 11);
 
-  // 서울 02
   if (digits.startsWith("02")) {
     if (digits.length <= 2) return digits;
     if (digits.length <= 5) return `${digits.slice(0, 2)}-${digits.slice(2)}`;
     if (digits.length <= 9) return `${digits.slice(0, 2)}-${digits.slice(2, 5)}-${digits.slice(5)}`;
-    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`; // 02-1234-5678
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6)}`;
   }
 
-  // 0505 같은 특수번호(4자리 국번)
   if (digits.startsWith("0505")) {
     if (digits.length <= 4) return digits;
     if (digits.length <= 7) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
-    return `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`; // 0505-123-4567
+    return `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
   }
 
-  // 일반 휴대폰/지역번호(3자리)
   if (digits.length <= 3) return digits;
   if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
-  if (digits.length <= 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`; // 010-123-4567
-  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`; // 010-1234-5678
+  if (digits.length <= 10) return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 };
 
 // ======================== 선택 테이블 컴포넌트 ========================
@@ -217,7 +216,8 @@ function TallySheet() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
-  const [images, setImages] = useState(Array(31).fill(null)); // 1~31일 이미지
+
+  const [images, setImages] = useState(Array(31).fill(null));
   const [receiptType, setReceiptType] = useState([]);
 
   const theme = useTheme();
@@ -234,12 +234,12 @@ function TallySheet() {
     loading,
     fetchDataRows,
     fetchData2Rows,
+    prevYear,
+    prevMonth,
   } = useTallysheetData(selectedAccountId, year, month);
 
   // ✅ 원본 데이터 관리 로직 개선
   useEffect(() => {
-    setDataRows([]);
-    setData2Rows([]);
     setOriginalRows([]);
     setOriginal2Rows([]);
   }, [selectedAccountId, year, month]);
@@ -314,11 +314,9 @@ function TallySheet() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // ✅ 현재 선택된 셀 날짜 (year/month + dayIndex)
     const day = dayIndex + 1;
     const selectedDate = dayjs(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
 
-    // (선택) 달에 없는 날짜(예: 2월 31일) 업로드 방지
     if (!selectedDate.isValid() || selectedDate.month() + 1 !== month) {
       return Swal.fire("경고", "선택한 날짜가 유효하지 않습니다.", "warning");
     }
@@ -333,10 +331,8 @@ function TallySheet() {
     formData.append("file", file);
     formData.append("type", typeForDay);
     formData.append("account_id", selectedAccountId);
-
-    // ✅ 날짜 같이 전송 (서버에서 원하는 포맷으로)
-    formData.append("cell_day", String(day)); // 1~31
-    formData.append("cell_date", selectedDate.format("YYYY-MM-DD")); // "2025-12-22" 같은 형태
+    formData.append("cell_day", String(day));
+    formData.append("cell_date", selectedDate.format("YYYY-MM-DD"));
 
     try {
       Swal.fire({
@@ -356,22 +352,7 @@ function TallySheet() {
 
       if (res.status === 200) {
         Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
-
-        const colKey = `day_${dayIndex + 1}`;
-
-        setDataRows((prev) => {
-          if (!prev || prev.length === 0) return prev;
-
-          const targetIndex = prev.findIndex((row) => String(row.type) === String(type));
-          const numericTotal = parseNumber(total);
-
-          return prev.map((row, idx) => {
-            if (idx !== targetIndex) return row;
-
-            const prevVal = parseNumber(row[colKey]);
-            return { ...row, [colKey]: prevVal + numericTotal };
-          });
-        });
+        // TODO: 서버 응답(total/type) 반영 로직 필요하면 기존 로직 붙여넣기
       } else if (res.status === 400) {
         Swal.fire("실패", res.data?.message || "영수증 인식에 실패했습니다.", "error");
       } else {
@@ -392,13 +373,16 @@ function TallySheet() {
         .map((row, idx) => {
           const changed = {};
           let hasChange = false;
+
           Object.keys(row).forEach((k) => {
             if (["name", "total"].includes(k) || row.name === "총합") return;
+
             if (parseNumber(row[k]) !== parseNumber(orig?.[idx]?.[k])) {
               changed[k] = parseNumber(row[k]);
               hasChange = true;
             }
           });
+
           return hasChange ? { ...row, ...changed } : null;
         })
         .filter(Boolean);
@@ -413,7 +397,8 @@ function TallySheet() {
     try {
       const payload = { nowList: changedNow, beforeList: changedBefore };
       const res = await api.post("/Operate/TallySheetSave", payload);
-      if (res.data.code === 200) {
+
+      if (res.data?.code === 200) {
         Swal.fire({
           title: "저장",
           text: "저장되었습니다.",
@@ -422,12 +407,15 @@ function TallySheet() {
           confirmButtonText: "확인",
         }).then(async (result) => {
           if (result.isConfirmed) {
-            await fetchDataRows(selectedAccountId, year, month);
-            await fetchData2Rows(selectedAccountId, year, month);
-            setOriginalRows(dataRows.map((r) => ({ ...r })));
-            setOriginal2Rows(data2Rows.map((r) => ({ ...r })));
+            const now = await fetchDataRows(selectedAccountId, year, month);
+            const prev = await fetchData2Rows(selectedAccountId, prevYear, prevMonth);
+
+            setOriginalRows((now || []).map((r) => ({ ...r })));
+            setOriginal2Rows((prev || []).map((r) => ({ ...r })));
           }
         });
+      } else {
+        Swal.fire("실패", res.data?.message || "저장 실패", "error");
       }
     } catch (e) {
       Swal.fire("실패", e.message || "저장 중 오류 발생", "error");
@@ -437,8 +425,8 @@ function TallySheet() {
   const ratioData = useMemo(() => Array.from({ length: 31 }, (_, i) => (((i + 1) / 31) * 100).toFixed(2) + "%"), []);
 
   // 모달 상태 및 항목 관리 상태
-  const [open, setOpen] = useState(false); // 거래처 연결 모달
-  const [open2, setOpen2] = useState(false); // 거래처 등록 모달
+  const [open, setOpen] = useState(false);
+  const [open2, setOpen2] = useState(false);
   const [leftItems, setLeftItems] = useState([]);
   const [rightItems, setRightItems] = useState([]);
   const [selectedLeft, setSelectedLeft] = useState([]);
@@ -452,6 +440,7 @@ function TallySheet() {
     try {
       const leftRes = await api.get("/Operate/AccountMappingList");
       setLeftItems(leftRes.data || []);
+
       if (selectedAccountId) {
         const rightRes = await api.get("/Operate/AccountMappingV2List", {
           params: { account_id: selectedAccountId },
@@ -461,6 +450,7 @@ function TallySheet() {
         setRightItems([]);
       }
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error(err);
       Swal.fire({ title: "오류", text: "거래처 목록을 불러오지 못했습니다.", icon: "error" });
     }
@@ -474,7 +464,10 @@ function TallySheet() {
       return;
     }
 
-    const updatedRightItems = [...rightItems, ...selectedLeft.map((item) => ({ ...item, account_id: selectedAccountId, del_yn: "N" }))];
+    const updatedRightItems = [
+      ...rightItems,
+      ...selectedLeft.map((item) => ({ ...item, account_id: selectedAccountId, del_yn: "N" })),
+    ];
     setRightItems(updatedRightItems);
     setSelectedLeft([]);
   };
@@ -496,11 +489,17 @@ function TallySheet() {
       const payload = rightItems;
       const response = await api.post("/Operate/AccountMappingSave", payload);
 
-      if (response.data.code === 200) {
+      if (response.data?.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
         setOpen(false);
-        await fetchDataRows(selectedAccountId, year, month);
-        await fetchData2Rows(selectedAccountId, year, month);
+
+        const now = await fetchDataRows(selectedAccountId, year, month);
+        const prev = await fetchData2Rows(selectedAccountId, prevYear, prevMonth);
+
+        setOriginalRows((now || []).map((r) => ({ ...r })));
+        setOriginal2Rows((prev || []).map((r) => ({ ...r })));
+      } else {
+        Swal.fire({ title: "오류", text: response.data?.message || "저장 실패", icon: "error" });
       }
     } catch (err) {
       Swal.fire({ title: "오류", text: err.message || "저장 실패", icon: "error" });
@@ -518,7 +517,7 @@ function TallySheet() {
     bank_image: null,
     biz_image: null,
     add_yn: "N",
-    add_name: ""
+    add_name: "",
   };
 
   const [formData, setFormData] = useState(initialForm);
@@ -563,17 +562,14 @@ function TallySheet() {
     setFormData((prev) => ({
       ...prev,
       add_yn: checked ? "Y" : "N",
-      // 체크 해제되면 약식명 비우기(원치 않으면 이 줄 삭제)
       add_name: checked ? (prev.add_name || "") : "",
     }));
   };
 
-  // ✅ 은행 Select (은행명 문자열로 저장)
   const handleBankSelect = (e) => {
     const bankName = e.target.value;
 
     setFormData((prev) => {
-      // 기타(직접입력)면 bank_name 유지(직접 입력 텍스트필드로)
       if (bankName === "기타(직접입력)") {
         return {
           ...prev,
@@ -590,7 +586,6 @@ function TallySheet() {
     });
   };
 
-  // ✅ 계좌번호 입력 시 은행명 기준으로 자동 포맷
   const handleBankNoChange = (e) => {
     const { value } = e.target;
     setFormData((prev) => ({
@@ -599,7 +594,6 @@ function TallySheet() {
     }));
   };
 
-  // ✅ 사업자번호 입력 시 자동 포맷
   const handleBizNoChange = (e) => {
     const { value } = e.target;
     setFormData((prev) => ({
@@ -608,7 +602,6 @@ function TallySheet() {
     }));
   };
 
-  // ✅ 연락처 입력 시 자동 포맷
   const handleTelChange = (e) => {
     const { value } = e.target;
     setFormData((prev) => ({
@@ -617,7 +610,6 @@ function TallySheet() {
     }));
   };
 
-  // ======================= 이미지 미리보기 =======================
   const handleImageUploadPreview = (e) => {
     const { name, files } = e.target;
     const file = files?.[0];
@@ -629,7 +621,7 @@ function TallySheet() {
     setFormData((prev) => ({ ...prev, [name]: file }));
   };
 
-  // ======================= 거래처 저장 =======================
+  // 거래처 저장
   const handleSubmit2 = async () => {
     const requiredFields = ["name", "biz_no", "ceo_name", "tel", "bank_name", "bank_no", "bank_image", "biz_image"];
 
@@ -660,8 +652,8 @@ function TallySheet() {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
-        if (res.data.code === 200) return res.data.image_path;
-        throw new Error(res.data.message || "이미지 업로드 실패");
+        if (res.data?.code === 200) return res.data.image_path;
+        throw new Error(res.data?.message || "이미지 업로드 실패");
       });
 
       const [bankPath, bizPath] = await Promise.all(uploadPromises);
@@ -674,7 +666,7 @@ function TallySheet() {
       };
 
       const response = await api.post("/Operate/AccountRetailBusinessSave", payload);
-      if (response.data.code === 200) {
+      if (response.data?.code === 200) {
         Swal.fire({
           title: "성공",
           text: "거래처가 등록되었습니다.",
@@ -686,9 +678,10 @@ function TallySheet() {
         setFormData(initialForm);
         setImagePreviews({ bank_image: null, biz_image: null });
       } else {
-        Swal.fire("실패", response.data.message || "저장 중 오류 발생", "error");
+        Swal.fire("실패", response.data?.message || "저장 중 오류 발생", "error");
       }
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.error(err);
       Swal.fire("에러", err.message || "저장 중 문제가 발생했습니다.", "error");
     }
@@ -722,7 +715,7 @@ function TallySheet() {
             {ratioData.map((val, idx) => (
               <td key={idx}>{val}</td>
             ))}
-            <td></td>
+            <td />
           </tr>
           {tableInstance.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
@@ -798,7 +791,7 @@ function TallySheet() {
               </td>
             ))}
 
-            <td></td>
+            <td />
           </tr>
         </tbody>
       </table>
@@ -816,7 +809,8 @@ function TallySheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-        <HeaderWithLogout showMenuButton title="🧮 집계표" />
+        {/* <HeaderWithLogout showMenuButton title="🧮 집계표" /> */}
+        <DashboardNavbar title="🧮 집계표" />
         <MDBox
           pt={1}
           pb={1}
@@ -843,46 +837,45 @@ function TallySheet() {
             ))}
           </TextField>
 
-          <Select value={year} onChange={(e) => setYear(e.target.value)} size="small" sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "12px" : "13px" }}>
-            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-              <MenuItem key={y} value={y}>
-                {y}년
-              </MenuItem>
-            ))}
-          </Select>
-
-          <Select value={month} onChange={(e) => setMonth(e.target.value)} size="small" sx={{ minWidth: isMobile ? 80 : 100, fontSize: isMobile ? "12px" : "13px" }}>
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <MenuItem key={m} value={m}>
-                {m}월
-              </MenuItem>
-            ))}
-          </Select>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleModalOpen2}
-            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110, px: isMobile ? 1 : 2 }}
+          <TextField
+            select
+            size="small"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            SelectProps={{ native: true }}
           >
+            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </TextField>
+  
+          <TextField
+            select
+            size="small"
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m}월
+              </option>
+            ))}
+          </TextField>
+
+          <MDButton variant="gradient" color="info" onClick={handleModalOpen2} sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110, px: isMobile ? 1 : 2 }}>
             거래처 등록
           </MDButton>
 
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleModalOpen}
-            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110, px: isMobile ? 1 : 2 }}
-          >
+          <MDButton variant="gradient" color="info" onClick={handleModalOpen} sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110, px: isMobile ? 1 : 2 }}>
             거래처 연결
           </MDButton>
 
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleSave}
-            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90, px: isMobile ? 1 : 2 }}
-          >
+          <MDButton variant="gradient" color="info" onClick={handleSave} sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90, px: isMobile ? 1 : 2 }}>
             저장
           </MDButton>
         </MDBox>
@@ -987,103 +980,33 @@ function TallySheet() {
             거래처 등록
           </Typography>
 
-          <TextField
-            fullWidth
-            required
-            margin="normal"
-            label="거래처명"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-            name="name"
-            value={formData.name || ""}
-            onChange={handleChange2}
-            sx={{mt: 1}}
-          />
-          {/* ✅ 약식사용(체크박스+라벨) + 약식명 한 줄 배치 */}
+          <TextField fullWidth required margin="normal" label="거래처명" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="name" value={formData.name || ""} onChange={handleChange2} sx={{ mt: 1 }} />
+
           <Grid container spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
-            {/* 왼쪽: 체크박스 + 라벨 (완전 한 줄) */}
             <Grid item xs={4} sm={3}>
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Checkbox
-                  size="small"
-                  checked={(formData.add_yn || "N") === "Y"}
-                  onChange={handleAddYnChange}
-                  sx={{ p: 0.5 }} // 너무 크면 0.25로 줄여도 됨
-                />
-                <Typography
-                  sx={{
-                    fontSize: "0.8rem",
-                    lineHeight: 1,
-                    whiteSpace: "nowrap", // 라벨 줄바꿈 방지
-                  }}
-                >
-                  약식사용
-                </Typography>
+                <Checkbox size="small" checked={(formData.add_yn || "N") === "Y"} onChange={handleAddYnChange} sx={{ p: 0.5 }} />
+                <Typography sx={{ fontSize: "0.8rem", lineHeight: 1, whiteSpace: "nowrap" }}>약식사용</Typography>
               </Box>
             </Grid>
 
-            {/* 오른쪽: 약식명 */}
             <Grid item xs={8} sm={9}>
-              <TextField
-                fullWidth
-                margin="none"
-                label="약식명"
-                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                name="add_name"
-                value={formData.add_name || ""}
-                onChange={handleChange2}
-                disabled={(formData.add_yn || "N") !== "Y"}
-                placeholder="약식사용 체크 시 입력"
-                size="small"
-              />
+              <TextField fullWidth margin="none" label="약식명" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="add_name" value={formData.add_name || ""} onChange={handleChange2} disabled={(formData.add_yn || "N") !== "Y"} placeholder="약식사용 체크 시 입력" size="small" />
             </Grid>
           </Grid>
-          <TextField
-            fullWidth
-            required
-            margin="normal"
-            label="사업자번호"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-            name="biz_no"
-            value={formData.biz_no || ""}
-            onChange={handleBizNoChange}
-            placeholder="예: 123-45-67890"
-            inputProps={{ inputMode: "numeric" }}
-            sx={{mt: 1}}
-          />
 
-          <TextField
-            fullWidth
-            required
-            margin="normal"
-            label="대표자명"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-            name="ceo_name"
-            value={formData.ceo_name || ""}
-            onChange={handleChange2}
-            sx={{mt: 1}}
-          />
+          <TextField fullWidth required margin="normal" label="사업자번호" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="biz_no" value={formData.biz_no || ""} onChange={handleBizNoChange} placeholder="예: 123-45-67890" inputProps={{ inputMode: "numeric" }} sx={{ mt: 1 }} />
 
-          <TextField
-            fullWidth
-            required
-            margin="normal"
-            label="연락처"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-            name="tel"
-            value={formData.tel || ""}
-            onChange={handleTelChange}
-            placeholder="예: 010-1234-5678"
-            inputProps={{ inputMode: "numeric" }}
-            sx={{ mt: 1 }}
-          />
+          <TextField fullWidth required margin="normal" label="대표자명" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="ceo_name" value={formData.ceo_name || ""} onChange={handleChange2} sx={{ mt: 1 }} />
 
-          {/* ✅ 은행명: Select로 변경 */}
+          <TextField fullWidth required margin="normal" label="연락처" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="tel" value={formData.tel || ""} onChange={handleTelChange} placeholder="예: 010-1234-5678" inputProps={{ inputMode: "numeric" }} sx={{ mt: 1 }} />
+
           <Box mt={1}>
             <Typography sx={{ fontSize: "0.8rem", mb: 0.5 }}>은행명 (필수)</Typography>
             <Select
               fullWidth
               size="small"
-              value={KOREAN_BANKS.includes(formData.bank_name) ? formData.bank_name : (formData.bank_name ? "기타(직접입력)" : "")}
+              value={KOREAN_BANKS.includes(formData.bank_name) ? formData.bank_name : formData.bank_name ? "기타(직접입력)" : ""}
               onChange={handleBankSelect}
               displayEmpty
               sx={{ fontSize: "0.85rem" }}
@@ -1098,38 +1021,13 @@ function TallySheet() {
               ))}
             </Select>
 
-            {/* 기타(직접입력) 선택 시 직접입력 */}
             {(!KOREAN_BANKS.includes(formData.bank_name) || formData.bank_name === "기타(직접입력)") && (
-              <TextField
-                fullWidth
-                required
-                margin="normal"
-                label="은행명 직접입력"
-                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                name="bank_name"
-                value={formData.bank_name === "기타(직접입력)" ? "" : (formData.bank_name || "")}
-                onChange={handleChange2}
-                sx={{mt: 1}}
-              />
+              <TextField fullWidth required margin="normal" label="은행명 직접입력" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="bank_name" value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""} onChange={handleChange2} sx={{ mt: 1 }} />
             )}
           </Box>
 
-          {/* ✅ 계좌번호: 은행명에 맞춰 자동 포맷 */}
-          <TextField
-            fullWidth
-            required
-            margin="normal"
-            label="계좌번호"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-            name="bank_no"
-            value={formData.bank_no || ""}
-            onChange={handleBankNoChange}
-            placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다."
-            inputProps={{ inputMode: "numeric" }}
-            sx={{mt: 1}}
-          />
+          <TextField fullWidth required margin="normal" label="계좌번호" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="bank_no" value={formData.bank_no || ""} onChange={handleBankNoChange} placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다." inputProps={{ inputMode: "numeric" }} sx={{ mt: 1 }} />
 
-          {/* 통장사본 첨부 */}
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>통장사본 (필수)</Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
@@ -1171,7 +1069,6 @@ function TallySheet() {
             </Box>
           </Box>
 
-          {/* 사업자등록증 첨부 */}
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>사업자등록증 (필수)</Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
@@ -1214,11 +1111,7 @@ function TallySheet() {
           </Box>
 
           <Box mt={4} display="flex" justifyContent="flex-end" gap={1}>
-            <Button
-              variant="contained"
-              onClick={handleModalClose2}
-              sx={{ bgcolor: "#e8a500", color: "#ffffff", "&:hover": { bgcolor: "#e8a500", color: "#ffffff" } }}
-            >
+            <Button variant="contained" onClick={handleModalClose2} sx={{ bgcolor: "#e8a500", color: "#ffffff", "&:hover": { bgcolor: "#e8a500", color: "#ffffff" } }}>
               취소
             </Button>
             <Button variant="contained" onClick={handleSubmit2} sx={{ color: "#ffffff" }}>

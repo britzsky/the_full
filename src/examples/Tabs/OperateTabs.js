@@ -10,6 +10,7 @@ import SubRestaurantTab from "./Operate/SubRestaurantTab";
 import HandOverSheetTab from "./Operate/HandoverSheetTab";
 import AccountMembersFilesTab from "./Operate/AccountMembersFilesTab";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
 const getUserCodes = () => {
@@ -157,7 +158,8 @@ function OperateTabs() {
         }}
       >
         {/* 🔹 공통 헤더 사용 */}
-        <HeaderWithLogout showMenuButton title="📁고객사 관리" />
+        {/* <HeaderWithLogout showMenuButton title="📁고객사 관리" /> */}
+        <DashboardNavbar title="📁고객사 관리" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -400,8 +401,8 @@ function OperateScheduleSheet() {
 
   return (
     <DashboardLayout>
-      <HeaderWithLogout showMenuButton title="📅 운영 일정관리 (내부 관리용)" />
-
+      {/* <HeaderWithLogout showMenuButton title="📅 운영 일정관리 (내부 관리용)" /> */}
+      <DashboardNavbar title="📅 운영 일정관리 (내부 관리용)" />
       {loading && (
         <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>
       )}

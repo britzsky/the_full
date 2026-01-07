@@ -7,6 +7,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import DeadlineBalanceTab from "./AccountSales/DeadlineBalanceTab";
 import DeadlineFilesTab from "./AccountSales/DeadlineFilesTab";
 import DeadlineIssueTab from "./AccountSales/DeadlineIssueTab";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 function AccountSalesTab() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -29,7 +30,8 @@ function AccountSalesTab() {
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
       {/* 🔹 공통 헤더 사용 */}
-      <HeaderWithLogout showMenuButton title="매출 관리" />
+      {/* <HeaderWithLogout showMenuButton title="매출 관리" /> */}
+      <DashboardNavbar title="💰매출 관리" />
       {/* 탭 상단 */}
       <Tabs
         value={tabIndex}

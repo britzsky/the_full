@@ -8,6 +8,7 @@ import TeleManagerTab from "./Business/TeleManagerTab";
 import CorCarTab from "./Business/CorCarTab";
 import CookWearTab from "./Business/CookWearTab";
 import AccountEventTab from "./Business/AccountEventTab";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 function BusinessTabs() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -41,7 +42,8 @@ function BusinessTabs() {
         }}
       >
         {/* 🔹 공통 헤더 사용 */}
-        <HeaderWithLogout showMenuButton title="📁 고객사 관리" />
+        {/* <HeaderWithLogout showMenuButton title="📁 고객사 관리" /> */}
+        <DashboardNavbar title="📁 고객사 관리" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}

@@ -1,15 +1,31 @@
 /* eslint-disable react/function-component-definition */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import dayjs from "dayjs";
 import api from "api/api";
 
 const parseNumber = (value) => {
-  if (!value) return 0;
+  if (value === null || value === undefined || value === "") return 0;
   return Number(String(value).replace(/,/g, "")) || 0;
 };
 
 const formatNumber = (value) => {
-  if (!value && value !== 0) return "";
+  if (value === null || value === undefined || value === "") return "";
   return Number(value).toLocaleString();
+};
+
+// ✅ 이전월 안전 계산 (1월 -> 전년도 12월)
+const getPrevYearMonth = (year, month) => {
+  // year/month가 비정상일 때 방어
+  const safeYear = Number(year) || dayjs().year();
+  const safeMonth = Number(month) || dayjs().month() + 1; // 1~12
+
+  const base = dayjs(`${safeYear}-${String(safeMonth).padStart(2, "0")}-01`);
+  const prev = base.subtract(1, "month");
+
+  return {
+    prevYear: prev.year(),
+    prevMonth: prev.month() + 1, // 0~11 -> 1~12
+  };
 };
 
 export default function useTallysheetData(account_id, year, month) {
@@ -24,115 +40,129 @@ export default function useTallysheetData(account_id, year, month) {
 
   const MIN_LOADING_TIME = 1000; // 최소 로딩 시간 1초
 
+  // ✅ 로딩 중복 호출(동시 fetch) 안전 처리
+  const loadingCountRef = useRef(0);
+
+  const runWithMinLoading = useCallback(async (fn) => {
+    const startTime = Date.now();
+
+    loadingCountRef.current += 1;
+    setLoading(true);
+
+    try {
+      return await fn();
+    } finally {
+      const elapsed = Date.now() - startTime;
+      const remaining = MIN_LOADING_TIME - elapsed;
+
+      setTimeout(() => {
+        loadingCountRef.current -= 1;
+        if (loadingCountRef.current <= 0) {
+          loadingCountRef.current = 0;
+          setLoading(false);
+        }
+      }, remaining > 0 ? remaining : 0);
+    }
+  }, []);
+
   // ✅ 이번 달 데이터 조회
   const fetchDataRows = useCallback(async () => {
-    const startTime = Date.now();
-    setLoading(true);
+    return runWithMinLoading(async () => {
+      // ✅ 조회 시작 시 기존 비교 기준 초기화
+      setOriginalRows([]);
 
-    // ✅ 조회 시작 시 기존 비교 기준 초기화
-    setOriginalRows([]);
+      try {
+        const params = {};
+        if (account_id) params.account_id = account_id;
+        if (year) params.year = year;
+        if (month) params.month = month;
 
-    try {
-      const params = {};
-      if (account_id) params.account_id = account_id;
-      if (year) params.year = year;
-      if (month) params.month = month;
+        const res = await api.get("/Operate/TallySheetList", { params });
+        const list = res.data || [];
 
-      const res = await api.get("/Operate/TallySheetList", { params });
-      const list = res.data || [];
+        if (list.length > 0 && list[0].count_month) {
+          setCountMonth(`${list[0].count_year}-${list[0].count_month}`);
+        } else {
+          setCountMonth("");
+        }
 
-      if (list.length > 0 && list[0].count_month) {
-        setCountMonth(`${list[0].count_year}-${list[0].count_month}`);
-      } else {
+        const initialRows = list.map((item) => {
+          const row = {
+            account_id: item.account_id,
+            name: item.name,
+            type: item.type,
+            count_year: item.count_year,
+            count_month: item.count_month,
+          };
+          for (let i = 1; i <= 31; i++) {
+            row[`day_${i}`] = parseNumber(item[`day_${i}`]);
+          }
+          return row;
+        });
+
+        setDataRows(initialRows);
+        setOriginalRows(initialRows.map((r) => ({ ...r })));
+
+        return initialRows;
+      } catch (err) {
+        console.error("데이터 조회 실패 (이번 달):", err);
+        setDataRows([]);
         setCountMonth("");
+        return [];
       }
+    });
+  }, [account_id, year, month, runWithMinLoading]);
 
-      const initialRows = list.map((item) => {
-        const row = {
-          account_id: item.account_id,
-          name: item.name,
-          type: item.type,
-          count_year: item.count_year,
-          count_month: item.count_month,
-        };
-        for (let i = 1; i <= 31; i++) {
-          row[`day_${i}`] = parseNumber(item[`day_${i}`]);
-        }
-        return row;
-      });
-
-      // ✅ 조회된 데이터 세팅
-      setDataRows(initialRows);
-
-      // ✅ 비교 기준(원본) 데이터 세팅
-      setOriginalRows(initialRows.map((r) => ({ ...r })));
-    } catch (err) {
-      console.error("데이터 조회 실패 (이번 달):", err);
-    } finally {
-      const elapsed = Date.now() - startTime;
-      const remaining = MIN_LOADING_TIME - elapsed;
-      if (remaining > 0) {
-        setTimeout(() => setLoading(false), remaining);
-      } else {
-        setLoading(false);
-      }
-    }
-  }, [account_id, year, month]);
-
-  // ✅ 지난 달 데이터 조회
+  // ✅ 지난 달 데이터 조회 (🔥 여기 핵심 수정: month-1 제거, dayjs로 이전월 계산)
   const fetchData2Rows = useCallback(async () => {
-    const startTime = Date.now();
-    setLoading(true);
+    return runWithMinLoading(async () => {
+      // ✅ 조회 시작 시 기존 비교 기준 초기화
+      setOriginal2Rows([]);
 
-    // ✅ 조회 시작 시 기존 비교 기준 초기화
-    setOriginal2Rows([]);
+      try {
+        const { prevYear, prevMonth } = getPrevYearMonth(year, month);
 
-    try {
-      const params = {};
-      if (account_id) params.account_id = account_id;
-      if (year) params.year = year;
-      if (month) params.month = month - 1;
+        const params = {};
+        if (account_id) params.account_id = account_id;
+        // ✅ 이전월의 year/month를 정확히 넣는다 (1월이면 prevYear=전년도)
+        params.year = prevYear;
+        params.month = prevMonth;
 
-      const res = await api.get("/Operate/TallySheetList", { params });
-      const list = res.data || [];
+        const res = await api.get("/Operate/TallySheetList", { params });
+        const list = res.data || [];
 
-      if (list.length > 0 && list[0].count_month) {
-        setCount2Month(`${list[0].count_year}-${list[0].count_month}`);
-      } else {
-        setCount2Month("");
-      }
-
-      const initialRows = list.map((item) => {
-        const row = {
-          account_id: item.account_id,
-          name: item.name,
-          type: item.type,
-          count_year: item.count_year,
-          count_month: item.count_month,
-        };
-        for (let i = 1; i <= 31; i++) {
-          row[`day_${i}`] = parseNumber(item[`day_${i}`]);
+        if (list.length > 0 && list[0].count_month) {
+          setCount2Month(`${list[0].count_year}-${list[0].count_month}`);
+        } else {
+          setCount2Month("");
         }
-        return row;
-      });
 
-      // ✅ 조회된 데이터 세팅
-      setData2Rows(initialRows);
+        const initialRows = list.map((item) => {
+          const row = {
+            account_id: item.account_id,
+            name: item.name,
+            type: item.type,
+            count_year: item.count_year,
+            count_month: item.count_month,
+          };
+          for (let i = 1; i <= 31; i++) {
+            row[`day_${i}`] = parseNumber(item[`day_${i}`]);
+          }
+          return row;
+        });
 
-      // ✅ 비교 기준(원본) 데이터 세팅
-      setOriginal2Rows(initialRows.map((r) => ({ ...r })));
-    } catch (err) {
-      console.error("데이터 조회 실패 (지난 달):", err);
-    } finally {
-      const elapsed = Date.now() - startTime;
-      const remaining = MIN_LOADING_TIME - elapsed;
-      if (remaining > 0) {
-        setTimeout(() => setLoading(false), remaining);
-      } else {
-        setLoading(false);
+        setData2Rows(initialRows);
+        setOriginal2Rows(initialRows.map((r) => ({ ...r })));
+
+        return initialRows;
+      } catch (err) {
+        console.error("데이터 조회 실패 (지난 달):", err);
+        setData2Rows([]);
+        setCount2Month("");
+        return [];
       }
-    }
-  }, [account_id, year, month]);
+    });
+  }, [account_id, year, month, runWithMinLoading]);
 
   // ✅ 두 달 데이터 동시 조회
   useEffect(() => {
@@ -169,7 +199,7 @@ export default function useTallysheetData(account_id, year, month) {
     countMonth,
     count2Month,
     loading,
-    fetchDataRows,  // ✅ 저장 후 재조회용
+    fetchDataRows, // ✅ 저장 후 재조회용
     fetchData2Rows, // ✅ 저장 후 재조회용
   };
 }

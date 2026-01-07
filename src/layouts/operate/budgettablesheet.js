@@ -1,9 +1,10 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useState } from "react";
-import { Box, Grid, Select, MenuItem, Card  } from "@mui/material";
+import { Box, Grid, Select, MenuItem, Card, TextField, useTheme, useMediaQuery  } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import MDButton from "components/MDButton";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "layouts/loading/loadingscreen";
@@ -15,7 +16,8 @@ export default function BudgetTableTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
-
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
 
@@ -170,7 +172,8 @@ export default function BudgetTableTab() {
   return (
     <DashboardLayout>
       {/* 🔹 공통 헤더 사용 */}
-      <HeaderWithLogout showMenuButton title="📑 예산관리" />
+      {/* <HeaderWithLogout showMenuButton title="📑 예산관리" /> */}
+      <DashboardNavbar title="📑 예산관리" />
       <Grid container spacing={6}>
         {/* 거래처 테이블 */}
         <Grid item xs={12}>
@@ -289,20 +292,35 @@ export default function BudgetTableTab() {
 
             {/* 🔹 오른쪽: 연 / 월 / 저장 버튼 */}
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Select value={year} onChange={handleYearChange} size="small">
+              <TextField
+                select
+                size="small"
+                value={year}
+                onChange={handleYearChange}
+                sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+                SelectProps={{ native: true }}
+              >
                 {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-                  <MenuItem key={y} value={y}>
+                  <option key={y} value={y}>
                     {y}년
-                  </MenuItem>
+                  </option>
                 ))}
-              </Select>
-              <Select value={month} onChange={handleMonthChange} size="small">
+              </TextField>
+              <TextField
+                select
+                size="small"
+                value={month}
+                onChange={handleMonthChange}
+                sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+                SelectProps={{ native: true }}
+              >
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <MenuItem key={m} value={m}>
+                  <option key={m} value={m}>
                     {m}월
-                  </MenuItem>
+                  </option>
                 ))}
-              </Select>
+              </TextField>
+
               <MDButton
                 variant="contained"
                 color="info"

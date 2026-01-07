@@ -21,6 +21,7 @@ import api from "api/api";
 
 // 🔹 데이터 훅 import
 import useDeadlineBalanceData, { parseNumber, formatNumber } from "./deadlineBalanceData";
+import LoadingScreen from "layouts/loading/loadingscreen";
 
 export default function DeadlineBalanceTab() {
   const today = dayjs();
@@ -40,6 +41,7 @@ export default function DeadlineBalanceTab() {
   const {
     balanceRows,
     depositRows,
+    loading,
     fetchDeadlineBalanceList,
     fetchDepositHistoryList,
     fetchAccountDeadlineDifferencePriceSearch, // ✅ 추가
@@ -435,6 +437,8 @@ export default function DeadlineBalanceTab() {
     [isMobile]
   );
 
+  if (loading) return <LoadingScreen />;
+
   return (
     <>
       {/* 상단 필터 영역 */}
@@ -456,30 +460,35 @@ export default function DeadlineBalanceTab() {
             flexWrap: "wrap",
           }}
         >
-          <Select
+          <TextField
+            select
+            size="small"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            size="small"
-            sx={{ minWidth: 90 }}
+            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            SelectProps={{ native: true }}
           >
             {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-              <MenuItem key={y} value={y}>
+              <option key={y} value={y}>
                 {y}년
-              </MenuItem>
+              </option>
             ))}
-          </Select>
-          <Select
+          </TextField>
+  
+          <TextField
+            select
+            size="small"
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
-            size="small"
-            sx={{ minWidth: 70 }}
+            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            SelectProps={{ native: true }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <MenuItem key={m} value={m}>
+              <option key={m} value={m}>
                 {m}월
-              </MenuItem>
+              </option>
             ))}
-          </Select>
+          </TextField>
         </MDBox>
 
         <MDBox

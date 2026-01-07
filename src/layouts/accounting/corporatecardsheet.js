@@ -1,6 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import {
@@ -689,7 +690,8 @@ function CorporateCardSheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-        <HeaderWithLogout showMenuButton title="💳 본사 법인카드 관리" />
+        {/* <HeaderWithLogout showMenuButton title="💳 본사 법인카드 관리" /> */}
+        <DashboardNavbar title="💳 본사 법인카드 관리" />
 
         <MDBox
           pt={1}

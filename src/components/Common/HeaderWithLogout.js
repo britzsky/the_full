@@ -44,7 +44,7 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
       pt={0.5}
       pb={0.5}
       sx={{
-        backgroundColor: "#77BEF0",
+        backgroundColor: "#2f557a",
         borderRadius: "10px 10px 10px 10px",
       }}
     >
@@ -62,7 +62,7 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
             }}
           >
             {/* miniSidenav 여부에 따라 아이콘 변경 (선택사항) */}
-            <Icon fontSize="small">
+            <Icon fontSize="small" sx={{color:"white"}}>
               {miniSidenav ? "menu_open" : "menu"}
             </Icon>
           </IconButton>

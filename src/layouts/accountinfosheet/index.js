@@ -13,6 +13,7 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import MDInput from "components/MDInput";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useAccountInfosheetData from "./data/AccountInfoSheetData";
@@ -827,7 +828,8 @@ function AccountInfoSheet() {
   return (
     <DashboardLayout>
       {/* 🔹 공통 헤더 사용 */}
-      <HeaderWithLogout showMenuButton title="📋 고객사 상세관리" />
+      {/* <HeaderWithLogout showMenuButton title="📋 고객사 상세관리" /> */}
+      <DashboardNavbar title="📋 고객사 상세관리" />
       {/* 버튼영역 */}
       <MDBox
         pt={1}

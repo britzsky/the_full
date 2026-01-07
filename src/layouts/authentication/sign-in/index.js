@@ -69,6 +69,8 @@ function Basic() {
           }
 
           // 로그인 정보를 저장.
+          localStorage.setItem("position_name", response.data.position_name);
+          localStorage.setItem("user_name", response.data.user_name);
           localStorage.setItem("user_id", response.data.user_id);
           localStorage.setItem("user_type", response.data.user_type);
           localStorage.setItem("position", response.data.position);

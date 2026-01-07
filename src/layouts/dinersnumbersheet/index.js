@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
-import { Select, MenuItem, TextField } from "@mui/material";
+import { Select, MenuItem, TextField, useMediaQuery, useTheme } from "@mui/material";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
@@ -728,6 +728,9 @@ function DinersNumberSheet() {
   const [workingDay, setWorkingDay] = useState("0");
   const [originalWorkingDay, setOriginalWorkingDay] = useState(0);
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   const {
     activeRows,
     setActiveRows,
@@ -1088,15 +1091,19 @@ function DinersNumberSheet() {
   return (
     <DashboardLayout>
       <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
-
       <MDBox
         pt={1}
         pb={1}
-        gap={1}
         sx={{
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: isMobile ? "space-between" : "flex-end",
           alignItems: "center",
+          gap: isMobile ? 1 : 2,
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
         }}
       >
         {isWorkingDayVisible && (
@@ -1121,46 +1128,63 @@ function DinersNumberSheet() {
             />
           </>
         )}
-
-        <Select
-          value={selectedAccountId}
-          onChange={(e) => setSelectedAccountId(e.target.value)}
+        {accountList.length > 0 && (
+          <TextField
+            select
+            size="small"
+            value={selectedAccountId}
+            onChange={(e) => setSelectedAccountId(e.target.value)}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+          >
+            {(accountList || []).map((row) => (
+              <option key={row.account_id} value={row.account_id}>
+                {row.account_name}
+              </option>
+            ))}
+          </TextField>
+        )}
+        {/* ✅ 거래처 select와 같은 컴포넌트(TextField select)로 통일 */}
+        <TextField
+          select
           size="small"
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+          SelectProps={{ native: true }}
         >
-          {(accountList || []).map((acc) => (
-            <MenuItem key={acc.account_id} value={acc.account_id}>
-              {acc.account_name}
-            </MenuItem>
-          ))}
-        </Select>
-
-        <Select value={year} onChange={(e) => setYear(e.target.value)} size="small">
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-            <MenuItem key={y} value={y}>
+            <option key={y} value={y}>
               {y}년
-            </MenuItem>
+            </option>
           ))}
-        </Select>
+        </TextField>
 
-        <Select value={month} onChange={(e) => setMonth(e.target.value)} size="small">
+        <TextField
+          select
+          size="small"
+          value={month}
+          onChange={(e) => setMonth(Number(e.target.value))}
+          sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+          SelectProps={{ native: true }}
+        >
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <MenuItem key={m} value={m}>
+            <option key={m} value={m}>
               {m}월
-            </MenuItem>
+            </option>
           ))}
-        </Select>
-
+        </TextField>
         <MDButton variant="gradient" color="info" onClick={handleSave}>
           저장
         </MDButton>
       </MDBox>
 
-      <MDBox pt={1} pb={3}>
+      <MDBox pt={3} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card
               sx={{
-                height: "calc(98vh - 160px)",
+                height: "calc(95vh - 160px)",
                 display: "flex",
                 flexDirection: "column",
               }}

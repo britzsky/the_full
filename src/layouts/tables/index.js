@@ -9,6 +9,7 @@ import { Modal, Box, Typography, Button, TextField, Select, MenuItem } from "@mu
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import DaumPostcode from "react-daum-postcode";
 import LoadingScreen from "../loading/loadingscreen";
 import Swal from "sweetalert2";
@@ -73,7 +74,8 @@ export default function Tables() {
   return (
     <DashboardLayout>
       {/* 🔹 공통 헤더 사용 */}
-      <HeaderWithLogout showMenuButton title="🏢 고객사 목록" />
+      {/* <HeaderWithLogout showMenuButton title="🏢 고객사 목록" /> */}
+      <DashboardNavbar title="🏢 고객사 목록" />
       <Grid container spacing={6}>
         <Grid item xs={12}>
           <Card>

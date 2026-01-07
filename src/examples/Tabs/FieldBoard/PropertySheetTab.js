@@ -1,20 +1,34 @@
 // src/layouts/property/PropertySheetTab.js
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import { TextField } from "@mui/material";
+import {
+  TextField,
+  useTheme,
+  useMediaQuery,
+  IconButton,
+  Tooltip,
+} from "@mui/material";
+import DownloadIcon from "@mui/icons-material/Download";
+import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiessheetData";
+import usePropertiessheetData, {
+  parseNumber,
+  formatNumber,
+} from "./propertiessheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
-import dayjs from "dayjs"; // 🟧 감가상각 계산용
+import dayjs from "dayjs";
 import { API_BASE_URL } from "config";
 
 function PropertySheetTab() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const { activeRows, setActiveRows, accountList, loading, fetcPropertyList } =
+  const { activeRows, accountList, loading, fetcPropertyList } =
     usePropertiessheetData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -32,9 +46,13 @@ function PropertySheetTab() {
   }, [selectedAccountId]);
 
   useEffect(() => {
-    const deepCopy = activeRows.map((r) => ({ ...r }));
+    // ✅ type은 select 비교/표시 위해 문자열로 통일
+    const deepCopy = (activeRows || []).map((r) => ({
+      ...r,
+      type: r.type == null ? "0" : String(r.type),
+    }));
 
-    // ✅ 감가상각 자동 계산 추가
+    // ✅ 감가상각 자동 계산
     const updated = deepCopy.map((row) => {
       const { purchase_dt, purchase_price } = row;
       if (!purchase_dt || !purchase_price) return { ...row, depreciation: "" };
@@ -67,7 +85,9 @@ function PropertySheetTab() {
 
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
-      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
+      prevRows.map((row, idx) =>
+        idx === rowIndex ? { ...row, [key]: value } : row
+      )
     );
   };
 
@@ -76,19 +96,25 @@ function PropertySheetTab() {
     return value.replace(/\s+/g, " ").trim();
   };
 
+  // ✅ (FIX) 값 비교를 key별로 통일 (type은 string 비교)
+  const isSameValue = (key, original, current) => {
+    if (key === "type") {
+      return String(original ?? "") === String(current ?? "");
+    }
+    if (numericCols.includes(key)) {
+      return Number(original ?? 0) === Number(current ?? 0);
+    }
+    if (typeof original === "string" && typeof current === "string") {
+      return normalize(original) === normalize(current);
+    }
+    return original === current;
+  };
+
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
-    if (numericCols.includes(key)) {
-      return Number(original ?? 0) !== Number(value ?? 0)
-        ? { color: "red" }
-        : { color: "black" };
-    }
-    if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value)
-        ? { color: "red" }
-        : { color: "black" };
-    }
-    return original !== value ? { color: "red" } : { color: "black" };
+    return isSameValue(key, original, value)
+      ? { color: "black" }
+      : { color: "red" };
   };
 
   const handleAddRow = () => {
@@ -99,12 +125,12 @@ function PropertySheetTab() {
       item: "",
       spec: "",
       qty: "",
-      type: "0",
+      type: "0", // ✅ 문자열
       purchase_price: "0",
       item_img: "",
       receipt_img: "",
       note: "",
-      depreciation: "", // 🟧 추가
+      depreciation: "",
       isNew: true,
     };
     setRows((prev) => [...prev, newRow]);
@@ -146,6 +172,25 @@ function PropertySheetTab() {
     }
   };
 
+  // ✅ 다운로드 (서버 경로 문자열일 때만)
+  const handleDownload = useCallback((path) => {
+    if (!path || typeof path !== "string") return;
+    const url = `${API_BASE_URL}${path}`;
+    const filename = path.split("/").pop() || "download";
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, []);
+
+  // ✅ 아이콘 파란색
+  const fileIconSx = { color: "#1e88e5" };
+
   // 🟧 감가상각 자동 계산 useEffect
   useEffect(() => {
     const updated = rows.map((row) => {
@@ -158,21 +203,16 @@ function PropertySheetTab() {
 
       if (!purchaseDate.isValid()) return { ...row, depreciation: "" };
 
-      // 구매월부터 현재까지의 경과월 계산 (구매월도 포함)
       let monthsPassed = now.diff(purchaseDate, "month") + 1;
       if (monthsPassed < 1) monthsPassed = 1;
       if (monthsPassed > 60) monthsPassed = 60;
 
       const depreciationValue = ((monthsPassed / 60) * price).toFixed(0);
-
-      return {
-        ...row,
-        depreciation: formatNumber(depreciationValue),
-      };
+      return { ...row, depreciation: formatNumber(depreciationValue) };
     });
 
     setRows(updated);
-  }, [rows.map((r) => `${r.purchase_dt}-${r.purchase_price}`).join(",")]); // purchase_dt, purchase_price 변할 때 재계산
+  }, [rows.map((r) => `${r.purchase_dt}-${r.purchase_price}`).join(",")]);
 
   const handleSave = async () => {
     try {
@@ -181,17 +221,13 @@ function PropertySheetTab() {
           const original = originalRows[idx] || {};
           let updatedRow = { ...row };
 
+          // ✅ (FIX) 변경 감지도 동일 비교 로직 사용
           const isChanged =
             row.isNew ||
             Object.keys(updatedRow).some((key) => {
-              //if (key === "depreciation") return false; // 🟧 감가상각은 저장 제외
               const origVal = original[key];
               const curVal = updatedRow[key];
-              if (numericCols.includes(key))
-                return Number(origVal ?? 0) !== Number(curVal ?? 0);
-              if (typeof origVal === "string" && typeof curVal === "string")
-                return normalize(origVal) !== normalize(curVal);
-              return origVal !== curVal;
+              return !isSameValue(key, origVal, curVal);
             });
 
           if (!isChanged) return null;
@@ -216,6 +252,7 @@ function PropertySheetTab() {
           // 🟧 감가상각은 서버 저장 제외
           delete updatedRow.depreciation;
 
+          // ✅ type은 저장시에도 문자열->그대로(서버가 숫자 원하면 여기서 Number로 변환 가능)
           return { ...updatedRow, account_id: selectedAccountId || row.account_id };
         })
       );
@@ -260,48 +297,56 @@ function PropertySheetTab() {
 
   const columns = useMemo(
     () => [
-      { header: "구매일자", accessorKey: "purchase_dt", size: 60 },
-      { header: "구매처", accessorKey: "purchase_name", size: 100 },
-      { header: "품목", accessorKey: "item", size: 150 },
-      { header: "규격", accessorKey: "spec", size: 100 },
-      { header: "수량", accessorKey: "qty", size: 60 },
-      { header: "신규/중고", accessorKey: "type", size: 60 },
-      { header: "구매가격", accessorKey: "purchase_price", size: 80 },
-      { header: "예상감가\n(60개월 기준)", accessorKey: "depreciation", size: 80 }, // 🟧 읽기 전용
-      { header: "제품사진", accessorKey: "item_img", size: 130 },
-      { header: "영수증사진", accessorKey: "receipt_img", size: 130 },
-      { header: "비고", accessorKey: "note", size: 100 },
+      { header: "구매일자", accessorKey: "purchase_dt", size: 80 },
+      { header: "구매처", accessorKey: "purchase_name", size: 120 },
+      { header: "품목", accessorKey: "item", size: 160 },
+      { header: "규격", accessorKey: "spec", size: 110 },
+      { header: "수량", accessorKey: "qty", size: 70 },
+      { header: "신규/중고", accessorKey: "type", size: 80 },
+      { header: "구매가격", accessorKey: "purchase_price", size: 100 },
+      { header: "예상감가\n(60개월 기준)", accessorKey: "depreciation", size: 100 },
+      { header: "제품사진", accessorKey: "item_img", size: 140 },
+      { header: "영수증사진", accessorKey: "receipt_img", size: 140 },
+      { header: "비고", accessorKey: "note", size: 120 },
     ],
     []
   );
 
+  // ✅ 모바일 대응 테이블 스타일
   const tableSx = {
     flex: 1,
     minHeight: 0,
+    maxHeight: isMobile ? "55vh" : "75vh",
+    overflowX: "auto",
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
     "& table": {
       borderCollapse: "separate",
       width: "max-content",
       minWidth: "100%",
       borderSpacing: 0,
+      tableLayout: "fixed",
     },
     "& th, & td": {
       border: "1px solid #686D76",
       textAlign: "center",
-      padding: "4px",
+      padding: isMobile ? "2px" : "4px",
       whiteSpace: "pre-wrap",
-      fontSize: "12px",
+      fontSize: isMobile ? "10px" : "12px",
       verticalAlign: "middle",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
     },
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
       top: 0,
-      zIndex: 2,
+      zIndex: 10,
     },
     "& input[type='date'], & input[type='text']": {
-      fontSize: "12px",
-      padding: "4px",
-      minWidth: "80px",
+      fontSize: isMobile ? "10px" : "12px",
+      padding: isMobile ? "2px 3px" : "4px",
+      minWidth: isMobile ? "70px" : "80px",
       border: "none",
       background: "transparent",
     },
@@ -311,13 +356,31 @@ function PropertySheetTab() {
 
   return (
     <>
-      <MDBox pt={1} pb={1} sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+      {/* 상단 필터/버튼 영역 (모바일 대응) */}
+      <MDBox
+        pt={1}
+        pb={1}
+        sx={{
+          display: "flex",
+          justifyContent: isMobile ? "space-between" : "flex-end",
+          alignItems: "center",
+          gap: isMobile ? 1 : 2,
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          position: "sticky",
+          zIndex: 10,
+          top: 78,
+          backgroundColor: "#ffffff",
+        }}
+      >
         <TextField
           select
           size="small"
           value={selectedAccountId}
           onChange={onSearchList}
-          sx={{ minWidth: 150 }}
+          sx={{
+            minWidth: isMobile ? 150 : 200,
+            fontSize: isMobile ? "12px" : "14px",
+          }}
           SelectProps={{ native: true }}
         >
           {(accountList || []).map((row) => (
@@ -326,32 +389,26 @@ function PropertySheetTab() {
             </option>
           ))}
         </TextField>
-        <MDButton color="info" onClick={handleAddRow}>
+
+        <MDButton
+          color="info"
+          onClick={handleAddRow}
+          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90 }}
+        >
           행 추가
         </MDButton>
-        <MDButton color="info" onClick={handleSave}>
+
+        <MDButton
+          color="info"
+          onClick={handleSave}
+          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90 }}
+        >
           저장
         </MDButton>
       </MDBox>
 
+      {/* 테이블 영역 */}
       <MDBox pt={1} pb={3} sx={tableSx}>
-        {/* <MDBox
-          mx={0}
-          mt={-3}
-          py={1}
-          px={2}
-          variant="gradient"
-          bgColor="info"
-          borderRadius="lg"
-          coloredShadow="info"
-          display="flex"
-          justifyContent="space-between"
-          alignItems="center"
-        >
-          <MDTypography variant="h6" color="white">
-            기물리스트 관리
-          </MDTypography>
-        </MDBox> */}
         <table>
           <thead>
             <tr>
@@ -360,6 +417,7 @@ function PropertySheetTab() {
               ))}
             </tr>
           </thead>
+
           <tbody>
             {rows.map((row, rowIndex) => (
               <tr key={rowIndex}>
@@ -391,7 +449,7 @@ function PropertySheetTab() {
                     return (
                       <td key={key} style={{ width: col.size }}>
                         <select
-                          value={value}
+                          value={String(value ?? "0")}
                           onChange={(e) =>
                             handleCellChange(rowIndex, key, e.target.value)
                           }
@@ -400,7 +458,7 @@ function PropertySheetTab() {
                             width: "100%",
                             border: "none",
                             background: "transparent",
-                            fontSize: "12px",
+                            fontSize: isMobile ? "10px" : "12px",
                           }}
                         >
                           <option value="0">신규</option>
@@ -409,7 +467,10 @@ function PropertySheetTab() {
                       </td>
                     );
 
-                  if (["item_img", "receipt_img"].includes(key))
+                  // ✅ 이미지: 있으면 다운로드/미리보기(파란색), 없으면 업로드 버튼
+                  if (["item_img", "receipt_img"].includes(key)) {
+                    const hasImage = !!value;
+
                     return (
                       <td
                         key={key}
@@ -425,37 +486,61 @@ function PropertySheetTab() {
                           id={`upload-${key}-${rowIndex}`}
                           style={{ display: "none" }}
                           onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.files[0])
+                            handleCellChange(rowIndex, key, e.target.files?.[0])
                           }
                         />
-                        {value && (
-                          <img
-                            src={
-                              typeof value === "object"
-                                ? URL.createObjectURL(value)
-                                : `${API_BASE_URL}${value}`
-                            }
-                            alt="preview"
+
+                        {hasImage ? (
+                          <div
                             style={{
-                              maxWidth: "150px",
-                              maxHeight: "150px",
-                              cursor: "pointer",
-                              display: "block",
-                              margin: "6px auto",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              flexWrap: isMobile ? "wrap" : "nowrap",
                             }}
-                            onClick={() => handleViewImage(value)}
-                          />
+                          >
+                            {/* 다운로드: 서버 문자열일 때만 */}
+                            {typeof value === "string" && (
+                              <Tooltip title="다운로드">
+                                <IconButton
+                                  size="small"
+                                  sx={fileIconSx}
+                                  onClick={() => handleDownload(value)}
+                                >
+                                  <DownloadIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+
+                            {/* 미리보기: 서버/로컬 모두 */}
+                            <Tooltip title="미리보기">
+                              <IconButton
+                                size="small"
+                                sx={fileIconSx}
+                                onClick={() => handleViewImage(value)}
+                              >
+                                <ImageSearchIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </div>
+                        ) : (
+                          <label htmlFor={`upload-${key}-${rowIndex}`}>
+                            <MDButton
+                              component="span"
+                              size="small"
+                              color="info"
+                              sx={{ fontSize: isMobile ? "10px" : "12px" }}
+                            >
+                              이미지 업로드
+                            </MDButton>
+                          </label>
                         )}
-                        <label htmlFor={`upload-${key}-${rowIndex}`}>
-                          <MDButton component="span" size="small" color="info">
-                            이미지 업로드
-                          </MDButton>
-                        </label>
                       </td>
                     );
+                  }
 
                   if (key === "depreciation") {
-                    // 🟧 감가상각은 읽기 전용
                     return (
                       <td
                         key={key}
@@ -479,11 +564,10 @@ function PropertySheetTab() {
                       suppressContentEditableWarning
                       style={{ ...style, width: col.size }}
                       onBlur={(e) => {
-                        let newValue = e.target.innerText.trim();
+                        let newValue = e.currentTarget.innerText.trim();
                         if (isNumeric) newValue = parseNumber(newValue);
                         handleCellChange(rowIndex, key, newValue);
-                        if (isNumeric)
-                          e.currentTarget.innerText = formatNumber(newValue);
+                        if (isNumeric) e.currentTarget.innerText = formatNumber(newValue);
                       }}
                     >
                       {isNumeric ? formatNumber(value) : value}
@@ -496,6 +580,7 @@ function PropertySheetTab() {
         </table>
       </MDBox>
 
+      {/* 이미지 전체보기 오버레이 */}
       {viewImageSrc && (
         <div
           style={{
@@ -518,30 +603,48 @@ function PropertySheetTab() {
               position: "relative",
               maxWidth: "100%",
               maxHeight: "100%",
+              padding: isMobile ? 8 : 16,
             }}
           >
-            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-              {({ zoomIn, zoomOut, resetTransform }) => (
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.5}
+              maxScale={5}
+              centerOnInit
+            >
+              {() => (
                 <>
                   <div
                     style={{
                       position: "absolute",
-                      top: 16,
-                      right: 16,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
+                      top: 8,
+                      right: 8,
                       zIndex: 1000,
                     }}
                   >
-                    <button onClick={handleCloseViewer}>X</button>
+                    <button
+                      onClick={handleCloseViewer}
+                      style={{
+                        border: "none",
+                        borderRadius: 4,
+                        padding: "4px 8px",
+                        fontSize: isMobile ? 12 : 14,
+                        cursor: "pointer",
+                      }}
+                    >
+                      닫기
+                    </button>
                   </div>
 
                   <TransformComponent>
                     <img
                       src={encodeURI(viewImageSrc)}
                       alt="미리보기"
-                      style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8 }}
+                      style={{
+                        maxWidth: "95vw",
+                        maxHeight: "90vh",
+                        borderRadius: 8,
+                      }}
                     />
                   </TransformComponent>
                 </>

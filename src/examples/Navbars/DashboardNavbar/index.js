@@ -1,15 +1,8 @@
-/**
-=========================================================
-* Material Dashboard 2 React - v2.2.0
-=========================================================
-*/
-
+/* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
-
-// prop-types is a library for typechecking of props.
 import PropTypes from "prop-types";
 
-// @material-ui core components
+// @mui
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import IconButton from "@mui/material/IconButton";
@@ -17,20 +10,21 @@ import Menu from "@mui/material/Menu";
 import Icon from "@mui/material/Icon";
 import Badge from "@mui/material/Badge";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
+import useTheme from "@mui/material/styles/useTheme";
+import useMediaQuery from "@mui/material/useMediaQuery";
 
-// Material Dashboard 2 React components
+// MD
 import MDBox from "components/MDBox";
-import MDInput from "components/MDInput";
 import MDTypography from "components/MDTypography";
 
-// Material Dashboard 2 React example components
+// Example
 import NotificationItem from "examples/Items/NotificationItem";
 import api from "api/api";
 
 // ✅ 프로필 모달
 import UserProfileModal from "examples/Navbars/DefaultNavbar/UserProfileModal";
 
-// Custom styles for DashboardNavbar
+// Styles
 import {
   navbar,
   navbarContainer,
@@ -39,7 +33,7 @@ import {
   navbarMobileMenu,
 } from "examples/Navbars/DashboardNavbar/styles";
 
-// Material Dashboard 2 React context
+// Context
 import {
   useMaterialUIController,
   setTransparentNavbar,
@@ -47,32 +41,32 @@ import {
   setOpenConfigurator,
 } from "context";
 
-function DashboardNavbar({ absolute, light, isMini }) {
+function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMini }) {
+  const NAVBAR_H = 48;
+
+  // ✅ 화면이 너무 작아지면 오른쪽(유저명/프로필/알림) 숨김
+  const theme = useTheme();
+  const isSmDown = useMediaQuery(theme.breakpoints.down("sm")); // 600px 이하
+  const hideRightArea = isSmDown;
+
   const [navbarType, setNavbarType] = useState();
   const [controller, dispatch] = useMaterialUIController();
   const { miniSidenav, transparentNavbar, fixedNavbar, openConfigurator, darkMode } = controller;
 
   const [openMenu, setOpenMenu] = useState(null);
-
-  // ✅ 프로필 모달 오픈 상태
   const [openProfile, setOpenProfile] = useState(false);
 
-  // 🔹 알림 상태
   const [notifications, setNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
 
-  // 🔹 로그인한 유저 아이디 (로그인 시 localStorage.setItem("user_id", ...) 했다는 가정)
+  const [userName, setUserName] = useState("");
+  const [position_name, setPositionName] = useState("");
+
   const userId = localStorage.getItem("user_id");
 
   useEffect(() => {
-    // Setting the navbar type
-    if (fixedNavbar) {
-      setNavbarType("sticky");
-    } else {
-      setNavbarType("static");
-    }
+    setNavbarType(fixedNavbar ? "sticky" : "static");
 
-    // A function that sets the transparent state of the navbar.
     function handleTransparentNavbar() {
       setTransparentNavbar(dispatch, (fixedNavbar && window.scrollY === 0) || !fixedNavbar);
     }
@@ -83,24 +77,18 @@ function DashboardNavbar({ absolute, light, isMini }) {
     return () => window.removeEventListener("scroll", handleTransparentNavbar);
   }, [dispatch, fixedNavbar]);
 
-  // 🔹 처음 진입했을 때 알림 한 번 조회
   useEffect(() => {
     fetchNotifications();
   }, []);
 
-  const handleMiniSidenav = () => setMiniSidenav(dispatch, !miniSidenav);
-  const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
-
-  const handleOpenMenu = (event) => {
-    setOpenMenu(event.currentTarget);
-    // 🔹 메뉴 열 때마다 최신 알림 조회
-    fetchNotifications();
-  };
-
-  const handleCloseMenu = () => setOpenMenu(null);
+  useEffect(() => {
+    const name = (localStorage.getItem("user_name") || "").trim();
+    setUserName(name);
+    const pn = (localStorage.getItem("position_name") || "").trim();
+    setPositionName(pn);
+  }, []);
 
   const fetchNotifications = async () => {
-    // userId 없으면 그냥 비워두고 종료
     if (!userId) {
       setNotifications([]);
       return;
@@ -108,12 +96,7 @@ function DashboardNavbar({ absolute, light, isMini }) {
 
     try {
       setNotifLoading(true);
-
-      // 👉 실제 백엔드 규격에 맞춰서 수정
-      const res = await api.get("/User/ContractEndAccountList", {
-        params: { user_id: userId },
-      });
-
+      const res = await api.get("/User/ContractEndAccountList", { params: { user_id: userId } });
       setNotifications(res.data || []);
     } catch (e) {
       console.error("알림 조회 실패:", e);
@@ -123,22 +106,43 @@ function DashboardNavbar({ absolute, light, isMini }) {
     }
   };
 
-  // Render the notifications menu
+  const handleOpenMenu = (event) => {
+    setOpenMenu(event.currentTarget);
+    fetchNotifications();
+  };
+  const handleCloseMenu = () => setOpenMenu(null);
+
+  // ✅ mini일 때만 “펼치기” 버튼 보이게
+  const showSidenavToggle = Boolean(showMenuButtonWhenMini && miniSidenav);
+  const handleToggleSidenav = () => setMiniSidenav(dispatch, !miniSidenav);
+
+  const iconsStyle = { color: "#fff" };
+  const notificationCount = notifications.length;
+
   const renderMenu = () => (
     <Menu
       anchorEl={openMenu}
       anchorReference={null}
-      anchorOrigin={{
-        vertical: "bottom",
-        horizontal: "left",
-      }}
+      anchorOrigin={{ vertical: "bottom", horizontal: "left" }}
+      transformOrigin={{ vertical: "top", horizontal: "left" }}
       open={Boolean(openMenu)}
       onClose={handleCloseMenu}
-      sx={{ mt: 1 }}
+      sx={{
+        mt: 1,
+        "& .MuiPaper-root": {
+          backgroundColor: "#2F557A",
+          backgroundImage: "none",
+          color: "#fff",
+          borderRadius: "12px",
+          minWidth: 260,
+          border: "1px solid rgba(255,255,255,0.18)",
+        },
+        "& .MuiBackdrop-root": { backgroundColor: "transparent" },
+      }}
     >
       {notifLoading && (
         <MDBox px={2} py={1}>
-          <MDTypography variant="button" fontSize="0.7rem">
+          <MDTypography variant="button" fontSize="0.7rem" sx={{ color: "#fff" }}>
             알림을 불러오는 중입니다...
           </MDTypography>
         </MDBox>
@@ -146,7 +150,7 @@ function DashboardNavbar({ absolute, light, isMini }) {
 
       {!notifLoading && notifications.length === 0 && (
         <MDBox px={2} py={1}>
-          <MDTypography variant="button" fontSize="0.7rem">
+          <MDTypography variant="button" fontSize="0.7rem" sx={{ color: "#fff" }}>
             새로운 알림이 없습니다.
           </MDTypography>
         </MDBox>
@@ -154,99 +158,159 @@ function DashboardNavbar({ absolute, light, isMini }) {
 
       {!notifLoading &&
         notifications.map((n, idx) => (
-          <NotificationItem
+          <MDBox
             key={n.id || n.account_id || idx}
-            icon={<ArrowRightIcon />}
-            title={n.title || n.message || `${n.account_name}(${n.contract_end})` || "알림"}
-          />
+            sx={{ "&:hover": { backgroundColor: "rgba(255,255,255,0.10)" }, borderRadius: "10px" }}
+          >
+            <NotificationItem
+              icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+              title={n.title || n.message || `${n.account_name}(${n.contract_end})` || "알림"}
+            />
+          </MDBox>
         ))}
     </Menu>
   );
-
-  // Styles for the navbar icons
-  const iconsStyle = ({ palette: { dark, white, text }, functions: { rgba } }) => ({
-    color: () => {
-      let colorValue = light || darkMode ? white.main : dark.main;
-
-      if (transparentNavbar && !light) {
-        colorValue = darkMode ? rgba(text.main, 0.6) : text.main;
-      }
-
-      return colorValue;
-    },
-  });
-
-  const notificationCount = notifications.length;
 
   return (
     <>
       <AppBar
         position={absolute ? "absolute" : navbarType}
         color="inherit"
-        sx={(theme) => navbar(theme, { transparentNavbar, absolute, light, darkMode })}
+        sx={(theme2) => ({
+          ...navbar(theme2, { transparentNavbar, absolute, light, darkMode }),
+          backgroundColor: "#2F557A",
+          backgroundImage: "none",
+          paddingTop: 0,
+          paddingBottom: 0,
+          minHeight: NAVBAR_H,
+          height: NAVBAR_H,
+          "& .MuiToolbar-root": {
+            minHeight: NAVBAR_H,
+            height: NAVBAR_H,
+            paddingTop: 0,
+            paddingBottom: 0,
+          },
+          "@media (min-width:600px)": {
+            minHeight: NAVBAR_H,
+            height: NAVBAR_H,
+            "& .MuiToolbar-root": { minHeight: NAVBAR_H, height: NAVBAR_H },
+          },
+        })}
       >
-        <Toolbar sx={(theme) => navbarContainer(theme)}>
-          <MDBox
-            color="inherit"
-            mb={{ xs: 1, md: 0 }}
-            sx={(theme) => navbarRow(theme, { isMini })}
-          >
-            {/* 지금은 breadcrumb 안 쓰는 상태라 비워둠 */}
+        <Toolbar
+          variant="dense"
+          disableGutters
+          sx={(theme2) => ({
+            ...navbarContainer(theme2),
+            minHeight: NAVBAR_H,
+            height: NAVBAR_H,
+            paddingTop: 0,
+            paddingBottom: 0,
+            paddingLeft: theme2.spacing(1.5),
+            paddingRight: theme2.spacing(1.5),
+            flexWrap: "nowrap", // ✅ 줄바꿈 방지
+            "@media (min-width:600px)": { minHeight: NAVBAR_H, height: NAVBAR_H },
+          })}
+        >
+          {/* ✅ 왼쪽: (mini일 때만) 토글 버튼 + title */}
+          <MDBox display="flex" alignItems="center" gap={1} sx={{ flex: 1, minWidth: 0 }}>
+            {showSidenavToggle && (
+              <IconButton
+                size="small"
+                onClick={handleToggleSidenav}
+                sx={{
+                  color: "white",
+                  border: "2px solid rgba(255,255,255,0.6)",
+                  borderRadius: "8px",
+                  padding: "4px",
+                  flex: "0 0 auto",
+                }}
+              >
+                <Icon fontSize="small" sx={{ color: "white" }}>
+                  menu_open
+                </Icon>
+              </IconButton>
+            )}
+
+            {!!title && (
+              <MDTypography
+                variant="button"
+                fontWeight="bold"
+                fontSize="16px"
+                sx={{
+                  color: "#fff",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {title}
+              </MDTypography>
+            )}
           </MDBox>
 
-          {isMini ? null : (
-            <MDBox sx={(theme) => navbarRow(theme, { isMini })}>
-              <MDBox color={light ? "white" : "inherit"}>
-                {/* ✅ 계정 아이콘: 클릭 시 프로필 모달 */}
+          {/* ✅ 오른쪽: 화면이 작아지면 통째로 숨김 (user/프로필/알림) */}
+          {isMini || hideRightArea ? null : (
+            <MDBox
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                flex: "0 0 auto",
+                whiteSpace: "nowrap",
+                flexWrap: "nowrap",
+                gap: 0.5,
+                minWidth: 0,
+              }}
+            >
+              {userName && (
+                <MDTypography
+                  variant="caption"
+                  sx={{
+                    color: "rgba(255,255,255,0.92)",
+                    fontWeight: 500,
+                    letterSpacing: "-0.2px",
+                    lineHeight: 1.1,
+                    textAlign: "right",
+                    mr: 0.5,
+                  }}
+                >
+                  {userName}
+                  <br />
+                  {position_name}
+                </MDTypography>
+              )}
+
+              <MDBox
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "nowrap",
+                  whiteSpace: "nowrap",
+                  gap: 0.25,
+                }}
+              >
                 <IconButton
-                  sx={navbarIconButton}
-                  size="small"
+                  sx={{ ...navbarIconButton, color: "#fff" }}
+                  size="medium"
                   disableRipple
                   onClick={() => setOpenProfile(true)}
                 >
                   <Icon sx={iconsStyle}>account_circle</Icon>
                 </IconButton>
 
-                {/* 사이드바 토글 아이콘 */}
                 <IconButton
-                  size="small"
+                  size="medium"
                   disableRipple
-                  color="inherit"
-                  sx={navbarMobileMenu}
-                  onClick={handleMiniSidenav}
-                >
-                  <Icon sx={iconsStyle} fontSize="medium">
-                    {miniSidenav ? "menu_open" : "menu"}
-                  </Icon>
-                </IconButton>
-
-                {/* 설정 아이콘 */}
-                <IconButton
-                  size="small"
-                  disableRipple
-                  color="inherit"
-                  sx={navbarIconButton}
-                  onClick={handleConfiguratorOpen}
-                >
-                  <Icon sx={iconsStyle}>settings</Icon>
-                </IconButton>
-
-                {/* 알림 아이콘 + 뱃지 */}
-                <IconButton
-                  size="small"
-                  disableRipple
-                  color="inherit"
-                  sx={navbarIconButton}
+                  sx={{ ...navbarIconButton, color: "#fff" }}
                   aria-controls="notification-menu"
                   aria-haspopup="true"
-                  variant="contained"
                   onClick={handleOpenMenu}
                 >
                   <Badge
                     badgeContent={notificationCount}
                     color="error"
                     max={99}
-                    // 0개면 뱃지 안 보이게
                     invisible={notificationCount === 0}
                   >
                     <Icon sx={iconsStyle}>notifications</Icon>
@@ -260,24 +324,25 @@ function DashboardNavbar({ absolute, light, isMini }) {
         </Toolbar>
       </AppBar>
 
-      {/* ✅ 프로필 모달 */}
       <UserProfileModal open={openProfile} onClose={() => setOpenProfile(false)} />
     </>
   );
 }
 
-// Setting default values for the props of DashboardNavbar
 DashboardNavbar.defaultProps = {
   absolute: false,
   light: false,
   isMini: false,
+  title: "",
+  showMenuButtonWhenMini: true,
 };
 
-// Typechecking props for the DashboardNavbar
 DashboardNavbar.propTypes = {
   absolute: PropTypes.bool,
   light: PropTypes.bool,
   isMini: PropTypes.bool,
+  title: PropTypes.string,
+  showMenuButtonWhenMini: PropTypes.bool,
 };
 
 export default DashboardNavbar;

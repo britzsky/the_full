@@ -6,6 +6,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 // 탭용 서브 컴포넌트 import
 import ProfitLossTableTab from "./HeadOffice/ProfitLossTableTab";
 import PeopleCountingTab from "./HeadOffice/PeopleCountingTab";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 function HeadOfficeTab() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -35,7 +36,8 @@ function HeadOfficeTab() {
         }}
       >
         {/* 🔹 공통 헤더 사용 */}
-        <HeaderWithLogout showMenuButton title="📊관리표" />
+        {/* <HeaderWithLogout showMenuButton title="📊관리표" /> */}
+        <DashboardNavbar title="📊관리표" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}

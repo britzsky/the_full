@@ -162,9 +162,9 @@ const routes = [
       {
         type: "collapse",
         name: "📁 고객사 관리",
-        key: "business",
+        key: "businessaccount",
         //icon: <Icon fontSize="small">*</Icon>,
-        route: "/business/telemanager",
+        route: "/businessaccount/telemanager",
         component: <TeleManager />,
         allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한

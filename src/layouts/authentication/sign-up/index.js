@@ -104,7 +104,7 @@ function SignUp() {
       setForm((prev) => ({
         ...prev,
         user_type: code,   // 🔹 이제 "1"
-        department: "0",   // 대표 부서
+        department: "2",   // 대표 부서
         position: "0",     // 대표 직책
         account_id: "",
       }));
@@ -414,13 +414,12 @@ function SignUp() {
                     value={form.department}
                     onChange={(e) => handleInputChange("department", e.target.value)}
                   >
-                    <MenuItem value="0">대표</MenuItem>
                     <MenuItem value="2">회계팀</MenuItem>
                     <MenuItem value="3">인사팀</MenuItem>
                     <MenuItem value="4">영업팀</MenuItem>
                     <MenuItem value="5">운영팀</MenuItem>
                     <MenuItem value="6">개발팀</MenuItem>
-                    <MenuItem value="7">현장</MenuItem>
+                    {/* <MenuItem value="7">현장</MenuItem> */}
                   </Select>
                   {errors.department && (
                     <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
@@ -441,14 +440,10 @@ function SignUp() {
                     value={form.position}
                     onChange={(e) => handleInputChange("position", e.target.value)}
                   >
-                    <MenuItem value="0">대표</MenuItem>
+                    {/* <MenuItem value="0">대표</MenuItem> */}
                     <MenuItem value="1">팀장</MenuItem>
-                    <MenuItem value="2">부장</MenuItem>
-                    <MenuItem value="3">차장</MenuItem>
-                    <MenuItem value="4">과장</MenuItem>
-                    <MenuItem value="5">대리</MenuItem>
-                    <MenuItem value="6">주임</MenuItem>
-                    <MenuItem value="7">사원</MenuItem>
+                    <MenuItem value="2">파트장</MenuItem>
+                    <MenuItem value="3">매니저</MenuItem>
                   </Select>
                   {errors.position && (
                     <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
@@ -552,12 +547,25 @@ function SignUp() {
               />
             </MDBox>
 
-            <MDBox mt={4} mb={1}>
-              <MDButton variant="gradient" color="info" fullWidth onClick={handleSubmit}>
+            {/* ✅ 회원가입 / 취소 버튼 */}
+            <MDBox mt={4} mb={1} display="flex" gap={1}>
+              <MDButton
+                variant="gradient"
+                color="info"
+                fullWidth
+                onClick={handleSubmit}
+              >
                 회원가입
               </MDButton>
+              <MDButton
+                variant="gradient"
+                color="warning"
+                fullWidth
+                onClick={() => navigate("/authentication/sign-in")}
+              >
+                취소
+              </MDButton>
             </MDBox>
-
             {/* 주소 검색 모달 */}
             <Dialog
               open={openPostcode}

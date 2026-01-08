@@ -377,15 +377,11 @@ function BusinessScheduleSheet() {
   const POSITION_LABEL = {
     0: "대표",
     1: "팀장",
-    2: "부장",
-    3: "차장",
-    4: "과장",
-    5: "대리",
-    6: "주임",
-    7: "사원",
+    2: "파트장",
+    3: "매니저",
     8: "영양사",
   };
-
+  
   const getPositionLabel = (pos) => {
     const key = Number(pos);
     return POSITION_LABEL[key] ?? "직급없음"; // 없는 값 들어오면 fallback

@@ -31,6 +31,8 @@ import Icon from "@mui/material/Icon";
 import useRecordsheetData from "./data/RecordSheetData";
 import Swal from "sweetalert2";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // ✅ 너네 백엔드에 맞게 수정해야 하는 API 2개
 const DISPATCH_LIST_API = "/Account/AccountDispatchMemberList"; // 파출 목록 조회 (del_yn 포함)
@@ -847,6 +849,199 @@ function RecordSheet() {
     }
   };
 
+  const TYPE_LABEL = {
+    "0": "-",
+    "1": "영양사",
+    "2": "상용",
+    "3": "초과",
+    "4": "결근",
+    "5": "파출",
+    "6": "직원파출",
+    "7": "유틸",
+    "8": "대체근무",
+    "9": "연차",
+    "10": "반차",
+    "11": "대체휴무",
+    "12": "병가",
+    "13": "출산휴가",
+    "14": "육아휴직",
+    "15": "하계휴가",
+  };
+
+  const formatDayCell = (cell) => {
+    if (!cell || !cell.type || cell.type === "0") return "";
+    const typeLabel = TYPE_LABEL[String(cell.type)] ?? String(cell.type);
+
+    const start = cell.start || cell.start_time || "";
+    const end = cell.end || cell.end_time || "";
+    const salary =
+      cell.salary != null && String(cell.salary).trim() !== ""
+        ? Number(String(cell.salary).replace(/,/g, "")).toLocaleString()
+        : "";
+    const memo = cell.memo ?? cell.note ?? "";
+
+    // 셀 하나에 보기 좋게 줄바꿈
+    // 예: "상용\n09:00~18:00\n급여: 100,000\n메모..."
+    const lines = [
+      typeLabel,
+      start || end ? `${start}~${end}` : "",
+      salary ? `급여: ${salary}` : "",
+      memo ? `메모: ${memo}` : "",
+    ].filter(Boolean);
+
+    return lines.join("\n");
+  };
+
+  const handleExcelDownload = async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "RecordSheet";
+
+    // 파일명
+    const accountName =
+      (accountList || []).find((a) => a.account_id === selectedAccountId)?.account_name ||
+      account_name ||
+      selectedAccountId ||
+      "거래처";
+    const filename = `출근부_${accountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
+
+    // =========================
+    // 1) 출근 현황 시트
+    // =========================
+    const ws1 = wb.addWorksheet("출근현황");
+    ws1.properties.defaultRowHeight = 18;
+
+    // 헤더 만들기: 직원명 + day_1..day_n
+    const header = ["직원명"];
+    for (let d = 1; d <= daysInMonth; d++) header.push(`${d}일`);
+    ws1.addRow(header);
+
+    // 헤더 스타일
+    ws1.getRow(1).font = { bold: true };
+    ws1.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
+
+    // 데이터
+    attendanceRows.forEach((row) => {
+      const r = [row.name || ""];
+      for (let d = 1; d <= daysInMonth; d++) {
+        const key = `day_${d}`;
+        r.push(formatDayCell(row[key]));
+      }
+      ws1.addRow(r);
+    });
+
+    // 컬럼 폭 / 줄바꿈 / 고정
+    ws1.columns = [
+      { width: 14 }, // 직원명
+      ...Array.from({ length: daysInMonth }, () => ({ width: 14 })),
+    ];
+
+    // 셀 스타일(줄바꿈)
+    ws1.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        cell.alignment = {
+          wrapText: true,
+          vertical: "top",
+          horizontal: rowNumber === 1 ? "center" : "left",
+        };
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+    });
+
+    // 첫 행/첫 열 고정(엑셀 Freeze)
+    ws1.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+
+    // =========================
+    // 2) 직원 정보 시트
+    // =========================
+    const ws2 = wb.addWorksheet("직원정보");
+    ws2.addRow(["직원명", "직책", "직원파출", "초과", "결근", "비고"]);
+    ws2.getRow(1).font = { bold: true };
+
+    (memberRows || []).forEach((m) => {
+      ws2.addRow([
+        m.name || "",
+        m.position || "",
+        m.employ_dispatch ?? "",
+        m.over_work ?? "",
+        m.non_work ?? "",
+        m.note ?? "",
+      ]);
+    });
+
+    ws2.columns = [
+      { width: 14 },
+      { width: 10 },
+      { width: 10 },
+      { width: 10 },
+      { width: 10 },
+      { width: 30 },
+    ];
+
+    ws2.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+    });
+
+    // =========================
+    // 3) 파출 정보 시트
+    // =========================
+    const ws3 = wb.addWorksheet("파출정보");
+    ws3.addRow(["이름", "주민등록번호", "계좌정보", "금액", "삭제여부(del_yn)"]);
+    ws3.getRow(1).font = { bold: true };
+
+    (dispatchRows || []).forEach((d) => {
+      ws3.addRow([
+        d.name || "",
+        d.rrn || "",
+        d.account_number || "",
+        d.total ?? "",
+        d.del_yn ?? "N",
+      ]);
+    });
+
+    ws3.columns = [
+      { width: 14 },
+      { width: 18 },
+      { width: 26 },
+      { width: 12 },
+      { width: 16 },
+    ];
+
+    ws3.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+    });
+
+    // =========================
+    // 파일 저장
+    // =========================
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    saveAs(blob, filename);
+  };
+
+
   // ✅ 거래처/연월/필터 변경 시 "파출만" 재조회
   // useEffect(() => {
   //   if (!selectedAccountId) return;
@@ -945,7 +1140,18 @@ function RecordSheet() {
             >
               출퇴근 일괄 적용
             </MDButton>
-
+            <MDButton
+              variant="gradient"
+              color="dark"
+              onClick={handleExcelDownload}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 90 : 110,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              엑셀 다운로드
+            </MDButton>
             {/* ✅ 조회: 전체 조회 + 파출은 필터로 다시 맞춤 */}
             <MDButton
               variant="gradient"

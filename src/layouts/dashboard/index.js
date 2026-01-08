@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import PropTypes from "prop-types";
+import { useNavigate } from "react-router-dom";
+
 // @mui
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
@@ -21,15 +23,14 @@ import MDTypography from "components/MDTypography";
 // Layout
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import Footer from "examples/Footer";
+// import Footer from "examples/Footer";
 import LoadingScreen from "layouts/loading/loadingscreen";
-
-// (선택) 로딩 컴포넌트가 프로젝트에 있으면 사용
-// import LoadingScreen from "layouts/loading/loadingscreen";
 
 import useDashBoardData from "layouts/dashboard/data/dashboardData";
 
-function HeaderCard({ title, children, minHeight = 140 }) {
+function HeaderCard({ title, children, minHeight = 140, onClick }) {
+  const clickable = typeof onClick === "function";
+
   return (
     <Card
       sx={{
@@ -40,11 +41,33 @@ function HeaderCard({ title, children, minHeight = 140 }) {
         backgroundColor: "#F3F3F3",
       }}
     >
-      <MDBox px={2} pt={1.5} pb={1} display="flex" alignItems="center" justifyContent="space-between">
+      <MDBox
+        px={2}
+        pt={1.5}
+        pb={1}
+        display="flex"
+        alignItems="center"
+        justifyContent="space-between"
+      >
         <MDTypography variant="button" fontWeight="bold" color="dark">
           {title}
         </MDTypography>
-        <Icon sx={{ opacity: 0.6, fontSize: 18 }}>chevron_right</Icon>
+
+        {/* ✅ 화살표 클릭 시 이동 */}
+        <Icon
+          sx={{
+            opacity: 0.6,
+            fontSize: 18,
+            cursor: clickable ? "pointer" : "default",
+          }}
+          onClick={(e) => {
+            if (!clickable) return;
+            e.stopPropagation();
+            onClick();
+          }}
+        >
+          chevron_right
+        </Icon>
       </MDBox>
 
       <Divider sx={{ my: 0 }} />
@@ -60,10 +83,12 @@ HeaderCard.propTypes = {
   title: PropTypes.string.isRequired,
   children: PropTypes.node,
   minHeight: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  onClick: PropTypes.func,
 };
 HeaderCard.defaultProps = {
   children: null,
   minHeight: 140,
+  onClick: undefined,
 };
 
 function ListLines({ items, emptyText = "데이터가 없습니다." }) {
@@ -78,13 +103,35 @@ function ListLines({ items, emptyText = "데이터가 없습니다." }) {
   return (
     <MDBox display="flex" flexDirection="column" gap={0.75}>
       {items.map((it, idx) => (
-        <MDBox key={`${idx}-${it?.content || ""}`} display="flex" justifyContent="space-between" gap={2}>
-          <MDTypography variant="caption" color="dark" sx={{ fontWeight: 500, whiteSpace: "pre-line" }}>
+        <MDBox
+          key={`${idx}-${it?.content || ""}`}
+          display="flex"
+          justifyContent="space-between"
+          alignItems="flex-start"
+          gap={2}
+          sx={{ minWidth: 0 }}
+        >
+          <MDTypography
+            variant="caption"
+            color="dark"
+            sx={{
+              fontWeight: 500,
+              flex: 1,
+              minWidth: 0,
+              whiteSpace: "pre-line",
+              wordBreak: "break-word",
+            }}
+          >
             {it.content}
           </MDTypography>
+
           {it.date && (
-            <MDTypography variant="caption" color="text" sx={{ opacity: 0.8, whiteSpace: "pre-line" }}>
-              {it.content}
+            <MDTypography
+              variant="caption"
+              color="text"
+              sx={{ opacity: 0.8, whiteSpace: "nowrap", flex: "0 0 auto" }}
+            >
+              {it.date}
             </MDTypography>
           )}
         </MDBox>
@@ -98,6 +145,7 @@ ListLines.propTypes = {
     PropTypes.shape({
       title: PropTypes.string,
       content: PropTypes.string,
+      date: PropTypes.string,
     })
   ),
   emptyText: PropTypes.string,
@@ -108,36 +156,63 @@ ListLines.defaultProps = {
   emptyText: "데이터가 없습니다.",
 };
 
-// ✅ 행사 종류별 색상 매핑
+// ✅ 행사 종류별 색상 매핑 (department=4용)
 const getTypeColor = (type) => {
   const t = String(type);
   switch (t) {
-    case "1": // 행사
+    case "1":
       return "#FF5F00";
-    case "2": // 미팅
+    case "2":
       return "#0046FF";
-    case "3": // 오픈
+    case "3":
       return "#527853";
-    case "4": // 오픈준비
+    case "4":
       return "#F266AB";
-    case "5": // 외근
+    case "5":
       return "#A459D1";
-    case "6": // 출장
+    case "6":
       return "#D71313";
-    case "7": // 체크
+    case "7":
       return "#364F6B";
-    case "8": // 연차
-      return "#1A0841";
-    case "9": // 오전반차
-      return "#1A0841";
-    case "10": // 오후반차
+    case "8":
+    case "9":
+    case "10":
       return "#1A0841";
     default:
-    return "#F2921D";
+      return "#F2921D";
   }
 };
 
-// ✅ 행사 종류 정의 (getTypeColor 주석과 동일하게)
+// ✅ 행사 종류별 색상 매핑 (department=5용)
+const getTypeColor2 = (type) => {
+  const t = String(type);
+  switch (t) {
+    case "1":
+      return "#FF5F00";
+    case "2":
+      return "#F2921D";
+    case "3":
+      return "#0046FF";
+    case "4":
+      return "#527853";
+    case "5":
+      return "#F266AB";
+    case "6":
+      return "#A459D1";
+    case "7":
+      return "#D71313";
+    case "8":
+      return "#364F6B";
+    case "9":
+    case "10":
+    case "11":
+      return "#1A0841";
+    default:
+      return "#F2921D";
+  }
+};
+
+// ✅ 행사 종류 정의 (department=4용)
 const TYPE_OPTIONS = [
   { value: "1", label: "행사" },
   { value: "2", label: "미팅" },
@@ -151,11 +226,34 @@ const TYPE_OPTIONS = [
   { value: "10", label: "오후반차" },
 ];
 
-// 🔽 TYPE_OPTIONS 아래 즈음에 추가
-const getTypeLabel = (typeValue) => {
+// ✅ 행사 종류 정의 (department=5용)
+const TYPE_OPTIONS2 = [
+  { value: "1", label: "행사" },
+  { value: "2", label: "위생관리" },
+  { value: "3", label: "미팅" },
+  { value: "4", label: "오픈" },
+  { value: "5", label: "오픈준비" },
+  { value: "6", label: "외근" },
+  { value: "7", label: "출장" },
+  { value: "8", label: "체크" },
+  { value: "9", label: "연차" },
+  { value: "10", label: "오전반차" },
+  { value: "11", label: "오후반차" },
+];
+
+// ✅ department에 따라 라벨 옵션 선택
+const getTypeLabelByDepartment = (typeValue, department) => {
   const v = String(typeValue ?? "");
-  const found = TYPE_OPTIONS.find((t) => t.value === v);
+  const dept = String(department ?? "");
+  const options = dept === "5" ? TYPE_OPTIONS2 : TYPE_OPTIONS;
+  const found = options.find((t) => t.value === v);
   return found ? found.label : "";
+};
+
+// ✅ department에 따라 색상 함수 선택
+const getTypeColorByDepartment = (typeValue, department) => {
+  const dept = String(department ?? "");
+  return dept === "5" ? getTypeColor2(typeValue) : getTypeColor(typeValue);
 };
 
 function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
@@ -170,33 +268,54 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
   return (
     <MDBox display="flex" flexDirection="column" gap={1}>
       {items.map((it, idx) => {
-        const typeLabel = getTypeLabel(it.type);
+        const typeLabel = getTypeLabelByDepartment(it.type, it.department);
+        const color = getTypeColorByDepartment(it.type, it.department);
+
         return (
           <MDBox
             key={`${idx}-${it?.time || ""}`}
             display="flex"
-            alignItems="center"
+            alignItems="flex-start"
             gap={1.2}
             sx={{
-              //borderLeft: `4px solid ${getTypeColor(it.type)}`,
-              pl: 1,              // 컬러바와 내용 간격
+              pl: 0.4,
               py: 0.4,
               borderRadius: "8px",
-              backgroundColor: `${getTypeColor(it.type)}20`, // ✅ 투명도 있는 배경(헥사 14 ≈ 8%)
+              backgroundColor: `${color}22`,
+              minWidth: 0,
             }}
           >
             <MDTypography
               variant="caption"
               color="dark"
-              sx={{ fontWeight: 800, whiteSpace: "nowrap", minWidth: 86 }}
+              sx={{
+                fontWeight: 800,
+                fontSize: 11,
+                whiteSpace: "nowrap",
+                minWidth: 86,
+                flex: "0 0 auto",
+              }}
             >
-              {/* ✅ type 라벨 + content */}
               {typeLabel ? `[${typeLabel}] ` : ""}
               {it.content}
             </MDTypography>
-            <MDTypography variant="caption" color="dark" sx={{ fontWeight: 600 }}>
+
+            <MDTypography
+              variant="caption"
+              color="dark"
+              sx={{
+                fontWeight: 600,
+                fontSize: 11,
+                flex: "1 1 auto",
+                minWidth: 0,
+                whiteSpace: "normal",
+                wordBreak: "break-word",
+                overflowWrap: "anywhere",
+                lineHeight: 1.3,
+              }}
+            >
               {it.user_name}
-              {it.position_name ? `[${it.position_name}] ` : ""}
+              {it.position_name ? ` [${it.position_name}]` : ""}
             </MDTypography>
           </MDBox>
         );
@@ -208,8 +327,12 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
 ScheduleLines.propTypes = {
   items: PropTypes.arrayOf(
     PropTypes.shape({
+      department: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      type: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
       user_name: PropTypes.string,
       content: PropTypes.string,
+      position_name: PropTypes.string,
+      time: PropTypes.string,
     })
   ),
   emptyText: PropTypes.string,
@@ -279,7 +402,14 @@ function MiniCalendar() {
         backgroundColor: "#F3F3F3",
       }}
     >
-      <MDBox px={2} pt={1.5} pb={1} display="flex" alignItems="center" justifyContent="space-between">
+      <MDBox
+        px={2}
+        pt={1.5}
+        pb={1}
+        display="flex"
+        alignItems="center"
+        justifyContent="space-between"
+      >
         <Icon
           sx={{ cursor: "pointer", opacity: 0.7 }}
           onClick={() => setCursor((p) => p.subtract(1, "month"))}
@@ -369,8 +499,6 @@ function ContractTableCard({ rows }) {
               width: "100%",
               tableLayout: "fixed",
               borderCollapse: "collapse",
-
-              // ✅ 누군가 flex/block로 바꾼 걸 강제로 되돌림 (핵심)
               "& thead": { display: "table-header-group" },
               "& tbody": { display: "table-row-group" },
               "& tr": { display: "table-row" },
@@ -449,11 +577,11 @@ ContractTableCard.propTypes = {
   rows: PropTypes.arrayOf(
     PropTypes.shape({
       customer_name: PropTypes.string,
-      start_date: PropTypes.string,
-      end_date: PropTypes.string,
-      type: PropTypes.string,
-      region: PropTypes.string,
-      manager: PropTypes.string,
+      contract_start: PropTypes.string,
+      contract_end: PropTypes.string,
+      account_type: PropTypes.string,
+      account_address: PropTypes.string,
+      manager_name: PropTypes.string,
     })
   ),
 };
@@ -463,6 +591,8 @@ ContractTableCard.defaultProps = {
 };
 
 function Dashboard() {
+  const navigate = useNavigate();
+
   const {
     accountList,
     loading,
@@ -478,7 +608,6 @@ function Dashboard() {
     fetchAll,
   } = useDashBoardData();
 
-  // ✅ account_id 결정: localStorage 우선 → 없으면 accountList 첫 번째
   const [accountId, setAccountId] = useState(localStorage.getItem("account_id") || "");
 
   useEffect(() => {
@@ -487,11 +616,10 @@ function Dashboard() {
     }
   }, [accountList, accountId]);
 
-  // ✅ dashboard 접속 시 "한 번에 다 조회"
   useEffect(() => {
     if (!accountId) return;
     fetchAll(accountId);
-  }, [accountId]);
+  }, [accountId, fetchAll]);
 
   if (loading) return <LoadingScreen />;
 
@@ -499,58 +627,78 @@ function Dashboard() {
     <DashboardLayout>
       <DashboardNavbar />
       <MDBox py={1} pt={2}>
-        {/* 상단 4개 카드 */}
         <Grid container spacing={2.2}>
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard title="공지사항">
+            <HeaderCard
+              title="공지사항"
+              onClick={() => navigate("/notice")} // ✅ 기존대로(라우트 경로만 맞추면 됨)
+            >
               <ListLines items={notices} />
             </HeaderCard>
           </Grid>
 
+          {/* ✅ 본사 식단표: WeekMenuManager 로 연결된 라우트 경로로 이동 */}
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard title="본사 식단표">
+            <HeaderCard
+              title="본사 식단표"
+              onClick={() => navigate("/weekmenu")} // ✅ routes.js에서 WeekMenuManager path와 동일하게
+            >
               <ListLines items={meals} emptyText="식단표가 없습니다." />
             </HeaderCard>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard title="본사교육">
+            <HeaderCard
+              title="본사교육"
+              onClick={() => navigate("/education")} // ✅ 기존대로(라우트 경로만 맞추면 됨)
+            >
               <ListLines items={educations} emptyText="교육이 없습니다." />
             </HeaderCard>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard title="복리후생">
+            <HeaderCard
+              title="복리후생"
+              onClick={() => navigate("/welfare")} // ✅ 기존대로(라우트 경로만 맞추면 됨)
+            >
               <ListLines items={welfares} emptyText="복리후생 공지가 없습니다." />
             </HeaderCard>
           </Grid>
         </Grid>
 
-        {/* 중단: 운영/영업 일정 + 우측(Bookmark/ToDo/달력) */}
         <MDBox mt={2.2}>
           <Grid container spacing={2.2}>
-            <Grid item xs={12} lg={8}>
+            <Grid item xs={12} lg={9}>
               <Grid container spacing={2.2}>
+                {/* ✅ 운영팀 일정: OperateSchedule 로 연결된 라우트 경로로 이동 */}
                 <Grid item xs={12} md={6}>
-                  <HeaderCard title={`운영팀 일정(${dayjs().format("YYYY-MM-DD")})`} minHeight={170}>
+                  <HeaderCard
+                    title={`운영팀 일정(${dayjs().format("YYYY-MM-DD")})`}
+                    minHeight={170}
+                    onClick={() => navigate("/operateschedule")} // ✅ routes.js에서 OperateSchedule path와 동일하게
+                  >
                     <ScheduleLines items={opsSchedules} />
                   </HeaderCard>
                 </Grid>
+
+                {/* ✅ 영업팀 일정: BusinessSchedule 로 연결된 라우트 경로로 이동 */}
                 <Grid item xs={12} md={6}>
-                  <HeaderCard title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`} minHeight={170}>
+                  <HeaderCard
+                    title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
+                    minHeight={170}
+                    onClick={() => navigate("/businessschedule")} // ✅ routes.js에서 BusinessSchedule path와 동일하게
+                  >
                     <ScheduleLines items={salesSchedules} />
                   </HeaderCard>
                 </Grid>
               </Grid>
 
-              {/* 하단 큰 테이블 */}
               <MDBox mt={2.2}>
                 <ContractTableCard rows={contracts} />
               </MDBox>
             </Grid>
 
-            {/* 우측 사이드 */}
-            <Grid item xs={12} lg={4}>
+            <Grid item xs={12} lg={3}>
               <Grid container spacing={2.2}>
                 <Grid item xs={12}>
                   <SmallBox title="Bookmark" items={bookmarks} />

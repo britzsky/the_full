@@ -37,6 +37,8 @@ export default function useTableData(accountType) {
         });
 
         const mapped = res.data.map((item) => ({
+          account_id: item.account_id,
+          meal_type: item.meal_type,
           account_name: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
               {item.account_name}
@@ -134,13 +136,13 @@ export default function useTableData(accountType) {
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },
     { Header: "주소", accessor: "account_address", size: "10%", align: "left" },
     { Header: "구분", accessor: "account_type", size: "3%", align: "left" },
-    { Header: "필요인원", accessor: "account_rqd_member", align: "center" },
-    { Header: "현재인원", accessor: "account_headcount", align: "center" },
-    { Header: "상세보기", accessor: "info", align: "center" },
-    { Header: "인사기록카드", accessor: "members", align: "center" },
-    { Header: "출근부", accessor: "record", align: "center" },
+    { Header: "필요인원", accessor: "account_rqd_member", size: "3%", align: "center" },
+    { Header: "현재인원", accessor: "account_headcount", size: "3%", align: "center" },
+    { Header: "상세보기", accessor: "info", size: "3%", align: "center" },
+    { Header: "인사기록카드", accessor: "members", size: "3%", align: "center" },
+    { Header: "출근부", accessor: "record", size: "3%", align: "center" },
     // { Header: "경관식", accessor: "ceremony", align: "center" },
-    { Header: "식수현황", accessor: "dinners", align: "center" },
+    { Header: "식수현황", accessor: "dinners", size: "3%", align: "center" },
     // { Header: "재고조사", accessor: "inventory", align: "center" },
   ];
 

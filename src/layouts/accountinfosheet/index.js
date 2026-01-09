@@ -1,4 +1,4 @@
-import React, { useMemo, useState, forwardRef, useEffect } from "react";
+import React, { useMemo, useState, forwardRef, useEffect, useRef } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Modal from "@mui/material/Modal";
@@ -35,12 +35,13 @@ const numericCols = [
   "dishwasher",
   "water_puri",
   "utility_bills",
-  // 🔹 추가 식단가 가격 컬럼도 숫자로 처리
   "extra_diet1_price",
   "extra_diet2_price",
   "extra_diet3_price",
   "extra_diet4_price",
   "extra_diet5_price",
+  "dishwasher_cnt",
+  "water_puri_cnt",
 ];
 
 const formatNumber = (num) => {
@@ -56,6 +57,7 @@ function AccountInfoSheet() {
   const [extraDiet, setExtraDiet] = useState(
     Array.from({ length: 5 }, () => ({ name: "", price: "" }))
   );
+
   const { account_id: paramAccountId } = useParams();
   const [selectedAccountId, setSelectedAccountId] = useState(paramAccountId || "");
 
@@ -74,16 +76,27 @@ function AccountInfoSheet() {
 
   const [isOpen, setIsOpen] = useState(false);
   const [activeImg, setActiveImg] = useState("");
+  const didInitAccountRef = useRef(false);
 
   // ✅ accountList 로딩 완료 후, URL에서 받은 account_id가 있을 때 자동 선택
   useEffect(() => {
-    if (accountList.length > 0 && paramAccountId) {
+    if (accountList.length === 0) return;
+
+    // ✅ paramAccountId는 최초 1회만 반영
+    if (paramAccountId && !didInitAccountRef.current) {
       const found = accountList.find((a) => a.account_id === paramAccountId);
-      if (found) setSelectedAccountId(found.account_id);
-    } else if (accountList.length > 0 && !selectedAccountId) {
+      if (found) {
+        setSelectedAccountId(found.account_id);
+        didInitAccountRef.current = true;
+        return;
+      }
+    }
+
+    // ✅ param이 없거나 못 찾았고, 아직 선택이 없으면 첫번째로
+    if (!selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
     }
-  }, [accountList, paramAccountId, selectedAccountId]);
+  }, [accountList, paramAccountId]); // ✅ selectedAccountId 의존성 제거
 
   // ✅ 선택된 account_id로 조회
   useEffect(() => {
@@ -94,18 +107,21 @@ function AccountInfoSheet() {
 
   const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
+  const [selectedFiles, setSelectedFiles] = useState({
+    business_report: null,
+    business_regist: null,
+    kitchen_drawing: null,
+    // ✅ 추가
+    nutritionist_room_img: null,
+    chef_lounge_img: null,
+  });
+
   const handleInputClick = (type) => {
     if (selectedFiles[type]?.path) {
       setActiveImg(`${API_BASE_URL}${selectedFiles[type].path}`);
       setIsOpen(true);
     }
   };
-
-  const [selectedFiles, setSelectedFiles] = useState({
-    business_report: null,
-    business_regist: null,
-    kitchen_drawing: null,
-  });
 
   // 버튼 클릭 시 input 클릭
   const handleFileSelect = (type) => {
@@ -141,10 +157,13 @@ function AccountInfoSheet() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       alert("모든 파일 업로드 완료!");
+
       setSelectedFiles({
         business_report: null,
         business_regist: null,
         kitchen_drawing: null,
+        nutritionist_room_img: null,
+        chef_lounge_img: null,
       });
     } catch (err) {
       console.error(err);
@@ -190,11 +209,19 @@ function AccountInfoSheet() {
       setEndDate(new Date(y, m - 1, d));
     }
 
+    // ✅ 상단 첨부 이미지 path 세팅
     if (businessImgRows && businessImgRows.length > 0 && businessImgRows[0]) {
       const img = businessImgRows[0] || {};
       const newSelectedFiles = {};
 
-      ["business_report", "business_regist", "kitchen_drawing"].forEach((key) => {
+      [
+        "business_report",
+        "business_regist",
+        "kitchen_drawing",
+        // ✅ 추가
+        "nutritionist_room_img",
+        "chef_lounge_img",
+      ].forEach((key) => {
         const filePath = img[key];
         if (filePath) {
           newSelectedFiles[key] = {
@@ -203,7 +230,8 @@ function AccountInfoSheet() {
           };
         }
       });
-      setSelectedFiles(newSelectedFiles);
+
+      setSelectedFiles((prev) => ({ ...prev, ...newSelectedFiles }));
     }
 
     // 🔹 extra_diet1~5 name/price 초기화 (priceRows[0] 기준으로 우선)
@@ -306,13 +334,12 @@ function AccountInfoSheet() {
     onClick: PropTypes.func,
     placeholder: PropTypes.string,
     style: PropTypes.object,
-    field: PropTypes.object,
+    field: PropTypes.string,
   };
 
   // ----------------- 테이블 컬럼 -----------------
   const priceTableColumns = useMemo(
     () => {
-      // 🔹 extra_diet name이 비어있지 않은 것만 동적 컬럼으로 추가
       const extraDietColumns = extraDiet
         .map((item, index) => ({
           idx: index + 1,
@@ -324,52 +351,13 @@ function AccountInfoSheet() {
           accessorKey: `extra_diet${item.idx}_price`,
         }));
 
-      // 🔹 공통 식단가 기본 컬럼
       const baseDietColumns = [
         { header: "2025년 식단가", accessorKey: "diet_price" },
         { header: "기초 식단가", accessorKey: "basic_price" },
         { header: "인상전 단가", accessorKey: "before_diet_price" },
-        {
-          header: "인상시점",
-          accessorKey: "after_dt",
-          cell: ({ row, getValue }) => {
-            const value = getValue();
-            const [dateValue, setDateValue] = useState(
-              value ? new Date(value) : null
-            );
-
-            return (
-              <DatePicker
-                selected={dateValue}
-                onChange={(date) => {
-                  setDateValue(date);
-                  row.original.after_dt = date
-                    ? date.toISOString().slice(0, 10)
-                    : "";
-                }}
-                dateFormat="yyyy-MM-dd"
-                customInput={
-                  <input
-                    style={{
-                      width: "100%",
-                      border: "none",
-                      textAlign: "center",
-                      background: "transparent",
-                      color:
-                        String(row.original.after_dt) ===
-                        String(row._valuesCache.after_dt)
-                          ? "black"
-                          : "red",
-                    }}
-                  />
-                }
-              />
-            );
-          },
-        },
+        { header: "인상시점", accessorKey: "after_dt" },
       ];
 
-      // ✅ 학교 / 산업체가 아닌 경우에만 어르신/간식/직원 추가
       if (!isSchoolOrIndustry) {
         baseDietColumns.push(
           { header: "어르신", accessorKey: "elderly" },
@@ -378,14 +366,10 @@ function AccountInfoSheet() {
         );
       }
 
-      // ✅ 공통적으로 맨 오른쪽에 추가 식단가 컬럼들 붙이기
       baseDietColumns.push(...extraDietColumns);
 
       return [
-        {
-          header: "식단가",
-          columns: baseDietColumns,
-        },
+        { header: "식단가", columns: baseDietColumns },
         {
           header: "식수인원(마감기준)",
           columns: [
@@ -401,9 +385,15 @@ function AccountInfoSheet() {
           header: "경비(신규영업, 중도운영)",
           columns: [
             { header: "음식물처리", accessorKey: "food_process" },
+
+            // ✅ 여기 select로 만들 컬럼
+            { header: "유형", accessorKey: "food_process_type" },
+
             { header: "식기세척기", accessorKey: "dishwasher" },
+            { header: "수량", accessorKey: "dishwasher_cnt" },
             { header: "세스코 방제", accessorKey: "cesco" },
             { header: "정수기", accessorKey: "water_puri" },
+            { header: "수량", accessorKey: "water_puri_cnt" },
             { header: "수도광열비", accessorKey: "utility_bills" },
             { header: "경비비고", accessorKey: "expenses_note" },
           ],
@@ -451,14 +441,8 @@ function AccountInfoSheet() {
           { header: "사업자", accessorKey: "business_type" },
         ],
       },
-      {
-        header: "보험",
-        columns: [{ header: "보험가입 현황", accessorKey: "insurance_note" }],
-      },
-      {
-        header: "마감",
-        columns: [{ header: "마감 특이사항", accessorKey: "finish_note" }],
-      },
+      { header: "보험", columns: [{ header: "보험가입 현황", accessorKey: "insurance_note" }] },
+      { header: "마감", columns: [{ header: "마감 특이사항", accessorKey: "finish_note" }] },
     ],
     []
   );
@@ -468,29 +452,22 @@ function AccountInfoSheet() {
       {
         header: "제안",
         columns: [
-          {
-            header: "만족도 조사",
-            accessorKey: "satis_note",
-            cell: ({ getValue, row, column }) => (
-              <textarea
-                value={getValue() || ""}
-                onChange={(e) => (row.original[column.id] = e.target.value)}
-                rows={2}
-                style={{
-                  width: "100%",
-                  resize: "none",
-                }}
-              />
-            ),
-          },
+          { header: "만족도 조사", accessorKey: "satis_note" },
           { header: "위생점검", accessorKey: "hygiene_note" },
           { header: "이벤트", accessorKey: "event_note" },
+
+          // ✅ Y/N select로 만들 컬럼들
+          { header: "집단급식소 여부", accessorKey: "group_feed_yn" },
+          { header: "생신잔치 여부", accessorKey: "birthday_note" },
+          { header: "영양사실 여부", accessorKey: "nutritionist_room_yn" },
+          { header: "조리사휴게실 여부", accessorKey: "chef_lounge_yn" },
         ],
       },
     ],
     []
   );
 
+  // ✅ dropdown options
   const dropdownOptions = {
     puri_type: [
       { value: 0, label: "해당없음" },
@@ -498,6 +475,10 @@ function AccountInfoSheet() {
       { value: 2, label: "더채움 렌탈" },
       { value: 3, label: "고객사 소유" },
       { value: 4, label: "더채움 소유" },
+      { value: 5, label: "고객사렌탈+더채움렌탈" },
+      { value: 6, label: "고객사렌탈+더채움소유" },
+      { value: 7, label: "고객사소유+더채움렌탈" },
+      { value: 8, label: "더채움소유+더채움소유" },
     ],
     gas_type: [
       { value: 0, label: "해당없음" },
@@ -510,7 +491,22 @@ function AccountInfoSheet() {
       { value: 2, label: "법인" },
       { value: 3, label: "애단원" },
     ],
+
+    // ✅ 추가: 음식물처리 유형
+    food_process_type: [
+      { value: 0, label: "해당없음" },
+      { value: 1, label: "고객사+업체" },
+      { value: 2, label: "고객사+종량제" },
+      { value: 3, label: "더채움+업체" },
+      { value: 4, label: "더채움+종량제" },
+    ],
   };
+
+  // ✅ Y/N 공통 옵션
+  const yesNoOptions = [
+    { value: "N", label: "N" },
+    { value: "Y", label: "Y" },
+  ];
 
   const columnWidths = {
     diet_price: "3%",
@@ -536,7 +532,7 @@ function AccountInfoSheet() {
     cesco: "3%",
     water_puri: "3%",
     utility_bills: "3%",
-    expenses_note: "10%",
+    expenses_note: "5%",
     setting_item: "5%",
     cuisine: "3%",
     cuisine_note: "5%",
@@ -552,6 +548,13 @@ function AccountInfoSheet() {
     satis_note: "33%",
     hygiene_note: "33%",
     event_note: "33%",
+    dishwasher_cnt: "2%",
+    water_puri_cnt: "2%",
+    food_process_type: "5%",
+    birthday_note: "2%",
+    group_feed_yn: "2%",
+    nutritionist_room_yn: "2%",
+    chef_lounge_yn: "2%",
   };
 
   // ----------------- 공통 테이블 렌더 -----------------
@@ -569,6 +572,21 @@ function AccountInfoSheet() {
       if (tableType === "event") return originalEvent[rowIndex]?.[field];
       return "";
     };
+
+    const nonEditableCols = [
+      "name",
+      "members",
+      "work_system",
+      "puri_type",
+      "gas_type",
+      "business_type",
+
+      // ✅ select 처리할 컬럼들(직접 편집 막기)
+      "food_process_type",
+      "group_feed_yn",
+      "nutritionist_room_yn",
+      "chef_lounge_yn",
+    ];
 
     return (
       <MDBox
@@ -603,31 +621,32 @@ function AccountInfoSheet() {
               </tr>
             ))}
           </thead>
+
           <tbody>
             {table.getRowModel().rows.map((row, rowIndex) => (
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
                   const isNumeric = numericCols.includes(colKey);
+
                   const currentValue = dataState[rowIndex]?.[colKey] ?? "";
                   const originalValue = getOriginal(rowIndex, colKey);
-                  const parseVal = (val) =>
-                    isNumeric ? Number(String(val).replace(/,/g, "")) || 0 : val ?? "";
+
+                  const parseVal = (val) => {
+                    if (isNumeric) return Number(String(val).replace(/,/g, "")) || 0;
+                    return val ?? "";
+                  };
+
                   const changed = parseVal(currentValue) !== parseVal(originalValue);
+
+                  // ✅ select 컬럼들
+                  const isSelectNumber = ["puri_type", "gas_type", "business_type", "food_process_type"].includes(colKey);
+                  const isSelectYN = ["group_feed_yn", "nutritionist_room_yn", "chef_lounge_yn"].includes(colKey);
 
                   return (
                     <td
                       key={cell.id}
-                      contentEditable={
-                        ![
-                          "name",
-                          "members",
-                          "work_system",
-                          "puri_type",
-                          "gas_type",
-                          "business_type",
-                        ].includes(colKey)
-                      }
+                      contentEditable={!nonEditableCols.includes(colKey)}
                       suppressContentEditableWarning
                       style={{
                         color: changed ? "red" : "black",
@@ -636,49 +655,58 @@ function AccountInfoSheet() {
                         minWidth: "40px",
                       }}
                       onBlur={(e) => {
-                        if (
-                          [
-                            "name",
-                            "members",
-                            "work_system",
-                            "puri_type",
-                            "gas_type",
-                            "business_type",
-                          ].includes(colKey)
-                        )
-                          return;
+                        if (nonEditableCols.includes(colKey)) return;
 
                         let newValue = e.target.innerText.trim();
                         if (isNumeric) {
                           newValue = Number(newValue.replace(/,/g, "")) || 0;
                           e.currentTarget.innerText = formatNumber(newValue);
                         }
+
                         const updatedRows = dataState.map((r, idx) =>
                           idx === rowIndex ? { ...r, [colKey]: newValue } : r
                         );
                         setDataState(updatedRows);
                       }}
                     >
-                      {["puri_type", "gas_type", "business_type"].includes(colKey) ? (
+                      {/* ✅ 숫자 select */}
+                      {isSelectNumber ? (
                         <select
                           value={currentValue ?? 0}
                           style={{
-                            width: "50%",
-                            color:
-                              String(currentValue) === String(originalValue)
-                                ? "black"
-                                : "red",
+                            width: "100%",
+                            color: String(currentValue) === String(originalValue) ? "black" : "red",
                           }}
                           onChange={(e) => {
+                            const v = Number(e.target.value);
                             const updatedRows = dataState.map((r, idx) =>
-                              idx === rowIndex
-                                ? { ...r, [colKey]: Number(e.target.value) }
-                                : r
+                              idx === rowIndex ? { ...r, [colKey]: v } : r
                             );
                             setDataState(updatedRows);
                           }}
                         >
-                          {dropdownOptions[colKey].map((opt) => (
+                          {(dropdownOptions[colKey] || []).map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : isSelectYN ? (
+                        <select
+                          value={String(currentValue || "N")}
+                          style={{
+                            width: "100%",
+                            color: String(currentValue) === String(originalValue) ? "black" : "red",
+                          }}
+                          onChange={(e) => {
+                            const v = e.target.value; // "N" or "Y"
+                            const updatedRows = dataState.map((r, idx) =>
+                              idx === rowIndex ? { ...r, [colKey]: v } : r
+                            );
+                            setDataState(updatedRows);
+                          }}
+                        >
+                          {yesNoOptions.map((opt) => (
                             <option key={opt.value} value={opt.value}>
                               {opt.label}
                             </option>
@@ -816,20 +844,10 @@ function AccountInfoSheet() {
     }
   };
 
-  // if (loading) {
-  //   return (
-  //     <DashboardLayout>
-  //       <HeaderWithLogout showMenuButton title="📋 고객사 상세관리" />
-  //       <LoadingScreen />
-  //     </DashboardLayout>
-  //   );
-  // }
-
   return (
     <DashboardLayout>
-      {/* 🔹 공통 헤더 사용 */}
-      {/* <HeaderWithLogout showMenuButton title="📋 고객사 상세관리" /> */}
       <DashboardNavbar title="📋 고객사 상세관리" />
+
       {/* 버튼영역 */}
       <MDBox
         pt={1}
@@ -842,25 +860,32 @@ function AccountInfoSheet() {
       >
         {/* 왼쪽 버튼 그룹 */}
         <MDBox sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-          {["business_report", "business_regist", "kitchen_drawing"].map((type) => (
+          {[
+            "business_report",
+            "business_regist",
+            "kitchen_drawing",
+            // ✅ 추가
+            "nutritionist_room_img",
+            "chef_lounge_img",
+          ].map((type) => (
             <React.Fragment key={type}>
-              <MDButton
-                variant="gradient"
-                color="success"
-                onClick={() => handleFileSelect(type)}
-              >
+              <MDButton variant="gradient" color="success" onClick={() => handleFileSelect(type)}>
                 {type === "business_report"
                   ? "영업신고증"
                   : type === "business_regist"
                   ? "사업자등록증"
-                  : "주방도면"}
+                  : type === "kitchen_drawing"
+                  ? "주방도면"
+                  : type === "nutritionist_room_img"
+                  ? "영양사실"
+                  : "휴게실"}
               </MDButton>
 
               <MDInput
                 value={selectedFiles[type]?.name || ""}
                 readOnly
                 sx={{
-                  width: 100,
+                  width: 110,
                   cursor: selectedFiles[type]?.path ? "pointer" : "default",
                 }}
                 onClick={() => handleInputClick(type)}
@@ -889,12 +914,7 @@ function AccountInfoSheet() {
                 position: "relative",
               }}
             >
-              <TransformWrapper
-                initialScale={1}
-                minScale={0.5}
-                maxScale={5}
-                centerOnInit
-              >
+              <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
                 {({ zoomIn, zoomOut, resetTransform }) => (
                   <>
                     <Box
@@ -911,25 +931,13 @@ function AccountInfoSheet() {
                         p: 1,
                       }}
                     >
-                      <IconButton
-                        size="small"
-                        sx={{ color: "white" }}
-                        onClick={() => zoomIn()}
-                      >
+                      <IconButton size="small" sx={{ color: "white" }} onClick={() => zoomIn()}>
                         <ZoomInIcon />
                       </IconButton>
-                      <IconButton
-                        size="small"
-                        sx={{ color: "white" }}
-                        onClick={() => zoomOut()}
-                      >
+                      <IconButton size="small" sx={{ color: "white" }} onClick={() => zoomOut()}>
                         <ZoomOutIcon />
                       </IconButton>
-                      <IconButton
-                        size="small"
-                        sx={{ color: "white" }}
-                        onClick={() => resetTransform()}
-                      >
+                      <IconButton size="small" sx={{ color: "white" }} onClick={() => resetTransform()}>
                         <RefreshIcon />
                       </IconButton>
                     </Box>
@@ -971,6 +979,7 @@ function AccountInfoSheet() {
             </option>
           ))}
         </TextField>
+
         <MDButton variant="gradient" color="info" onClick={handleSave}>
           저장
         </MDButton>
@@ -983,11 +992,7 @@ function AccountInfoSheet() {
           <Grid item xs={12} md={6}>
             <Grid container spacing={2}>
               {/* 업장명 + 계약기간 */}
-              <Grid
-                item
-                xs={12}
-                sx={{ display: "flex", alignItems: "center", gap: 1 }}
-              >
+              <Grid item xs={12} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                 <MDTypography
                   sx={{
                     minWidth: "75px",
@@ -1020,14 +1025,12 @@ function AccountInfoSheet() {
                 >
                   계약기간
                 </MDTypography>
+
                 <DatePicker
                   selected={startDate}
                   onChange={(date) => {
                     setStartDate(date);
-                    handleChange(
-                      "contract_start",
-                      date ? date.toISOString().slice(0, 10) : ""
-                    );
+                    handleChange("contract_start", date ? date.toISOString().slice(0, 10) : "");
                   }}
                   dateFormat="yyyy-MM-dd"
                   customInput={<DatePickerInput field="contract_start" />}
@@ -1038,10 +1041,7 @@ function AccountInfoSheet() {
                   selected={endDate}
                   onChange={(date) => {
                     setEndDate(date);
-                    handleChange(
-                      "contract_end",
-                      date ? date.toISOString().slice(0, 10) : ""
-                    );
+                    handleChange("contract_end", date ? date.toISOString().slice(0, 10) : "");
                   }}
                   dateFormat="yyyy-MM-dd"
                   customInput={<DatePickerInput field="contract_end" />}
@@ -1076,10 +1076,7 @@ function AccountInfoSheet() {
                     fontSize: "13px",
                     "& input": {
                       padding: "4px 4px",
-                      color: getColor(
-                        "account_address",
-                        formData.account_address
-                      ),
+                      color: getColor("account_address", formData.account_address),
                     },
                   }}
                   value={formData.account_address || ""}
@@ -1091,16 +1088,11 @@ function AccountInfoSheet() {
                     fontSize: "13px",
                     "& input": {
                       padding: "4px 4px",
-                      color: getColor(
-                        "account_address_detail",
-                        formData.account_address_detail
-                      ),
+                      color: getColor("account_address_detail", formData.account_address_detail),
                     },
                   }}
                   value={formData.account_address_detail || ""}
-                  onChange={(e) =>
-                    handleChange("account_address_detail", e.target.value)
-                  }
+                  onChange={(e) => handleChange("account_address_detail", e.target.value)}
                 />
               </Grid>
 
@@ -1215,16 +1207,11 @@ function AccountInfoSheet() {
                     fontSize: "13px",
                     "& input": {
                       padding: "4px 4px",
-                      color: getColor(
-                        "manager_name2",
-                        formData.manager_name2
-                      ),
+                      color: getColor("manager_name2", formData.manager_name2),
                     },
                   }}
                   value={formData.manager_name2 || ""}
-                  onChange={(e) =>
-                    handleChange("manager_name2", e.target.value)
-                  }
+                  onChange={(e) => handleChange("manager_name2", e.target.value)}
                 />
                 <MDTypography
                   sx={{
@@ -1246,9 +1233,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.manager_tel2 || ""}
-                  onChange={(e) =>
-                    handleChange("manager_tel2", e.target.value)
-                  }
+                  onChange={(e) => handleChange("manager_tel2", e.target.value)}
                 />
 
                 {/* ✅ meal_type 선택 */}
@@ -1313,13 +1298,7 @@ function AccountInfoSheet() {
                   value={formData.closing_name || ""}
                   onChange={(e) => handleChange("closing_name", e.target.value)}
                 />
-                <MDTypography
-                  sx={{
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                  }}
-                >
+                <MDTypography sx={{ fontSize: "13px", textAlign: "right", fontWeight: "bold" }}>
                   연락처
                 </MDTypography>
                 <MDInput
@@ -1389,16 +1368,11 @@ function AccountInfoSheet() {
                   sx={{
                     width: "80%",
                     "& textarea": {
-                      color: getColor(
-                        "property_as_note",
-                        formData.property_as_note
-                      ),
+                      color: getColor("property_as_note", formData.property_as_note),
                     },
                   }}
                   value={formData.property_as_note || ""}
-                  onChange={(e) =>
-                    handleChange("property_as_note", e.target.value)
-                  }
+                  onChange={(e) => handleChange("property_as_note", e.target.value)}
                 />
               </Grid>
             </Grid>
@@ -1430,9 +1404,7 @@ function AccountInfoSheet() {
                       },
                     }}
                     value={formData.business_note || ""}
-                    onChange={(e) =>
-                      handleChange("business_note", e.target.value)
-                    }
+                    onChange={(e) => handleChange("business_note", e.target.value)}
                   />
                 </Grid>
 
@@ -1452,9 +1424,7 @@ function AccountInfoSheet() {
                     rows={12}
                     sx={{ width: "100%", textAlign: "center" }}
                     value={formData.industry_note || ""}
-                    onChange={(e) =>
-                      handleChange("industry_note", e.target.value)
-                    }
+                    onChange={(e) => handleChange("industry_note", e.target.value)}
                   />
                 </Grid>
               </Grid>
@@ -1481,9 +1451,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.business_note || ""}
-                  onChange={(e) =>
-                    handleChange("business_note", e.target.value)
-                  }
+                  onChange={(e) => handleChange("business_note", e.target.value)}
                 />
               </>
             )}
@@ -1493,38 +1461,21 @@ function AccountInfoSheet() {
 
       {/* 하단 테이블 */}
       <Card sx={{ p: 1, mb: 1 }}>
-        <MDBox
-          sx={{
-            display: "flex",
-            justifyContent: "flex-start",
-            alignItems: "center",
-            mb: 1,
-          }}
-        >
+        <MDBox sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}>
           {isExtraDietEnabled && (
-            <MDButton
-              variant="outlined"
-              color="info"
-              size="small"
-              onClick={handleOpenExtraDietModal}
-            >
+            <MDButton variant="outlined" color="info" size="small" onClick={handleOpenExtraDietModal}>
               식단가 추가
             </MDButton>
           )}
         </MDBox>
-
         {renderTable(priceData, setPriceData, "price", priceTableColumns)}
       </Card>
 
-      <Card sx={{ p: 1, mb: 1 }}>
-        {renderTable(etcData, setEtcData, "etc", etcTableColumns)}
-      </Card>
+      <Card sx={{ p: 1, mb: 1 }}>{renderTable(etcData, setEtcData, "etc", etcTableColumns)}</Card>
       <Card sx={{ p: 1, mb: 1 }}>
         {renderTable(managerData, setManagerData, "manager", managerTableColumns)}
       </Card>
-      <Card sx={{ p: 1, mb: 1 }}>
-        {renderTable(eventData, setEventData, "event", eventTableColumns)}
-      </Card>
+      <Card sx={{ p: 1, mb: 1 }}>{renderTable(eventData, setEventData, "event", eventTableColumns)}</Card>
 
       {/* 🔹 추가 식단가 입력 모달 */}
       <Modal
@@ -1545,24 +1496,12 @@ function AccountInfoSheet() {
             p: 5,
           }}
         >
-          <MDTypography
-            sx={{
-              fontSize: "15px",
-              fontWeight: "bold",
-              mb: 2,
-              textAlign: "center",
-            }}
-          >
+          <MDTypography sx={{ fontSize: "15px", fontWeight: "bold", mb: 2, textAlign: "center" }}>
             추가 식단가 설정
           </MDTypography>
 
           {extraDiet.map((item, index) => (
-            <Grid
-              container
-              spacing={1}
-              key={index}
-              sx={{ mb: 1, alignItems: "center" }}
-            >
+            <Grid container spacing={1} key={index} sx={{ mb: 1, alignItems: "center" }}>
               <Grid item xs={6}>
                 <MDInput
                   label={`식단가명${index + 1}`}
@@ -1583,14 +1522,7 @@ function AccountInfoSheet() {
             </Grid>
           ))}
 
-          <MDBox
-            sx={{
-              display: "flex",
-              justifyContent: "flex-end",
-              mt: 2,
-              gap: 1,
-            }}
-          >
+          <MDBox sx={{ display: "flex", justifyContent: "flex-end", mt: 2, gap: 1 }}>
             <MDButton
               variant="outlined"
               color="secondary"
@@ -1599,12 +1531,7 @@ function AccountInfoSheet() {
             >
               닫기
             </MDButton>
-            <MDButton
-              variant="gradient"
-              color="info"
-              size="small"
-              onClick={handleApplyExtraDiet}
-            >
+            <MDButton variant="gradient" color="info" size="small" onClick={handleApplyExtraDiet}>
               적용
             </MDButton>
           </MDBox>

@@ -72,21 +72,21 @@ export default function BudgetTableTab() {
 
   // ✅ 테이블 컬럼 정의
   const columns = [
-    { key: "month",             label: "월",              width: 50  },
-    { key: "account_type_name", label: "구분",            width: 60  },
-    { key: "meal_type_name",    label: "예산기준",        width: 90 },
-    { key: "account_name",      label: "거래처명",        width: 120 },
-    { key: "total",             label: "식수",            width: 50  },
-    { key: "diet_price",        label: "식비",            width: 80 },
-    { key: "utility_bills",     label: "수도광열비",      width: 90 },
-    { key: "food_budget",       label: "식자재 예산",     width: 90 },
-    { key: "budget_total",      label: "실 예산 부여 합계", width: 120 },
-    { key: "day_budget",        label: "일 예산",         width: 90 },
-    { key: "day_use_amount",    label: "일 사용금액",     width: 90 },
-    { key: "use_ratio",         label: "사용비율(%)",     width: 90 },
-    { key: "existing_budget",   label: "기존예산",        width: 90 },
+    { key: "month",             label: "월",                width: 50  },
+    { key: "account_type_name", label: "구분",              width: 60  },
+    { key: "meal_type_name",    label: "예산기준",          width: 90 },
+    { key: "account_name",      label: "거래처명",          width: 120 },
+    { key: "total",             label: "식수",              width: 50  },
+    { key: "diet_price",        label: "식비",              width: 80 },
+    { key: "utility_bills",     label: "수도광열비",        width: 90 },
+    { key: "food_budget",       label: "1식 기준 식재비",     width: 90 },
+    { key: "budget_total",      label: "예상 부여금액", width: 120 },
+    { key: "day_budget",        label: "현기준 적정예산",         width: 90 },
+    { key: "day_use_amount",    label: "현기준 사용금액",     width: 90 },
+    { key: "use_ratio",         label: "총 예산대비 사용비율(%)",     width: 90 },
+    // { key: "existing_budget",   label: "기존예산",        width: 90 },
     { key: "diff_amount",       label: "차액",            width: 90 },
-    { key: "day_use_ratio",     label: "일 사용비율(%)",  width: 90 },
+    { key: "day_use_ratio",     label: "현기준 적정금액 비율(%)",  width: 90 },
     { key: "budget_grant",      label: "예산부여",        width: 90 }, // editable
     { key: "note",              label: "비고",            width: 200 }, // editable
   ];

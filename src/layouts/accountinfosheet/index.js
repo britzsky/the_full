@@ -352,7 +352,7 @@ function AccountInfoSheet() {
         }));
 
       const baseDietColumns = [
-        { header: "2025년 식단가", accessorKey: "diet_price" },
+        { header: "식단가", accessorKey: "diet_price" },
         { header: "기초 식단가", accessorKey: "basic_price" },
         { header: "인상전 단가", accessorKey: "before_diet_price" },
         { header: "인상시점", accessorKey: "after_dt" },
@@ -751,7 +751,24 @@ function AccountInfoSheet() {
 
   // ----------------- 전체 저장 -----------------
   const handleSave = async () => {
-    const payload = { formData, priceData, etcData, managerData, eventData };
+    const user_id = localStorage.getItem("user_id") || "";
+
+    // ✅ formData에 user_id 주입
+    const _formData = { ...formData, user_id };
+
+    // ✅ 각 테이블 row에 user_id 주입 (배열이면 map으로)
+    const _priceData = (priceData || []).map((r) => ({ ...r, user_id }));
+    const _etcData = (etcData || []).map((r) => ({ ...r, user_id }));
+    const _managerData = (managerData || []).map((r) => ({ ...r, user_id }));
+    const _eventData = (eventData || []).map((r) => ({ ...r, user_id }));
+
+    const payload = {
+      formData: _formData,
+      priceData: _priceData,
+      etcData: _etcData,
+      managerData: _managerData,
+      eventData: _eventData,
+    };
 
     try {
       const res = await api.post("/Account/AccountInfoSave", payload);
@@ -764,6 +781,7 @@ function AccountInfoSheet() {
           confirmButtonText: "확인",
         }).then(async (result) => {
           if (result.isConfirmed) {
+            // ✅ 화면 상태는 굳이 user_id 포함으로 덮어쓸 필요 없으면 기존대로 OK
             setOriginalBasic(formData);
             setOriginalPrice([...priceData]);
             setOriginalEtc([...etcData]);
@@ -776,6 +794,7 @@ function AccountInfoSheet() {
       Swal.fire("실패", e.message || "저장 중 오류 발생", "error");
     }
   };
+
 
   // 🔹 식단가 추가 버튼 클릭 시: Business/AccountEctDietList 조회 후 모달 오픈
   const handleOpenExtraDietModal = async () => {

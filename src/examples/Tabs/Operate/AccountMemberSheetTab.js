@@ -1,17 +1,23 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+/* eslint-disable react/function-component-definition */
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import { TextField, useTheme, useMediaQuery  } from "@mui/material";
+import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
+import DownloadIcon from "@mui/icons-material/Download";
+import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import Swal from "sweetalert2";
 import api from "api/api";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import { API_BASE_URL } from "config";
 
 function AccountMemberSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -27,15 +33,14 @@ function AccountMemberSheet() {
     setOriginalRows,
     accountList,
     workSystemList, // ✅ 추가
-    originalWorkSystemList,   // ✅ 추가
-    fetchWorkSystemList,      // ✅ 추가
-    saveWorkSystemList,       // ✅ 추가
+    originalWorkSystemList, // ✅ 추가
+    fetchWorkSystemList, // ✅ 추가
+    saveWorkSystemList, // ✅ 추가
     saveData,
     fetchAccountMembersAllList,
-    loading: hookLoading
+    loading: hookLoading,
   } = useAccountMembersheetData(selectedAccountId, activeStatus);
 
-  //const [originalRows, setOriginalRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // =========================
@@ -46,6 +51,64 @@ function AccountMemberSheet() {
   const [wsOriginal, setWsOriginal] = useState([]);
 
   const numericCols = ["salary"];
+
+  // =========================
+  // ✅ 이미지 업로드/뷰어 기능 (추가)
+  // =========================
+  const imageFields = ["employment_contract", "id", "bankbook"];
+  const [viewImageSrc, setViewImageSrc] = useState(null);
+  const fileIconSx = { color: "#1e88e5" };
+
+  const handleViewImage = (value) => {
+    if (!value) return;
+    if (typeof value === "object") {
+      setViewImageSrc(URL.createObjectURL(value));
+    } else {
+      setViewImageSrc(`${API_BASE_URL}${value}`);
+    }
+  };
+  const handleCloseViewer = () => setViewImageSrc(null);
+
+  const handleDownload = useCallback((path) => {
+    if (!path || typeof path !== "string") return;
+    const url = `${API_BASE_URL}${path}`;
+    const filename = path.split("/").pop() || "download";
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, []);
+
+  const normalizeTime = (t) => {
+    if (!t) return "";
+    return String(t).trim().replace(/^0(\d):/, "$1:");
+  };
+
+  // hygiene와 동일하게 OperateImgUpload 사용
+  const uploadImage = async (file, field, row) => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    formData.append("type", "member");
+    const gubun = `${field}_${row.member_id || row.rrn || Date.now()}`;
+    formData.append("gubun", gubun);
+    formData.append("folder", row.account_id || selectedAccountId || "common");
+
+    const res = await api.post("/Operate/OperateImgUpload", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+
+    if (res.data.code === 200) {
+      return res.data.image_path;
+    }
+    throw new Error(res.data.message || "이미지 업로드 실패");
+  };
+  // =========================
 
   // ★★★★★ 조회 useEffect 추가 (핵심)
   useEffect(() => {
@@ -157,6 +220,11 @@ function AccountMemberSheet() {
       { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
       { header: "본사노트", accessorKey: "headoffice_note", minWidth: 80, maxWidth: 150 },
       { header: "지원금", accessorKey: "subsidy", minWidth: 80, maxWidth: 150 },
+
+      // ✅ 이미지 컬럼 3개 추가 (RecSheet와 동일 항목명)
+      { header: "근로계약서", accessorKey: "employment_contract", size: 120 },
+      { header: "신분증", accessorKey: "id", size: 120 },
+      { header: "통장사본", accessorKey: "bankbook", size: 120 },
     ],
     []
   );
@@ -178,6 +246,14 @@ function AccountMemberSheet() {
       if (!original) return true;
 
       return Object.keys(row).some((key) => {
+        // ✅ 이미지 필드: object(File)로 바뀌면 무조건 변경
+        if (imageFields.includes(key)) {
+          const v = row[key];
+          const o = original[key];
+          if (typeof v === "object" && v) return true;
+          return String(v ?? "") !== String(o ?? "");
+        }
+
         if (numericCols.includes(key)) {
           return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
         }
@@ -193,7 +269,6 @@ function AccountMemberSheet() {
     try {
       const userId = localStorage.getItem("user_id");
 
-
       // ⭐ 빈 문자열 제거 → null 값으로 변환
       const cleanRow = (row) => {
         const newRow = { ...row };
@@ -202,18 +277,30 @@ function AccountMemberSheet() {
             newRow[key] = null;
           }
         });
-
         return newRow;
       };
 
-      // 🔥 row 내부에 user_id 추가 + null 변환
-      const changedRowsWithUser = changedRows.map((row) => ({
-        ...cleanRow(row),
-        user_id: userId,
-      }));
+      // ✅ 이미지가 File이면 업로드 후 경로 문자열로 치환
+      const processed = await Promise.all(
+        changedRows.map(async (row) => {
+          const newRow = cleanRow(row);
+
+          for (const field of imageFields) {
+            if (newRow[field] && typeof newRow[field] === "object") {
+              const uploadedPath = await uploadImage(newRow[field], field, newRow);
+              newRow[field] = uploadedPath;
+            }
+          }
+
+          return {
+            ...newRow,
+            user_id: userId,
+          };
+        })
+      );
 
       const res = await api.post("/Operate/AccountMembersSave", {
-        data: changedRowsWithUser,
+        data: processed,
       });
 
       if (res.data.code === 200) {
@@ -230,7 +317,6 @@ function AccountMemberSheet() {
 
   // 모달 열기: 현재 workSystemList로 스냅샷 생성
   const openWorkSystemModal = async () => {
-    // 최신 데이터 보장(원하면)
     const latest = await fetchWorkSystemList({ snapshot: true });
 
     setWsRows(latest || []);
@@ -245,7 +331,7 @@ function AccountMemberSheet() {
   // 모달 행추가
   const handleWsAddRow = () => {
     const newRow = {
-      idx: null,             // 신규면 서버에서 채번하는 케이스가 많아서 null로 둠
+      idx: null,
       work_system: "",
       start_time: startTimes?.[0] ?? "6:00",
       end_time: endTimes?.[0] ?? "10:00",
@@ -256,20 +342,16 @@ function AccountMemberSheet() {
 
   // 모달 셀 변경
   const handleWsChange = (rowIndex, key, value) => {
-    setWsRows((prev) =>
-      prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r))
-    );
+    setWsRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r)));
   };
 
-  // 변경분 추출 (idx 기준 비교 + 신규는 idx null)
+  // 변경분 추출
   const getWsChangedRows = () => {
     const norm = (v) => String(v ?? "");
     return wsRows.filter((r, i) => {
       const o = wsOriginal[i];
       if (!o) return true;
 
-      // 신규/기존 구분이 필요하면 idx로도 확인
-      // idx가 둘 다 존재할 때만 “같은 레코드”라고 가정(현재는 인덱스 기반)
       return (
         norm(r.work_system) !== norm(o.work_system) ||
         norm(r.start_time) !== norm(o.start_time) ||
@@ -289,11 +371,7 @@ function AccountMemberSheet() {
 
     try {
       const res = await saveWorkSystemList(changed);
-
-      // 서버 응답 포맷이 {code:200}이든 그냥 200이든 케이스별로 대응
-      const ok =
-        res?.status === 200 ||
-        res?.data?.code === 200;
+      const ok = res?.status === 200 || res?.data?.code === 200;
 
       if (!ok) {
         Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
@@ -302,7 +380,6 @@ function AccountMemberSheet() {
 
       Swal.fire("저장 완료", "근무형태가 저장되었습니다.", "success");
 
-      // ✅ 저장 후 리스트 재조회해서 본 화면에도 반영
       const latest = await fetchWorkSystemList({ snapshot: true });
       setWsRows(latest || []);
       setWsOriginal(latest || []);
@@ -314,9 +391,7 @@ function AccountMemberSheet() {
   };
 
   const handleAddRow = () => {
-    const defaultAccountId =
-      selectedAccountId || (accountList?.[0]?.account_id ?? "");
-
+    const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
     const newRow = {
@@ -337,8 +412,8 @@ function AccountMemberSheet() {
       del_note: "",
       salary: "",
       idx: defaultWorkSystemIdx,
-      start_time: workSystemList?.[0]?.start_time ? normalizeTime(workSystemList[0].start_time) : (startTimes?.[0] ?? "6:00"),
-      end_time: workSystemList?.[0]?.end_time ? normalizeTime(workSystemList[0].end_time) : (endTimes?.[0] ?? "10:00"),
+      start_time: workSystemList?.[0]?.start_time ? normalizeTime(workSystemList[0].start_time) : startTimes?.[0] ?? "6:00",
+      end_time: workSystemList?.[0]?.end_time ? normalizeTime(workSystemList[0].end_time) : endTimes?.[0] ?? "10:00",
       national_pension: "",
       health_insurance: "",
       industrial_insurance: "",
@@ -347,8 +422,13 @@ function AccountMemberSheet() {
       headoffice_note: "",
       subsidy: "",
       total: 0,
+
+      // ✅ 이미지 필드 초기값
+      employment_contract: "",
+      id: "",
+      bankbook: "",
     };
-    
+
     setActiveRows((prev) => [newRow, ...prev]);
     setOriginalRows((prev) => [newRow, ...prev]);
   };
@@ -365,7 +445,7 @@ function AccountMemberSheet() {
       "industrial_insurance",
       "employment_insurance",
     ]);
-    const selectFields = new Set(["position_type", "del_yn", "contract_type", "start_time", "end_time", "account_id", "idx",]);
+    const selectFields = new Set(["position_type", "del_yn", "contract_type", "start_time", "end_time", "account_id", "idx"]);
     const nonEditableCols = new Set(["diner_date", "total"]);
 
     return (
@@ -437,15 +517,8 @@ function AccountMemberSheet() {
             zIndex: 3,
           },
           "thead th:nth-of-type(-n+6)": { zIndex: 5 },
-          "& .edited-cell": {
-            color: "#d32f2f",
-            fontWeight: 500,
-          },
-          "td[contenteditable]": {
-            minWidth: "80px",
-            cursor: "text",
-          },
-          // select / date 등 폼 컨트롤 스타일(간단)
+          "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
+          "td[contenteditable]": { minWidth: "80px", cursor: "text" },
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -455,10 +528,7 @@ function AccountMemberSheet() {
             outline: "none",
             cursor: "pointer",
           },
-          "& select.edited-cell": {
-            color: "#d32f2f",
-            fontWeight: 500,
-          },
+          "& select.edited-cell": { color: "#d32f2f", fontWeight: 500 },
           "& input[type='date']": {
             fontSize: "12px",
             padding: "4px",
@@ -466,7 +536,6 @@ function AccountMemberSheet() {
             border: "none",
             background: "transparent",
           },
-
         }}
       >
         <table className="dinersheet-table">
@@ -491,18 +560,28 @@ function AccountMemberSheet() {
                   const originalValue = originals?.[rowIndex]?.[colKey];
 
                   const isNumeric = numericCols.includes(colKey);
-                  const normCurrent = isNumeric ? Number(currentValue ?? 0) : String(currentValue ?? "");
-                  const normOriginal = isNumeric ? Number(originalValue ?? 0) : String(originalValue ?? "");
+                  const isImage = imageFields.includes(colKey);
+
+                  // ✅ 이미지 변경 판정 포함
+                  const normCurrent = isImage
+                    ? typeof currentValue === "object" && currentValue
+                      ? "__FILE__"
+                      : String(currentValue ?? "")
+                    : isNumeric
+                    ? Number(currentValue ?? 0)
+                    : String(currentValue ?? "");
+
+                  const normOriginal = isImage
+                    ? String(originalValue ?? "")
+                    : isNumeric
+                    ? Number(originalValue ?? 0)
+                    : String(originalValue ?? "");
+
                   const isChanged = normCurrent !== normOriginal;
 
                   const isEditable = !nonEditableCols.has(colKey);
                   const isSelect = selectFields.has(colKey);
                   const isDate = dateFields.has(colKey);
-
-                  const normalizeTime = (t) => {
-                    if (!t) return "";
-                    return String(t).trim().replace(/^0(\d):/, "$1:");
-                  };
 
                   const handleCellChange = (newValue) => {
                     const updatedRows = rows.map((r, idx) => {
@@ -510,9 +589,7 @@ function AccountMemberSheet() {
 
                       // ✅ work_system 변경 시 start/end 자동 세팅
                       if (colKey === "idx") {
-                        const selected = (workSystemList || []).find(
-                          (w) => String(w.idx) === String(newValue)
-                        );
+                        const selected = (workSystemList || []).find((w) => String(w.idx) === String(newValue));
 
                         return {
                           ...r,
@@ -528,7 +605,6 @@ function AccountMemberSheet() {
                         };
                       }
 
-                      // ✅ 나머지는 기존 로직 유지
                       return {
                         ...r,
                         [colKey]: newValue,
@@ -539,34 +615,138 @@ function AccountMemberSheet() {
                     setActiveRows(updatedRows);
                   };
 
+                  // ✅ 이미지 컬럼 렌더링 (RecSheet 방식 그대로)
+                  if (isImage) {
+                    const value = currentValue ?? "";
+                    const hasImage = !!value;
+                    const inputId = `upload-${colKey}-${rowIndex}`;
+
+                    return (
+                      <td key={cell.id} className={isChanged ? "edited-cell" : ""} style={{ textAlign: "center" }}>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          id={inputId}
+                          style={{ display: "none" }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            handleCellChange(file);
+                          }}
+                        />
+
+                        {hasImage ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              flexWrap: "nowrap",        // ✅ 줄바꿈 금지
+                              whiteSpace: "nowrap",      // ✅ 텍스트 줄바꿈 금지
+                            }}
+                          >
+                            {typeof value === "string" && (
+                              <Tooltip title="다운로드">
+                                <IconButton
+                                  size="small"
+                                  sx={{ ...fileIconSx, p: 0.5 }}  // ✅ 패딩 축소
+                                  onClick={() => handleDownload(value)}
+                                >
+                                  <DownloadIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            )}
+
+                            <Tooltip title="미리보기">
+                              <IconButton
+                                size="small"
+                                sx={{ ...fileIconSx, p: 0.5 }}    // ✅ 패딩 축소
+                                onClick={() => handleViewImage(value)}
+                              >
+                                <ImageSearchIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+
+                            <label htmlFor={inputId}>
+                              <MDButton
+                                size="small"
+                                component="span"
+                                color="info"
+                                sx={{
+                                  fontSize: isMobile ? "10px" : "11px",
+                                  minWidth: 44,             // ✅ 버튼 폭 축소
+                                  px: 1,                    // ✅ 좌우 패딩 축소
+                                  py: 0.5,
+                                  lineHeight: 1.2,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                변경
+                              </MDButton>
+                            </label>
+                          </div>
+                        ) : (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 6,
+                              flexWrap: "nowrap",        // ✅ 줄바꿈 금지
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <label htmlFor={inputId} style={{ display: "inline-flex" }}>
+                              <MDButton
+                                size="small"
+                                component="span"
+                                color="info"
+                                sx={{
+                                  fontSize: isMobile ? "10px" : "11px",
+                                  minWidth: 44,
+                                  px: 1,
+                                  py: 0.5,
+                                  lineHeight: 1.2,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                업로드
+                              </MDButton>
+                            </label>
+                          </div>
+                        )}
+                      </td>
+                    );
+                  }
+
                   return (
                     <td
                       key={cell.id}
                       style={{
-                        textAlign:
-                          [
-                            "rrn",
-                            "account_number",
-                            "phone",
-                            "contract_type",
-                            "join_dt",
-                            "act_join_dt",
-                            "ret_set_dt",
-                            "loss_major_insurances",
-                            "del_yn",
-                            "del_dt",
-                            "idx",
-                            "start_time",
-                            "end_time",
-                            "national_pension",
-                            "health_insurance",
-                            "industrial_insurance",
-                            "employment_insurance",
-                          ].includes(colKey)
-                            ? "center"
-                            : colKey === "salary"
-                            ? "right"
-                            : "left",
+                        textAlign: [
+                          "rrn",
+                          "account_number",
+                          "phone",
+                          "contract_type",
+                          "join_dt",
+                          "act_join_dt",
+                          "ret_set_dt",
+                          "loss_major_insurances",
+                          "del_yn",
+                          "del_dt",
+                          "idx",
+                          "start_time",
+                          "end_time",
+                          "national_pension",
+                          "health_insurance",
+                          "industrial_insurance",
+                          "employment_insurance",
+                        ].includes(colKey)
+                          ? "center"
+                          : colKey === "salary"
+                          ? "right"
+                          : "left",
                       }}
                       contentEditable={isEditable && !isSelect && !isDate}
                       suppressContentEditableWarning
@@ -677,7 +857,7 @@ function AccountMemberSheet() {
   if (loading) return <LoadingScreen />;
 
   return (
-      <>
+    <>
       {/* 상단 필터 + 버튼 (모바일 대응) */}
       <MDBox
         pt={1}
@@ -724,7 +904,7 @@ function AccountMemberSheet() {
             </option>
           ))}
         </TextField>
-        
+
         <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
           근무형태 관리
         </MDButton>
@@ -737,31 +917,18 @@ function AccountMemberSheet() {
           저장
         </MDButton>
       </MDBox>
+
       <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
-              {/* <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-                display="flex"
-                justifyContent="space-between"
-                alignItems="center"
-              >
-                <MDTypography variant="h6" color="white">
-                  현장 직원관리
-                </MDTypography>
-              </MDBox> */}
-
             {renderTable(table, activeRows, originalRows)}
           </Grid>
         </Grid>
       </MDBox>
+
+      {/* =========================
+          ✅ 근무형태 모달(기존 그대로)
+         ========================= */}
       <Modal open={wsOpen} onClose={closeWorkSystemModal}>
         <Box
           sx={{
@@ -774,12 +941,11 @@ function AccountMemberSheet() {
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            overflow: "hidden",          // ✅ 핵심: 바깥은 hidden
+            overflow: "hidden",
             display: "flex",
             flexDirection: "column",
           }}
         >
-          {/* ✅ 상단 버튼 영역 sticky */}
           <MDBox
             display="flex"
             justifyContent="space-between"
@@ -787,12 +953,12 @@ function AccountMemberSheet() {
             sx={{
               position: "sticky",
               top: 0,
-              zIndex: 30,                 // ✅ th보다 더 위
-              bgcolor: "#fff",            // ✅ 배경 확실히
+              zIndex: 30,
+              bgcolor: "#fff",
               px: 2,
               py: 1,
               borderBottom: "1px solid #e0e0e0",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)", // ✅ 잔상 느낌 방지 + 구분
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
             }}
           >
             <MDTypography variant="h6">근무형태 관리</MDTypography>
@@ -810,13 +976,12 @@ function AccountMemberSheet() {
             </MDBox>
           </MDBox>
 
-          {/* ✅ 여기만 스크롤 */}
           <MDBox
             sx={{
               flex: 1,
               overflow: "auto",
               WebkitOverflowScrolling: "touch",
-              bgcolor: "#fff",           // ✅ 스크롤 영역도 배경 고정
+              bgcolor: "#fff",
             }}
           >
             <MDBox
@@ -832,14 +997,14 @@ function AccountMemberSheet() {
                   padding: "6px",
                   fontSize: "12px",
                   textAlign: "center",
-                  backgroundColor: "#fff",   // ✅ td도 기본 배경을 흰색으로(비침 방지)
+                  backgroundColor: "#fff",
                 },
                 "& thead th": {
                   position: "sticky",
-                  top: 0,                    // ✅ 스크롤 컨테이너 내부 기준
-                  zIndex: 20,                // ✅ 버튼바(30)보다 아래
+                  top: 0,
+                  zIndex: 20,
                   backgroundColor: "#f0f0f0",
-                  boxShadow: "0 1px 0 rgba(0,0,0,0.12)", // ✅ 헤더 경계 또렷
+                  boxShadow: "0 1px 0 rgba(0,0,0,0.12)",
                   backgroundClip: "padding-box",
                 },
                 "& input, & select": {
@@ -866,50 +1031,51 @@ function AccountMemberSheet() {
                 <tbody>
                   {(wsRows || []).map((r, i) => {
                     const o = wsOriginal?.[i] || {};
-
-                    // ✅ 신규행 판단: idx가 없으면(또는 원본이 없으면) 신규로 봄
                     const isNewRow = r.idx == null || !wsOriginal?.[i];
 
-                    // ✅ 셀 단위 변경 여부
                     const changedWorkSystem = String(r.work_system ?? "") !== String(o.work_system ?? "");
-                    const changedStartTime  = String(r.start_time ?? "")  !== String(o.start_time ?? "");
-                    const changedEndTime    = String(r.end_time ?? "")    !== String(o.end_time ?? "");
+                    const changedStartTime = String(r.start_time ?? "") !== String(o.start_time ?? "");
+                    const changedEndTime = String(r.end_time ?? "") !== String(o.end_time ?? "");
 
                     return (
                       <tr key={`${r.idx ?? "new"}-${i}`} className={isNewRow ? "edited-cell" : ""}>
                         <td className={isNewRow ? "edited-cell" : ""}>{r.idx ?? ""}</td>
 
-                        <td className={(isNewRow || changedWorkSystem) ? "edited-cell" : ""}>
+                        <td className={isNewRow || changedWorkSystem ? "edited-cell" : ""}>
                           <input
                             value={r.work_system ?? ""}
                             onChange={(e) => handleWsChange(i, "work_system", e.target.value)}
                             placeholder="예) 주5일(09~18)"
-                            className={(isNewRow || changedWorkSystem) ? "edited-cell" : ""}
+                            className={isNewRow || changedWorkSystem ? "edited-cell" : ""}
                           />
                         </td>
 
-                        <td className={(isNewRow || changedStartTime) ? "edited-cell" : ""}>
+                        <td className={isNewRow || changedStartTime ? "edited-cell" : ""}>
                           <select
                             value={r.start_time ?? ""}
                             onChange={(e) => handleWsChange(i, "start_time", e.target.value)}
-                            className={(isNewRow || changedStartTime) ? "edited-cell" : ""}
+                            className={isNewRow || changedStartTime ? "edited-cell" : ""}
                           >
                             <option value="">없음</option>
                             {startTimes.map((t) => (
-                              <option key={t} value={t}>{t}</option>
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
                             ))}
                           </select>
                         </td>
 
-                        <td className={(isNewRow || changedEndTime) ? "edited-cell" : ""}>
+                        <td className={isNewRow || changedEndTime ? "edited-cell" : ""}>
                           <select
                             value={r.end_time ?? ""}
                             onChange={(e) => handleWsChange(i, "end_time", e.target.value)}
-                            className={(isNewRow || changedEndTime) ? "edited-cell" : ""}
+                            className={isNewRow || changedEndTime ? "edited-cell" : ""}
                           >
                             <option value="">없음</option>
                             {endTimes.map((t) => (
-                              <option key={t} value={t}>{t}</option>
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
                             ))}
                           </select>
                         </td>
@@ -922,6 +1088,71 @@ function AccountMemberSheet() {
           </MDBox>
         </Box>
       </Modal>
+
+      {/* =========================
+          ✅ 이미지 뷰어 (추가)
+         ========================= */}
+      {viewImageSrc && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "50vw",
+            height: "90vh",
+            backgroundColor: "rgba(0,0,0,0.7)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+          }}
+          onClick={handleCloseViewer}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              maxWidth: isMobile ? "95%" : "80%",
+              maxHeight: isMobile ? "90%" : "80%",
+            }}
+          >
+            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
+              {({ zoomIn, zoomOut, resetTransform }) => (
+                <>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 8,
+                      right: 8,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      zIndex: 1000,
+                    }}
+                  >
+                    <button onClick={zoomIn} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                      +
+                    </button>
+                    <button onClick={zoomOut} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                      -
+                    </button>
+                    <button onClick={resetTransform} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                      ⟳
+                    </button>
+                    <button onClick={handleCloseViewer} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                      X
+                    </button>
+                  </div>
+
+                  <TransformComponent>
+                    <img src={encodeURI(viewImageSrc)} alt="미리보기" style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }} />
+                  </TransformComponent>
+                </>
+              )}
+            </TransformWrapper>
+          </div>
+        </div>
+      )}
     </>
   );
 }

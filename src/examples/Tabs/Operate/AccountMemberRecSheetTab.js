@@ -109,8 +109,9 @@ function AccountMemberRecSheet() {
 
   // ✅ 채용여부(use_yn) 옵션
   const useYnOptions = [
-    { value: "Y", label: "Y" },
-    { value: "N", label: "N" },
+    { value: "D", label: "진행중" },
+    { value: "Y", label: "채용확정" },
+    { value: "N", label: "채용취소" },
   ];
 
   const formatDateForInput = (val) => {
@@ -299,7 +300,7 @@ function AccountMemberRecSheet() {
       idx: defaultWorkSystemIdx,
       start_time: workSystemList?.[0]?.start_time ? normalizeTime(workSystemList[0].start_time) : (startTimes?.[0] ?? "6:00"),
       end_time: workSystemList?.[0]?.end_time ? normalizeTime(workSystemList[0].end_time) : (endTimes?.[0] ?? "10:00"),
-      use_yn: "Y", // ✅ 기본값
+      use_yn: "D", // ✅ 기본값
       note: "",
       employment_contract: "",
       id: "",
@@ -440,11 +441,31 @@ function AccountMemberRecSheet() {
                     setActiveRows(updatedRows);
                   };
 
-                  // ✅ 이미지 컬럼 렌더링 (HygieneSheetTab 방식)
+                  // ✅ 이미지 컬럼 렌더링 (아이콘/버튼 한줄 고정)
                   if (isImage) {
                     const value = currentValue ?? "";
                     const hasImage = !!value;
                     const inputId = `upload-${colKey}-${rowIndex}`;
+
+                    const rowActionSx = {
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      flexWrap: "nowrap",      // ✅ 줄바꿈 금지
+                      whiteSpace: "nowrap",    // ✅ 텍스트 줄바꿈 금지
+                    };
+
+                    const actionBtnSx = {
+                      fontSize: isMobile ? "10px" : "11px",
+                      minWidth: 44,            // ✅ 버튼 폭 축소
+                      px: 1,
+                      py: 0.5,
+                      lineHeight: 1.2,
+                      whiteSpace: "nowrap",
+                    };
+
+                    const iconBtnSx = { ...fileIconSx, p: 0.5 }; // ✅ 아이콘 버튼 패딩 축소
 
                     return (
                       <td
@@ -465,34 +486,35 @@ function AccountMemberRecSheet() {
                         />
 
                         {hasImage ? (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
+                          <div style={rowActionSx}>
                             {typeof value === "string" && (
                               <Tooltip title="다운로드">
-                                <IconButton size="small" sx={fileIconSx} onClick={() => handleDownload(value)}>
+                                <IconButton size="small" sx={iconBtnSx} onClick={() => handleDownload(value)}>
                                   <DownloadIcon fontSize="small" />
                                 </IconButton>
                               </Tooltip>
                             )}
 
                             <Tooltip title="미리보기">
-                              <IconButton size="small" sx={fileIconSx} onClick={() => handleViewImage(value)}>
+                              <IconButton size="small" sx={iconBtnSx} onClick={() => handleViewImage(value)}>
                                 <ImageSearchIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
 
-                            {/* ✅ 이미지 변경 업로드 */}
-                            <label htmlFor={inputId}>
-                              <MDButton size="small" component="span" color="info" sx={{ fontSize: isMobile ? "10px" : "11px" }}>
+                            <label htmlFor={inputId} style={{ display: "inline-flex" }}>
+                              <MDButton size="small" component="span" color="info" sx={actionBtnSx}>
                                 변경
                               </MDButton>
                             </label>
                           </div>
                         ) : (
-                          <label htmlFor={inputId}>
-                            <MDButton size="small" component="span" color="info" sx={{ fontSize: isMobile ? "10px" : "11px" }}>
-                              업로드
-                            </MDButton>
-                          </label>
+                          <div style={rowActionSx}>
+                            <label htmlFor={inputId} style={{ display: "inline-flex" }}>
+                              <MDButton size="small" component="span" color="info" sx={actionBtnSx}>
+                                업로드
+                              </MDButton>
+                            </label>
+                          </div>
                         )}
                       </td>
                     );
@@ -645,8 +667,9 @@ function AccountMemberRecSheet() {
           sx={{ minWidth: 150 }}
           SelectProps={{ native: true }}
         >
-          <option value="Y">채용</option>
-          <option value="N">취소</option>
+          <option value="D">진행중</option>
+          <option value="Y">채용확정</option>
+          <option value="N">채용취소</option>
         </TextField>
 
         <TextField

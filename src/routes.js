@@ -68,6 +68,10 @@ import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
 // 현장
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
+
+// 테스트
+//import Temp from "layouts/temp/AccountEventTab";
+
 // @mui icons
 import Icon from "@mui/material/Icon";
 import HomeIcon from "@mui/icons-material/Home";
@@ -171,6 +175,17 @@ const routes = [
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한
         accessMode: "AND",
       },
+      // {
+      //   type: "collapse",
+      //   name: "📅 테스트화면",
+      //   key: "tempview",
+      //   //icon: <Icon fontSize="small">*</Icon>,
+      //   route: "/tempview",
+      //   component: <Temp />,
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+      //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7],   // 🔹 직책권한
+      //   accessMode: "AND",
+      // },
     ]
   },
   {

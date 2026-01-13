@@ -85,6 +85,8 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
         headoffice_note: item.headoffice_note,
         subsidy: item.subsidy,
         note: item.note,
+        id: item.id,
+        bankbook: item.bankbook
       }));
 
       // ✅ workSystemList가 이미 있으면 work_system을 idx로 매핑해서 저장

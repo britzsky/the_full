@@ -4,12 +4,16 @@ import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import MDTypography from "components/MDTypography";
-import { TextField, useTheme, useMediaQuery  } from "@mui/material";
+import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "api/api";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
-import useAccountMemberCardSheetData, { parseNumber, formatNumber } from "./accountMemberCardSheetData";
+import Autocomplete from "@mui/material/Autocomplete";
+import useAccountMemberCardSheetData, {
+  parseNumber,
+  formatNumber,
+} from "./accountMemberCardSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 
 function AccountMemberSheet() {
@@ -26,15 +30,16 @@ function AccountMemberSheet() {
     setOriginalRows,
     accountList,
     workSystemList,
-    originalWorkSystemList,   // ✅ 추가
-    fetchWorkSystemList,      // ✅ 추가
-    saveWorkSystemList,       // ✅ 추가
+    originalWorkSystemList, // ✅ 추가
+    fetchWorkSystemList, // ✅ 추가
+    saveWorkSystemList, // ✅ 추가
     saveData,
     fetchAccountMembersAllList,
     loading: hookLoading,
   } = useAccountMemberCardSheetData(selectedAccountId, activeStatus);
 
   const [loading, setLoading] = useState(true);
+
   // =========================
   // ✅ 근무형태 관리 Modal 상태
   // =========================
@@ -44,12 +49,34 @@ function AccountMemberSheet() {
 
   const numericCols = ["salary"];
 
-  // ★★★★★ 조회 useEffect 추가 (핵심)
+  // ✅ 거래처 Autocomplete 옵션
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
+  // ✅ Autocomplete value 객체
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
+
   useEffect(() => {
+    if (selectedAccountId) return;
+    if (!Array.isArray(accountList) || accountList.length === 0) return;
+
+    setSelectedAccountId(String(accountList[0].account_id));
+  }, [accountList, selectedAccountId]);
+
+  useEffect(() => {
+    if (!selectedAccountId) return;
+
     setLoading(true);
-    fetchAccountMembersAllList().then(() => {
-      setLoading(false);
-    });
+    Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
   }, [selectedAccountId, activeStatus]);
 
   // 합계 계산
@@ -129,28 +156,21 @@ function AccountMemberSheet() {
   const columns = useMemo(
     () => [
       { header: "성명", accessorKey: "name", size: 50 },
-      // { header: "주민번호", accessorKey: "rrn", size: 100 },
       { header: "업장명", accessorKey: "account_id", size: 150 },
-      
-      // { header: "계좌번호", accessorKey: "account_number", size: 160 },
-      // { header: "연락처", accessorKey: "phone", size: 100 },
-      // { header: "주소", accessorKey: "address", size: 150 },
-      // { header: "계약형태", accessorKey: "contract_type", size: 50 },
-      // { header: "실입사일", accessorKey: "act_join_dt", size: 80 },
-      { header: "급여(월)", accessorKey: "salary", size: 80, cell: (info) => formatNumber(info.getValue()) },
+      {
+        header: "급여(월)",
+        accessorKey: "salary",
+        size: 80,
+        cell: (info) => formatNumber(info.getValue()),
+      },
       { header: "직책", accessorKey: "position_type", size: 65 },
-      { header: "근무형태", accessorKey: "idx", size: 100 },
+      { header: "근무형태", accessorKey: "idx", size: 180 },
       { header: "시작", accessorKey: "start_time", size: 60 },
       { header: "마감", accessorKey: "end_time", size: 60 },
       { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
     ],
     []
   );
-
-  const onSearchList = (e) => {
-    setLoading(true);
-    setSelectedAccountId(e.target.value);
-  };
 
   const table = useReactTable({
     data: activeRows,
@@ -182,13 +202,11 @@ function AccountMemberSheet() {
       // ⭐ 빈 문자열 제거 → null 값으로 변환
       const cleanRow = (row) => {
         const newRow = { ...row };
-
         Object.keys(newRow).forEach((key) => {
           if (newRow[key] === "" || newRow[key] === undefined) {
             newRow[key] = null;
           }
         });
-
         return newRow;
       };
 
@@ -216,9 +234,7 @@ function AccountMemberSheet() {
 
   // 모달 열기: 현재 workSystemList로 스냅샷 생성
   const openWorkSystemModal = async () => {
-    // 최신 데이터 보장(원하면)
     const latest = await fetchWorkSystemList({ snapshot: true });
-
     setWsRows(latest || []);
     setWsOriginal(latest || []);
     setWsOpen(true);
@@ -231,7 +247,7 @@ function AccountMemberSheet() {
   // 모달 행추가
   const handleWsAddRow = () => {
     const newRow = {
-      idx: null,             // 신규면 서버에서 채번하는 케이스가 많아서 null로 둠
+      idx: null,
       work_system: "",
       start_time: startTimes?.[0] ?? "6:00",
       end_time: endTimes?.[0] ?? "10:00",
@@ -242,20 +258,16 @@ function AccountMemberSheet() {
 
   // 모달 셀 변경
   const handleWsChange = (rowIndex, key, value) => {
-    setWsRows((prev) =>
-      prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r))
-    );
+    setWsRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r)));
   };
 
-  // 변경분 추출 (idx 기준 비교 + 신규는 idx null)
+  // 변경분 추출
   const getWsChangedRows = () => {
     const norm = (v) => String(v ?? "");
     return wsRows.filter((r, i) => {
       const o = wsOriginal[i];
       if (!o) return true;
 
-      // 신규/기존 구분이 필요하면 idx로도 확인
-      // idx가 둘 다 존재할 때만 “같은 레코드”라고 가정(현재는 인덱스 기반)
       return (
         norm(r.work_system) !== norm(o.work_system) ||
         norm(r.start_time) !== norm(o.start_time) ||
@@ -275,11 +287,7 @@ function AccountMemberSheet() {
 
     try {
       const res = await saveWorkSystemList(changed);
-
-      // 서버 응답 포맷이 {code:200}이든 그냥 200이든 케이스별로 대응
-      const ok =
-        res?.status === 200 ||
-        res?.data?.code === 200;
+      const ok = res?.status === 200 || res?.data?.code === 200;
 
       if (!ok) {
         Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
@@ -288,11 +296,9 @@ function AccountMemberSheet() {
 
       Swal.fire("저장 완료", "근무형태가 저장되었습니다.", "success");
 
-      // ✅ 저장 후 리스트 재조회해서 본 화면에도 반영
       const latest = await fetchWorkSystemList({ snapshot: true });
       setWsRows(latest || []);
       setWsOriginal(latest || []);
-
       setWsOpen(false);
     } catch (err) {
       Swal.fire("저장 실패", err?.message || "오류", "error");
@@ -310,8 +316,8 @@ function AccountMemberSheet() {
       join_dt: "",
       salary: "",
       idx: ws0?.idx ? String(ws0.idx) : "",
-      start_time: ws0?.start_time ?? (startTimes?.[0] ?? "6:00"),
-      end_time: ws0?.end_time ?? (endTimes?.[0] ?? "10:00"),
+      start_time: ws0?.start_time ?? startTimes?.[0] ?? "6:00",
+      end_time: ws0?.end_time ?? endTimes?.[0] ?? "10:00",
       note: "",
     };
 
@@ -319,10 +325,8 @@ function AccountMemberSheet() {
     setOriginalRows((prev) => [newRow, ...prev]);
   };
 
-  const renderTable = (table, rows, originals) => {
-    const dateFields = new Set([
-      "join_dt",
-    ]);
+  const renderTable = (tableInst, rows, originals) => {
+    const dateFields = new Set(["join_dt"]);
     const selectFields = new Set(["position_type", "start_time", "end_time", "account_id", "idx"]);
     const nonEditableCols = new Set(["diner_date", "total"]);
 
@@ -366,7 +370,6 @@ function AccountMemberSheet() {
             minWidth: "80px",
             cursor: "text",
           },
-          // select / date 등 폼 컨트롤 스타일(간단)
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -387,12 +390,11 @@ function AccountMemberSheet() {
             border: "none",
             background: "transparent",
           },
-
         }}
       >
         <table className="dinersheet-table">
           <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
+            {tableInst.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th key={header.id} style={{ width: header.column.columnDef.size }}>
@@ -404,7 +406,7 @@ function AccountMemberSheet() {
           </thead>
 
           <tbody>
-            {table.getRowModel().rows.map((row, rowIndex) => (
+            {tableInst.getRowModel().rows.map((row, rowIndex) => (
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
@@ -412,8 +414,12 @@ function AccountMemberSheet() {
                   const originalValue = originals?.[rowIndex]?.[colKey];
 
                   const isNumeric = numericCols.includes(colKey);
-                  const normCurrent = isNumeric ? Number(currentValue ?? 0) : String(currentValue ?? "");
-                  const normOriginal = isNumeric ? Number(originalValue ?? 0) : String(originalValue ?? "");
+                  const normCurrent = isNumeric
+                    ? Number(currentValue ?? 0)
+                    : String(currentValue ?? "");
+                  const normOriginal = isNumeric
+                    ? Number(originalValue ?? 0)
+                    : String(originalValue ?? "");
                   const isChanged = normCurrent !== normOriginal;
 
                   const isEditable = !nonEditableCols.has(colKey);
@@ -424,7 +430,6 @@ function AccountMemberSheet() {
                     const updatedRows = rows.map((r, idx) => {
                       if (idx !== rowIndex) return r;
 
-                      // ✅ 근무형태(idx) 변경 시 start/end 자동 세팅
                       if (colKey === "idx") {
                         const selected = (workSystemList || []).find(
                           (w) => String(w.idx) === String(newValue)
@@ -458,17 +463,11 @@ function AccountMemberSheet() {
                     <td
                       key={cell.id}
                       style={{
-                        textAlign:
-                          [
-                            "join_dt",
-                            "idx",
-                            "start_time",
-                            "end_time",
-                          ].includes(colKey)
-                            ? "center"
-                            : colKey === "salary"
-                            ? "right"
-                            : "left",
+                        textAlign: ["join_dt", "idx", "start_time", "end_time"].includes(colKey)
+                          ? "center"
+                          : colKey === "salary"
+                          ? "right"
+                          : "left",
                       }}
                       contentEditable={isEditable && !isSelect && !isDate}
                       suppressContentEditableWarning
@@ -488,63 +487,142 @@ function AccountMemberSheet() {
                       }
                     >
                       {isSelect ? (
-                        <select
-                          value={currentValue ?? ""}
-                          onChange={(e) => handleCellChange(e.target.value)}
-                          className={isChanged ? "edited-cell" : ""}   // ✅ 추가
-                          style={{ width: "100%", background: "transparent", cursor: "pointer", border: "none" }}
-                        >
-                          {colKey === "account_id" &&
-                            (accountList || []).map((acc) => (
-                              <option key={acc.account_id} value={acc.account_id}>
-                                {acc.account_name}
-                              </option>
-                            ))}
-                          {colKey === "del_yn" &&
-                            delOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          {colKey === "position_type" &&
-                            positionOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          {colKey === "contract_type" &&
-                            contractOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          {colKey === "start_time" && (
-                            <>
-                              <option value="">없음</option> {/* value 빈값, text 없음 */}
-                              {startTimes.map((t) => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </>
-                          )}
-                          {colKey === "end_time" && (
-                            <>
-                              <option value="">없음</option> {/* value 빈값, text 없음 */}
-                              {endTimes.map((t) => (
-                                <option key={t} value={t}>{t}</option>
-                              ))}
-                            </>
-                          )}
-                          {colKey === "idx" && (
-                            <>
-                              <option value="">선택</option>
-                              {(workSystemList || []).map((ws) => (
-                                <option key={ws.idx} value={ws.idx}>
-                                  {ws.work_system}
+                        colKey === "idx" ? (
+                          <Autocomplete
+                            size="small"
+                            options={(workSystemList || []).map((w) => ({
+                              value: String(w.idx),
+                              label: w.work_system,
+                              start_time: w.start_time,
+                              end_time: w.end_time,
+                            }))}
+                            value={(() => {
+                              const v = String(currentValue ?? "");
+                              return (
+                                (workSystemList || [])
+                                  .map((w) => ({ value: String(w.idx), label: w.work_system }))
+                                  .find((o) => o.value === v) || null
+                              );
+                            })()}
+                            onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
+                            getOptionLabel={(opt) => opt?.label ?? ""}
+                            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+                            renderOption={(props, option) => (
+                              <li
+                                {...props}
+                                style={{
+                                  fontSize: "12px",
+                                  paddingTop: 4,
+                                  paddingBottom: 4,
+                                  color: isChanged ? "#d32f2f" : "inherit",
+                                  fontWeight: isChanged ? 600 : 400,
+                                }}
+                              >
+                                {option.label}
+                              </li>
+                            )}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                variant="standard"
+                                placeholder="검색"
+                                InputProps={{
+                                  ...params.InputProps,
+                                  disableUnderline: true,
+                                }}
+                                inputProps={{
+                                  ...params.inputProps,
+                                  style: {
+                                    fontSize: "12px",
+                                    padding: 0,
+                                    color: isChanged ? "#d32f2f" : "inherit",
+                                    fontWeight: isChanged ? 600 : 400,
+                                  },
+                                }}
+                              />
+                            )}
+                            sx={{
+                              width: "100%",
+                              "& .MuiInputBase-root": { minHeight: 24 },
+                              "& .MuiAutocomplete-input": {
+                                fontSize: "12px",
+                                padding: "0px !important",
+                                color: isChanged ? "#d32f2f" : "inherit",
+                                fontWeight: isChanged ? 600 : 400,
+                              },
+                              "& .MuiSvgIcon-root": {
+                                fontSize: 18,
+                                color: isChanged ? "#d32f2f" : "inherit",
+                              },
+                              "& .MuiAutocomplete-option": { fontSize: "12px", minHeight: 28 },
+                            }}
+                            ListboxProps={{
+                              style: { fontSize: "12px" },
+                            }}
+                          />
+                        ) : (
+                          <select
+                            value={currentValue ?? ""}
+                            onChange={(e) => handleCellChange(e.target.value)}
+                            className={isChanged ? "edited-cell" : ""}
+                            style={{
+                              width: "100%",
+                              background: "transparent",
+                              cursor: "pointer",
+                              border: "none",
+                            }}
+                          >
+                            {colKey === "account_id" &&
+                              (accountList || []).map((acc) => (
+                                <option key={acc.account_id} value={acc.account_id}>
+                                  {acc.account_name}
                                 </option>
                               ))}
-                            </>
-                          )}
-                        </select>
+
+                            {colKey === "del_yn" &&
+                              delOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
+                            {colKey === "position_type" &&
+                              positionOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
+                            {colKey === "contract_type" &&
+                              contractOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
+                            {colKey === "start_time" && (
+                              <>
+                                <option value="">없음</option>
+                                {startTimes.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </>
+                            )}
+
+                            {colKey === "end_time" && (
+                              <>
+                                <option value="">없음</option>
+                                {endTimes.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                        )
                       ) : isDate ? (
                         <input
                           type="date"
@@ -569,7 +647,7 @@ function AccountMemberSheet() {
   if (loading) return <LoadingScreen />;
 
   return (
-      <>
+    <>
       {/* 상단 필터 + 버튼 (모바일 대응) */}
       <MDBox
         pt={1}
@@ -601,22 +679,36 @@ function AccountMemberSheet() {
           <option value="Y">퇴사자</option>
         </TextField>
 
-        <TextField
-          select
+        <Autocomplete
           size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{ minWidth: 150 }}
-          SelectProps={{ native: true }}
-        >
-          <option value="">전체</option>
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
-        
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={selectedAccountOption}
+          onChange={(_, opt) => {
+            setLoading(true);
+            setSelectedAccountId(opt ? opt.value : "");
+          }}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          // ✅ (선택) 검색 품질: 이름에 포함되면 매칭
+          filterOptions={(options, state) => {
+            const q = (state.inputValue ?? "").trim().toLowerCase();
+            if (!q) return options;
+            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
+
         <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
           근무형태 관리
         </MDButton>
@@ -629,27 +721,10 @@ function AccountMemberSheet() {
           저장
         </MDButton>
       </MDBox>
+
       <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
-              {/* <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-                display="flex"
-                justifyContent="space-between"
-                alignItems="center"
-              >
-                <MDTypography variant="h6" color="white">
-                  현장 직원관리
-                </MDTypography>
-              </MDBox> */}
-
             {renderTable(table, activeRows, originalRows)}
           </Grid>
         </Grid>
@@ -667,7 +742,7 @@ function AccountMemberSheet() {
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            overflow: "hidden",          // ✅ 핵심: 바깥은 hidden
+            overflow: "hidden",
             display: "flex",
             flexDirection: "column",
           }}
@@ -680,12 +755,12 @@ function AccountMemberSheet() {
             sx={{
               position: "sticky",
               top: 0,
-              zIndex: 30,                 // ✅ th보다 더 위
-              bgcolor: "#fff",            // ✅ 배경 확실히
+              zIndex: 30,
+              bgcolor: "#fff",
               px: 2,
               py: 1,
               borderBottom: "1px solid #e0e0e0",
-              boxShadow: "0 2px 6px rgba(0,0,0,0.08)", // ✅ 잔상 느낌 방지 + 구분
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
             }}
           >
             <MDTypography variant="h6">근무형태 관리</MDTypography>
@@ -709,7 +784,7 @@ function AccountMemberSheet() {
               flex: 1,
               overflow: "auto",
               WebkitOverflowScrolling: "touch",
-              bgcolor: "#fff",           // ✅ 스크롤 영역도 배경 고정
+              bgcolor: "#fff",
             }}
           >
             <MDBox
@@ -725,14 +800,14 @@ function AccountMemberSheet() {
                   padding: "6px",
                   fontSize: "12px",
                   textAlign: "center",
-                  backgroundColor: "#fff",   // ✅ td도 기본 배경을 흰색으로(비침 방지)
+                  backgroundColor: "#fff",
                 },
                 "& thead th": {
                   position: "sticky",
-                  top: 0,                    // ✅ 스크롤 컨테이너 내부 기준
-                  zIndex: 20,                // ✅ 버튼바(30)보다 아래
+                  top: 0,
+                  zIndex: 20,
                   backgroundColor: "#f0f0f0",
-                  boxShadow: "0 1px 0 rgba(0,0,0,0.12)", // ✅ 헤더 경계 또렷
+                  boxShadow: "0 1px 0 rgba(0,0,0,0.12)",
                   backgroundClip: "padding-box",
                 },
                 "& input, & select": {
@@ -760,49 +835,53 @@ function AccountMemberSheet() {
                   {(wsRows || []).map((r, i) => {
                     const o = wsOriginal?.[i] || {};
 
-                    // ✅ 신규행 판단: idx가 없으면(또는 원본이 없으면) 신규로 봄
                     const isNewRow = r.idx == null || !wsOriginal?.[i];
 
-                    // ✅ 셀 단위 변경 여부
-                    const changedWorkSystem = String(r.work_system ?? "") !== String(o.work_system ?? "");
-                    const changedStartTime  = String(r.start_time ?? "")  !== String(o.start_time ?? "");
-                    const changedEndTime    = String(r.end_time ?? "")    !== String(o.end_time ?? "");
+                    const changedWorkSystem =
+                      String(r.work_system ?? "") !== String(o.work_system ?? "");
+                    const changedStartTime =
+                      String(r.start_time ?? "") !== String(o.start_time ?? "");
+                    const changedEndTime = String(r.end_time ?? "") !== String(o.end_time ?? "");
 
                     return (
                       <tr key={`${r.idx ?? "new"}-${i}`} className={isNewRow ? "edited-cell" : ""}>
                         <td className={isNewRow ? "edited-cell" : ""}>{r.idx ?? ""}</td>
 
-                        <td className={(isNewRow || changedWorkSystem) ? "edited-cell" : ""}>
+                        <td className={isNewRow || changedWorkSystem ? "edited-cell" : ""}>
                           <input
                             value={r.work_system ?? ""}
                             onChange={(e) => handleWsChange(i, "work_system", e.target.value)}
                             placeholder="예) 주5일(09~18)"
-                            className={(isNewRow || changedWorkSystem) ? "edited-cell" : ""}
+                            className={isNewRow || changedWorkSystem ? "edited-cell" : ""}
                           />
                         </td>
 
-                        <td className={(isNewRow || changedStartTime) ? "edited-cell" : ""}>
+                        <td className={isNewRow || changedStartTime ? "edited-cell" : ""}>
                           <select
                             value={r.start_time ?? ""}
                             onChange={(e) => handleWsChange(i, "start_time", e.target.value)}
-                            className={(isNewRow || changedStartTime) ? "edited-cell" : ""}
+                            className={isNewRow || changedStartTime ? "edited-cell" : ""}
                           >
                             <option value="">없음</option>
                             {startTimes.map((t) => (
-                              <option key={t} value={t}>{t}</option>
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
                             ))}
                           </select>
                         </td>
 
-                        <td className={(isNewRow || changedEndTime) ? "edited-cell" : ""}>
+                        <td className={isNewRow || changedEndTime ? "edited-cell" : ""}>
                           <select
                             value={r.end_time ?? ""}
                             onChange={(e) => handleWsChange(i, "end_time", e.target.value)}
-                            className={(isNewRow || changedEndTime) ? "edited-cell" : ""}
+                            className={isNewRow || changedEndTime ? "edited-cell" : ""}
                           >
                             <option value="">없음</option>
                             {endTimes.map((t) => (
-                              <option key={t} value={t}>{t}</option>
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
                             ))}
                           </select>
                         </td>

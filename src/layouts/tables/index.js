@@ -232,7 +232,9 @@ export default function Tables() {
       const clean = toNumberString(value);
 
       // 1) localRows 갱신 (✅ 이때 data가 바뀌어도 페이징은 유지되게 아래 useReactTable 옵션으로 막음)
-      setLocalRows((prev) => prev.map((r) => (r._rowKey === rowKey ? { ...r, [field]: clean } : r)));
+      setLocalRows((prev) =>
+        prev.map((r) => (r._rowKey === rowKey ? { ...r, [field]: clean } : r))
+      );
 
       // 2) editedMap 갱신 (+ 원래값으로 되돌리면 자동 제거)
       setEditedMap((prev) => {
@@ -243,8 +245,8 @@ export default function Tables() {
         };
 
         const org = originalMap[rowKey] || { account_rqd_member: "", account_headcount: "" };
-        const mergedRqd = String(nextRow.account_rqd_member ?? (org.account_rqd_member ?? ""));
-        const mergedHead = String(nextRow.account_headcount ?? (org.account_headcount ?? ""));
+        const mergedRqd = String(nextRow.account_rqd_member ?? org.account_rqd_member ?? "");
+        const mergedHead = String(nextRow.account_headcount ?? org.account_headcount ?? "");
 
         const dirty =
           mergedRqd !== String(org.account_rqd_member ?? "") ||
@@ -289,7 +291,8 @@ export default function Tables() {
       const account_id = row?.account_id;
 
       if (!rowKey) return Swal.fire({ title: "오류", text: "rowKey가 없습니다.", icon: "error" });
-      if (!account_id) return Swal.fire({ title: "오류", text: "account_id가 없습니다.", icon: "error" });
+      if (!account_id)
+        return Swal.fire({ title: "오류", text: "account_id가 없습니다.", icon: "error" });
 
       const edited = editedMap[rowKey] || {};
       const account_rqd_member = edited.account_rqd_member ?? row.account_rqd_member ?? "";
@@ -473,7 +476,14 @@ export default function Tables() {
         <Grid item xs={12}>
           <Card>
             {/* 상단 select + 저장 + 추가 버튼 */}
-            <MDBox display="flex" justifyContent="flex-end" alignItems="center" gap={2} my={1} mx={1}>
+            <MDBox
+              display="flex"
+              justifyContent="flex-end"
+              alignItems="center"
+              gap={2}
+              my={1}
+              mx={1}
+            >
               <TextField
                 select
                 size="small"
@@ -731,7 +741,7 @@ export default function Tables() {
             <TextField
               fullWidth
               margin="normal"
-              label="필수인원"
+              label="필요조리인력"
               name="account_rqd_member"
               value={formData.account_rqd_member}
               onChange={handleChange}
@@ -741,7 +751,7 @@ export default function Tables() {
             <TextField
               fullWidth
               margin="normal"
-              label="현재인원"
+              label="현재인력"
               name="account_headcount"
               value={formData.account_headcount}
               onChange={handleChange}

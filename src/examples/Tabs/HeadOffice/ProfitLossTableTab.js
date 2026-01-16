@@ -1,9 +1,8 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useState } from "react";
-import { Box, Grid, Select, MenuItem, TextField } from "@mui/material";
+import React, { useEffect, useState, useMemo } from "react";
+import { Box, Grid, Select, MenuItem, TextField, Autocomplete } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import useProfitLossTableData, { formatNumber } from "./profitLossTableData";
@@ -34,6 +33,8 @@ export default function ProfitLossTableTab() {
         _original: { ...row },
       }));
       setEditRows(cloned);
+    } else {
+      setEditRows([]);
     }
   }, [profitLossTableRows]);
 
@@ -42,6 +43,14 @@ export default function ProfitLossTableTab() {
     if (accountList.length > 0 && !selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
     }
+  }, [accountList, selectedAccountId]);
+
+  // ✅ Autocomplete에서 선택된 객체
+  const selectedAccount = useMemo(() => {
+    if (!selectedAccountId) return null;
+    return (
+      (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null
+    );
   }, [accountList, selectedAccountId]);
 
   // ✅ 입력 가능한 항목
@@ -53,7 +62,7 @@ export default function ProfitLossTableTab() {
     "etc_cost",
     "utility_bills",
     "duty_secure",
-    "person_cost"
+    "person_cost",
   ];
 
   // ✅ 숨길 컬럼
@@ -118,41 +127,35 @@ export default function ProfitLossTableTab() {
   }));
 
   // ✅ 변경 저장
-  const handleSave = async() => {
-    // ✅ 1) 변경된 행만 필터
+  const handleSave = async () => {
     const modifiedRows = editRows
       .map((row) => {
-        // 변경된 필드만 추출
         const changedFields = {};
         editableFields.forEach((field) => {
           const original = Number(row._original[field] ?? 0);
           const current = Number(row[field] ?? 0);
           if (original !== current) {
-            changedFields[field] = row[field]; // ✅ 달라졌으면 저장할 값만 담음
+            changedFields[field] = row[field];
           }
         });
 
-        // ✅ 필드가 1개라도 변경되었으면 account_id, month 포함해서 전송 준비
         if (Object.keys(changedFields).length > 0) {
           return {
             account_id: row.account_id,
             year: year,
             month: row.month,
-            ...changedFields, // ✅ 변경된 값만 담기
+            ...changedFields,
           };
         }
         return null;
       })
       .filter((row) => row !== null);
 
-    console.log("✅ 저장할 변경값만:", modifiedRows);
-
     if (modifiedRows.length === 0) {
       Swal.fire("변경된 내용이 없습니다.", "", "info");
       return;
     }
 
-    // ✅ 2) 백엔드 저장 API 호출 (예시)
     try {
       await api.post("/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
@@ -164,8 +167,7 @@ export default function ProfitLossTableTab() {
 
   // ✅ 숫자 입력 핸들러 (콤마 제거 → 숫자 저장)
   const handleInputChange = (rowIdx, field, value) => {
-    const numericValue =
-      value === "" || value === null ? null : Number(value.replace(/,/g, ""));
+    const numericValue = value === "" || value === null ? null : Number(value.replace(/,/g, ""));
     const newRows = [...editRows];
     newRows[rowIdx][field] = numericValue;
     setEditRows(newRows);
@@ -179,23 +181,27 @@ export default function ProfitLossTableTab() {
       <MDBox
         pt={1}
         pb={1}
-        sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}
+        sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap" }}
       >
+        {/* ✅ 거래처 검색 가능한 Autocomplete */}
         {accountList.length > 0 && (
-          <TextField
-            select
+          <Autocomplete
             size="small"
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            sx={{ minWidth: 150 }}
-            SelectProps={{ native: true }}
-          >
-            {accountList.map((row) => (
-              <option key={row.account_id} value={row.account_id}>
-                {row.account_name}
-              </option>
-            ))}
-          </TextField>
+            sx={{ minWidth: 200 }}
+            options={accountList || []}
+            value={selectedAccount}
+            onChange={(_, newValue) => {
+              setSelectedAccountId(newValue ? newValue.account_id : "");
+            }}
+            // ✅ 입력 텍스트로 검색: account_name 기준
+            getOptionLabel={(option) => option?.account_name ?? ""}
+            isOptionEqualToValue={(option, value) =>
+              String(option.account_id) === String(value.account_id)
+            }
+            renderInput={(params) => (
+              <TextField {...params} label="거래처 검색" placeholder="거래처명을 입력" />
+            )}
+          />
         )}
 
         <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small">
@@ -214,21 +220,6 @@ export default function ProfitLossTableTab() {
       {/* 메인 테이블 */}
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          {/* <MDBox
-            py={1}
-            px={2}
-            variant="gradient"
-            bgColor="info"
-            borderRadius="lg"
-            display="flex"
-            justifyContent="space-between"
-            alignItems="center"
-          >
-            <MDTypography variant="h6" color="white">
-              월별 손익표
-            </MDTypography>
-          </MDBox> */}
-
           <Box
             sx={{
               maxHeight: "75vh",
@@ -239,41 +230,39 @@ export default function ProfitLossTableTab() {
                 minWidth: "1800px",
                 borderSpacing: 0,
                 borderCollapse: "separate",
-                fontWeight: "bold"
+                fontWeight: "bold",
               },
               "& th, & td": {
                 border: "1px solid #686D76",
                 textAlign: "center",
                 fontSize: "12px",
                 padding: "4px",
-                borderRight: "1px solid #686D76",  /* ✅ 테두리 유지 */
-                borderLeft: "1px solid #686D76",  /* ✅ 테두리 유지 */
+                borderRight: "1px solid #686D76",
+                borderLeft: "1px solid #686D76",
               },
               "& th": {
                 backgroundColor: "#f0f0f0",
               },
-              /* ✅ 공통 Sticky 스타일 */
               ".sticky-col": {
                 position: "sticky",
                 left: 0,
-                background: "#e8f0ff",  /* 헤더 배경 있으면 더 좋음 */
+                background: "#e8f0ff",
                 zIndex: 2,
-                /* ✅ 오른쪽 테두리 강조 (겹침 방지 핵심포인트!) */
                 borderRight: "1px solid #686D76",
               },
-
-              /* ✅ 헤더의 첫 번째 열은 가장 위에 위치해야 함 (z-index +1) */
               ".sticky-header": {
                 zIndex: 3,
-                background: "#e8f0ff",  /* 헤더 배경 있으면 더 좋음 */
-                borderRight: "1px solid #686D76",  /* ✅ 테두리 유지 */
+                background: "#e8f0ff",
+                borderRight: "1px solid #686D76",
               },
             }}
           >
             <table>
               <thead>
                 <tr>
-                  <th className="sticky-col sticky-header" rowSpan={2}>월</th>
+                  <th className="sticky-col sticky-header" rowSpan={2}>
+                    월
+                  </th>
                   {filteredHeaders.map((h) => (
                     <th key={h.group} colSpan={h.cols.length}>
                       {h.group}
@@ -281,11 +270,7 @@ export default function ProfitLossTableTab() {
                   ))}
                   <th rowSpan={2}>영업이익</th>
                 </tr>
-                <tr>
-                  {filteredHeaders.flatMap((h) =>
-                    h.cols.map((c) => <th key={c}>{c}</th>)
-                  )}
-                </tr>
+                <tr>{filteredHeaders.flatMap((h) => h.cols.map((c) => <th key={c}>{c}</th>))}</tr>
               </thead>
 
               <tbody>
@@ -293,7 +278,11 @@ export default function ProfitLossTableTab() {
                   <React.Fragment key={i}>
                     {/* 1️⃣ 숫자 입력행 */}
                     <tr>
-                      <td className="sticky-col" rowSpan={2} style={{ fontWeight: "bold", background: "#fafafa" }}>
+                      <td
+                        className="sticky-col"
+                        rowSpan={2}
+                        style={{ fontWeight: "bold", background: "#fafafa" }}
+                      >
                         {r.month}월
                       </td>
 
@@ -304,13 +293,17 @@ export default function ProfitLossTableTab() {
                           const originalValue = Number(r._original[field] ?? 0);
                           const currentValue = Number(r[field] ?? 0);
                           const isChanged = isEditable && originalValue !== currentValue;
-                          
+
                           return (
                             <td key={col}>
                               {isEditable ? (
                                 <input
                                   type="text"
-                                  value={r[field] !== null && r[field] !== undefined ? formatNumber(r[field]) : ""}
+                                  value={
+                                    r[field] !== null && r[field] !== undefined
+                                      ? formatNumber(r[field])
+                                      : ""
+                                  }
                                   style={{
                                     width: "60px",
                                     height: "20px",
@@ -319,7 +312,7 @@ export default function ProfitLossTableTab() {
                                     textAlign: "right",
                                     border: "none",
                                     background: "transparent",
-                                    color: isChanged ? "red" : "black"
+                                    color: isChanged ? "red" : "black",
                                   }}
                                   onChange={(e) => handleInputChange(i, field, e.target.value)}
                                 />

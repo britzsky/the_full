@@ -1,16 +1,8 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import {
-  Box,
-  TextField,
-  useTheme,
-  useMediaQuery,
-  IconButton,
-  Tooltip,
-} from "@mui/material";
+import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -24,9 +16,18 @@ function HygieneSheetTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const [selectedAccountId, setSelectedAccountId] = useState("");
-  const { hygieneListRows, accountList, loading, fetcHygieneList } =
-    useHygienesheetData();
+  // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
+  const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
+
+  const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+
+  const { hygieneListRows, accountList, loading, fetcHygieneList } = useHygienesheetData();
+
+  // ✅ localStorage account_id 기준으로 거래처 리스트 필터링
+  const filteredAccountList = useMemo(() => {
+    if (!localAccountId) return accountList || [];
+    return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
+  }, [accountList, localAccountId]);
 
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -42,12 +43,21 @@ function HygieneSheetTab() {
     }
   }, [selectedAccountId]);
 
-  // 거래처 기본값: 첫 번째 업장
+  // ✅ 거래처 기본값
+  // - localStorage account_id가 있으면 무조건 그걸로 고정
+  // - 없으면: 첫 번째 업장 자동 선택
   useEffect(() => {
-    if (accountList.length > 0 && !selectedAccountId) {
+    if (!accountList || accountList.length === 0) return;
+
+    if (localAccountId) {
+      setSelectedAccountId(localAccountId);
+      return;
+    }
+
+    if (!selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
     }
-  }, [accountList, selectedAccountId]);
+  }, [accountList, selectedAccountId, localAccountId]);
 
   // 서버 rows → 로컬 rows / originalRows 복사
   useEffect(() => {
@@ -61,9 +71,7 @@ function HygieneSheetTab() {
   // cell 값 변경 처리
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
-      prevRows.map((row, idx) =>
-        idx === rowIndex ? { ...row, [key]: value } : row
-      )
+      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
     );
   };
 
@@ -75,9 +83,7 @@ function HygieneSheetTab() {
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
     if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value)
-        ? { color: "red" }
-        : { color: "black" };
+      return normalize(original) !== normalize(value) ? { color: "red" } : { color: "black" };
     }
     return original !== value ? { color: "red" } : { color: "black" };
   };
@@ -189,7 +195,7 @@ function HygieneSheetTab() {
     }
   };
 
-  // ✅ (NEW) 다운로드 (서버 경로 문자열일 때만)
+  // ✅ 다운로드 (서버 경로 문자열일 때만)
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
     const url = `${API_BASE_URL}${path}`;
@@ -205,8 +211,21 @@ function HygieneSheetTab() {
     document.body.removeChild(a);
   }, []);
 
-  // ✅ (NEW) 아이콘 파란색
+  // ✅ 아이콘 파란색
   const fileIconSx = { color: "#1e88e5" };
+
+  const columns = useMemo(
+    () => [
+      { header: "등록일자", accessorKey: "reg_dt", size: 100 },
+      { header: "조치 전 사진", accessorKey: "problem_image", size: 200 },
+      { header: "전달 내용", accessorKey: "problem_note", size: 150 },
+      { header: "조치일자", accessorKey: "mod_dt", size: 100 },
+      { header: "조치 사진", accessorKey: "clean_image", size: 200 },
+      { header: "조치 내용", accessorKey: "clean_note", size: 150 },
+      { header: "비고", accessorKey: "note", size: 150 },
+    ],
+    []
+  );
 
   // 저장
   const handleSave = async () => {
@@ -234,17 +253,9 @@ function HygieneSheetTab() {
             if (row[field] && typeof row[field] === "object") {
               let uploadedPath;
               if (field === "problem_image") {
-                uploadedPath = await uploadImage(
-                  row[field],
-                  row.reg_dt,
-                  selectedAccountId
-                );
+                uploadedPath = await uploadImage(row[field], row.reg_dt, selectedAccountId);
               } else if (field === "clean_image") {
-                uploadedPath = await uploadImage(
-                  row[field],
-                  row.mod_dt,
-                  selectedAccountId
-                );
+                uploadedPath = await uploadImage(row[field], row.mod_dt, selectedAccountId);
               }
               updatedRow[field] = uploadedPath;
             }
@@ -265,9 +276,7 @@ function HygieneSheetTab() {
       }
 
       const response = await api.post("/Operate/HygieneSave", payload, {
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
       if (response.data.code === 200) {
@@ -292,19 +301,6 @@ function HygieneSheetTab() {
     }
   };
 
-  const columns = useMemo(
-    () => [
-      { header: "등록일자", accessorKey: "reg_dt", size: 100 },
-      { header: "조치 전 사진", accessorKey: "problem_image", size: 200 },
-      { header: "전달 내용", accessorKey: "problem_note", size: 150 },
-      { header: "조치일자", accessorKey: "mod_dt", size: 100 },
-      { header: "조치 사진", accessorKey: "clean_image", size: 200 },
-      { header: "조치 내용", accessorKey: "clean_note", size: 150 },
-      { header: "비고", accessorKey: "note", size: 150 },
-    ],
-    []
-  );
-
   if (loading) return <LoadingScreen />;
 
   return (
@@ -325,7 +321,7 @@ function HygieneSheetTab() {
           backgroundColor: "#ffffff",
         }}
       >
-        {accountList.length > 0 && (
+        {(filteredAccountList || []).length > 0 && (
           <TextField
             select
             size="small"
@@ -336,8 +332,9 @@ function HygieneSheetTab() {
               fontSize: isMobile ? "12px" : "14px",
             }}
             SelectProps={{ native: true }}
+            disabled={!!localAccountId} // ✅ localStorage로 고정이면 변경 불가 (원하면 제거)
           >
-            {(accountList || []).map((row) => (
+            {(filteredAccountList || []).map((row) => (
               <option key={row.account_id} value={row.account_id}>
                 {row.account_name}
               </option>
@@ -356,6 +353,7 @@ function HygieneSheetTab() {
         >
           행 추가
         </MDButton>
+
         <MDButton
           variant="gradient"
           color="info"
@@ -381,6 +379,7 @@ function HygieneSheetTab() {
                   ))}
                 </tr>
               </thead>
+
               <tbody>
                 {rows.map((row, rowIndex) => (
                   <tr key={rowIndex}>
@@ -388,7 +387,7 @@ function HygieneSheetTab() {
                       const key = col.accessorKey;
                       const value = row[key] ?? "";
 
-                      // ✅ (CHANGED) 이미지: 있으면 다운로드/미리보기(파란색), 없으면 업로드 버튼
+                      // 이미지 컬럼
                       if (["problem_image", "clean_image"].includes(key)) {
                         const hasImage = !!value;
 
@@ -453,9 +452,7 @@ function HygieneSheetTab() {
                                   size="small"
                                   component="span"
                                   color="info"
-                                  sx={{
-                                    fontSize: isMobile ? "10px" : "12px",
-                                  }}
+                                  sx={{ fontSize: isMobile ? "10px" : "12px" }}
                                 >
                                   이미지 업로드
                                 </MDButton>
@@ -465,6 +462,7 @@ function HygieneSheetTab() {
                         );
                       }
 
+                      // 날짜 컬럼
                       const isDate = ["reg_dt", "mod_dt"].includes(key);
                       if (isDate) {
                         return (
@@ -478,9 +476,7 @@ function HygieneSheetTab() {
                             <input
                               type="date"
                               value={value || ""}
-                              onChange={(e) =>
-                                handleCellChange(rowIndex, key, e.target.value)
-                              }
+                              onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                               style={{
                                 ...getCellStyle(rowIndex, key, value),
                                 width: "100%",
@@ -490,18 +486,13 @@ function HygieneSheetTab() {
                         );
                       }
 
+                      // 일반 텍스트 컬럼
                       return (
                         <td
                           key={key}
                           contentEditable
                           suppressContentEditableWarning
-                          onBlur={(e) =>
-                            handleCellChange(
-                              rowIndex,
-                              key,
-                              e.target.innerText
-                            )
-                          }
+                          onBlur={(e) => handleCellChange(rowIndex, key, e.target.innerText)}
                           style={{
                             ...getCellStyle(rowIndex, key, value),
                             width: `${col.size}px`,
@@ -519,7 +510,7 @@ function HygieneSheetTab() {
         </Grid>
       </MDBox>
 
-      {/* 이미지 뷰어 (PC/모바일 공통, 크기만 조절) */}
+      {/* 이미지 뷰어 */}
       {viewImageSrc && (
         <div
           style={{
@@ -544,12 +535,7 @@ function HygieneSheetTab() {
               maxHeight: isMobile ? "90%" : "80%",
             }}
           >
-            <TransformWrapper
-              initialScale={1}
-              minScale={0.5}
-              maxScale={5}
-              centerOnInit
-            >
+            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
               {({ zoomIn, zoomOut, resetTransform }) => (
                 <>
                   <div

@@ -1,7 +1,6 @@
 // src/layouts/property/PropertySheetTab.js
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import {
   TextField,
@@ -9,14 +8,12 @@ import {
   useMediaQuery,
   IconButton,
   Tooltip,
+  Autocomplete,
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import usePropertiessheetData, {
-  parseNumber,
-  formatNumber,
-} from "./propertiessheetData";
+import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiessheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
@@ -28,13 +25,27 @@ function PropertySheetTab() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const { activeRows, accountList, loading, fetcPropertyList } =
-    usePropertiessheetData();
+  const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
 
   const numericCols = ["purchase_price"];
+
+  // ✅ 거래처 옵션(Autocomplete)
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
 
   useEffect(() => {
     if (selectedAccountId) {
@@ -85,9 +96,7 @@ function PropertySheetTab() {
 
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
-      prevRows.map((row, idx) =>
-        idx === rowIndex ? { ...row, [key]: value } : row
-      )
+      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
     );
   };
 
@@ -112,9 +121,7 @@ function PropertySheetTab() {
 
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
-    return isSameValue(key, original, value)
-      ? { color: "black" }
-      : { color: "red" };
+    return isSameValue(key, original, value) ? { color: "black" } : { color: "red" };
   };
 
   const handleAddRow = () => {
@@ -233,8 +240,7 @@ function PropertySheetTab() {
           if (!isChanged) return null;
 
           numericCols.forEach((col) => {
-            if (updatedRow[col])
-              updatedRow[col] = updatedRow[col].toString().replace(/,/g, "");
+            if (updatedRow[col]) updatedRow[col] = updatedRow[col].toString().replace(/,/g, "");
           });
 
           const imageFields = ["item_img", "receipt_img"];
@@ -372,23 +378,35 @@ function PropertySheetTab() {
           backgroundColor: "#ffffff",
         }}
       >
-        <TextField
-          select
-          size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{
-            minWidth: isMobile ? 150 : 200,
-            fontSize: isMobile ? "12px" : "14px",
-          }}
-          SelectProps={{ native: true }}
-        >
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+        {/* ✅ 거래처 Select → 검색 가능한 Autocomplete로 변경 */}
+        {(accountList || []).length > 0 && (
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={selectedAccountOption}
+            onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+            // ✅ 포함 검색(원하는 검색 규칙이면 유지)
+            filterOptions={(options, state) => {
+              const q = (state.inputValue ?? "").trim().toLowerCase();
+              if (!q) return options;
+              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
+        )}
 
         <MDButton
           color="info"
@@ -408,7 +426,7 @@ function PropertySheetTab() {
       </MDBox>
 
       {/* 테이블 영역 */}
-      <MDBox pt={1} pb={3} sx={tableSx}>
+      <MDBox pt={0} pb={3} sx={tableSx}>
         <table>
           <thead>
             <tr>
@@ -432,9 +450,7 @@ function PropertySheetTab() {
                         <input
                           type="date"
                           value={value}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{
                             ...style,
                             width: "100%",
@@ -450,9 +466,7 @@ function PropertySheetTab() {
                       <td key={key} style={{ width: col.size }}>
                         <select
                           value={String(value ?? "0")}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{
                             ...style,
                             width: "100%",
@@ -485,9 +499,7 @@ function PropertySheetTab() {
                           accept="image/*"
                           id={`upload-${key}-${rowIndex}`}
                           style={{ display: "none" }}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.files?.[0])
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.files?.[0])}
                         />
 
                         {hasImage ? (
@@ -606,12 +618,7 @@ function PropertySheetTab() {
               padding: isMobile ? 8 : 16,
             }}
           >
-            <TransformWrapper
-              initialScale={1}
-              minScale={0.5}
-              maxScale={5}
-              centerOnInit
-            >
+            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
               {() => (
                 <>
                   <div

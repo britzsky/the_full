@@ -2,9 +2,15 @@ import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import MDButton from "components/MDButton";
+import DownloadIcon from "@mui/icons-material/Download";
 import { TextField, useTheme, useMediaQuery, Box, Typography } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 import useAccountDispatchMembersheetData, { formatNumber } from "./accountDispatchMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import Swal from "sweetalert2";
 
 /**
  * ✅ 달력 주차(월~일) 계산 (월요일 시작)
@@ -92,7 +98,7 @@ function AccountDispatchMemberSheet() {
   const [selectedMonth, setSelectedMonth] = useState(String(now.getMonth() + 1));
   const [activeStatus, setActiveStatus] = useState("N");
 
-  // ✅ 거래처: 전체 옵션 제거 + 최초 진입 시 첫 번째 거래처로 자동 선택
+  // ✅ 거래처: 최초 진입 시 첫 번째 거래처로 자동 선택
   const [selectedAccountId, setSelectedAccountId] = useState("");
 
   const tableContainerRef = useRef(null);
@@ -107,11 +113,21 @@ function AccountDispatchMemberSheet() {
     accountList,
     fetchAccountMembersAllList,
     loading,
-  } = useAccountDispatchMembersheetData(selectedAccountId, activeStatus, selectedYear, selectedMonth);
+  } = useAccountDispatchMembersheetData(
+    selectedAccountId,
+    activeStatus,
+    selectedYear,
+    selectedMonth
+  );
 
   const [localLoading, setLocalLoading] = useState(true);
 
-  const { daysInMonth, ranges: weekRanges, dayToWeekNo, endDayToWeekNo } = useMemo(() => {
+  const {
+    daysInMonth,
+    ranges: weekRanges,
+    dayToWeekNo,
+    endDayToWeekNo,
+  } = useMemo(() => {
     return buildCalendarWeekRanges(selectedYear, selectedMonth);
   }, [selectedYear, selectedMonth]);
 
@@ -122,16 +138,27 @@ function AccountDispatchMemberSheet() {
     }
   }, [accountList, selectedAccountId]);
 
+  // ✅ 거래처 Autocomplete 옵션
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
   // ✅ 조회
   useEffect(() => {
     if (!selectedAccountId) return;
 
     setLocalLoading(true);
-    fetchAccountMembersAllList({ snapshot: false }).then((rows) => {
-      setActiveRows(rows || []);
-      setOriginalRows(rows || []);
-      setLocalLoading(false);
-    });
+    fetchAccountMembersAllList({ snapshot: false })
+      .then((rows) => {
+        setActiveRows(rows || []);
+        setOriginalRows(rows || []);
+      })
+      .finally(() => setLocalLoading(false));
   }, [selectedAccountId, activeStatus, selectedYear, selectedMonth, daysInMonth]);
 
   // ✅ “주차별 salary 합계” 캡션 데이터
@@ -144,11 +171,17 @@ function AccountDispatchMemberSheet() {
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const dayKey = String(day);
-      const endWeekNo = endDayToWeekNo[dayKey];
 
       return {
         header: (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 1.05 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              lineHeight: 1.05,
+            }}
+          >
             <div>{dayKey}</div>
           </div>
         ),
@@ -157,7 +190,7 @@ function AccountDispatchMemberSheet() {
         meta: { align: "center", isDay: true, day },
       };
     });
-  }, [daysInMonth, endDayToWeekNo]);
+  }, [daysInMonth]);
 
   const columns = useMemo(
     () => [
@@ -170,7 +203,13 @@ function AccountDispatchMemberSheet() {
 
       { header: "근무횟수", accessorKey: "work_cnt", size: 90, meta: { align: "right" } },
       { header: "총 금액", accessorKey: "salary_sum", size: 110, meta: { align: "right" } },
-      { header: "비고", accessorKey: "note", minWidth: 120, maxWidth: 220, meta: { align: "left" } },
+      {
+        header: "비고",
+        accessorKey: "note",
+        minWidth: 120,
+        maxWidth: 220,
+        meta: { align: "left" },
+      },
     ],
     [dayColumns]
   );
@@ -180,11 +219,6 @@ function AccountDispatchMemberSheet() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
-
-  const onSearchList = (e) => {
-    setLocalLoading(true);
-    setSelectedAccountId(e.target.value);
-  };
 
   const renderWeekCaption = () => {
     if (!weekRanges?.length) return null;
@@ -204,35 +238,30 @@ function AccountDispatchMemberSheet() {
           background: "#fafafa",
         }}
       >
-        <Typography sx={{ fontSize: 13, fontWeight: 700, mr: 0.5 }}>
-          주차별 급여 합계
-        </Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 700, mr: 0.5 }}>주차별 급여 합계</Typography>
 
-        {weekRanges.map((w) => {
-          // ✅ 1주차도 다른 캡션과 동일한 테두리로 (강조 제거)
-          return (
-            <Box
-              key={w.weekNo}
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 0.8,
-                px: 1.1,
-                py: 0.7,
-                borderRadius: 1,
-                backgroundColor: getWeekBg(w.weekNo),
-                border: "1px solid rgba(0,0,0,0.10)", // ✅ 모두 동일
-              }}
-            >
-              <Typography sx={{ fontSize: 12, fontWeight: 700 }}>
-                {w.weekNo}주차 ({w.start}~{w.end})
-              </Typography>
-              <Typography sx={{ fontSize: 12, fontWeight: 600 }}>
-                {formatNumber(weekSalarySums?.[w.weekNo] ?? 0)}원
-              </Typography>
-            </Box>
-          );
-        })}
+        {weekRanges.map((w) => (
+          <Box
+            key={w.weekNo}
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.8,
+              px: 1.1,
+              py: 0.7,
+              borderRadius: 1,
+              backgroundColor: getWeekBg(w.weekNo),
+              border: "1px solid rgba(0,0,0,0.10)",
+            }}
+          >
+            <Typography sx={{ fontSize: 12, fontWeight: 700 }}>
+              {w.weekNo}주차 ({w.start}~{w.end})
+            </Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 600 }}>
+              {formatNumber(weekSalarySums?.[w.weekNo] ?? 0)}원
+            </Typography>
+          </Box>
+        ))}
       </Box>
     );
   };
@@ -322,14 +351,12 @@ function AccountDispatchMemberSheet() {
                   const currentValue = row.getValue(colKey);
 
                   const isDayCol = meta.isDay === true && /^\d+$/.test(colKey);
-                  const daySalaryKey = isDayCol ? `${colKey}Salary` : null;
-                  const daySalaryVal = isDayCol ? row.original?.[daySalaryKey] : null;
 
-                  // ✅ 주차별 배경(일자 셀에도 은은하게)
+                  // ✅ 주차별 배경
                   const weekNo = isDayCol ? dayToWeekNo[colKey] : null;
                   const weekBg = weekNo ? getWeekBg(weekNo) : null;
 
-                  // ✅ "주차 끝" 컬럼(주차 마지막날)만 더 진하게 표현
+                  // ✅ 주차 끝(마지막날)만 더 진하게
                   const endWeekNo = isDayCol ? endDayToWeekNo[colKey] : null;
                   const isWeekEndDay = Boolean(endWeekNo);
 
@@ -354,14 +381,12 @@ function AccountDispatchMemberSheet() {
                           }}
                         >
                           <div style={{ fontWeight: 500 }}>{currentValue ?? ""}</div>
-                          <div style={{ fontSize: 10, fontWeight: 500 }}>
-                            {/* {daySalaryVal != null && daySalaryVal !== "" ? formatNumber(daySalaryVal) : ""} */}
-                          </div>
+                          <div style={{ fontSize: 10, fontWeight: 500 }}>{/* salary 숨김 */}</div>
                         </div>
                       ) : isNumericKey(colKey) ? (
                         formatNumber(currentValue ?? 0)
                       ) : (
-                        (currentValue ?? "")
+                        currentValue ?? ""
                       )}
                     </td>
                   );
@@ -383,6 +408,209 @@ function AccountDispatchMemberSheet() {
   }, []);
 
   const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, i) => String(i + 1)), []);
+
+  // ✅ HEX -> ARGB (ExcelJS는 ARGB 필요)
+  const hexToArgb = (hex) => {
+    if (!hex) return "FFFFFFFF";
+    const h = hex.replace("#", "");
+    return `FF${h.toUpperCase()}`; // FF + RRGGBB
+  };
+
+  const handleExcelDownload = async () => {
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "AccountDispatchMemberSheet";
+      const ws = wb.addWorksheet("파견직 급여", {
+        views: [{ state: "frozen", ySplit: 0 }],
+      });
+
+      const fixedCols = ["성명", "주민번호", "은행명", "계좌번호"];
+      const dayCols = Array.from({ length: daysInMonth }, (_, i) => String(i + 1));
+      const tailCols = ["근무횟수", "총 금액", "비고"];
+
+      const headers = [...fixedCols, ...dayCols, ...tailCols];
+      const totalColCount = headers.length;
+
+      const accName =
+        (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId))
+          ?.account_name ?? "거래처";
+      const fileName = `파견직급여_${accName}_${selectedYear}-${String(selectedMonth).padStart(
+        2,
+        "0"
+      )}.xlsx`;
+
+      ws.addRow([`파견직 급여 (${selectedYear}년 ${selectedMonth}월) - ${accName}`]);
+      ws.mergeCells(1, 1, 1, totalColCount);
+      ws.getRow(1).height = 22;
+      ws.getCell(1, 1).font = { bold: true, size: 14 };
+      ws.getCell(1, 1).alignment = { vertical: "middle", horizontal: "center" };
+
+      ws.addRow(["주차별 급여 합계"]);
+      ws.mergeCells(2, 1, 2, totalColCount);
+      ws.getRow(2).height = 18;
+      ws.getCell(2, 1).font = { bold: true, size: 11 };
+      ws.getCell(2, 1).alignment = { vertical: "middle", horizontal: "left" };
+
+      const captionRowStart = 3;
+
+      let c = 1;
+      weekRanges.forEach((w) => {
+        const label = `${w.weekNo}주차 (${w.start}~${w.end})`;
+        const money = `${formatNumber(weekSalarySums?.[w.weekNo] ?? 0)}원`;
+        const text = `${label}  ${money}`;
+
+        if (c <= totalColCount) {
+          ws.getCell(captionRowStart, c).value = text;
+          ws.mergeCells(captionRowStart, c, captionRowStart, Math.min(c + 2, totalColCount));
+          ws.getCell(captionRowStart, c).alignment = {
+            vertical: "middle",
+            horizontal: "left",
+            wrapText: true,
+          };
+          ws.getCell(captionRowStart, c).font = { bold: true, size: 10 };
+
+          ws.getCell(captionRowStart, c).fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: hexToArgb(getWeekBg(w.weekNo)) },
+          };
+
+          ws.getCell(captionRowStart, c).border = {
+            top: { style: "thin", color: { argb: "FFCCCCCC" } },
+            left: { style: "thin", color: { argb: "FFCCCCCC" } },
+            bottom: { style: "thin", color: { argb: "FFCCCCCC" } },
+            right: { style: "thin", color: { argb: "FFCCCCCC" } },
+          };
+        }
+
+        c += 3;
+      });
+
+      ws.getRow(captionRowStart).height = 18;
+
+      ws.addRow([]);
+      const headerRowIndex = captionRowStart + 2;
+
+      ws.addRow(headers);
+      const headerRow = ws.getRow(headerRowIndex);
+      headerRow.height = 18;
+
+      headerRow.eachCell((cell) => {
+        cell.font = { bold: true, size: 10 };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FF686D76" } },
+          left: { style: "thin", color: { argb: "FF686D76" } },
+          bottom: { style: "thin", color: { argb: "FF686D76" } },
+          right: { style: "thin", color: { argb: "FF686D76" } },
+        };
+      });
+
+      const dataStartRowIndex = headerRowIndex + 1;
+
+      (activeRows || []).forEach((r) => {
+        const rowValues = [];
+        rowValues.push(r?.name ?? "");
+        rowValues.push(r?.rrn ?? "");
+        rowValues.push(r?.bank_name ?? "");
+        rowValues.push(r?.account_number ?? "");
+
+        for (let d = 1; d <= daysInMonth; d += 1) {
+          const k = String(d);
+          rowValues.push(r?.[k] ?? "");
+        }
+
+        rowValues.push(r?.work_cnt ?? 0);
+        rowValues.push(r?.salary_sum ?? 0);
+        rowValues.push(r?.note ?? "");
+
+        ws.addRow(rowValues);
+      });
+
+      const lastRowIndex = ws.rowCount;
+
+      ws.getColumn(1).width = 14;
+      ws.getColumn(2).width = 18;
+      ws.getColumn(3).width = 12;
+      ws.getColumn(4).width = 26;
+
+      const dayStartCol = 5;
+      for (let d = 1; d <= daysInMonth; d += 1) {
+        ws.getColumn(dayStartCol + (d - 1)).width = 6;
+      }
+
+      ws.getColumn(dayStartCol + daysInMonth + 0).width = 12;
+      ws.getColumn(dayStartCol + daysInMonth + 1).width = 14;
+      ws.getColumn(dayStartCol + daysInMonth + 2).width = 22;
+
+      ws.views = [{ state: "frozen", ySplit: headerRowIndex }];
+
+      for (let rIdx = dataStartRowIndex; rIdx <= lastRowIndex; rIdx += 1) {
+        const row = ws.getRow(rIdx);
+        row.height = 16;
+
+        for (let cIdx = 1; cIdx <= totalColCount; cIdx += 1) {
+          const cell = row.getCell(cIdx);
+
+          cell.border = {
+            top: { style: "thin", color: { argb: "FF686D76" } },
+            left: { style: "thin", color: { argb: "FF686D76" } },
+            bottom: { style: "thin", color: { argb: "FF686D76" } },
+            right: { style: "thin", color: { argb: "FF686D76" } },
+          };
+
+          const isNumeric =
+            cIdx === dayStartCol + daysInMonth || cIdx === dayStartCol + daysInMonth + 1;
+
+          if (isNumeric) {
+            cell.alignment = { vertical: "middle", horizontal: "right" };
+          } else if (cIdx <= 4) {
+            cell.alignment = { vertical: "middle", horizontal: cIdx === 1 ? "left" : "center" };
+          } else if (cIdx >= dayStartCol && cIdx < dayStartCol + daysInMonth) {
+            cell.alignment = { vertical: "middle", horizontal: "center" };
+          } else {
+            cell.alignment = { vertical: "middle", horizontal: "left" };
+          }
+
+          if (cIdx === dayStartCol + daysInMonth) cell.numFmt = "#,##0";
+          if (cIdx === dayStartCol + daysInMonth + 1) cell.numFmt = "#,##0";
+
+          if (cIdx >= dayStartCol && cIdx < dayStartCol + daysInMonth) {
+            const day = cIdx - dayStartCol + 1;
+            const weekNo = dayToWeekNo[String(day)];
+            if (weekNo) {
+              cell.fill = {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb: hexToArgb(getWeekBg(weekNo)) },
+              };
+            }
+
+            const isWeekEnd = Boolean(endDayToWeekNo[String(day)]);
+            if (isWeekEnd) {
+              cell.border = {
+                ...cell.border,
+                right: { style: "thick", color: { argb: "FF444444" } },
+              };
+            }
+          }
+        }
+      }
+
+      const buffer = await wb.xlsx.writeBuffer();
+      saveAs(
+        new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+        fileName
+      );
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(e);
+      Swal.fire("엑셀 다운로드 실패", e?.message || "오류", "error");
+    }
+  };
 
   if (loading || localLoading || !selectedAccountId) return <LoadingScreen />;
 
@@ -418,20 +646,33 @@ function AccountDispatchMemberSheet() {
           <option value="Y">퇴사자</option>
         </TextField>
 
-        <TextField
-          select
+        {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
+        <Autocomplete
           size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
           sx={{ minWidth: 200 }}
-          SelectProps={{ native: true }}
-        >
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+          options={accountOptions}
+          value={(() => {
+            const v = String(selectedAccountId ?? "");
+            return accountOptions.find((o) => o.value === v) || null;
+          })()}
+          onChange={(_, opt) => {
+            setLocalLoading(true);
+            setSelectedAccountId(opt ? opt.value : "");
+          }}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
 
         <TextField
           select
@@ -468,6 +709,15 @@ function AccountDispatchMemberSheet() {
             </option>
           ))}
         </TextField>
+
+        <MDButton
+          variant="gradient"
+          color="info"
+          onClick={handleExcelDownload}
+          startIcon={<DownloadIcon />}
+        >
+          엑셀다운로드
+        </MDButton>
       </MDBox>
 
       <MDBox pt={1} pb={1}>

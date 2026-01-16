@@ -115,6 +115,13 @@ export default function useTableData(accountType) {
               text="확인"
             />
           ),
+          tally: (
+            <NavLink
+              to={`/tallysheet/${item.account_id}?name=${item.account_name}`}
+              color="#0D92F4"
+              text="확인"
+            />
+          ),
         }));
 
         setRows(mapped);
@@ -136,9 +143,9 @@ export default function useTableData(accountType) {
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },
     { Header: "주소", accessor: "account_address", size: "10%", align: "left" },
     { Header: "구분", accessor: "account_type", size: "3%", align: "left" },
-    { Header: "필요인원", accessor: "account_rqd_member", size: "3%", align: "center" },
-    { Header: "현재인원", accessor: "account_headcount", size: "3%", align: "center" },
-    // { Header: "상세보기", accessor: "info", size: "3%", align: "center" },
+    { Header: "필요조리인력", accessor: "account_rqd_member", size: "3%", align: "center" },
+    { Header: "현재인력", accessor: "account_headcount", size: "3%", align: "center" },
+    { Header: "집계표", accessor: "tally", size: "3%", align: "center" },
     // { Header: "인사기록카드", accessor: "members", size: "3%", align: "center" },
     // { Header: "출근부", accessor: "record", size: "3%", align: "center" },
     // { Header: "경관식", accessor: "ceremony", align: "center" },

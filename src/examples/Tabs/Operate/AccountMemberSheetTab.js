@@ -13,6 +13,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
+import Autocomplete from "@mui/material/Autocomplete";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
@@ -86,7 +87,9 @@ function AccountMemberSheet() {
 
   const normalizeTime = (t) => {
     if (!t) return "";
-    return String(t).trim().replace(/^0(\d):/, "$1:");
+    return String(t)
+      .trim()
+      .replace(/^0(\d):/, "$1:");
   };
 
   // hygiene와 동일하게 OperateImgUpload 사용
@@ -110,12 +113,18 @@ function AccountMemberSheet() {
   };
   // =========================
 
-  // ★★★★★ 조회 useEffect 추가 (핵심)
   useEffect(() => {
+    if (selectedAccountId) return;
+    if (!Array.isArray(accountList) || accountList.length === 0) return;
+
+    setSelectedAccountId(String(accountList[0].account_id));
+  }, [accountList, selectedAccountId]);
+
+  useEffect(() => {
+    if (!selectedAccountId) return;
+
     setLoading(true);
-    fetchAccountMembersAllList().then(() => {
-      setLoading(false);
-    });
+    Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
   }, [selectedAccountId, activeStatus]);
 
   // 합계 계산
@@ -192,6 +201,21 @@ function AccountMemberSheet() {
     }
   };
 
+  // ✅ 거래처 옵션(Autocomplete)
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((a) => ({
+        value: String(a.account_id),
+        label: a.account_name,
+      })),
+    [accountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
+
   const columns = useMemo(
     () => [
       { header: "성명", accessorKey: "name", size: 50 },
@@ -209,8 +233,13 @@ function AccountMemberSheet() {
       { header: "퇴사여부", accessorKey: "del_yn", size: 80 },
       { header: "퇴사일", accessorKey: "del_dt", size: 80 },
       { header: "퇴사사유", accessorKey: "del_note", size: 100 },
-      { header: "급여(월)", accessorKey: "salary", size: 80, cell: (info) => formatNumber(info.getValue()) },
-      { header: "근무형태", accessorKey: "idx", size: 100 },
+      {
+        header: "급여(월)",
+        accessorKey: "salary",
+        size: 80,
+        cell: (info) => formatNumber(info.getValue()),
+      },
+      { header: "근무형태", accessorKey: "idx", size: 180 },
       { header: "시작", accessorKey: "start_time", size: 60 },
       { header: "마감", accessorKey: "end_time", size: 60 },
       { header: "국민연금", accessorKey: "national_pension", size: 80 },
@@ -229,10 +258,11 @@ function AccountMemberSheet() {
     []
   );
 
-  const onSearchList = (e) => {
-    setLoading(true);
-    setSelectedAccountId(e.target.value);
-  };
+  // ✅ (수정) 기존 select onChange 핸들러는 Autocomplete로 대체하므로 제거/미사용 가능
+  // const onSearchList = (e) => {
+  //   setLoading(true);
+  //   setSelectedAccountId(e.target.value);
+  // };
 
   const table = useReactTable({
     data: activeRows,
@@ -412,8 +442,12 @@ function AccountMemberSheet() {
       del_note: "",
       salary: "",
       idx: defaultWorkSystemIdx,
-      start_time: workSystemList?.[0]?.start_time ? normalizeTime(workSystemList[0].start_time) : startTimes?.[0] ?? "6:00",
-      end_time: workSystemList?.[0]?.end_time ? normalizeTime(workSystemList[0].end_time) : endTimes?.[0] ?? "10:00",
+      start_time: workSystemList?.[0]?.start_time
+        ? normalizeTime(workSystemList[0].start_time)
+        : startTimes?.[0] ?? "6:00",
+      end_time: workSystemList?.[0]?.end_time
+        ? normalizeTime(workSystemList[0].end_time)
+        : endTimes?.[0] ?? "10:00",
       national_pension: "",
       health_insurance: "",
       industrial_insurance: "",
@@ -445,7 +479,15 @@ function AccountMemberSheet() {
       "industrial_insurance",
       "employment_insurance",
     ]);
-    const selectFields = new Set(["position_type", "del_yn", "contract_type", "start_time", "end_time", "account_id", "idx"]);
+    const selectFields = new Set([
+      "position_type",
+      "del_yn",
+      "contract_type",
+      "start_time",
+      "end_time",
+      "account_id",
+      "idx",
+    ]);
     const nonEditableCols = new Set(["diner_date", "total"]);
 
     return (
@@ -589,18 +631,28 @@ function AccountMemberSheet() {
 
                       // ✅ work_system 변경 시 start/end 자동 세팅
                       if (colKey === "idx") {
-                        const selected = (workSystemList || []).find((w) => String(w.idx) === String(newValue));
+                        const selected = (workSystemList || []).find(
+                          (w) => String(w.idx) === String(newValue)
+                        );
 
                         return {
                           ...r,
                           idx: newValue,
-                          start_time: selected?.start_time ? normalizeTime(selected.start_time) : r.start_time,
-                          end_time: selected?.end_time ? normalizeTime(selected.end_time) : r.end_time,
+                          start_time: selected?.start_time
+                            ? normalizeTime(selected.start_time)
+                            : r.start_time,
+                          end_time: selected?.end_time
+                            ? normalizeTime(selected.end_time)
+                            : r.end_time,
                           total: calculateTotal({
                             ...r,
                             idx: newValue,
-                            start_time: selected?.start_time ? normalizeTime(selected.start_time) : r.start_time,
-                            end_time: selected?.end_time ? normalizeTime(selected.end_time) : r.end_time,
+                            start_time: selected?.start_time
+                              ? normalizeTime(selected.start_time)
+                              : r.start_time,
+                            end_time: selected?.end_time
+                              ? normalizeTime(selected.end_time)
+                              : r.end_time,
                           }),
                         };
                       }
@@ -622,7 +674,11 @@ function AccountMemberSheet() {
                     const inputId = `upload-${colKey}-${rowIndex}`;
 
                     return (
-                      <td key={cell.id} className={isChanged ? "edited-cell" : ""} style={{ textAlign: "center" }}>
+                      <td
+                        key={cell.id}
+                        className={isChanged ? "edited-cell" : ""}
+                        style={{ textAlign: "center" }}
+                      >
                         <input
                           type="file"
                           accept="image/*"
@@ -642,15 +698,15 @@ function AccountMemberSheet() {
                               alignItems: "center",
                               justifyContent: "center",
                               gap: 6,
-                              flexWrap: "nowrap",        // ✅ 줄바꿈 금지
-                              whiteSpace: "nowrap",      // ✅ 텍스트 줄바꿈 금지
+                              flexWrap: "nowrap",
+                              whiteSpace: "nowrap",
                             }}
                           >
                             {typeof value === "string" && (
                               <Tooltip title="다운로드">
                                 <IconButton
                                   size="small"
-                                  sx={{ ...fileIconSx, p: 0.5 }}  // ✅ 패딩 축소
+                                  sx={{ ...fileIconSx, p: 0.5 }}
                                   onClick={() => handleDownload(value)}
                                 >
                                   <DownloadIcon fontSize="small" />
@@ -661,7 +717,7 @@ function AccountMemberSheet() {
                             <Tooltip title="미리보기">
                               <IconButton
                                 size="small"
-                                sx={{ ...fileIconSx, p: 0.5 }}    // ✅ 패딩 축소
+                                sx={{ ...fileIconSx, p: 0.5 }}
                                 onClick={() => handleViewImage(value)}
                               >
                                 <ImageSearchIcon fontSize="small" />
@@ -675,8 +731,8 @@ function AccountMemberSheet() {
                                 color="info"
                                 sx={{
                                   fontSize: isMobile ? "10px" : "11px",
-                                  minWidth: 44,             // ✅ 버튼 폭 축소
-                                  px: 1,                    // ✅ 좌우 패딩 축소
+                                  minWidth: 44,
+                                  px: 1,
                                   py: 0.5,
                                   lineHeight: 1.2,
                                   whiteSpace: "nowrap",
@@ -693,7 +749,7 @@ function AccountMemberSheet() {
                               alignItems: "center",
                               justifyContent: "center",
                               gap: 6,
-                              flexWrap: "nowrap",        // ✅ 줄바꿈 금지
+                              flexWrap: "nowrap",
                               whiteSpace: "nowrap",
                             }}
                           >
@@ -766,73 +822,201 @@ function AccountMemberSheet() {
                       }
                     >
                       {isSelect ? (
-                        <select
-                          value={currentValue ?? ""}
-                          onChange={(e) => handleCellChange(e.target.value)}
-                          className={isChanged ? "edited-cell" : ""}
-                          style={{ width: "100%", background: "transparent", cursor: "pointer", border: "none" }}
-                        >
-                          {colKey === "account_id" &&
-                            (accountList || []).map((acc) => (
-                              <option key={acc.account_id} value={acc.account_id}>
-                                {acc.account_name}
-                              </option>
-                            ))}
+                        colKey === "idx" ? (
+                          <Autocomplete
+                            size="small"
+                            options={(workSystemList || []).map((w) => ({
+                              value: String(w.idx),
+                              label: w.work_system,
+                            }))}
+                            value={(() => {
+                              const v = String(currentValue ?? "");
+                              return (
+                                (workSystemList || [])
+                                  .map((w) => ({ value: String(w.idx), label: w.work_system }))
+                                  .find((o) => o.value === v) || null
+                              );
+                            })()}
+                            onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
+                            getOptionLabel={(opt) => opt?.label ?? ""}
+                            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+                            renderOption={(props, option) => (
+                              <li
+                                {...props}
+                                style={{
+                                  fontSize: "12px",
+                                  paddingTop: 4,
+                                  paddingBottom: 4,
+                                  color: isChanged ? "#d32f2f" : "inherit",
+                                  fontWeight: isChanged ? 600 : 400,
+                                }}
+                              >
+                                {option.label}
+                              </li>
+                            )}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                variant="standard"
+                                placeholder="검색"
+                                InputProps={{
+                                  ...params.InputProps,
+                                  disableUnderline: true,
+                                }}
+                                inputProps={{
+                                  ...params.inputProps,
+                                  style: {
+                                    fontSize: "12px",
+                                    padding: 0,
+                                    color: isChanged ? "#d32f2f" : "inherit",
+                                    fontWeight: isChanged ? 600 : 400,
+                                  },
+                                }}
+                              />
+                            )}
+                            sx={{
+                              width: "100%",
+                              "& .MuiInputBase-root": { minHeight: 24 },
+                              "& .MuiAutocomplete-input": {
+                                fontSize: "12px",
+                                padding: "0px !important",
+                                color: isChanged ? "#d32f2f" : "inherit",
+                                fontWeight: isChanged ? 600 : 400,
+                              },
+                              "& .MuiSvgIcon-root": {
+                                fontSize: 18,
+                                color: isChanged ? "#d32f2f" : "inherit",
+                              },
+                              "& .MuiAutocomplete-option": { fontSize: "12px", minHeight: 28 },
+                            }}
+                            ListboxProps={{ style: { fontSize: "12px" } }}
+                          />
+                        ) : colKey === "account_id" ? (
+                          (() => {
+                            const isAccountChanged =
+                              String(currentValue ?? "") !== String(originalValue ?? "");
 
-                          {colKey === "idx" && (
-                            <>
-                              <option value="">선택</option>
-                              {(workSystemList || []).map((opt) => (
-                                <option key={opt.idx} value={opt.idx}>
-                                  {opt.work_system}
+                            return (
+                              <Autocomplete
+                                size="small"
+                                options={accountOptions}
+                                value={(() => {
+                                  const v = String(currentValue ?? "");
+                                  return accountOptions.find((o) => o.value === v) || null;
+                                })()}
+                                onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
+                                getOptionLabel={(opt) => opt?.label ?? ""}
+                                isOptionEqualToValue={(opt, val) => opt.value === val.value}
+                                // ✅ 옵션 목록도 변경상태면 빨강 (원하면 여기서는 항상 기본색으로 둬도 됨)
+                                renderOption={(props, option) => (
+                                  <li
+                                    {...props}
+                                    style={{
+                                      fontSize: "12px",
+                                      paddingTop: 4,
+                                      paddingBottom: 4,
+                                      color: isAccountChanged ? "#d32f2f" : "inherit",
+                                      fontWeight: isAccountChanged ? 600 : 400,
+                                    }}
+                                  >
+                                    {option.label}
+                                  </li>
+                                )}
+                                renderInput={(params) => (
+                                  <TextField
+                                    {...params}
+                                    variant="standard"
+                                    placeholder="검색"
+                                    InputProps={{
+                                      ...params.InputProps,
+                                      disableUnderline: true,
+                                    }}
+                                    inputProps={{
+                                      ...params.inputProps,
+                                      style: {
+                                        fontSize: "12px",
+                                        padding: 0,
+                                        color: isAccountChanged ? "#d32f2f" : "inherit",
+                                        fontWeight: isAccountChanged ? 600 : 400,
+                                      },
+                                    }}
+                                  />
+                                )}
+                                sx={{
+                                  minWidth: 180,
+                                  "& .MuiInputBase-root": { minHeight: 24 },
+                                  "& .MuiAutocomplete-input": {
+                                    fontSize: "12px",
+                                    padding: "0px !important",
+                                    color: isAccountChanged ? "#d32f2f" : "inherit",
+                                    fontWeight: isAccountChanged ? 600 : 400,
+                                  },
+                                  "& .MuiSvgIcon-root": {
+                                    fontSize: 18,
+                                    color: isAccountChanged ? "#d32f2f" : "inherit",
+                                  },
+                                  "& .MuiAutocomplete-option": { fontSize: "12px", minHeight: 28 },
+                                }}
+                                ListboxProps={{ style: { fontSize: "12px" } }}
+                              />
+                            );
+                          })()
+                        ) : (
+                          <select
+                            value={currentValue ?? ""}
+                            onChange={(e) => handleCellChange(e.target.value)}
+                            className={isChanged ? "edited-cell" : ""}
+                            style={{
+                              width: "100%",
+                              background: "transparent",
+                              cursor: "pointer",
+                              border: "none",
+                            }}
+                          >
+                            {colKey === "del_yn" &&
+                              delOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
                                 </option>
                               ))}
-                            </>
-                          )}
 
-                          {colKey === "del_yn" &&
-                            delOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-
-                          {colKey === "position_type" &&
-                            positionOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-
-                          {colKey === "contract_type" &&
-                            contractOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-
-                          {colKey === "start_time" && (
-                            <>
-                              <option value="">없음</option>
-                              {startTimes.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
+                            {colKey === "position_type" &&
+                              positionOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
                                 </option>
                               ))}
-                            </>
-                          )}
 
-                          {colKey === "end_time" && (
-                            <>
-                              <option value="">없음</option>
-                              {endTimes.map((t) => (
-                                <option key={t} value={t}>
-                                  {t}
+                            {colKey === "contract_type" &&
+                              contractOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
                                 </option>
                               ))}
-                            </>
-                          )}
-                        </select>
+
+                            {colKey === "start_time" && (
+                              <>
+                                <option value="">없음</option>
+                                {startTimes.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </>
+                            )}
+
+                            {colKey === "end_time" && (
+                              <>
+                                <option value="">없음</option>
+                                {endTimes.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </>
+                            )}
+                          </select>
+                        )
                       ) : isDate ? (
                         <input
                           type="date"
@@ -889,21 +1073,35 @@ function AccountMemberSheet() {
           <option value="Y">퇴사자</option>
         </TextField>
 
-        <TextField
-          select
+        {/* ✅ (수정) 거래처 select → Autocomplete(검색 가능) */}
+        <Autocomplete
           size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{ minWidth: 150 }}
-          SelectProps={{ native: true }}
-        >
-          <option value="">전체</option>
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={selectedAccountOption}
+          onChange={(_, opt) => {
+            setLoading(true);
+            setSelectedAccountId(opt ? opt.value : "");
+          }}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          filterOptions={(options, state) => {
+            const q = (state.inputValue ?? "").trim().toLowerCase();
+            if (!q) return options;
+            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
 
         <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
           근무형태 관리
@@ -1033,8 +1231,10 @@ function AccountMemberSheet() {
                     const o = wsOriginal?.[i] || {};
                     const isNewRow = r.idx == null || !wsOriginal?.[i];
 
-                    const changedWorkSystem = String(r.work_system ?? "") !== String(o.work_system ?? "");
-                    const changedStartTime = String(r.start_time ?? "") !== String(o.start_time ?? "");
+                    const changedWorkSystem =
+                      String(r.work_system ?? "") !== String(o.work_system ?? "");
+                    const changedStartTime =
+                      String(r.start_time ?? "") !== String(o.start_time ?? "");
                     const changedEndTime = String(r.end_time ?? "") !== String(o.end_time ?? "");
 
                     return (
@@ -1130,22 +1330,54 @@ function AccountMemberSheet() {
                       zIndex: 1000,
                     }}
                   >
-                    <button onClick={zoomIn} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                    <button
+                      onClick={zoomIn}
+                      style={{
+                        border: "none",
+                        padding: isMobile ? "2px 6px" : "4px 8px",
+                        cursor: "pointer",
+                      }}
+                    >
                       +
                     </button>
-                    <button onClick={zoomOut} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                    <button
+                      onClick={zoomOut}
+                      style={{
+                        border: "none",
+                        padding: isMobile ? "2px 6px" : "4px 8px",
+                        cursor: "pointer",
+                      }}
+                    >
                       -
                     </button>
-                    <button onClick={resetTransform} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                    <button
+                      onClick={resetTransform}
+                      style={{
+                        border: "none",
+                        padding: isMobile ? "2px 6px" : "4px 8px",
+                        cursor: "pointer",
+                      }}
+                    >
                       ⟳
                     </button>
-                    <button onClick={handleCloseViewer} style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}>
+                    <button
+                      onClick={handleCloseViewer}
+                      style={{
+                        border: "none",
+                        padding: isMobile ? "2px 6px" : "4px 8px",
+                        cursor: "pointer",
+                      }}
+                    >
                       X
                     </button>
                   </div>
 
                   <TransformComponent>
-                    <img src={encodeURI(viewImageSrc)} alt="미리보기" style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }} />
+                    <img
+                      src={encodeURI(viewImageSrc)}
+                      alt="미리보기"
+                      style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }}
+                    />
                   </TransformComponent>
                 </>
               )}

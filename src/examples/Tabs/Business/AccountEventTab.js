@@ -3,16 +3,15 @@ import React, { useEffect, useState } from "react";
 import {
   Grid,
   Box,
-  Select,
-  MenuItem,
   IconButton,
   Dialog,
   DialogContent,
   useTheme,
   useMediaQuery,
+  TextField,
+  Autocomplete,
 } from "@mui/material";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
 import api from "api/api";
@@ -42,6 +41,10 @@ export default function AccountEventTab() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewList, setPreviewList] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // ✅ Autocomplete value로 쓸 선택 객체
+  const selectedAccount =
+    (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null;
 
   // ================================
   // 초기 로드
@@ -148,8 +151,7 @@ export default function AccountEventTab() {
     if (!fileList || fileList.length === 0) return;
 
     const targetRow = eventRows[rowIndex];
-    const currentCount =
-      (targetRow.images?.length || 0) + (targetRow.pendingFiles?.length || 0);
+    const currentCount = (targetRow.images?.length || 0) + (targetRow.pendingFiles?.length || 0);
 
     if (currentCount >= 10) {
       Swal.fire("이미지는 최대 10장까지 등록 가능합니다.", "", "warning");
@@ -305,10 +307,7 @@ export default function AccountEventTab() {
         // 2) 기존행 UPDATE (변경된 경우만)
         const origin = originalEventRows.find((o) => o.event_id === row.event_id);
 
-        if (
-          origin &&
-          (origin.event_name !== row.event_name || origin.event_dt !== row.event_dt)
-        ) {
+        if (origin && (origin.event_name !== row.event_name || origin.event_dt !== row.event_dt)) {
           await api.post("/Business/AccountEventUpdate", {
             event_id: row.event_id,
             account_id: row.account_id,
@@ -442,20 +441,39 @@ export default function AccountEventTab() {
             width: isMobile ? "100%" : "auto",
           }}
         >
-          <Select
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            size="small"
-            displayEmpty
-            sx={{ minWidth: isMobile ? 160 : 200, fontSize: isMobile ? "12px" : "14px" }}
-          >
-            <MenuItem value="">거래처 선택</MenuItem>
-            {(accountList || []).map((acc) => (
-              <MenuItem key={acc.account_id} value={acc.account_id}>
-                {acc.account_name}
-              </MenuItem>
-            ))}
-          </Select>
+          {/* ✅ 거래처 검색 가능한 Autocomplete */}
+          {(accountList || []).length > 0 && (
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 200 }}
+              options={accountList || []}
+              // ✅ selectedAccountId로 현재 선택된 객체를 만들어 value에 넣기
+              value={
+                (accountList || []).find(
+                  (a) => String(a.account_id) === String(selectedAccountId)
+                ) || null
+              }
+              onChange={(_, newValue) => {
+                setSelectedAccountId(newValue ? newValue.account_id : "");
+              }}
+              // ✅ 입력 텍스트로 검색: account_name 기준
+              getOptionLabel={(option) => option?.account_name ?? ""}
+              isOptionEqualToValue={(option, value) =>
+                String(option?.account_id) === String(value?.account_id)
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  sx={{
+                    "& .MuiInputBase-root": { height: 43, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
+            />
+          )}
 
           <MDButton
             variant="gradient"
@@ -501,7 +519,9 @@ export default function AccountEventTab() {
                       <input
                         type="text"
                         value={row.event_name || ""}
-                        onChange={(e) => handleEventFieldChange(index, "event_name", e.target.value)}
+                        onChange={(e) =>
+                          handleEventFieldChange(index, "event_name", e.target.value)
+                        }
                         style={cellInputStyle(isCellChanged(index, "event_name"))}
                       />
                     </td>
@@ -521,7 +541,11 @@ export default function AccountEventTab() {
                       <Box
                         sx={{
                           display: "grid",
-                          gridTemplateColumns: { xs: "repeat(2, 1fr)", sm: "repeat(3, 1fr)", md: "repeat(4, 1fr)" },
+                          gridTemplateColumns: {
+                            xs: "repeat(2, 1fr)",
+                            sm: "repeat(3, 1fr)",
+                            md: "repeat(4, 1fr)",
+                          },
                           gap: 1,
                         }}
                       >
@@ -581,7 +605,13 @@ export default function AccountEventTab() {
                                 {img.image_name}
                               </button>
 
-                              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
                                 <IconButton
                                   size="small"
                                   color="success"
@@ -655,7 +685,12 @@ export default function AccountEventTab() {
                               {pf.file.name}
                             </span>
 
-                            <IconButton size="small" color="error" sx={{ p: 0.5 }} onClick={() => removePendingFile(index, idx2)}>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              sx={{ p: 0.5 }}
+                              onClick={() => removePendingFile(index, idx2)}
+                            >
                               <Trash2 size={14} />
                             </IconButton>
                           </Box>

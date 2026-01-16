@@ -10,7 +10,7 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
 const getUserCodes = () => {
   const dept = localStorage.getItem("department"); // ex) "2"
-  const pos = localStorage.getItem("position");    // ex) "4"
+  const pos = localStorage.getItem("position"); // ex) "4"
 
   return {
     deptCode: dept != null ? Number(dept) : null,
@@ -22,27 +22,19 @@ const getUserCodes = () => {
 const hasAccess = (tab, deptCode, posCode) => {
   const { allowedDepartments, allowedPositions, accessMode = "AND" } = tab;
 
-  const hasDeptCond =
-    Array.isArray(allowedDepartments) && allowedDepartments.length > 0;
-  const hasPosCond =
-    Array.isArray(allowedPositions) && allowedPositions.length > 0;
+  const hasDeptCond = Array.isArray(allowedDepartments) && allowedDepartments.length > 0;
+  const hasPosCond = Array.isArray(allowedPositions) && allowedPositions.length > 0;
 
   // 조건이 하나도 없으면 모두 접근 허용
   if (!hasDeptCond && !hasPosCond) return true;
 
-  const deptOk =
-    hasDeptCond && deptCode != null
-      ? allowedDepartments.includes(deptCode)
-      : false;
-  const posOk =
-    hasPosCond && posCode != null
-      ? allowedPositions.includes(posCode)
-      : false;
+  const deptOk = hasDeptCond && deptCode != null ? allowedDepartments.includes(deptCode) : false;
+  const posOk = hasPosCond && posCode != null ? allowedPositions.includes(posCode) : false;
 
   if (accessMode === "OR") {
     if (hasDeptCond && hasPosCond) return deptOk || posOk;
     if (hasDeptCond) return deptOk; // 부서만 있을 때
-    if (hasPosCond) return posOk;   // 직책만 있을 때
+    if (hasPosCond) return posOk; // 직책만 있을 때
     return true;
   } else {
     // AND: 없는 조건은 true 로 간주 (부서만 있으면 부서만 체크)
@@ -71,8 +63,8 @@ function OperateTabs_2() {
       label: "👥 현장 직원목록",
       iconIndex: 0,
       component: <AccountMemberCardSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
-      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },
     {
@@ -80,8 +72,8 @@ function OperateTabs_2() {
       label: "📦 현장 채용현황",
       iconIndex: 1,
       component: <AccountMemberRecSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
-      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },
     // {
@@ -146,7 +138,7 @@ function OperateTabs_2() {
       <MDBox
         sx={{
           position: "sticky",
-          top: 0,             // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
+          top: 0, // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
           zIndex: 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
@@ -154,7 +146,7 @@ function OperateTabs_2() {
       >
         {/* 🔹 공통 헤더 사용 */}
         {/* <HeaderWithLogout showMenuButton title="📁고객사 관리" /> */}
-        <DashboardNavbar title="📁고객사 관리" />
+        <DashboardNavbar title="🧑‍🔧채용관리" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}

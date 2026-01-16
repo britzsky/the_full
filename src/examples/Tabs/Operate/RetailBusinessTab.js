@@ -13,7 +13,7 @@ import {
   useMediaQuery,
   IconButton,
   Tooltip,
-  Checkbox
+  Checkbox,
 } from "@mui/material";
 import MDButton from "components/MDButton";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -69,16 +69,46 @@ const formatByGroups = (digits, groups) => {
 
 // 은행별 대표 포맷(현실적으로 케이스가 많아서 “대표 패턴 + fallback” 방식)
 const BANK_MASKS_BY_NAME = {
-  "KB국민은행": [[3, 2, 6], [3, 3, 6]],
-  "신한은행": [[3, 3, 6], [3, 2, 6]],
-  "우리은행": [[4, 3, 6], [3, 3, 6]],
-  "하나은행": [[3, 6, 5], [3, 3, 6]],
-  "IBK기업은행": [[3, 6, 2, 3], [3, 3, 6]],
-  "NH농협은행": [[3, 4, 4, 2], [3, 3, 6]],
-  "카카오뱅크": [[4, 2, 7], [3, 3, 6]],
-  "토스뱅크": [[3, 3, 6], [4, 3, 6]],
-  "케이뱅크": [[3, 3, 6], [4, 2, 7]],
-  우체국: [[4, 4, 4], [3, 3, 6]],
+  KB국민은행: [
+    [3, 2, 6],
+    [3, 3, 6],
+  ],
+  신한은행: [
+    [3, 3, 6],
+    [3, 2, 6],
+  ],
+  우리은행: [
+    [4, 3, 6],
+    [3, 3, 6],
+  ],
+  하나은행: [
+    [3, 6, 5],
+    [3, 3, 6],
+  ],
+  IBK기업은행: [
+    [3, 6, 2, 3],
+    [3, 3, 6],
+  ],
+  NH농협은행: [
+    [3, 4, 4, 2],
+    [3, 3, 6],
+  ],
+  카카오뱅크: [
+    [4, 2, 7],
+    [3, 3, 6],
+  ],
+  토스뱅크: [
+    [3, 3, 6],
+    [4, 3, 6],
+  ],
+  케이뱅크: [
+    [3, 3, 6],
+    [4, 2, 7],
+  ],
+  우체국: [
+    [4, 4, 4],
+    [3, 3, 6],
+  ],
 };
 
 const pickBestMask = (bankName, len) => {
@@ -175,27 +205,21 @@ function RetailBusinessTab() {
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
     if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value)
-        ? { color: "red" }
-        : { color: "black" };
+      return normalize(original) !== normalize(value) ? { color: "red" } : { color: "black" };
     }
     return original !== value ? { color: "red" } : { color: "black" };
   };
 
   // ✅ 셀 값 변경
   const handleCellChange = (rowIndex, key, value) => {
-    setRows((prev) =>
-      prev.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row))
-    );
+    setRows((prev) => prev.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row)));
   };
 
   // ✅ 이미지 확대
   const handleViewImage = (value) => {
     if (!value) return;
     setViewImageSrc(
-      typeof value === "object"
-        ? URL.createObjectURL(value)
-        : `${API_BASE_URL}${value}`
+      typeof value === "object" ? URL.createObjectURL(value) : `${API_BASE_URL}${value}`
     );
   };
   const handleCloseViewer = () => setViewImageSrc(null);
@@ -273,11 +297,9 @@ function RetailBusinessTab() {
         return;
       }
 
-      const response = await api.post(
-        `/Operate/AccountRetailBusinessSaveV2`,
-        payload,
-        { headers: { "Content-Type": "application/json" } }
-      );
+      const response = await api.post(`/Operate/AccountRetailBusinessSaveV2`, payload, {
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (response.data.code === 200) {
         Swal.fire("성공", "저장되었습니다.", "success");
@@ -311,6 +333,9 @@ function RetailBusinessTab() {
   const tableSx = {
     flex: 1,
     minHeight: 0,
+    maxHeight: isMobile ? "55vh" : "75vh",
+    overflowX: "auto",
+    overflowY: "auto",
     "& table": {
       borderCollapse: "separate",
       width: "max-content",
@@ -320,31 +345,34 @@ function RetailBusinessTab() {
     "& th, & td": {
       border: "1px solid #686D76",
       textAlign: "center",
-      padding: "4px",
+      padding: isMobile ? "2px" : "4px",
       whiteSpace: "pre-wrap",
-      fontSize: "12px",
+      fontSize: isMobile ? "10px" : "12px",
+      verticalAlign: "middle",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
     },
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 130,
+      top: 0,
       zIndex: 10,
     },
   };
 
   // ========================== Modal 관련 시작 ==========================
   const initialForm = {
-      name: "",
-      biz_no: "",
-      ceo_name: "",
-      tel: "",
-      bank_name: "",
-      bank_no: "",
-      bank_image: null,
-      biz_image: null,
-      add_yn: "N",
-      add_name: ""
-    };
+    name: "",
+    biz_no: "",
+    ceo_name: "",
+    tel: "",
+    bank_name: "",
+    bank_no: "",
+    bank_image: null,
+    biz_image: null,
+    add_yn: "N",
+    add_name: "",
+  };
 
   const [open2, setOpen2] = useState(false);
 
@@ -391,7 +419,7 @@ function RetailBusinessTab() {
       ...prev,
       add_yn: checked ? "Y" : "N",
       // 체크 해제되면 약식명 비우기(원치 않으면 이 줄 삭제)
-      add_name: checked ? (prev.add_name || "") : "",
+      add_name: checked ? prev.add_name || "" : "",
     }));
   };
 
@@ -588,7 +616,7 @@ function RetailBusinessTab() {
       </MDBox>
 
       {/* ✅ 테이블 렌더 */}
-      <MDBox pt={1} pb={3} sx={tableSx}>
+      <MDBox pt={0} pb={3} sx={tableSx}>
         <table>
           <thead>
             <tr>
@@ -612,9 +640,7 @@ function RetailBusinessTab() {
                       <td key={key} style={{ width: col.size }}>
                         <select
                           value={value || "N"}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{
                             width: "100%",
                             border: "none",
@@ -636,9 +662,7 @@ function RetailBusinessTab() {
                       <td key={key} style={{ width: col.size }}>
                         <select
                           value={value || "N"}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{
                             width: "100%",
                             border: "none",
@@ -659,10 +683,7 @@ function RetailBusinessTab() {
                     const hasImage = !!value;
 
                     return (
-                      <td
-                        key={key}
-                        style={{ verticalAlign: "middle", width: col.size }}
-                      >
+                      <td key={key} style={{ verticalAlign: "middle", width: col.size }}>
                         <div
                           style={{
                             display: "flex",
@@ -677,9 +698,7 @@ function RetailBusinessTab() {
                             accept="image/*"
                             id={`upload-${key}-${rowIndex}`}
                             style={{ display: "none" }}
-                            onChange={(e) =>
-                              handleCellChange(rowIndex, key, e.target.files?.[0])
-                            }
+                            onChange={(e) => handleCellChange(rowIndex, key, e.target.files?.[0])}
                           />
 
                           {hasImage ? (
@@ -729,11 +748,7 @@ function RetailBusinessTab() {
                       style={{ ...style, width: col.size }}
                       onBlur={(e) => {
                         if (key !== "account_name") {
-                          handleCellChange(
-                            rowIndex,
-                            key,
-                            e.currentTarget.innerText.trim()
-                          );
+                          handleCellChange(rowIndex, key, e.currentTarget.innerText.trim());
                         }
                       }}
                     >
@@ -764,11 +779,7 @@ function RetailBusinessTab() {
           }}
           onClick={handleCloseViewer}
         >
-          <img
-            src={viewImageSrc}
-            alt="미리보기"
-            style={{ maxWidth: "80%", maxHeight: "80%" }}
-          />
+          <img src={viewImageSrc} alt="미리보기" style={{ maxWidth: "80%", maxHeight: "80%" }} />
         </div>
       )}
 
@@ -800,7 +811,7 @@ function RetailBusinessTab() {
             name="name"
             value={formData.name || ""}
             onChange={handleChange2}
-            sx={{mt: 1}}
+            sx={{ mt: 1 }}
           />
           {/* ✅ 약식사용(체크박스+라벨) + 약식명 한 줄 배치 */}
           <Grid container spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
@@ -852,7 +863,7 @@ function RetailBusinessTab() {
             onChange={handleBizNoChange}
             placeholder="예: 123-45-67890"
             inputProps={{ inputMode: "numeric" }}
-            sx={{mt: 1}}
+            sx={{ mt: 1 }}
           />
 
           <TextField
@@ -864,7 +875,7 @@ function RetailBusinessTab() {
             name="ceo_name"
             value={formData.ceo_name || ""}
             onChange={handleChange2}
-            sx={{mt: 1}}
+            sx={{ mt: 1 }}
           />
 
           <TextField
@@ -887,7 +898,13 @@ function RetailBusinessTab() {
             <Select
               fullWidth
               size="small"
-              value={KOREAN_BANKS.includes(formData.bank_name) ? formData.bank_name : (formData.bank_name ? "기타(직접입력)" : "")}
+              value={
+                KOREAN_BANKS.includes(formData.bank_name)
+                  ? formData.bank_name
+                  : formData.bank_name
+                  ? "기타(직접입력)"
+                  : ""
+              }
               onChange={handleBankSelect}
               displayEmpty
               sx={{ fontSize: "0.85rem" }}
@@ -903,7 +920,8 @@ function RetailBusinessTab() {
             </Select>
 
             {/* 기타(직접입력) 선택 시 직접입력 */}
-            {(!KOREAN_BANKS.includes(formData.bank_name) || formData.bank_name === "기타(직접입력)") && (
+            {(!KOREAN_BANKS.includes(formData.bank_name) ||
+              formData.bank_name === "기타(직접입력)") && (
               <TextField
                 fullWidth
                 required
@@ -911,9 +929,9 @@ function RetailBusinessTab() {
                 label="은행명 직접입력"
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
                 name="bank_name"
-                value={formData.bank_name === "기타(직접입력)" ? "" : (formData.bank_name || "")}
+                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
                 onChange={handleChange2}
-                sx={{mt: 1}}
+                sx={{ mt: 1 }}
               />
             )}
           </Box>
@@ -930,7 +948,7 @@ function RetailBusinessTab() {
             onChange={handleBankNoChange}
             placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다."
             inputProps={{ inputMode: "numeric" }}
-            sx={{mt: 1}}
+            sx={{ mt: 1 }}
           />
 
           {/* 통장사본 첨부 */}
@@ -948,7 +966,12 @@ function RetailBusinessTab() {
                   "&:hover": { borderColor: "#e8a500", backgroundColor: "rgba(232, 165, 0, 0.1)" },
                 }}
               >
-                <input type="file" accept="image/*" name="bank_image" onChange={handleImageUploadPreview} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  name="bank_image"
+                  onChange={handleImageUploadPreview}
+                />
               </Button>
 
               {imagePreviews.bank_image && (
@@ -977,7 +1000,9 @@ function RetailBusinessTab() {
 
           {/* 사업자등록증 첨부 */}
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>사업자등록증 (필수)</Typography>
+            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>
+              사업자등록증 (필수)
+            </Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
               <Button
                 variant="outlined"
@@ -990,7 +1015,12 @@ function RetailBusinessTab() {
                   "&:hover": { borderColor: "#e8a500", backgroundColor: "rgba(232, 165, 0, 0.1)" },
                 }}
               >
-                <input type="file" accept="image/*" name="biz_image" onChange={handleImageUploadPreview} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  name="biz_image"
+                  onChange={handleImageUploadPreview}
+                />
               </Button>
 
               {imagePreviews.biz_image && (
@@ -1021,7 +1051,11 @@ function RetailBusinessTab() {
             <Button
               variant="contained"
               onClick={handleModalClose2}
-              sx={{ bgcolor: "#e8a500", color: "#ffffff", "&:hover": { bgcolor: "#e8a500", color: "#ffffff" } }}
+              sx={{
+                bgcolor: "#e8a500",
+                color: "#ffffff",
+                "&:hover": { bgcolor: "#e8a500", color: "#ffffff" },
+              }}
             >
               취소
             </Button>

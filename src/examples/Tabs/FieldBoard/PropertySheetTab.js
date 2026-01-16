@@ -1,22 +1,12 @@
 // src/layouts/property/PropertySheetTab.js
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import {
-  TextField,
-  useTheme,
-  useMediaQuery,
-  IconButton,
-  Tooltip,
-} from "@mui/material";
+import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import usePropertiessheetData, {
-  parseNumber,
-  formatNumber,
-} from "./propertiessheetData";
+import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiessheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
@@ -27,9 +17,18 @@ function PropertySheetTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const [selectedAccountId, setSelectedAccountId] = useState("");
-  const { activeRows, accountList, loading, fetcPropertyList } =
-    usePropertiessheetData();
+  // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
+  const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
+  const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+
+  const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
+
+  // ✅ localStorage account_id 기준으로 거래처 리스트 필터링
+  const filteredAccountList = useMemo(() => {
+    if (!localAccountId) return accountList || [];
+    return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
+  }, [accountList, localAccountId]);
+
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
@@ -75,19 +74,27 @@ function PropertySheetTab() {
     setOriginalRows(deepCopy);
   }, [activeRows]);
 
+  // ✅ 거래처 기본값
+  // - localStorage account_id가 있으면 무조건 그걸로 고정
+  // - 없으면: 첫 번째 업장 자동 선택
   useEffect(() => {
-    if (accountList.length > 0 && !selectedAccountId) {
+    if (!accountList || accountList.length === 0) return;
+
+    if (localAccountId) {
+      setSelectedAccountId(localAccountId);
+      return;
+    }
+
+    if (!selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
     }
-  }, [accountList, selectedAccountId]);
+  }, [accountList, selectedAccountId, localAccountId]);
 
   const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
-      prevRows.map((row, idx) =>
-        idx === rowIndex ? { ...row, [key]: value } : row
-      )
+      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
     );
   };
 
@@ -96,7 +103,7 @@ function PropertySheetTab() {
     return value.replace(/\s+/g, " ").trim();
   };
 
-  // ✅ (FIX) 값 비교를 key별로 통일 (type은 string 비교)
+  // ✅ 값 비교를 key별로 통일 (type은 string 비교)
   const isSameValue = (key, original, current) => {
     if (key === "type") {
       return String(original ?? "") === String(current ?? "");
@@ -112,9 +119,7 @@ function PropertySheetTab() {
 
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
-    return isSameValue(key, original, value)
-      ? { color: "black" }
-      : { color: "red" };
+    return isSameValue(key, original, value) ? { color: "black" } : { color: "red" };
   };
 
   const handleAddRow = () => {
@@ -221,7 +226,7 @@ function PropertySheetTab() {
           const original = originalRows[idx] || {};
           let updatedRow = { ...row };
 
-          // ✅ (FIX) 변경 감지도 동일 비교 로직 사용
+          // ✅ 변경 감지도 동일 비교 로직 사용
           const isChanged =
             row.isNew ||
             Object.keys(updatedRow).some((key) => {
@@ -233,8 +238,7 @@ function PropertySheetTab() {
           if (!isChanged) return null;
 
           numericCols.forEach((col) => {
-            if (updatedRow[col])
-              updatedRow[col] = updatedRow[col].toString().replace(/,/g, "");
+            if (updatedRow[col]) updatedRow[col] = updatedRow[col].toString().replace(/,/g, "");
           });
 
           const imageFields = ["item_img", "receipt_img"];
@@ -252,7 +256,6 @@ function PropertySheetTab() {
           // 🟧 감가상각은 서버 저장 제외
           delete updatedRow.depreciation;
 
-          // ✅ type은 저장시에도 문자열->그대로(서버가 숫자 원하면 여기서 Number로 변환 가능)
           return { ...updatedRow, account_id: selectedAccountId || row.account_id };
         })
       );
@@ -291,6 +294,7 @@ function PropertySheetTab() {
         confirmButtonColor: "#d33",
         confirmButtonText: "확인",
       });
+      // eslint-disable-next-line no-console
       console.error(error);
     }
   };
@@ -382,8 +386,9 @@ function PropertySheetTab() {
             fontSize: isMobile ? "12px" : "14px",
           }}
           SelectProps={{ native: true }}
+          disabled={!!localAccountId} // ✅ localStorage로 고정이면 변경 불가 (원하면 제거)
         >
-          {(accountList || []).map((row) => (
+          {(filteredAccountList || []).map((row) => (
             <option key={row.account_id} value={row.account_id}>
               {row.account_name}
             </option>
@@ -432,9 +437,7 @@ function PropertySheetTab() {
                         <input
                           type="date"
                           value={value}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{
                             ...style,
                             width: "100%",
@@ -450,9 +453,7 @@ function PropertySheetTab() {
                       <td key={key} style={{ width: col.size }}>
                         <select
                           value={String(value ?? "0")}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{
                             ...style,
                             width: "100%",
@@ -485,9 +486,7 @@ function PropertySheetTab() {
                           accept="image/*"
                           id={`upload-${key}-${rowIndex}`}
                           style={{ display: "none" }}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.files?.[0])
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.files?.[0])}
                         />
 
                         {hasImage ? (
@@ -606,22 +605,10 @@ function PropertySheetTab() {
               padding: isMobile ? 8 : 16,
             }}
           >
-            <TransformWrapper
-              initialScale={1}
-              minScale={0.5}
-              maxScale={5}
-              centerOnInit
-            >
+            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
               {() => (
                 <>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      zIndex: 1000,
-                    }}
-                  >
+                  <div style={{ position: "absolute", top: 8, right: 8, zIndex: 1000 }}>
                     <button
                       onClick={handleCloseViewer}
                       style={{
@@ -640,11 +627,7 @@ function PropertySheetTab() {
                     <img
                       src={encodeURI(viewImageSrc)}
                       alt="미리보기"
-                      style={{
-                        maxWidth: "95vw",
-                        maxHeight: "90vh",
-                        borderRadius: 8,
-                      }}
+                      style={{ maxWidth: "95vw", maxHeight: "90vh", borderRadius: 8 }}
                     />
                   </TransformComponent>
                 </>

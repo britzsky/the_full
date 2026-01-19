@@ -410,19 +410,13 @@ function MiniCalendar() {
         alignItems="center"
         justifyContent="space-between"
       >
-        <Icon
-          sx={{ cursor: "pointer", opacity: 0.7 }}
-          onClick={() => setCursor((p) => p.subtract(1, "month"))}
-        >
+        <Icon sx={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setCursor((p) => p.subtract(1, "month"))}>
           chevron_left
         </Icon>
         <MDTypography variant="button" fontWeight="bold" color="dark">
           {cursor.format("YYYY")}년 {cursor.format("M")}월
         </MDTypography>
-        <Icon
-          sx={{ cursor: "pointer", opacity: 0.7 }}
-          onClick={() => setCursor((p) => p.add(1, "month"))}
-        >
+        <Icon sx={{ cursor: "pointer", opacity: 0.7 }} onClick={() => setCursor((p) => p.add(1, "month"))}>
           chevron_right
         </Icon>
       </MDBox>
@@ -629,38 +623,26 @@ function Dashboard() {
       <MDBox py={1} pt={2}>
         <Grid container spacing={2.2}>
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard
-              title="공지사항"
-              onClick={() => navigate("/notice")} // ✅ 기존대로(라우트 경로만 맞추면 됨)
-            >
+            <HeaderCard title="공지사항" onClick={() => navigate("/notice")}> {/* ✅ 기존대로(라우트 경로만 맞추면 됨) */}
               <ListLines items={notices} />
             </HeaderCard>
           </Grid>
 
           {/* ✅ 본사 식단표: WeekMenuManager 로 연결된 라우트 경로로 이동 */}
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard
-              title="본사 식단표"
-              onClick={() => navigate("/weekmenu")} // ✅ routes.js에서 WeekMenuManager path와 동일하게
-            >
+            <HeaderCard title="본사 식단표" onClick={() => navigate("/weekmenu")}> {/* ✅ routes.js에서 WeekMenuManager path와 동일하게 */}
               <ListLines items={meals} emptyText="식단표가 없습니다." />
             </HeaderCard>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard
-              title="본사교육"
-              onClick={() => navigate("/education")} // ✅ 기존대로(라우트 경로만 맞추면 됨)
-            >
+            <HeaderCard title="본사교육" onClick={() => navigate("/education")}> {/*  ✅ 기존대로(라우트 경로만 맞추면 됨) */}
               <ListLines items={educations} emptyText="교육이 없습니다." />
             </HeaderCard>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard
-              title="복리후생"
-              onClick={() => navigate("/welfare")} // ✅ 기존대로(라우트 경로만 맞추면 됨)
-            >
+            <HeaderCard title="복리후생" onClick={() => navigate("/welfare")}> {/*  ✅ 기존대로(라우트 경로만 맞추면 됨) */}
               <ListLines items={welfares} emptyText="복리후생 공지가 없습니다." />
             </HeaderCard>
           </Grid>
@@ -675,7 +657,7 @@ function Dashboard() {
                   <HeaderCard
                     title={`운영팀 일정(${dayjs().format("YYYY-MM-DD")})`}
                     minHeight={170}
-                    onClick={() => navigate("/operateschedule")} // ✅ routes.js에서 OperateSchedule path와 동일하게
+                    onClick={() => navigate("/operateschedule")}
                   >
                     <ScheduleLines items={opsSchedules} />
                   </HeaderCard>
@@ -686,7 +668,7 @@ function Dashboard() {
                   <HeaderCard
                     title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
                     minHeight={170}
-                    onClick={() => navigate("/businessschedule")} // ✅ routes.js에서 BusinessSchedule path와 동일하게
+                    onClick={() => navigate("/businessschedule")}
                   >
                     <ScheduleLines items={salesSchedules} />
                   </HeaderCard>

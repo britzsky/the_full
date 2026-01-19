@@ -25,3 +25,5 @@ package-lock.json
 yarn.lock
 
 commit.sh
+src/layouts/temp/TestData.js
+src/layouts/temp/TestTab.js

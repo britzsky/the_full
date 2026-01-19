@@ -56,6 +56,28 @@ function Basic() {
             confirmButtonColor: "#d33",
             confirmButtonText: "확인",
           });
+          return;
+        } else if (response.data.code == "403") {
+          const useYn = String(response.data.use_yn ?? "").toUpperCase();
+          // ✅ use_yn이 N인 사람만 "승인 필요" 팝업 표시
+          if (useYn === "N") {
+            Swal.fire({
+              title: "승인 대기",
+              html: "승인 요청 중입니다.<br/>관리자에게 문의해주세요.",
+              icon: "warning",
+              confirmButtonText: "확인",
+              confirmButtonColor: "#d33",
+            });
+          } else {
+            // ✅ use_yn이 N이 아닌데 403이 내려오는 케이스가 있다면(정책에 맞게 처리)
+            Swal.fire({
+              title: "로그인 불가",
+              text: response.data.msg || "로그인할 수 없습니다.",
+              icon: "error",
+              confirmButtonText: "확인",
+            });
+          }
+          return;
         } else {
           // 🔐 자동로그인 체크 여부에 따라 localStorage에 계정정보 저장
           if (rememberMe) {

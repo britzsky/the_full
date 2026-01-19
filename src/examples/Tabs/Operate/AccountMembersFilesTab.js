@@ -2,13 +2,8 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import {
-  TextField,
-  useTheme,
-  useMediaQuery,
-  IconButton,
-  Tooltip,
-} from "@mui/material";
+import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -30,6 +25,21 @@ function AccountMembersFilesTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
+  // ✅ 거래처 옵션(Autocomplete)
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
+
   // ✅ 계정 변경 시 조회
   useEffect(() => {
     if (selectedAccountId) fetcMembersFilesList(selectedAccountId);
@@ -49,8 +59,8 @@ function AccountMembersFilesTab() {
 
   // ✅ 계정 자동 선택
   useEffect(() => {
-    if (accountList.length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+    if ((accountList || []).length > 0 && !selectedAccountId) {
+      setSelectedAccountId(String(accountList[0].account_id));
     }
   }, [accountList, selectedAccountId]);
 
@@ -91,9 +101,7 @@ function AccountMembersFilesTab() {
 
   // ✅ 값 변경
   const handleCellChange = (rowIndex, key, value) => {
-    setRows((prev) =>
-      prev.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
-    );
+    setRows((prev) => prev.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row)));
   };
 
   // ✅ 문서종류 옵션
@@ -138,15 +146,11 @@ function AccountMembersFilesTab() {
         };
 
         setRows((prev) =>
-          prev.map((row, idx) =>
-            idx === rowIndex ? { ...row, ...normalized } : row
-          )
+          prev.map((row, idx) => (idx === rowIndex ? { ...row, ...normalized } : row))
         );
 
         setOriginalRows((prev) =>
-          prev.map((row, idx) =>
-            idx === rowIndex ? { ...row, ...normalized } : row
-          )
+          prev.map((row, idx) => (idx === rowIndex ? { ...row, ...normalized } : row))
         );
       } else {
         setRows((prev) =>
@@ -237,7 +241,7 @@ function AccountMembersFilesTab() {
     }
   }, []);
 
-  // ✅ (NEW) td 꽉 차는 입력 UI 스타일
+  // ✅ td 꽉 차는 입력 UI 스타일
   const inputLikeStyle = (color) => ({
     width: "100%",
     height: isMobile ? 28 : 30,
@@ -256,7 +260,6 @@ function AccountMembersFilesTab() {
     try {
       const userId = localStorage.getItem("user_id");
 
-      // 변경된 row + doc_type 체크를 위해 먼저 “변경된 것만” 수집
       const changedIndexes = rows
         .map((row, idx) => {
           const original = originalRows[idx] || {};
@@ -276,10 +279,9 @@ function AccountMembersFilesTab() {
         return;
       }
 
-      // ✅ (NEW) 변경된 행 중 문서종류 미선택 체크
       const invalidIdx = changedIndexes.find((idx) => {
         const docType = String(rows[idx]?.doc_type_id ?? "").trim();
-        return docType === ""; // 선택
+        return docType === "";
       });
 
       if (invalidIdx !== undefined) {
@@ -288,7 +290,6 @@ function AccountMembersFilesTab() {
         return;
       }
 
-      // ✅ 실제 payload 생성 (파일 업로드 포함)
       const modifiedRows = await Promise.all(
         changedIndexes.map(async (idx) => {
           const row = rows[idx];
@@ -346,7 +347,7 @@ function AccountMembersFilesTab() {
     "& th, & td": {
       border: "1px solid #686D76",
       textAlign: "center",
-      padding: isMobile ? "3px" : "4px", // ✅ 살짝 여유
+      padding: isMobile ? "3px" : "4px",
       fontSize: isMobile ? "10px" : "12px",
       verticalAlign: "middle",
     },
@@ -358,7 +359,7 @@ function AccountMembersFilesTab() {
     },
   };
 
-  const fileIconSx = { color: "#1e88e5" }; // 원하는 파란색으로 변경 가능
+  const fileIconSx = { color: "#1e88e5" };
 
   if (loading) return <LoadingScreen />;
 
@@ -380,20 +381,32 @@ function AccountMembersFilesTab() {
           backgroundColor: "#ffffff",
         }}
       >
-        <TextField
-          select
+        {/* ✅ 거래처 Select → 검색 가능한 Autocomplete로 변경 */}
+        <Autocomplete
           size="small"
-          value={selectedAccountId}
-          onChange={(e) => setSelectedAccountId(e.target.value)}
-          sx={{ minWidth: isMobile ? 160 : 200 }}
-          SelectProps={{ native: true }}
-        >
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={selectedAccountOption}
+          onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          filterOptions={(options, state) => {
+            const q = (state.inputValue ?? "").trim().toLowerCase();
+            if (!q) return options;
+            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
 
         <MDButton
           color="info"
@@ -440,16 +453,14 @@ function AccountMembersFilesTab() {
                     );
                   }
 
-                  // ✅ 문서종류 (td 꽉 차는 스타일)
+                  // ✅ 문서종류
                   if (key === "doc_type_id") {
                     const options = getDocTypeOptions(row.position);
                     return (
                       <td key={key} style={cellStyle}>
                         <select
                           value={String(value || "")}
-                          onChange={(e) =>
-                            handleDocTypeChange(rowIndex, e.target.value)
-                          }
+                          onChange={(e) => handleDocTypeChange(rowIndex, e.target.value)}
                           style={inputLikeStyle(cellStyle.color)}
                         >
                           <option value="">선택</option>
@@ -463,16 +474,14 @@ function AccountMembersFilesTab() {
                     );
                   }
 
-                  // ✅ 날짜 (td 꽉 차는 스타일)
+                  // ✅ 날짜
                   if (key === "issue_dt" || key === "expiry_dt") {
                     return (
                       <td key={key} style={cellStyle}>
                         <input
                           type="date"
                           value={String(value || "")}
-                          onChange={(e) =>
-                            handleCellChange(rowIndex, key, e.target.value)
-                          }
+                          onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={inputLikeStyle(cellStyle.color)}
                         />
                       </td>
@@ -499,13 +508,7 @@ function AccountMembersFilesTab() {
                             accept="image/*"
                             id={`upload-${key}-${rowIndex}`}
                             style={{ display: "none" }}
-                            onChange={(e) =>
-                              handleCellChange(
-                                rowIndex,
-                                key,
-                                e.target.files?.[0]
-                              )
-                            }
+                            onChange={(e) => handleCellChange(rowIndex, key, e.target.files?.[0])}
                           />
 
                           {hasImage ? (
@@ -558,13 +561,7 @@ function AccountMembersFilesTab() {
                       style={cellStyle}
                       contentEditable
                       suppressContentEditableWarning
-                      onBlur={(e) =>
-                        handleCellChange(
-                          rowIndex,
-                          key,
-                          e.currentTarget.innerText
-                        )
-                      }
+                      onBlur={(e) => handleCellChange(rowIndex, key, e.currentTarget.innerText)}
                     >
                       {value}
                     </td>
@@ -593,7 +590,7 @@ function AccountMembersFilesTab() {
           }}
           onClick={() => setViewImageSrc(null)}
         >
-          <TransformWrapper initialScale={1} minScale={0.5} maxScale={5}>
+          <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
             <TransformComponent>
               <img
                 src={viewImageSrc}

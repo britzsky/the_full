@@ -16,6 +16,7 @@ import {
   IconButton,
   Tooltip,
   TextField,
+  Autocomplete, // ✅ 추가
 } from "@mui/material";
 
 import Paper from "@mui/material/Paper";
@@ -33,7 +34,6 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
@@ -102,7 +102,8 @@ const maskCardNo = (digits) => {
 const normalize = (v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : v);
 
 const isChangedValue = (orig, cur) => {
-  if (typeof orig === "string" && typeof cur === "string") return normalize(orig) !== normalize(cur);
+  if (typeof orig === "string" && typeof cur === "string")
+    return normalize(orig) !== normalize(cur);
   return orig !== cur;
 };
 
@@ -150,7 +151,9 @@ const DETAIL_SELECT_KEYS = ["taxType", "itemType"];
 
 const parseNumMaybe = (v) => {
   if (v === null || v === undefined) return null;
-  const s = String(v).replace(/\u00A0/g, " ").trim();
+  const s = String(v)
+    .replace(/\u00A0/g, " ")
+    .trim();
   if (s === "") return null;
   const n = Number(s.replace(/,/g, "").replace(/[^\d.-]/g, ""));
   return Number.isNaN(n) ? null : n;
@@ -175,7 +178,11 @@ const formatNumber = (v) => {
 
 const parseNumber = (v) => {
   if (v === null || v === undefined || v === "") return 0;
-  const n = Number(String(v).replace(/,/g, "").replace(/[^\d.-]/g, ""));
+  const n = Number(
+    String(v)
+      .replace(/,/g, "")
+      .replace(/[^\d.-]/g, "")
+  );
   return Number.isNaN(n) ? 0 : n;
 };
 
@@ -229,7 +236,7 @@ function AccountCorporateCardSheet() {
 
   const [selectedMaster, setSelectedMaster] = useState(null);
 
-  // ✅ 거래처 검색조건
+  // ✅ 거래처 검색조건 (string id 유지)
   const [selectedAccountId, setSelectedAccountId] = useState("");
 
   // ✅ 스캔된 상세 item 은 무조건 빨간 글씨
@@ -296,6 +303,19 @@ function AccountCorporateCardSheet() {
       setSelectedAccountId(accountList[0].account_id);
     }
   }, [accountList, selectedAccountId]);
+
+  // ✅ 거래처 Autocomplete 옵션(안정화)
+  const accountOptions = useMemo(() => {
+    return (accountList || []).map((a) => ({
+      account_id: String(a.account_id),
+      account_name: String(a.account_name ?? ""),
+    }));
+  }, [accountList]);
+
+  const selectedAccountOption = useMemo(() => {
+    const id = String(selectedAccountId || "");
+    return accountOptions.find((o) => o.account_id === id) || null;
+  }, [accountOptions, selectedAccountId]);
 
   // ========================= 조회 =========================
   const handleFetchMaster = useCallback(async () => {
@@ -401,7 +421,7 @@ function AccountCorporateCardSheet() {
 
       const nextVal =
         DETAIL_NUMBER_KEYS.includes(key) || DETAIL_SELECT_KEYS.includes(key)
-          ? (parseNumMaybe(nextRaw) ?? 0)
+          ? parseNumMaybe(nextRaw) ?? 0
           : nextRaw;
 
       return prev.map((r, i) => (i === rowIndex ? { ...r, [key]: nextVal } : r));
@@ -478,8 +498,11 @@ function AccountCorporateCardSheet() {
     }
     const sid = String(selectedMaster.sale_id || "").trim();
     if (!sid) {
-      // 저장 전 임시행이면 sale_id가 없을 가능성이 큼
-      return Swal.fire("안내", "선택한 상단 행이 아직 저장되지 않아 상세를 추가할 수 없습니다.\n상단을 먼저 저장한 후 다시 추가해주세요.", "info");
+      return Swal.fire(
+        "안내",
+        "선택한 상단 행이 아직 저장되지 않아 상세를 추가할 수 없습니다.\n상단을 먼저 저장한 후 다시 추가해주세요.",
+        "info"
+      );
     }
 
     const newDetail = {
@@ -495,7 +518,6 @@ function AccountCorporateCardSheet() {
     };
 
     setDetailRows((prev) => [...(prev || []), newDetail]);
-    // index 정렬을 위해 orig에도 placeholder 추가
     setOrigDetailRows((prev) => [...(prev || []), {}]);
     setDetailRenderKey((k) => k + 1);
 
@@ -513,10 +535,13 @@ function AccountCorporateCardSheet() {
       const typeOk = !!String(row.receipt_type || ""); // ✅ 타입 필수
 
       if (!acctOk || !cardOk) {
-        return Swal.fire("경고", "영수증 업로드 전에 거래처와 카드번호를 먼저 선택해주세요.", "warning");
+        return Swal.fire(
+          "경고",
+          "영수증 업로드 전에 거래처와 카드번호를 먼저 선택해주세요.",
+          "warning"
+        );
       }
 
-      // ✅ 타입 선택 강제
       if (!typeOk) {
         return Swal.fire("경고", "영수증타입을 선택해주세요.", "warning");
       }
@@ -533,7 +558,6 @@ function AccountCorporateCardSheet() {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("user_id", localStorage.getItem("user_id") || "");
-        // ✅ 여기로 전달
         formData.append("type", row.receipt_type);
         formData.append("objectValue", row.account_id);
         formData.append("folderValue", "acnCorporate");
@@ -558,7 +582,9 @@ function AccountCorporateCardSheet() {
 
         const patch = {
           ...(main.sale_id != null ? { sale_id: main.sale_id } : {}),
-          ...(main.account_id != null && main.account_id !== "" ? { account_id: main.account_id } : {}),
+          ...(main.account_id != null && main.account_id !== ""
+            ? { account_id: main.account_id }
+            : {}),
           ...(main.payment_dt != null ? { payment_dt: main.payment_dt } : {}),
           ...(main.use_name != null ? { use_name: main.use_name } : {}),
           ...(main.bizNo != null ? { bizNo: main.bizNo } : {}),
@@ -571,7 +597,6 @@ function AccountCorporateCardSheet() {
           ...(main.receipt_image != null ? { receipt_image: main.receipt_image } : {}),
         };
 
-        // ✅ 상단 반영
         setMasterRows((prev) =>
           prev.map((r, i) => {
             if (i !== rowIndex) return r;
@@ -583,7 +608,6 @@ function AccountCorporateCardSheet() {
           })
         );
 
-        // ✅ 하단 반영(스캔된 항목은 무조건 빨간 글씨)
         if (Array.isArray(items)) {
           const saleIdForDetail = main.sale_id || row.sale_id || "";
           const normalized = items.map((it) => ({
@@ -671,10 +695,7 @@ function AccountCorporateCardSheet() {
 
     const item = detailRows
       .map((r, i) => {
-        // ✅ 신규 상세행은 무조건 저장 대상
         if (r?.isNew) return cleanDetailRow(r);
-
-        // ✅ 스캔(강제 빨강)은 무조건 저장 대상
         if (isForcedRedRow(r)) return cleanDetailRow(r);
 
         const o = origDetailRows[i] || {};
@@ -713,7 +734,6 @@ function AccountCorporateCardSheet() {
       skipPendingNewMergeRef.current = true;
       await handleFetchMaster();
 
-      // ✅ 저장 후 선택된 상단행이 있다면 다시 상세조회(서버데이터로 리셋)
       if (selectedMaster?.sale_id) {
         await fetchAccountCorporateCardPaymentDetailList({
           sale_id: selectedMaster.sale_id,
@@ -721,7 +741,6 @@ function AccountCorporateCardSheet() {
           payment_dt: selectedMaster.payment_dt,
         });
       } else {
-        // 안전장치: 선택행 없으면 로컬기준 리셋
         setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
         setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
         setDetailRenderKey((k) => k + 1);
@@ -745,10 +764,8 @@ function AccountCorporateCardSheet() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
 
-  // ✅ (추가) Draggable nodeRef
   const viewerNodeRef = useRef(null);
 
-  // ✅ 테이블에 있는 영수증 이미지 목록(순서대로)
   const imageItems = useMemo(() => {
     return (masterRows || [])
       .filter((r) => !!r?.receipt_image)
@@ -772,14 +789,15 @@ function AccountCorporateCardSheet() {
   const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
 
   const goPrev = useCallback(() => {
-    setViewerIndex((i) => (imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0));
+    setViewerIndex((i) =>
+      imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0
+    );
   }, [imageItems.length]);
 
   const goNext = useCallback(() => {
     setViewerIndex((i) => (imageItems.length ? (i + 1) % imageItems.length : 0));
   }, [imageItems.length]);
 
-  // ✅ 이미지 목록이 바뀌면 index 보정
   useEffect(() => {
     if (!viewerOpen) return;
     if (!imageItems.length) {
@@ -789,7 +807,6 @@ function AccountCorporateCardSheet() {
     if (viewerIndex > imageItems.length - 1) setViewerIndex(imageItems.length - 1);
   }, [viewerOpen, imageItems.length, viewerIndex]);
 
-  // ✅ 키보드로 이동(좌/우/ESC) - 입력 중에는 방해 안되게
   useEffect(() => {
     if (!viewerOpen) return;
 
@@ -813,13 +830,18 @@ function AccountCorporateCardSheet() {
   const [cardModalOpen, setCardModalOpen] = useState(false);
   const [cardRows, setCardRows] = useState([]);
   const [origCardRows, setOrigCardRows] = useState([]);
-  // ✅ 모달에서 조회할 거래처(모달 전용)
   const [modalAccountId, setModalAccountId] = useState("");
+
+  const modalAccountOption = useMemo(() => {
+    const id = String(modalAccountId || "");
+    return accountOptions.find((o) => o.account_id === id) || null;
+  }, [accountOptions, modalAccountId]);
 
   const openCardModal = useCallback(async () => {
     setCardModalOpen(true);
 
-    const acct = selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
+    const acct =
+      selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
     setModalAccountId(acct);
 
     if (acct) {
@@ -834,7 +856,6 @@ function AccountCorporateCardSheet() {
     setOrigCardRows(copy);
   }, [activeRows, cardModalOpen]);
 
-  // ✅ 모달 거래처 변경 시 해당 거래처 카드 목록 재조회
   useEffect(() => {
     if (!cardModalOpen) return;
     if (!modalAccountId) return;
@@ -845,7 +866,8 @@ function AccountCorporateCardSheet() {
   const closeCardModal = () => setCardModalOpen(false);
 
   const addCardRow = useCallback(() => {
-    const defaultAcct = selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
+    const defaultAcct =
+      selectedAccountId || (accountList?.[0]?.account_id ? String(accountList[0].account_id) : "");
     setCardRows((prev) => [
       ...prev,
       {
@@ -912,8 +934,14 @@ function AccountCorporateCardSheet() {
       { header: "총카드금액", key: "totalCard", editable: true, size: 110 },
       { header: "카드번호", key: "cardNo", editable: false, size: 200 },
       { header: "카드사", key: "cardBrand", editable: false, size: 130 },
-      // ✅ 영수증타입(영수증사진 왼쪽)
-      { header: "영수증타입", key: "receipt_type", editable: false, size: 120, type: "select", options: RECEIPT_TYPES },
+      {
+        header: "영수증타입",
+        key: "receipt_type",
+        editable: false,
+        size: 120,
+        type: "select",
+        options: RECEIPT_TYPES,
+      },
       { header: "영수증사진", key: "receipt_image", editable: false, size: 110 },
       { header: "비고", key: "note", editable: true, size: 160 },
       { header: "등록일자", key: "reg_dt", editable: false, size: 110 },
@@ -927,8 +955,22 @@ function AccountCorporateCardSheet() {
       { header: "수량", key: "qty", editable: true, size: 80 },
       { header: "금액", key: "amount", editable: true, size: 100 },
       { header: "단가", key: "unitPrice", editable: true, size: 100 },
-      { header: "과세구분", key: "taxType", editable: false, size: 120, type: "select", options: TAX_TYPES },
-      { header: "상품구분", key: "itemType", editable: false, size: 120, type: "select", options: ITEM_TYPES },
+      {
+        header: "과세구분",
+        key: "taxType",
+        editable: false,
+        size: 120,
+        type: "select",
+        options: TAX_TYPES,
+      },
+      {
+        header: "상품구분",
+        key: "itemType",
+        editable: false,
+        size: 120,
+        type: "select",
+        options: ITEM_TYPES,
+      },
     ],
     []
   );
@@ -947,8 +989,8 @@ function AccountCorporateCardSheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-        {/* <HeaderWithLogout showMenuButton title="💳 거래처 법인카드 관리" /> */}
         <DashboardNavbar title="💳 거래처 법인카드 관리" />
+
         <MDBox
           pt={1}
           pb={1}
@@ -974,20 +1016,37 @@ function AccountCorporateCardSheet() {
               gap: 1,
             }}
           >
+            {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 200 }}
+              options={accountOptions}
+              value={selectedAccountOption}
+              onChange={(_, newValue) => setSelectedAccountId(newValue?.account_id || "")}
+              getOptionLabel={(opt) => opt?.account_name || ""}
+              isOptionEqualToValue={(opt, val) => String(opt.account_id) === String(val.account_id)}
+              disablePortal
+              autoHighlight
+              openOnFocus
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  sx={{
+                    "& .MuiInputBase-root": { height: 45, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
+            />
+
             <Select
               size="small"
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              sx={{ minWidth: isMobile ? 100 : 150, mr: 1 }}
+              value={year}
+              onChange={(e) => setYear(e.target.value)}
+              sx={{ minWidth: 110 }}
             >
-              {(accountList || []).map((acc) => (
-                <MenuItem key={acc.account_id} value={acc.account_id}>
-                  {acc.account_name}
-                </MenuItem>
-              ))}
-            </Select>
-
-            <Select size="small" value={year} onChange={(e) => setYear(e.target.value)} sx={{ minWidth: 110 }}>
               {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
                 <MenuItem key={y} value={y}>
                   {y}년
@@ -995,7 +1054,12 @@ function AccountCorporateCardSheet() {
               ))}
             </Select>
 
-            <Select size="small" value={month} onChange={(e) => setMonth(e.target.value)} sx={{ minWidth: 90 }}>
+            <Select
+              size="small"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              sx={{ minWidth: 90 }}
+            >
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <MenuItem key={m} value={m}>
                   {m}월
@@ -1015,7 +1079,12 @@ function AccountCorporateCardSheet() {
               저장
             </MDButton>
 
-            <MDButton variant="gradient" color="info" onClick={openCardModal} sx={{ minWidth: 120 }}>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={openCardModal}
+              sx={{ minWidth: 120 }}
+            >
               법인카드관리
             </MDButton>
           </Box>
@@ -1078,7 +1147,9 @@ function AccountCorporateCardSheet() {
                   key={row.sale_id || row.client_id || rowIndex}
                   style={{
                     background:
-                      selectedMaster?.sale_id && selectedMaster?.sale_id === row.sale_id && row.sale_id
+                      selectedMaster?.sale_id &&
+                      selectedMaster?.sale_id === row.sale_id &&
+                      row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1111,7 +1182,8 @@ function AccountCorporateCardSheet() {
                       : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
-                      const acctName = accountNameById.get(String(row.account_id)) || String(row.account_id || "");
+                      const acctName =
+                        accountNameById.get(String(row.account_id)) || String(row.account_id || "");
                       return (
                         <td key={key} style={{ width: c.size, color: changed ? "red" : "black" }}>
                           {acctName}
@@ -1129,7 +1201,9 @@ function AccountCorporateCardSheet() {
                             fullWidth
                             value={dateVal}
                             onClick={(ev) => ev.stopPropagation()}
-                            onChange={(e) => handleMasterCellChange(rowIndex, "payment_dt", e.target.value)}
+                            onChange={(e) =>
+                              handleMasterCellChange(rowIndex, "payment_dt", e.target.value)
+                            }
                             sx={{
                               "& input": {
                                 fontSize: 12,
@@ -1162,11 +1236,20 @@ function AccountCorporateCardSheet() {
                             sx={{ fontSize: 12, height: 28 }}
                           >
                             <MenuItem value="">
-                              <em>{!acctKey ? "거래처 선택" : options.length === 0 ? "등록된 카드 없음" : "카드 선택"}</em>
+                              <em>
+                                {!acctKey
+                                  ? "거래처 선택"
+                                  : options.length === 0
+                                  ? "등록된 카드 없음"
+                                  : "카드 선택"}
+                              </em>
                             </MenuItem>
 
                             {options.map((opt) => (
-                              <MenuItem key={`${opt.card_brand}-${opt.card_no}`} value={opt.card_no}>
+                              <MenuItem
+                                key={`${opt.card_brand}-${opt.card_no}`}
+                                value={opt.card_no}
+                              >
                                 {opt.card_brand} / {maskCardNo(opt.card_no)}
                               </MenuItem>
                             ))}
@@ -1183,7 +1266,6 @@ function AccountCorporateCardSheet() {
                       );
                     }
 
-                    // ✅ 영수증타입 Select
                     if (key === "receipt_type") {
                       return (
                         <td key={key} style={{ width: c.size }}>
@@ -1191,7 +1273,9 @@ function AccountCorporateCardSheet() {
                             size="small"
                             fullWidth
                             value={String(row.receipt_type ?? "UNKNOWN")}
-                            onChange={(e) => handleMasterCellChange(rowIndex, "receipt_type", e.target.value)}
+                            onChange={(e) =>
+                              handleMasterCellChange(rowIndex, "receipt_type", e.target.value)
+                            }
                             onClick={(ev) => ev.stopPropagation()}
                             displayEmpty
                             sx={{
@@ -1217,7 +1301,14 @@ function AccountCorporateCardSheet() {
 
                       return (
                         <td key={key} style={{ width: c.size }}>
-                          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 1 }}>
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 1,
+                            }}
+                          >
                             <input
                               type="file"
                               accept="image/*"
@@ -1326,7 +1417,6 @@ function AccountCorporateCardSheet() {
             overflow: "hidden",
           }}
         >
-          {/* ✅ (추가) 하단 상단바: 선택된 결제정보 + 행추가 버튼 */}
           <MDBox
             sx={{
               px: 1,
@@ -1339,17 +1429,7 @@ function AccountCorporateCardSheet() {
               backgroundColor: "#fff",
             }}
           >
-            {/* <Typography variant="caption" sx={{ color: "#444" }}>
-              상세내역
-              {selectedMaster?.sale_id ? ` (sale_id: ${selectedMaster.sale_id})` : selectedMaster ? " (미저장 선택행)" : ""}
-            </Typography> */}
-
-            <MDButton
-              color="info"
-              size="small"
-              onClick={addDetailRow}
-              sx={{ minWidth: 90 }}
-            >
+            <MDButton color="info" size="small" onClick={addDetailRow} sx={{ minWidth: 90 }}>
               행추가
             </MDButton>
           </MDBox>
@@ -1398,14 +1478,15 @@ function AccountCorporateCardSheet() {
                       const rawVal = row[key] ?? "";
                       const orig = origDetailRows[rowIndex]?.[key];
 
-                      // ✅ 신규 상세행은 무조건 빨강(변경표시)
-                      const changed = row?.isNew ? true : isForcedRedRow(row) ? true : isDetailFieldChanged(key, orig, rawVal);
+                      const changed = row?.isNew
+                        ? true
+                        : isForcedRedRow(row)
+                        ? true
+                        : isDetailFieldChanged(key, orig, rawVal);
 
-                      // ✅ 숫자 컬럼(수량/금액/단가)만 콤마 표시
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
 
-                      // ✅ select 컬럼
                       if (c.type === "select") {
                         const curNum = parseNumMaybe(rawVal);
                         const curStr = curNum == null ? "" : String(curNum);
@@ -1416,7 +1497,9 @@ function AccountCorporateCardSheet() {
                               size="small"
                               fullWidth
                               value={curStr}
-                              onChange={(e) => handleDetailCellChange(rowIndex, key, e.target.value)}
+                              onChange={(e) =>
+                                handleDetailCellChange(rowIndex, key, e.target.value)
+                              }
                               onClick={(ev) => ev.stopPropagation()}
                               displayEmpty
                               sx={{
@@ -1439,7 +1522,6 @@ function AccountCorporateCardSheet() {
                         );
                       }
 
-                      // ✅ editable(상품명/수량/금액/단가 등)
                       if (c.editable) {
                         return (
                           <td
@@ -1508,16 +1590,9 @@ function AccountCorporateCardSheet() {
         </MDBox>
       </MDBox>
 
-      {/* ========================= ✅ 떠있는 창 미리보기: 뒤 테이블 입력 가능 ========================= */}
+      {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
       {viewerOpen && (
-        <Box
-          sx={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 2000,
-            pointerEvents: "none", // ✅ 전체 화면은 클릭 통과
-          }}
-        >
+        <Box sx={{ position: "fixed", inset: 0, zIndex: 2000, pointerEvents: "none" }}>
           <Draggable
             nodeRef={viewerNodeRef}
             handle="#receipt-viewer-titlebar"
@@ -1540,12 +1615,10 @@ function AccountCorporateCardSheet() {
                 boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
                 overflow: "hidden",
                 resize: "both",
-
-                pointerEvents: "auto", // ✅ 창만 클릭 가능
+                pointerEvents: "auto",
                 backgroundColor: "#000",
               }}
             >
-              {/* 타이틀바(드래그 핸들) */}
               <Box
                 id="receipt-viewer-titlebar"
                 sx={{
@@ -1654,14 +1727,7 @@ function AccountCorporateCardSheet() {
                 </Tooltip>
               </Box>
 
-              {/* 컨텐츠 영역 */}
-              <Box
-                sx={{
-                  height: "calc(100% - 42px)",
-                  bgcolor: "#000",
-                  position: "relative",
-                }}
-              >
+              <Box sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}>
                 {currentImg?.src ? (
                   <TransformWrapper
                     initialScale={1}
@@ -1673,7 +1739,6 @@ function AccountCorporateCardSheet() {
                   >
                     {({ zoomIn, zoomOut, resetTransform }) => (
                       <>
-                        {/* 줌 컨트롤(우상단) */}
                         <Box
                           sx={{
                             position: "absolute",
@@ -1686,23 +1751,34 @@ function AccountCorporateCardSheet() {
                           }}
                         >
                           <Tooltip title="확대">
-                            <IconButton size="small" onClick={zoomIn} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                            <IconButton
+                              size="small"
+                              onClick={zoomIn}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
                               <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="축소">
-                            <IconButton size="small" onClick={zoomOut} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                            <IconButton
+                              size="small"
+                              onClick={zoomOut}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
                               <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="리셋">
-                            <IconButton size="small" onClick={resetTransform} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                            <IconButton
+                              size="small"
+                              onClick={resetTransform}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
                               <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
                             </IconButton>
                           </Tooltip>
                         </Box>
 
-                        {/* 이미지 */}
                         <TransformComponent
                           wrapperStyle={{ width: "100%", height: "100%" }}
                           contentStyle={{ width: "100%", height: "100%" }}
@@ -1719,11 +1795,7 @@ function AccountCorporateCardSheet() {
                             <img
                               src={currentImg.src}
                               alt="미리보기"
-                              style={{
-                                maxWidth: "95%",
-                                maxHeight: "95%",
-                                userSelect: "none",
-                              }}
+                              style={{ maxWidth: "95%", maxHeight: "95%", userSelect: "none" }}
                             />
                           </Box>
                         </TransformComponent>
@@ -1756,21 +1828,38 @@ function AccountCorporateCardSheet() {
             overflow: "auto",
           }}
         >
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2, gap: 1 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              mb: 2,
+              gap: 1,
+            }}
+          >
             <Typography variant="h6">법인카드관리</Typography>
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "right", gap: 1 }}>
-              <Select
-                size="small"
-                value={modalAccountId}
-                onChange={(e) => setModalAccountId(e.target.value)}
-                sx={{ minWidth: 150 }}
-              >
-                {(accountList || []).map((acc) => (
-                  <MenuItem key={acc.account_id} value={acc.account_id}>
-                    {acc.account_name}
-                  </MenuItem>
-                ))}
-              </Select>
+
+            <Box
+              sx={{ display: "flex", justifyContent: "space-between", alignItems: "right", gap: 1 }}
+            >
+              {/* ✅ 모달 거래처: 문자 검색 가능한 Autocomplete */}
+              <Autocomplete
+                options={accountOptions}
+                value={modalAccountOption}
+                onChange={(_, newValue) => setModalAccountId(newValue?.account_id || "")}
+                getOptionLabel={(opt) => opt?.account_name || ""}
+                isOptionEqualToValue={(opt, val) =>
+                  String(opt.account_id) === String(val.account_id)
+                }
+                disablePortal
+                autoHighlight
+                openOnFocus
+                renderInput={(params) => (
+                  <TextField {...params} size="small" label="거래처" placeholder="검색..." />
+                )}
+                sx={{ minWidth: 260 }}
+              />
+
               <MDButton color="info" size="small" onClick={addCardRow}>
                 행추가
               </MDButton>
@@ -1807,26 +1896,43 @@ function AccountCorporateCardSheet() {
               <tbody>
                 {cardRows.map((row, idx) => {
                   const acctChanged = isChangedValue(origCardRows[idx]?.account_id, row.account_id);
-                  const brandChanged = isChangedValue(origCardRows[idx]?.card_brand, row.card_brand);
+                  const brandChanged = isChangedValue(
+                    origCardRows[idx]?.card_brand,
+                    row.card_brand
+                  );
                   const noChanged = isChangedValue(origCardRows[idx]?.card_no, row.card_no);
                   const delChanged = isChangedValue(origCardRows[idx]?.del_yn, row.del_yn);
 
+                  const rowAcctOption =
+                    accountOptions.find(
+                      (o) => String(o.account_id) === String(row.account_id || "")
+                    ) || null;
+
                   return (
                     <tr key={row.idx ?? `new_${idx}`}>
+                      {/* ✅ 테이블 셀에서도 검색 가능하게 Autocomplete */}
                       <td style={{ color: acctChanged ? "red" : "black" }}>
-                        <Select
-                          size="small"
-                          fullWidth
-                          value={String(row.account_id || "")}
-                          onChange={(e) => handleCardCell(idx, "account_id", e.target.value)}
-                          displayEmpty
-                        >
-                          {(accountList || []).map((acc) => (
-                            <MenuItem key={acc.account_id} value={acc.account_id}>
-                              {acc.account_name}
-                            </MenuItem>
-                          ))}
-                        </Select>
+                        <Autocomplete
+                          options={accountOptions}
+                          value={rowAcctOption}
+                          onChange={(_, newValue) =>
+                            handleCardCell(idx, "account_id", newValue?.account_id || "")
+                          }
+                          getOptionLabel={(opt) => opt?.account_name || ""}
+                          isOptionEqualToValue={(opt, val) =>
+                            String(opt.account_id) === String(val.account_id)
+                          }
+                          disablePortal
+                          autoHighlight
+                          openOnFocus
+                          renderInput={(params) => (
+                            <TextField {...params} size="small" placeholder="검색..." />
+                          )}
+                          sx={{
+                            minWidth: 240,
+                            "& .MuiInputBase-root": { fontSize: 12 },
+                          }}
+                        />
                       </td>
 
                       <td style={{ color: brandChanged ? "red" : "black" }}>
@@ -1849,7 +1955,11 @@ function AccountCorporateCardSheet() {
                           <TextField
                             size="small"
                             fullWidth
-                            value={cardNoEditingIndex === idx ? formatCardNoFull(row.card_no) : maskCardNo(row.card_no)}
+                            value={
+                              cardNoEditingIndex === idx
+                                ? formatCardNoFull(row.card_no)
+                                : maskCardNo(row.card_no)
+                            }
                             onFocus={() => setCardNoEditingIndex(idx)}
                             onBlur={() => setCardNoEditingIndex(null)}
                             onChange={(e) => {

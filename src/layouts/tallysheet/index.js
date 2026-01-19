@@ -13,6 +13,7 @@ import {
   useMediaQuery,
   Checkbox,
 } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 import dayjs from "dayjs";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
@@ -72,16 +73,46 @@ const formatByGroups = (digits, groups) => {
 
 // 은행별 대표 포맷(대표 패턴 + fallback)
 const BANK_MASKS_BY_NAME = {
-  "KB국민은행": [[3, 2, 6], [3, 3, 6]],
-  "신한은행": [[3, 3, 6], [3, 2, 6]],
-  "우리은행": [[4, 3, 6], [3, 3, 6]],
-  "하나은행": [[3, 6, 5], [3, 3, 6]],
-  "IBK기업은행": [[3, 6, 2, 3], [3, 3, 6]],
-  "NH농협은행": [[3, 4, 4, 2], [3, 3, 6]],
-  "카카오뱅크": [[4, 2, 7], [3, 3, 6]],
-  "토스뱅크": [[3, 3, 6], [4, 3, 6]],
-  "케이뱅크": [[3, 3, 6], [4, 2, 7]],
-  우체국: [[4, 4, 4], [3, 3, 6]],
+  KB국민은행: [
+    [3, 2, 6],
+    [3, 3, 6],
+  ],
+  신한은행: [
+    [3, 3, 6],
+    [3, 2, 6],
+  ],
+  우리은행: [
+    [4, 3, 6],
+    [3, 3, 6],
+  ],
+  하나은행: [
+    [3, 6, 5],
+    [3, 3, 6],
+  ],
+  IBK기업은행: [
+    [3, 6, 2, 3],
+    [3, 3, 6],
+  ],
+  NH농협은행: [
+    [3, 4, 4, 2],
+    [3, 3, 6],
+  ],
+  카카오뱅크: [
+    [4, 2, 7],
+    [3, 3, 6],
+  ],
+  토스뱅크: [
+    [3, 3, 6],
+    [4, 3, 6],
+  ],
+  케이뱅크: [
+    [3, 3, 6],
+    [4, 2, 7],
+  ],
+  우체국: [
+    [4, 4, 4],
+    [3, 3, 6],
+  ],
 };
 
 const pickBestMask = (bankName, len) => {
@@ -190,7 +221,11 @@ function YourSelectableTable({ data, selected, setSelected }) {
               }}
             >
               <td>
-                <input type="checkbox" checked={isSelected(row)} onChange={() => toggleSelect(row)} />
+                <input
+                  type="checkbox"
+                  checked={isSelected(row)}
+                  onChange={() => toggleSelect(row)}
+                />
               </td>
               <td>{row.name}</td>
               <td>{row.type}</td>
@@ -257,7 +292,16 @@ function TallySheet() {
   }, [data2Rows]);
 
   useEffect(() => {
-    if (accountList.length > 0 && !selectedAccountId) setSelectedAccountId(accountList[0].account_id);
+    if (accountList.length > 0 && !selectedAccountId)
+      setSelectedAccountId(accountList[0].account_id);
+  }, [accountList, selectedAccountId]);
+
+  // ✅ 거래처 Autocomplete value 객체
+  const selectedAccountOption = useMemo(() => {
+    if (!selectedAccountId) return null;
+    return (
+      (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null
+    );
   }, [accountList, selectedAccountId]);
 
   // 컬럼 구성
@@ -267,7 +311,11 @@ function TallySheet() {
       accessorKey: `day_${i + 1}`,
       size: 100,
     }));
-    return [{ header: "구분", accessorKey: "name", size: 100 }, ...dayColumns, { header: "합계", accessorKey: "total", size: 100 }];
+    return [
+      { header: "구분", accessorKey: "name", size: 100 },
+      ...dayColumns,
+      { header: "합계", accessorKey: "total", size: 100 },
+    ];
   }, []);
 
   // 합계 계산
@@ -275,7 +323,10 @@ function TallySheet() {
     if (!rows || rows.length === 0) return [];
 
     const calculatedRows = rows.map((r) => {
-      const total = Array.from({ length: 31 }, (_, i) => parseNumber(r[`day_${i + 1}`])).reduce((sum, val) => sum + val, 0);
+      const total = Array.from({ length: 31 }, (_, i) => parseNumber(r[`day_${i + 1}`])).reduce(
+        (sum, val) => sum + val,
+        0
+      );
       return { ...r, total };
     });
 
@@ -315,7 +366,9 @@ function TallySheet() {
     if (!file) return;
 
     const day = dayIndex + 1;
-    const selectedDate = dayjs(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+    const selectedDate = dayjs(
+      `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    );
 
     if (!selectedDate.isValid() || selectedDate.month() + 1 !== month) {
       return Swal.fire("경고", "선택한 날짜가 유효하지 않습니다.", "warning");
@@ -357,7 +410,11 @@ function TallySheet() {
       } else if (res.status === 400) {
         Swal.fire("실패", res.data?.message || "영수증 인식에 실패했습니다.", "error");
       } else {
-        Swal.fire("오류", res.data?.message || `예상치 못한 오류가 발생했습니다. (code: ${res.status})`, "error");
+        Swal.fire(
+          "오류",
+          res.data?.message || `예상치 못한 오류가 발생했습니다. (code: ${res.status})`,
+          "error"
+        );
       }
     } catch (err) {
       Swal.close();
@@ -423,7 +480,10 @@ function TallySheet() {
     }
   };
 
-  const ratioData = useMemo(() => Array.from({ length: 31 }, (_, i) => (((i + 1) / 31) * 100).toFixed(2) + "%"), []);
+  const ratioData = useMemo(
+    () => Array.from({ length: 31 }, (_, i) => (((i + 1) / 31) * 100).toFixed(2) + "%"),
+    []
+  );
 
   // 모달 상태 및 항목 관리 상태
   const [open, setOpen] = useState(false);
@@ -459,7 +519,9 @@ function TallySheet() {
 
   // 항목 이동(오른쪽)
   const moveRight = () => {
-    const duplicates = selectedLeft.filter((item) => rightItems.some((r) => r.type === item.type && r.del_yn === "N"));
+    const duplicates = selectedLeft.filter((item) =>
+      rightItems.some((r) => r.type === item.type && r.del_yn === "N")
+    );
     if (duplicates.length > 0) {
       Swal.fire({ title: "중복", text: "이미 등록되어 있는 항목입니다.", icon: "warning" });
       return;
@@ -475,7 +537,9 @@ function TallySheet() {
 
   // 항목 이동(왼쪽) => 삭제 플래그
   const moveLeft = () => {
-    const updatedRightItems = rightItems.map((item) => (selectedRight.includes(item) ? { ...item, del_yn: "Y" } : item));
+    const updatedRightItems = rightItems.map((item) =>
+      selectedRight.includes(item) ? { ...item, del_yn: "Y" } : item
+    );
     setRightItems(updatedRightItems);
     setSelectedRight([]);
   };
@@ -563,7 +627,7 @@ function TallySheet() {
     setFormData((prev) => ({
       ...prev,
       add_yn: checked ? "Y" : "N",
-      add_name: checked ? (prev.add_name || "") : "",
+      add_name: checked ? prev.add_name || "" : "",
     }));
   };
 
@@ -624,7 +688,16 @@ function TallySheet() {
 
   // 거래처 저장
   const handleSubmit2 = async () => {
-    const requiredFields = ["name", "biz_no", "ceo_name", "tel", "bank_name", "bank_no", "bank_image", "biz_image"];
+    const requiredFields = [
+      "name",
+      "biz_no",
+      "ceo_name",
+      "tel",
+      "bank_name",
+      "bank_no",
+      "bank_image",
+      "biz_image",
+    ];
 
     const missing = requiredFields.filter((key) => !formData[key]);
     if (missing.length > 0) {
@@ -702,10 +775,26 @@ function TallySheet() {
       pt={0}
       sx={{
         overflowX: "auto",
-        "& table": { borderCollapse: "separate", width: "max-content", minWidth: "50%", borderSpacing: 0 },
-        "& th, & td": { border: "1px solid #686D76", textAlign: "center", whiteSpace: "nowrap", fontSize: "12px", padding: "4px" },
+        "& table": {
+          borderCollapse: "separate",
+          width: "max-content",
+          minWidth: "50%",
+          borderSpacing: 0,
+        },
+        "& th, & td": {
+          border: "1px solid #686D76",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          fontSize: "12px",
+          padding: "4px",
+        },
         "& th": { backgroundColor: "#f0f0f0", position: "sticky", top: 0, zIndex: 2 },
-        "& td:first-of-type, & th:first-of-type": { position: "sticky", left: 0, background: "#f0f0f0", zIndex: 3 },
+        "& td:first-of-type, & th:first-of-type": {
+          position: "sticky",
+          left: 0,
+          background: "#f0f0f0",
+          zIndex: 3,
+        },
         "& .total-row": { backgroundColor: "#FFE3A9", fontWeight: "bold" },
       }}
     >
@@ -731,7 +820,8 @@ function TallySheet() {
             <tr key={row.id} className={row.original.name === "총합" ? "total-row" : ""}>
               {row.getVisibleCells().map((cell) => {
                 const colKey = cell.column.columnDef.accessorKey;
-                const isEditable = colKey !== "name" && colKey !== "total" && row.original.name !== "총합";
+                const isEditable =
+                  colKey !== "name" && colKey !== "total" && row.original.name !== "총합";
 
                 const currVal = parseNumber(dataState[rIdx]?.[colKey]);
                 const origVal = parseNumber(originalData[rIdx]?.[colKey]);
@@ -823,27 +913,35 @@ function TallySheet() {
             gap: isMobile ? 1 : 2,
           }}
         >
-          <TextField
-            select
+          {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
+          <Autocomplete
             size="small"
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
-            SelectProps={{ native: true }}
-          >
-            {(accountList || []).map((row) => (
-              <option key={row.account_id} value={row.account_id}>
-                {row.account_name}
-              </option>
-            ))}
-          </TextField>
+            sx={{ minWidth: 200 }}
+            options={accountList || []}
+            value={selectedAccountOption}
+            onChange={(_, newValue) => setSelectedAccountId(newValue ? newValue.account_id : "")}
+            getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
+            isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
+            disableClearable
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
 
           <TextField
             select
             size="small"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            sx={{ minWidth: isMobile ? 140 : 150 }}
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -852,13 +950,13 @@ function TallySheet() {
               </option>
             ))}
           </TextField>
-  
+
           <TextField
             select
             size="small"
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            sx={{ minWidth: isMobile ? 140 : 150 }}
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -868,15 +966,42 @@ function TallySheet() {
             ))}
           </TextField>
 
-          <MDButton variant="gradient" color="info" onClick={handleModalOpen2} sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110, px: isMobile ? 1 : 2 }}>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleModalOpen2}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 90 : 110,
+              px: isMobile ? 1 : 2,
+            }}
+          >
             거래처 등록
           </MDButton>
 
-          <MDButton variant="gradient" color="info" onClick={handleModalOpen} sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110, px: isMobile ? 1 : 2 }}>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleModalOpen}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 90 : 110,
+              px: isMobile ? 1 : 2,
+            }}
+          >
             거래처 연결
           </MDButton>
 
-          <MDButton variant="gradient" color="info" onClick={handleSave} sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90, px: isMobile ? 1 : 2 }}>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleSave}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 70 : 90,
+              px: isMobile ? 1 : 2,
+            }}
+          >
             저장
           </MDButton>
         </MDBox>
@@ -887,7 +1012,16 @@ function TallySheet() {
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card>
-              <MDBox mx={0} mt={-3} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
+              <MDBox
+                mx={0}
+                mt={-3}
+                py={1}
+                px={2}
+                variant="gradient"
+                bgColor="info"
+                borderRadius="lg"
+                coloredShadow="info"
+              >
                 <MDTypography variant="h6" color="white">
                   집계표 {countMonth ? `(${countMonth})` : ""}
                 </MDTypography>
@@ -903,7 +1037,16 @@ function TallySheet() {
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card>
-              <MDBox mx={0} mt={-3} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
+              <MDBox
+                mx={0}
+                mt={-3}
+                py={1}
+                px={2}
+                variant="gradient"
+                bgColor="info"
+                borderRadius="lg"
+                coloredShadow="info"
+              >
                 <MDTypography variant="h6" color="white">
                   집계표 {count2Month ? `(${count2Month})` : ""}
                 </MDTypography>
@@ -928,7 +1071,16 @@ function TallySheet() {
             p: 3,
           }}
         >
-          <MDBox mx={0} mt={-2} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
+          <MDBox
+            mx={0}
+            mt={-2}
+            py={1}
+            px={2}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="info"
+          >
             <MDTypography variant="h6" color="white">
               거래처 연결
             </MDTypography>
@@ -936,9 +1088,20 @@ function TallySheet() {
 
           <Grid container spacing={2}>
             <Grid item xs={5}>
-              <YourSelectableTable data={leftItems} selected={selectedLeft} setSelected={setSelectedLeft} />
+              <YourSelectableTable
+                data={leftItems}
+                selected={selectedLeft}
+                setSelected={setSelectedLeft}
+              />
             </Grid>
-            <Grid item xs={2} display="flex" flexDirection="column" justifyContent="center" alignItems="center">
+            <Grid
+              item
+              xs={2}
+              display="flex"
+              flexDirection="column"
+              justifyContent="center"
+              alignItems="center"
+            >
               <MDButton variant="gradient" color="info" onClick={moveRight}>
                 {">"}
               </MDButton>
@@ -947,7 +1110,11 @@ function TallySheet() {
               </MDButton>
             </Grid>
             <Grid item xs={5}>
-              <YourSelectableTable data={rightItems} selected={selectedRight} setSelected={setSelectedRight} />
+              <YourSelectableTable
+                data={rightItems}
+                selected={selectedRight}
+                setSelected={setSelectedRight}
+              />
             </Grid>
           </Grid>
 
@@ -981,33 +1148,101 @@ function TallySheet() {
             거래처 등록
           </Typography>
 
-          <TextField fullWidth required margin="normal" label="거래처명" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="name" value={formData.name || ""} onChange={handleChange2} sx={{ mt: 1 }} />
+          <TextField
+            fullWidth
+            required
+            margin="normal"
+            label="거래처명"
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            name="name"
+            value={formData.name || ""}
+            onChange={handleChange2}
+            sx={{ mt: 1 }}
+          />
 
           <Grid container spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
             <Grid item xs={4} sm={3}>
               <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-                <Checkbox size="small" checked={(formData.add_yn || "N") === "Y"} onChange={handleAddYnChange} sx={{ p: 0.5 }} />
-                <Typography sx={{ fontSize: "0.8rem", lineHeight: 1, whiteSpace: "nowrap" }}>약식사용</Typography>
+                <Checkbox
+                  size="small"
+                  checked={(formData.add_yn || "N") === "Y"}
+                  onChange={handleAddYnChange}
+                  sx={{ p: 0.5 }}
+                />
+                <Typography sx={{ fontSize: "0.8rem", lineHeight: 1, whiteSpace: "nowrap" }}>
+                  약식사용
+                </Typography>
               </Box>
             </Grid>
 
             <Grid item xs={8} sm={9}>
-              <TextField fullWidth margin="none" label="약식명" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="add_name" value={formData.add_name || ""} onChange={handleChange2} disabled={(formData.add_yn || "N") !== "Y"} placeholder="약식사용 체크 시 입력" size="small" />
+              <TextField
+                fullWidth
+                margin="none"
+                label="약식명"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="add_name"
+                value={formData.add_name || ""}
+                onChange={handleChange2}
+                disabled={(formData.add_yn || "N") !== "Y"}
+                placeholder="약식사용 체크 시 입력"
+                size="small"
+              />
             </Grid>
           </Grid>
 
-          <TextField fullWidth required margin="normal" label="사업자번호" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="biz_no" value={formData.biz_no || ""} onChange={handleBizNoChange} placeholder="예: 123-45-67890" inputProps={{ inputMode: "numeric" }} sx={{ mt: 1 }} />
+          <TextField
+            fullWidth
+            required
+            margin="normal"
+            label="사업자번호"
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            name="biz_no"
+            value={formData.biz_no || ""}
+            onChange={handleBizNoChange}
+            placeholder="예: 123-45-67890"
+            inputProps={{ inputMode: "numeric" }}
+            sx={{ mt: 1 }}
+          />
 
-          <TextField fullWidth required margin="normal" label="대표자명" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="ceo_name" value={formData.ceo_name || ""} onChange={handleChange2} sx={{ mt: 1 }} />
+          <TextField
+            fullWidth
+            required
+            margin="normal"
+            label="대표자명"
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            name="ceo_name"
+            value={formData.ceo_name || ""}
+            onChange={handleChange2}
+            sx={{ mt: 1 }}
+          />
 
-          <TextField fullWidth required margin="normal" label="연락처" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="tel" value={formData.tel || ""} onChange={handleTelChange} placeholder="예: 010-1234-5678" inputProps={{ inputMode: "numeric" }} sx={{ mt: 1 }} />
+          <TextField
+            fullWidth
+            required
+            margin="normal"
+            label="연락처"
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            name="tel"
+            value={formData.tel || ""}
+            onChange={handleTelChange}
+            placeholder="예: 010-1234-5678"
+            inputProps={{ inputMode: "numeric" }}
+            sx={{ mt: 1 }}
+          />
 
           <Box mt={1}>
             <Typography sx={{ fontSize: "0.8rem", mb: 0.5 }}>은행명 (필수)</Typography>
             <Select
               fullWidth
               size="small"
-              value={KOREAN_BANKS.includes(formData.bank_name) ? formData.bank_name : formData.bank_name ? "기타(직접입력)" : ""}
+              value={
+                KOREAN_BANKS.includes(formData.bank_name)
+                  ? formData.bank_name
+                  : formData.bank_name
+                  ? "기타(직접입력)"
+                  : ""
+              }
               onChange={handleBankSelect}
               displayEmpty
               sx={{ fontSize: "0.85rem" }}
@@ -1022,12 +1257,35 @@ function TallySheet() {
               ))}
             </Select>
 
-            {(!KOREAN_BANKS.includes(formData.bank_name) || formData.bank_name === "기타(직접입력)") && (
-              <TextField fullWidth required margin="normal" label="은행명 직접입력" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="bank_name" value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""} onChange={handleChange2} sx={{ mt: 1 }} />
+            {(!KOREAN_BANKS.includes(formData.bank_name) ||
+              formData.bank_name === "기타(직접입력)") && (
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                label="은행명 직접입력"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="bank_name"
+                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                onChange={handleChange2}
+                sx={{ mt: 1 }}
+              />
             )}
           </Box>
 
-          <TextField fullWidth required margin="normal" label="계좌번호" InputLabelProps={{ style: { fontSize: "0.7rem" } }} name="bank_no" value={formData.bank_no || ""} onChange={handleBankNoChange} placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다." inputProps={{ inputMode: "numeric" }} sx={{ mt: 1 }} />
+          <TextField
+            fullWidth
+            required
+            margin="normal"
+            label="계좌번호"
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            name="bank_no"
+            value={formData.bank_no || ""}
+            onChange={handleBankNoChange}
+            placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다."
+            inputProps={{ inputMode: "numeric" }}
+            sx={{ mt: 1 }}
+          />
 
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>통장사본 (필수)</Typography>
@@ -1043,7 +1301,12 @@ function TallySheet() {
                   "&:hover": { borderColor: "#e8a500", backgroundColor: "rgba(232, 165, 0, 0.1)" },
                 }}
               >
-                <input type="file" accept="image/*" name="bank_image" onChange={handleImageUploadPreview} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  name="bank_image"
+                  onChange={handleImageUploadPreview}
+                />
               </Button>
 
               {imagePreviews.bank_image && (
@@ -1071,7 +1334,9 @@ function TallySheet() {
           </Box>
 
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>사업자등록증 (필수)</Typography>
+            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>
+              사업자등록증 (필수)
+            </Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
               <Button
                 variant="outlined"
@@ -1084,7 +1349,12 @@ function TallySheet() {
                   "&:hover": { borderColor: "#e8a500", backgroundColor: "rgba(232, 165, 0, 0.1)" },
                 }}
               >
-                <input type="file" accept="image/*" name="biz_image" onChange={handleImageUploadPreview} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  name="biz_image"
+                  onChange={handleImageUploadPreview}
+                />
               </Button>
 
               {imagePreviews.biz_image && (
@@ -1112,7 +1382,15 @@ function TallySheet() {
           </Box>
 
           <Box mt={4} display="flex" justifyContent="flex-end" gap={1}>
-            <Button variant="contained" onClick={handleModalClose2} sx={{ bgcolor: "#e8a500", color: "#ffffff", "&:hover": { bgcolor: "#e8a500", color: "#ffffff" } }}>
+            <Button
+              variant="contained"
+              onClick={handleModalClose2}
+              sx={{
+                bgcolor: "#e8a500",
+                color: "#ffffff",
+                "&:hover": { bgcolor: "#e8a500", color: "#ffffff" },
+              }}
+            >
               취소
             </Button>
             <Button variant="contained" onClick={handleSubmit2} sx={{ color: "#ffffff" }}>

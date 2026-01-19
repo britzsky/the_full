@@ -12,6 +12,8 @@ import {
   Typography,
 } from "@mui/material";
 
+import Autocomplete from "@mui/material/Autocomplete";
+
 import Paper from "@mui/material/Paper";
 import Draggable from "react-draggable";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -109,7 +111,7 @@ function AccountPurchaseTallyTab() {
         setAccountList(list);
 
         if (list.length > 0) {
-          const firstId = list[0].account_id;
+          const firstId = String(list[0].account_id);
           setFilters((prev) => {
             const next = { ...prev, account_id: firstId };
             fetchPurchaseList(next);
@@ -280,7 +282,9 @@ function AccountPurchaseTallyTab() {
   const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
 
   const goPrev = useCallback(() => {
-    setViewerIndex((i) => (imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0));
+    setViewerIndex((i) =>
+      imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0
+    );
   }, [imageItems.length]);
 
   const goNext = useCallback(() => {
@@ -322,7 +326,17 @@ function AccountPurchaseTallyTab() {
   //    - qty/unitPrice/amount는 콤마 제거해서 전송
   // ============================================================
   const SAVE_KEYS = useMemo(
-    () => ["saleDate", "name", "itemType", "qty", "unitPrice", "amount", "taxType", "receipt_image", "note"],
+    () => [
+      "saleDate",
+      "name",
+      "itemType",
+      "qty",
+      "unitPrice",
+      "amount",
+      "taxType",
+      "receipt_image",
+      "note",
+    ],
     []
   );
 
@@ -349,10 +363,8 @@ function AccountPurchaseTallyTab() {
 
       delete next.account_name;
 
-      // ✅ item_id 반드시 포함(조회 row에 있으면 그대로, 혹시 없으면 originalRows에서 보강)
-      if (!next.item_id) next.item_id = r?.item_id || originalRows?.find((o) => o === r)?.item_id;
-      // ↑ 위 한 줄이 애매하면 아래처럼 rowIndex 기반으로 보강하는 방식이 가장 확실함(추천)
-      // (아래 "추천 방식" 참고)
+      // ✅ item_id 반드시 포함(조회 row에 있으면 그대로)
+      if (!next.item_id) next.item_id = r?.item_id;
 
       MONEY_KEYS.forEach((k) => {
         const raw = stripComma(next[k]);
@@ -367,7 +379,7 @@ function AccountPurchaseTallyTab() {
 
       return next;
     },
-    [filters, MONEY_KEYS, stripComma, originalRows]
+    [filters, MONEY_KEYS, stripComma]
   );
 
   const handleSave = useCallback(async () => {
@@ -413,6 +425,37 @@ function AccountPurchaseTallyTab() {
       Swal.fire("오류", e.message || "저장 중 오류가 발생했습니다.", "error");
     }
   }, [rows, originalRows, isRowChanged, buildRowForSave, fetchPurchaseList, filters]);
+
+  // =========================
+  // ✅ (NEW) 거래처 Autocomplete 값 만들기
+  // =========================
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((a) => ({
+        value: String(a.account_id),
+        label: a.account_name,
+      })),
+    [accountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(filters.account_id ?? "");
+    const found = (accountList || []).find((a) => String(a.account_id) === v);
+    return found ? { value: String(found.account_id), label: found.account_name } : null;
+  }, [filters.account_id, accountList]);
+
+  // ✅ 거래처 선택 변경 시: account_id 반영 + 자동조회(기존 동작 유지)
+  const handleAccountChange = useCallback(
+    (_, opt) => {
+      const nextId = opt ? opt.value : "";
+      setFilters((prev) => {
+        const next = { ...prev, account_id: nextId };
+        if (nextId) fetchPurchaseList(next);
+        return next;
+      });
+    },
+    [fetchPurchaseList]
+  );
 
   if (loading) return <LoadingScreen />;
 
@@ -486,33 +529,41 @@ function AccountPurchaseTallyTab() {
           sx={{ minWidth: isMobile ? 100 : 120 }}
         />
 
-        {/* 🔹 거래처(사업장) select - account_id 사용 */}
-        <TextField
-          select
-          label="거래처"
+        {/* 🔹 거래처(사업장) "검색 가능한" Autocomplete */}
+        <Autocomplete
           size="small"
-          name="account_id"
-          onChange={handleFilterChange}
-          sx={{ minWidth: isMobile ? 120 : 150 }}
-          SelectProps={{ native: true }}
-          value={filters.account_id}
-        >
-          {accountList.length === 0 ? (
-            <option value="">사업장 선택</option>
-          ) : (
-            accountList.map((a) => (
-              <option key={a.account_id} value={a.account_id}>
-                {a.account_name}
-              </option>
-            ))
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={selectedAccountOption}
+          onChange={handleAccountChange}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
+          filterOptions={(options, state) => {
+            const q = (state.inputValue ?? "").trim().toLowerCase();
+            if (!q) return options;
+            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
           )}
-        </TextField>
+        />
 
         <MDButton
           variant="gradient"
           color="info"
           onClick={handleSearch}
-          sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
+          sx={{
+            minWidth: isMobile ? 90 : 100,
+            fontSize: isMobile ? "11px" : "13px",
+          }}
         >
           조회
         </MDButton>
@@ -522,7 +573,10 @@ function AccountPurchaseTallyTab() {
           variant="gradient"
           color="info"
           onClick={handleSave}
-          sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
+          sx={{
+            minWidth: isMobile ? 90 : 100,
+            fontSize: isMobile ? "11px" : "13px",
+          }}
         >
           저장
         </MDButton>
@@ -530,7 +584,10 @@ function AccountPurchaseTallyTab() {
         <MDButton
           variant="gradient"
           color="info"
-          sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "11px" : "13px" }}
+          sx={{
+            minWidth: isMobile ? 90 : 110,
+            fontSize: isMobile ? "11px" : "13px",
+          }}
         >
           엑셀다운로드
         </MDButton>
@@ -538,7 +595,10 @@ function AccountPurchaseTallyTab() {
         <MDButton
           variant="gradient"
           color="info"
-          sx={{ minWidth: isMobile ? 70 : 90, fontSize: isMobile ? "11px" : "13px" }}
+          sx={{
+            minWidth: isMobile ? 70 : 90,
+            fontSize: isMobile ? "11px" : "13px",
+          }}
         >
           인쇄
         </MDButton>
@@ -661,10 +721,17 @@ function AccountPurchaseTallyTab() {
                                 width: `${col.size}px`,
                               }}
                             >
-                              <Box display="flex" justifyContent="center" alignItems="center" gap={0.5}>
+                              <Box
+                                display="flex"
+                                justifyContent="center"
+                                alignItems="center"
+                                gap={0.5}
+                              >
                                 <IconButton
                                   size="small"
-                                  onClick={hasImage ? () => handleDownload(value) : handleNoImageAlert}
+                                  onClick={
+                                    hasImage ? () => handleDownload(value) : handleNoImageAlert
+                                  }
                                   color={hasImage ? "primary" : "error"}
                                   sx={{ padding: "3px", lineHeight: 0 }}
                                 >
@@ -673,7 +740,9 @@ function AccountPurchaseTallyTab() {
 
                                 <IconButton
                                   size="small"
-                                  onClick={hasImage ? () => handleViewImage(value) : handleNoImageAlert}
+                                  onClick={
+                                    hasImage ? () => handleViewImage(value) : handleNoImageAlert
+                                  }
                                   color={hasImage ? "primary" : "error"}
                                   sx={{ padding: "3px", lineHeight: 0 }}
                                 >
@@ -899,17 +968,29 @@ function AccountPurchaseTallyTab() {
                           }}
                         >
                           <Tooltip title="확대">
-                            <IconButton size="small" onClick={zoomIn} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                            <IconButton
+                              size="small"
+                              onClick={zoomIn}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
                               <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="축소">
-                            <IconButton size="small" onClick={zoomOut} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                            <IconButton
+                              size="small"
+                              onClick={zoomOut}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
                               <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
                             </IconButton>
                           </Tooltip>
                           <Tooltip title="리셋">
-                            <IconButton size="small" onClick={resetTransform} sx={{ bgcolor: "rgba(255,255,255,0.15)" }}>
+                            <IconButton
+                              size="small"
+                              onClick={resetTransform}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
                               <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
                             </IconButton>
                           </Tooltip>
@@ -932,7 +1013,11 @@ function AccountPurchaseTallyTab() {
                               src={currentImg.src}
                               alt="미리보기"
                               onError={() => {
-                                Swal.fire("미리보기 실패", "이미지 경로 또는 서버 응답을 확인해주세요.", "error");
+                                Swal.fire(
+                                  "미리보기 실패",
+                                  "이미지 경로 또는 서버 응답을 확인해주세요.",
+                                  "error"
+                                );
                               }}
                               style={{
                                 maxWidth: "95%",

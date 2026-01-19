@@ -7,15 +7,13 @@ import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import DatePicker from "react-datepicker";
-import { Grid, Box, MenuItem, TextField, Card } from "@mui/material";
+import { Grid, Box, MenuItem, TextField, Card, Autocomplete } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import MDInput from "components/MDInput";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import LoadingScreen from "layouts/loading/loadingscreen";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useAccountInfosheetData from "./data/AccountInfoSheetData";
 import PropTypes from "prop-types";
 import Swal from "sweetalert2";
@@ -261,9 +259,7 @@ function AccountInfoSheet() {
 
   // 🔹 식단가명 변경
   const handleExtraNameChange = (index, value) => {
-    setExtraDiet((prev) =>
-      prev.map((item, i) => (i === index ? { ...item, name: value } : item))
-    );
+    setExtraDiet((prev) => prev.map((item, i) => (i === index ? { ...item, name: value } : item)));
   };
 
   // 🔹 식단가 가격(숫자만, 자동콤마)
@@ -338,70 +334,67 @@ function AccountInfoSheet() {
   };
 
   // ----------------- 테이블 컬럼 -----------------
-  const priceTableColumns = useMemo(
-    () => {
-      const extraDietColumns = extraDiet
-        .map((item, index) => ({
-          idx: index + 1,
-          name: item.name,
-        }))
-        .filter((item) => item.name && item.name.trim() !== "")
-        .map((item) => ({
-          header: item.name,
-          accessorKey: `extra_diet${item.idx}_price`,
-        }));
+  const priceTableColumns = useMemo(() => {
+    const extraDietColumns = extraDiet
+      .map((item, index) => ({
+        idx: index + 1,
+        name: item.name,
+      }))
+      .filter((item) => item.name && item.name.trim() !== "")
+      .map((item) => ({
+        header: item.name,
+        accessorKey: `extra_diet${item.idx}_price`,
+      }));
 
-      const baseDietColumns = [
-        { header: "식단가", accessorKey: "diet_price" },
-        { header: "기초 식단가", accessorKey: "basic_price" },
-        { header: "인상전 단가", accessorKey: "before_diet_price" },
-        { header: "인상시점", accessorKey: "after_dt" },
-      ];
+    const baseDietColumns = [
+      { header: "식단가", accessorKey: "diet_price" },
+      { header: "기초 식단가", accessorKey: "basic_price" },
+      { header: "인상전 단가", accessorKey: "before_diet_price" },
+      { header: "인상시점", accessorKey: "after_dt" },
+    ];
 
-      if (!isSchoolOrIndustry) {
-        baseDietColumns.push(
-          { header: "어르신", accessorKey: "elderly" },
-          { header: "간식", accessorKey: "snack" },
-          { header: "직원", accessorKey: "employ" }
-        );
-      }
+    if (!isSchoolOrIndustry) {
+      baseDietColumns.push(
+        { header: "어르신", accessorKey: "elderly" },
+        { header: "간식", accessorKey: "snack" },
+        { header: "직원", accessorKey: "employ" }
+      );
+    }
 
-      baseDietColumns.push(...extraDietColumns);
+    baseDietColumns.push(...extraDietColumns);
 
-      return [
-        { header: "식단가", columns: baseDietColumns },
-        {
-          header: "식수인원(마감기준)",
-          columns: [
-            { header: "만실", accessorKey: "full_room" },
-            { header: "기초", accessorKey: "basic" },
-            { header: "일반", accessorKey: "normal" },
-            { header: "간식", accessorKey: "eat_snack" },
-            { header: "경관식", accessorKey: "ceremony" },
-            { header: "직원", accessorKey: "eat_employ" },
-          ],
-        },
-        {
-          header: "경비(신규영업, 중도운영)",
-          columns: [
-            { header: "음식물처리", accessorKey: "food_process" },
+    return [
+      { header: "식단가", columns: baseDietColumns },
+      {
+        header: "식수인원(마감기준)",
+        columns: [
+          { header: "만실", accessorKey: "full_room" },
+          { header: "기초", accessorKey: "basic" },
+          { header: "일반", accessorKey: "normal" },
+          { header: "간식", accessorKey: "eat_snack" },
+          { header: "경관식", accessorKey: "ceremony" },
+          { header: "직원", accessorKey: "eat_employ" },
+        ],
+      },
+      {
+        header: "경비(신규영업, 중도운영)",
+        columns: [
+          { header: "음식물처리", accessorKey: "food_process" },
 
-            // ✅ 여기 select로 만들 컬럼
-            { header: "유형", accessorKey: "food_process_type" },
+          // ✅ 여기 select로 만들 컬럼
+          { header: "유형", accessorKey: "food_process_type" },
 
-            { header: "식기세척기", accessorKey: "dishwasher" },
-            { header: "수량", accessorKey: "dishwasher_cnt" },
-            { header: "세스코 방제", accessorKey: "cesco" },
-            { header: "정수기", accessorKey: "water_puri" },
-            { header: "수량", accessorKey: "water_puri_cnt" },
-            { header: "수도광열비", accessorKey: "utility_bills" },
-            { header: "경비비고", accessorKey: "expenses_note" },
-          ],
-        },
-      ];
-    },
-    [extraDiet, isSchoolOrIndustry]
-  );
+          { header: "식기세척기", accessorKey: "dishwasher" },
+          { header: "수량", accessorKey: "dishwasher_cnt" },
+          { header: "세스코 방제", accessorKey: "cesco" },
+          { header: "정수기", accessorKey: "water_puri" },
+          { header: "수량", accessorKey: "water_puri_cnt" },
+          { header: "수도광열비", accessorKey: "utility_bills" },
+          { header: "경비비고", accessorKey: "expenses_note" },
+        ],
+      },
+    ];
+  }, [extraDiet, isSchoolOrIndustry]);
 
   const etcTableColumns = useMemo(
     () => [
@@ -640,8 +633,17 @@ function AccountInfoSheet() {
                   const changed = parseVal(currentValue) !== parseVal(originalValue);
 
                   // ✅ select 컬럼들
-                  const isSelectNumber = ["puri_type", "gas_type", "business_type", "food_process_type"].includes(colKey);
-                  const isSelectYN = ["group_feed_yn", "nutritionist_room_yn", "chef_lounge_yn"].includes(colKey);
+                  const isSelectNumber = [
+                    "puri_type",
+                    "gas_type",
+                    "business_type",
+                    "food_process_type",
+                  ].includes(colKey);
+                  const isSelectYN = [
+                    "group_feed_yn",
+                    "nutritionist_room_yn",
+                    "chef_lounge_yn",
+                  ].includes(colKey);
 
                   return (
                     <td
@@ -794,7 +796,6 @@ function AccountInfoSheet() {
       Swal.fire("실패", e.message || "저장 중 오류 발생", "error");
     }
   };
-
 
   // 🔹 식단가 추가 버튼 클릭 시: Business/AccountEctDietList 조회 후 모달 오픈
   const handleOpenExtraDietModal = async () => {
@@ -956,7 +957,11 @@ function AccountInfoSheet() {
                       <IconButton size="small" sx={{ color: "white" }} onClick={() => zoomOut()}>
                         <ZoomOutIcon />
                       </IconButton>
-                      <IconButton size="small" sx={{ color: "white" }} onClick={() => resetTransform()}>
+                      <IconButton
+                        size="small"
+                        sx={{ color: "white" }}
+                        onClick={() => resetTransform()}
+                      >
                         <RefreshIcon />
                       </IconButton>
                     </Box>
@@ -984,20 +989,38 @@ function AccountInfoSheet() {
           </MDButton>
         </MDBox>
 
-        <TextField
-          select
-          size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{ minWidth: 150 }}
-          SelectProps={{ native: true }}
-        >
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+        {/* ✅ 거래처 검색 가능한 Autocomplete */}
+        {(accountList || []).length > 0 && (
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountList || []}
+            // ✅ selectedAccountId로 현재 선택된 객체를 만들어 value에 넣기
+            value={
+              (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) ||
+              null
+            }
+            onChange={(_, newValue) => {
+              setSelectedAccountId(newValue ? newValue.account_id : "");
+            }}
+            // ✅ 입력 텍스트로 검색: account_name 기준
+            getOptionLabel={(option) => option?.account_name ?? ""}
+            isOptionEqualToValue={(option, value) =>
+              String(option?.account_id) === String(value?.account_id)
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                sx={{
+                  "& .MuiInputBase-root": { height: 43, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
+        )}
 
         <MDButton variant="gradient" color="info" onClick={handleSave}>
           저장
@@ -1044,7 +1067,6 @@ function AccountInfoSheet() {
                 >
                   계약기간
                 </MDTypography>
-
                 <DatePicker
                   selected={startDate}
                   onChange={(date) => {
@@ -1482,7 +1504,12 @@ function AccountInfoSheet() {
       <Card sx={{ p: 1, mb: 1 }}>
         <MDBox sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}>
           {isExtraDietEnabled && (
-            <MDButton variant="outlined" color="info" size="small" onClick={handleOpenExtraDietModal}>
+            <MDButton
+              variant="outlined"
+              color="info"
+              size="small"
+              onClick={handleOpenExtraDietModal}
+            >
               식단가 추가
             </MDButton>
           )}
@@ -1494,7 +1521,9 @@ function AccountInfoSheet() {
       <Card sx={{ p: 1, mb: 1 }}>
         {renderTable(managerData, setManagerData, "manager", managerTableColumns)}
       </Card>
-      <Card sx={{ p: 1, mb: 1 }}>{renderTable(eventData, setEventData, "event", eventTableColumns)}</Card>
+      <Card sx={{ p: 1, mb: 1 }}>
+        {renderTable(eventData, setEventData, "event", eventTableColumns)}
+      </Card>
 
       {/* 🔹 추가 식단가 입력 모달 */}
       <Modal

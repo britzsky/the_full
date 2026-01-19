@@ -60,18 +60,14 @@ function SubRestaurantTab() {
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
     if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value)
-        ? { color: "red" }
-        : { color: "black" };
+      return normalize(original) !== normalize(value) ? { color: "red" } : { color: "black" };
     }
     return original !== value ? { color: "red" } : { color: "black" };
   };
 
   // ✅ 셀 값 변경
   const handleCellChange = (rowIndex, key, value) => {
-    setRows((prev) =>
-      prev.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row))
-    );
+    setRows((prev) => prev.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row)));
   };
 
   // ✅ 저장 처리
@@ -97,11 +93,9 @@ function SubRestaurantTab() {
         return;
       }
 
-      const response = await api.post(
-        `/Operate/AccountSubRestaurantSave`,
-        modifiedRows,
-        { headers: { "Content-Type": "application/json" } }
-      );
+      const response = await api.post(`/Operate/AccountSubRestaurantSave`, modifiedRows, {
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (response.data.code === 200) {
         Swal.fire("성공", "저장되었습니다.", "success");
@@ -141,7 +135,7 @@ function SubRestaurantTab() {
     WebkitOverflowScrolling: "touch",
     "& table": {
       borderCollapse: "separate",
-      width: "max-content",   // ✅ 화면보다 넓으면 가로 스크롤
+      width: "max-content", // ✅ 화면보다 넓으면 가로 스크롤
       minWidth: "100%",
       borderSpacing: 0,
       tableLayout: "fixed",
@@ -159,7 +153,7 @@ function SubRestaurantTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0,        // ✅ 스크롤 박스 내에서 상단 고정
+      top: 0, // ✅ 스크롤 박스 내에서 상단 고정
       zIndex: 10,
     },
   };
@@ -213,7 +207,7 @@ function SubRestaurantTab() {
       </MDBox>
 
       {/* 테이블 렌더링 */}
-      <MDBox pt={1} pb={3} sx={tableSx}>
+      <MDBox pt={0} pb={3} sx={tableSx}>
         {/* 타이틀 박스 필요하면 주석 해제 */}
         {/* <MDBox
           mx={0}

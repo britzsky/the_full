@@ -1,6 +1,7 @@
 // src/layouts/handover/HandoverSheetTab.js
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { TextField, useTheme, useMediaQuery } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import useHandOversheetData from "./handoverheetData";
@@ -21,11 +22,27 @@ export default function HandoverSheetTab() {
   const { handOverListRows, accountList, loading, fetcHandOverList } =
     useHandOversheetData(selectedAccountId);
 
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
+  // ✅ 거래처 옵션(Autocomplete)
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
+
+  // (기존 select 핸들러는 Autocomplete로 교체)
+  // const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   useEffect(() => {
-    if (accountList.length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+    if ((accountList || []).length > 0 && !selectedAccountId) {
+      setSelectedAccountId(String(accountList[0].account_id));
     }
   }, [accountList, selectedAccountId]);
 
@@ -34,8 +51,7 @@ export default function HandoverSheetTab() {
   }, [selectedAccountId]);
 
   useEffect(() => {
-    if (selectedAccountId)
-      setForm((prev) => ({ ...prev, account_id: selectedAccountId }));
+    if (selectedAccountId) setForm((prev) => ({ ...prev, account_id: selectedAccountId }));
   }, [selectedAccountId]);
 
   useEffect(() => {
@@ -84,8 +100,7 @@ export default function HandoverSheetTab() {
 
   if (loading) return <LoadingScreen />;
 
-  const normalize = (v) =>
-    v === null || v === undefined ? "" : String(v).trim();
+  const normalize = (v) => (v === null || v === undefined ? "" : String(v).trim());
   const isChanged = (key) => normalize(form[key]) !== normalize(originalForm[key]);
 
   // ✅ 셀 렌더 함수 (모바일 폰트/패딩 반영)
@@ -175,16 +190,13 @@ export default function HandoverSheetTab() {
     headerData.forEach(([range, title]) => {
       sheet.range(range).merged(true);
       sheet.range(range).style({ border: borderThin });
-      sheet
-        .cell(range.split(":")[0])
-        .value(title)
-        .style({
-          bold: true,
-          fontFamily: fontKor,
-          horizontalAlignment: "center",
-          verticalAlignment: "center",
-          fill: gray,
-        });
+      sheet.cell(range.split(":")[0]).value(title).style({
+        bold: true,
+        fontFamily: fontKor,
+        horizontalAlignment: "center",
+        verticalAlignment: "center",
+        fill: gray,
+      });
     });
 
     // 3. 기본 정보
@@ -218,23 +230,29 @@ export default function HandoverSheetTab() {
     let rowIdx = 3;
     baseRows.forEach((cols) => {
       ["A", "C", "E"].forEach((col, i) => {
-        sheet.cell(`${col}${rowIdx}`).value(cols[i * 2]).style({
-          bold: true,
-          fill: gray,
-          fontFamily: fontKor,
-          verticalAlignment: "center",
-          horizontalAlignment: "center",
-          border: borderThin,
-        });
+        sheet
+          .cell(`${col}${rowIdx}`)
+          .value(cols[i * 2])
+          .style({
+            bold: true,
+            fill: gray,
+            fontFamily: fontKor,
+            verticalAlignment: "center",
+            horizontalAlignment: "center",
+            border: borderThin,
+          });
       });
 
       ["B", "D", "F"].forEach((col, i) => {
-        sheet.cell(`${col}${rowIdx}`).value(cols[i * 2 + 1]).style({
-          fontFamily: fontKor,
-          verticalAlignment: "center",
-          horizontalAlignment: "left",
-          border: borderThin,
-        });
+        sheet
+          .cell(`${col}${rowIdx}`)
+          .value(cols[i * 2 + 1])
+          .style({
+            fontFamily: fontKor,
+            verticalAlignment: "center",
+            horizontalAlignment: "left",
+            border: borderThin,
+          });
       });
 
       rowIdx++;
@@ -270,17 +288,19 @@ export default function HandoverSheetTab() {
 
       sheet.range(`B${rowIdx}:F${rowIdx}`).merged(true);
       sheet.range(`B${rowIdx}:F${rowIdx}`).style({ border: borderThin });
-      sheet.cell(`B${rowIdx}`).value(value || "").style({
-        fontFamily: fontKor,
-        verticalAlignment: "center",
-        horizontalAlignment: "left",
-      });
+      sheet
+        .cell(`B${rowIdx}`)
+        .value(value || "")
+        .style({
+          fontFamily: fontKor,
+          verticalAlignment: "center",
+          horizontalAlignment: "left",
+        });
 
       sheet.row(rowIdx).height(height);
     };
 
     // 6. 내용 채우기
-    // 1. 업무 현황
     addSection("1. 업무 현황");
     addRowBlock("▶ 급식 대상자 수", cleanedForm.meal_number);
     addRowBlock("▶ 식수 운영 방식 및 배식 방식", cleanedForm.catering_ration);
@@ -292,33 +312,24 @@ export default function HandoverSheetTab() {
     addRowBlock("▶ 검수 및 입고 방법", cleanedForm.inspection_store_type);
     addRowBlock("▶ 재고 관리 방법", cleanedForm.stock_manage_type);
 
-    // 2. 주요 업무 및 주의사항
     addSection("2. 주요 업무 및 주의사항");
     addRowBlock("▶ 식단 구성 및 제출 주기", cleanedForm.diet_submit_cycle);
     addRowBlock("▶ 위생 점검 사항", cleanedForm.hygiene_note);
     addRowBlock("▶ 주요 문제", cleanedForm.hot_issue);
-    addRowBlock(
-      "▶ (운영방) 케어포 등 프로그램 사용 여부",
-      cleanedForm.program_use_whether
-    );
+    addRowBlock("▶ (운영방) 케어포 등 프로그램 사용 여부", cleanedForm.program_use_whether);
     addRowBlock("▶ 라운딩 횟수 및 만족도 조사 여부", cleanedForm.rounding_satis_whether);
     addRowBlock("▶ 클레임 및 민원 이력", cleanedForm.complain_note);
     addRowBlock("▶ 매니저 연락처", cleanedForm.manager_phone);
     addRowBlock("▶ 쓰레기 처리 방식", cleanedForm.trash_treatment_type);
     addRowBlock("▶ 정기 일정", cleanedForm.regular_schedule);
 
-    // 3. 인계자 요청사항 및 기타 특이사항
     addSection("3. 인계자 요청사항 및 기타 특이사항");
     addRowBlock("내용", cleanedForm.special_note, 60);
 
     const blob = await workbook.outputAsync();
 
-    const selectedAccount = accountList.find(
-      (a) => a.account_id === selectedAccountId
-    );
-    const accountName = selectedAccount
-      ? selectedAccount.account_name
-      : "handover";
+    const selectedAccount = (accountList || []).find((a) => a.account_id === selectedAccountId);
+    const accountName = selectedAccount ? selectedAccount.account_name : "handover";
 
     FileSaver.saveAs(blob, `${accountName}_인수인계서.xlsx`);
   };
@@ -327,7 +338,7 @@ export default function HandoverSheetTab() {
   const tableSx = {
     flex: 1,
     mt: 1,
-    maxHeight: isMobile ? "60vh" : "none",
+    maxHeight: isMobile ? "60vh" : "75vh",
     overflowX: "auto",
     overflowY: isMobile ? "auto" : "visible",
     WebkitOverflowScrolling: "touch",
@@ -347,7 +358,6 @@ export default function HandoverSheetTab() {
       backgroundColor: "#f0f0f0",
       fontWeight: "bold",
       textAlign: "center",
-      position: "sticky",
       top: 0,
       zIndex: 1,
     },
@@ -373,23 +383,33 @@ export default function HandoverSheetTab() {
           backgroundColor: "#ffffff",
         }}
       >
-        <TextField
-          select
+        {/* ✅ 거래처 Select → 검색 가능한 Autocomplete로 변경 */}
+        <Autocomplete
           size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{
-            minWidth: isMobile ? 160 : 200,
-            fontSize: isMobile ? "12px" : "14px",
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={selectedAccountOption}
+          onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          filterOptions={(options, state) => {
+            const q = (state.inputValue ?? "").trim().toLowerCase();
+            if (!q) return options;
+            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
           }}
-          SelectProps={{ native: true }}
-        >
-          {(accountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
+
         <MDButton
           variant="gradient"
           color="info"
@@ -464,8 +484,8 @@ export default function HandoverSheetTab() {
               <td>
                 ▶ 식수 운영 방식 및 배식 방식 <br />
                 <span style={{ color: "red", fontSize: isMobile ? "9px" : "11px" }}>
-                  (예 : 선택식, 일품식, 샐러드바식, 식판배식, 그룹배식 등) <br />
-                  * 그릇 세척, 음식물 처리 시 아웃소싱도 나누어 기재
+                  (예 : 선택식, 일품식, 샐러드바식, 식판배식, 그룹배식 등) <br />* 그릇 세척, 음식물
+                  처리 시 아웃소싱도 나누어 기재
                 </span>
               </td>
               <td colSpan={5}>{renderInput("catering_ration", { multiline: true })}</td>
@@ -496,9 +516,7 @@ export default function HandoverSheetTab() {
                 <br />
                 (업체명, 발주 요일, 발주 방법 등)
               </td>
-              <td colSpan={5}>
-                {renderInput("ingredients_order_type", { multiline: true })}
-              </td>
+              <td colSpan={5}>{renderInput("ingredients_order_type", { multiline: true })}</td>
             </tr>
             <tr>
               <td>
@@ -506,9 +524,7 @@ export default function HandoverSheetTab() {
                 <br />
                 (시간, 장소, 확인자 등)
               </td>
-              <td colSpan={5}>
-                {renderInput("inspection_store_type", { multiline: true })}
-              </td>
+              <td colSpan={5}>{renderInput("inspection_store_type", { multiline: true })}</td>
             </tr>
             <tr>
               <td>
@@ -529,9 +545,7 @@ export default function HandoverSheetTab() {
                 <br />
                 (계절별 메뉴, 영양사 검토 포함)
               </td>
-              <td colSpan={5}>
-                {renderInput("diet_submit_cycle", { multiline: true })}
-              </td>
+              <td colSpan={5}>{renderInput("diet_submit_cycle", { multiline: true })}</td>
             </tr>
             <tr>
               <td>
@@ -579,9 +593,7 @@ export default function HandoverSheetTab() {
                 <br />
                 (업체 수거/분리배출 규칙 등)
               </td>
-              <td colSpan={5}>
-                {renderInput("trash_treatment_type", { multiline: true })}
-              </td>
+              <td colSpan={5}>{renderInput("trash_treatment_type", { multiline: true })}</td>
             </tr>
             <tr>
               <td>
@@ -589,9 +601,7 @@ export default function HandoverSheetTab() {
                 <br />
                 (예: 주간 교육, 회의, 설비점검 등)
               </td>
-              <td colSpan={5}>
-                {renderInput("regular_schedule", { multiline: true })}
-              </td>
+              <td colSpan={5}>{renderInput("regular_schedule", { multiline: true })}</td>
             </tr>
 
             {/* 3. 특이사항 */}
@@ -600,9 +610,7 @@ export default function HandoverSheetTab() {
             </tr>
             <tr>
               <td>내용</td>
-              <td colSpan={5}>
-                {renderInput("special_note", { multiline: true, rows: 5 })}
-              </td>
+              <td colSpan={5}>{renderInput("special_note", { multiline: true, rows: 5 })}</td>
             </tr>
           </tbody>
         </table>

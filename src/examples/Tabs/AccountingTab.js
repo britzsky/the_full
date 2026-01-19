@@ -15,10 +15,7 @@ function AccountingTab() {
   // ✅ 숫자 이모지 아이콘
   const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
 
-  const tabLabels = [
-    "매입집계",
-    "매입마감",
-  ];
+  const tabLabels = ["매입집계", "매입마감"];
 
   const tabComponents = [
     <AccountPurchaseTallyTab key="tally" />,
@@ -29,7 +26,7 @@ function AccountingTab() {
       <MDBox
         sx={{
           position: "sticky",
-          top: 0,             // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
+          top: 15, // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
           zIndex: 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",

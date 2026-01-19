@@ -4,17 +4,8 @@ import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import {
-  Modal,
-  Box,
-  Typography,
-  Button,
-  TextField,
-  useTheme,
-  useMediaQuery,
-  Select,
-  MenuItem,
-} from "@mui/material";
+import { Modal, Box, Typography, Button, TextField, useTheme, useMediaQuery } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 
 import useAccountAnnualLeaveData from "./accountAnnualLeaveData";
 import LoadingScreen from "layouts/loading/loadingscreen";
@@ -30,7 +21,7 @@ function AccountAnnualLeaveTab() {
     annualLeaveRows,
     overTimeRows,
     accountList,
-    accountWorkSystemList,           // ✅ 추가
+    accountWorkSystemList, // ✅ 추가
     loading,
     fetchAccountMemberList,
     fetchAnnualLeaveList,
@@ -61,10 +52,7 @@ function AccountAnnualLeaveTab() {
 
   useEffect(() => {
     const init = async () => {
-      await Promise.all([
-        fetchAccountList(),
-        fetchAccountMemberWorkSystemList(), // ✅ 추가
-      ]);
+      await Promise.all([fetchAccountList(), fetchAccountMemberWorkSystemList()]);
     };
     init();
   }, []);
@@ -262,15 +250,23 @@ function AccountAnnualLeaveTab() {
     []
   );
 
+  // ✅ 거래처 Autocomplete 옵션
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
   const getTypeLabel = (type) => {
     const opt = itemOptions.find((o) => String(o.value) === String(type));
     return opt ? opt.label : type || "";
   };
 
   const getContractLabel = (contract_type) => {
-    const opt = contractOptions.find(
-      (o) => String(o.value) === String(contract_type)
-    );
+    const opt = contractOptions.find((o) => String(o.value) === String(contract_type));
     return opt ? opt.label : contract_type || "";
   };
 
@@ -278,11 +274,6 @@ function AccountAnnualLeaveTab() {
   const columnsLeft = useMemo(
     () => [
       { header: "성명", accessorKey: "name" },
-      // {
-      //   header: "계약형태",
-      //   accessorKey: "contract_type",
-      //   type: "contractOptions",
-      // },
       { header: "입사일자", accessorKey: "join_dt" },
       { header: "근무형태", accessorKey: "idx" },
       { header: "시작", accessorKey: "start_time" },
@@ -302,28 +293,21 @@ function AccountAnnualLeaveTab() {
     []
   );
 
-  // 오른쪽 셀 변경 핸들러 (지금은 입력 안 쓰지만 summary 계산용 state 유지 위해 남겨둠)
+  // 오른쪽 셀 변경 핸들러
   const handleDetailCellChange = (rowIndex, key, value) => {
     setDetailRows((prev) =>
-      prev.map((row, idx) =>
-        idx === rowIndex ? { ...row, [key]: value } : row
-      )
+      prev.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
     );
   };
 
-  // 행 추가 (오른쪽 상세) – 버튼은 안 쓰는 상태
+  // 행 추가 (오른쪽 상세)
   const handleAddDetailRow = () => {
     if (!selectedMemberId) {
-      Swal.fire({
-        title: "안내",
-        text: "왼쪽 테이블에서 직원을 먼저 선택해주세요.",
-        icon: "info",
-      });
+      Swal.fire({ title: "안내", text: "왼쪽 테이블에서 직원을 먼저 선택해주세요.", icon: "info" });
       return;
     }
 
-    const defaultAccountId =
-      selectedAccountId || accountList[0]?.account_id || "";
+    const defaultAccountId = selectedAccountId || accountList[0]?.account_id || "";
 
     const newRow = {
       member_id: selectedMemberId,
@@ -349,11 +333,7 @@ function AccountAnnualLeaveTab() {
   // 저장 버튼 (변경된 행만 서버 전송)
   const handleSave = async () => {
     if (!detailRows.length) {
-      Swal.fire({
-        title: "안내",
-        text: "저장할 데이터가 없습니다.",
-        icon: "info",
-      });
+      Swal.fire({ title: "안내", text: "저장할 데이터가 없습니다.", icon: "info" });
       return;
     }
 
@@ -363,12 +343,8 @@ function AccountAnnualLeaveTab() {
       const original = originalDetailRows[idx];
 
       // 완전 빈 새 행이면 스킵
-      const hasAnyValue = Object.values(row).some(
-        (v) => v !== null && v !== undefined && v !== ""
-      );
-      if (!original && !hasAnyValue) {
-        return;
-      }
+      const hasAnyValue = Object.values(row).some((v) => v !== null && v !== undefined && v !== "");
+      if (!original && !hasAnyValue) return;
 
       // 새 행이고 값이 있으면 변경으로 간주
       if (!original && hasAnyValue) {
@@ -384,24 +360,16 @@ function AccountAnnualLeaveTab() {
         return String(v1) !== String(v2);
       });
 
-      if (isChanged) {
-        changedRows.push(row);
-      }
+      if (isChanged) changedRows.push(row);
     });
 
     if (!changedRows.length) {
-      Swal.fire({
-        title: "안내",
-        text: "변경된 내용이 없습니다.",
-        icon: "info",
-      });
+      Swal.fire({ title: "안내", text: "변경된 내용이 없습니다.", icon: "info" });
       return;
     }
 
     try {
-      const payload = {
-        outList: { list: changedRows },
-      };
+      const payload = { outList: { list: changedRows } };
 
       const response = await api.post("/Business/CookWearSave", payload, {
         headers: { "Content-Type": "application/json" },
@@ -420,18 +388,10 @@ function AccountAnnualLeaveTab() {
           await fetchAnnualLeaveList(selectedMemberId); // member_id만 전달
         }
       } else {
-        Swal.fire({
-          title: "실패",
-          text: response.data.message || "저장 실패",
-          icon: "error",
-        });
+        Swal.fire({ title: "실패", text: response.data.message || "저장 실패", icon: "error" });
       }
     } catch (error) {
-      Swal.fire({
-        title: "실패",
-        text: error.message || "저장 중 오류 발생",
-        icon: "error",
-      });
+      Swal.fire({ title: "실패", text: error.message || "저장 중 오류 발생", icon: "error" });
     }
   };
 
@@ -444,8 +404,7 @@ function AccountAnnualLeaveTab() {
   const selectedMember = accountMemberRows.find(
     (m) => String(m.member_id) === String(selectedMemberId)
   );
-  const isNutritionist =
-    selectedMember && String(selectedMember.position_type) === "1";
+  const isNutritionist = selectedMember && String(selectedMember.position_type) === "1";
 
   // 왼쪽 테이블 렌더
   const renderLeftTable = () => (
@@ -468,6 +427,7 @@ function AccountAnnualLeaveTab() {
           직원 목록
         </MDTypography>
       </MDBox>
+
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <table>
@@ -485,7 +445,6 @@ function AccountAnnualLeaveTab() {
                   onClick={async () => {
                     setSelectedMemberId(row.member_id);
                     if (row.member_id) {
-                      // ✅ 연차 + 시간외근무 같이 조회
                       await Promise.all([
                         fetchAnnualLeaveList(row.member_id),
                         fetchOverTimeList(row.member_id),
@@ -512,11 +471,11 @@ function AccountAnnualLeaveTab() {
                       const found = (accountWorkSystemList || []).find(
                         (w) => String(w.idx) === String(idx)
                       );
-                      return found ? found.work_system : (idx ?? "");
+                      return found ? found.work_system : idx ?? "";
                     };
 
                     if (col.accessorKey === "idx") {
-                      displayValue = getWorkSystemLabel(value); // ✅ 여기서 라벨로 표시
+                      displayValue = getWorkSystemLabel(value);
                     }
 
                     return (
@@ -534,7 +493,7 @@ function AccountAnnualLeaveTab() {
     </MDBox>
   );
 
-  // 👉👉 오른쪽 테이블 렌더 (연차 상세) — **조회 전용(수정 불가) 버전**
+  // 오른쪽 테이블 렌더 (연차 상세) — 조회 전용
   const renderRightTable = () => (
     <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableSx}>
       <MDBox
@@ -618,19 +577,14 @@ function AccountAnnualLeaveTab() {
             <thead>
               <tr>
                 {columnsRight.map((col) => {
-                  const isCompact =
-                    col.accessorKey === "type" || col.accessorKey === "days"; // ✅ 구분/일수
+                  const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
                   const widthStyle = middleColWidths[col.accessorKey]
                     ? { width: middleColWidths[col.accessorKey] }
                     : {};
                   return (
                     <th
                       key={col.accessorKey}
-                      style={
-                        isCompact
-                          ? { ...compactHeaderStyle, ...widthStyle }
-                          : widthStyle
-                      }
+                      style={isCompact ? { ...compactHeaderStyle, ...widthStyle } : widthStyle}
                     >
                       {col.header}
                     </th>
@@ -640,7 +594,6 @@ function AccountAnnualLeaveTab() {
             </thead>
             <tbody>
               {detailRows.map((row, rowIndex) => {
-                // 선택된 직원 것만 보여주기
                 if (
                   selectedMemberId &&
                   row.member_id &&
@@ -653,28 +606,18 @@ function AccountAnnualLeaveTab() {
                   <tr key={rowIndex}>
                     {columnsRight.map((col) => {
                       const rawValue = row[col.accessorKey] || "";
-                      const baseStyle = getDetailCellStyle(
-                        rowIndex,
-                        col.accessorKey
-                      );
+                      const baseStyle = getDetailCellStyle(rowIndex, col.accessorKey);
 
-                      const isCompact =
-                        col.accessorKey === "type" ||
-                        col.accessorKey === "days"; // ✅ 구분/일수
-
+                      const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
                       const widthStyle = middleColWidths[col.accessorKey]
                         ? { width: middleColWidths[col.accessorKey] }
                         : {};
-
                       const style = isCompact
                         ? { ...baseStyle, ...compactCellStyle, ...widthStyle }
                         : { ...baseStyle, ...widthStyle };
 
                       let displayValue = rawValue;
-
-                      if (col.type === "itemOptions") {
-                        displayValue = getTypeLabel(row.type);
-                      }
+                      if (col.type === "itemOptions") displayValue = getTypeLabel(row.type);
 
                       return (
                         <td key={col.accessorKey} style={style}>
@@ -692,28 +635,22 @@ function AccountAnnualLeaveTab() {
     </MDBox>
   );
 
-  // 🔹 영양사 전용 오른쪽 끝 테이블 (시간외근무 내역 + 상단 요약)
+  // 영양사 전용 오른쪽 끝 테이블 (시간외근무 내역 + 상단 요약)
   const renderNutritionTable = () => {
     if (!isNutritionist) return null;
 
-    // 선택된 영양사의 시간외근무 행만 필터링
     const nutritionOverRows = overTimeRows.filter(
-      (row) =>
-        row.member_id && String(row.member_id) === String(selectedMemberId)
+      (row) => row.member_id && String(row.member_id) === String(selectedMemberId)
     );
 
-    // type 기준 합계 계산
-    let totalGrantTime = 0; // G
-    let totalUseTime = 0; // U
-    let remainingTime = 0; // 전체 합 (G, U 모두 포함)
+    let totalGrantTime = 0;
+    let totalUseTime = 0;
+    let remainingTime = 0;
 
     nutritionOverRows.forEach((row) => {
       const t = Number(row.times) || 0;
-      if (row.type === "G") {
-        totalGrantTime += t;
-      } else if (row.type === "U") {
-        totalUseTime += t;
-      }
+      if (row.type === "G") totalGrantTime += t;
+      else if (row.type === "U") totalUseTime += t;
       remainingTime += t;
     });
 
@@ -739,7 +676,6 @@ function AccountAnnualLeaveTab() {
           </MDTypography>
         </MDBox>
 
-        {/* ✅ 상단 고정 보상시간 합계 영역 */}
         <MDBox
           mt={0}
           mb={0}
@@ -776,10 +712,7 @@ function AccountAnnualLeaveTab() {
             </MDTypography>
             <MDTypography
               variant="button"
-              sx={{
-                fontWeight: "bold",
-                color: remainingTime < 0 ? "red" : "black",
-              }}
+              sx={{ fontWeight: "bold", color: remainingTime < 0 ? "red" : "black" }}
             >
               {remainingTime}
             </MDTypography>
@@ -791,55 +724,23 @@ function AccountAnnualLeaveTab() {
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: nutritionColWidths.over_dt }}>
-                    기준일자
-                  </th>
-                  <th
-                    style={{
-                      ...compactHeaderStyle,
-                      width: nutritionColWidths.type,
-                    }}
-                  >
-                    구분
-                  </th>
-                  <th
-                    style={{
-                      ...compactHeaderStyle,
-                      width: nutritionColWidths.times,
-                    }}
-                  >
-                    시간
-                  </th>
+                  <th style={{ width: nutritionColWidths.over_dt }}>기준일자</th>
+                  <th style={{ ...compactHeaderStyle, width: nutritionColWidths.type }}>구분</th>
+                  <th style={{ ...compactHeaderStyle, width: nutritionColWidths.times }}>시간</th>
                   <th style={{ width: nutritionColWidths.reason }}>사유</th>
                 </tr>
               </thead>
               <tbody>
                 {nutritionOverRows.map((row, idx) => (
                   <tr key={row.over_id || idx}>
-                    <td style={{ width: nutritionColWidths.over_dt }}>
-                      {row.over_dt}
-                    </td>
-                    {/* ✅ 구분: 코드 → 라벨 매핑 + width 축소 */}
-                    <td
-                      style={{
-                        ...compactCellStyle,
-                        width: nutritionColWidths.type,
-                      }}
-                    >
+                    <td style={{ width: nutritionColWidths.over_dt }}>{row.over_dt}</td>
+                    <td style={{ ...compactCellStyle, width: nutritionColWidths.type }}>
                       {getTypeLabel(row.type)}
                     </td>
-                    {/* ✅ 시간: width 축소 */}
-                    <td
-                      style={{
-                        ...compactCellStyle,
-                        width: nutritionColWidths.times,
-                      }}
-                    >
+                    <td style={{ ...compactCellStyle, width: nutritionColWidths.times }}>
                       {row.times}
                     </td>
-                    <td style={{ width: nutritionColWidths.reason }}>
-                      {row.reason}
-                    </td>
+                    <td style={{ width: nutritionColWidths.reason }}>{row.reason}</td>
                   </tr>
                 ))}
               </tbody>
@@ -864,31 +765,36 @@ function AccountAnnualLeaveTab() {
           flexWrap: isMobile ? "wrap" : "nowrap",
         }}
       >
-        {/* 거래처 검색조건 셀렉트 */}
-        <Select
+        {/* ✅ 거래처 검색 가능한 Autocomplete */}
+        <Autocomplete
           size="small"
-          value={selectedAccountId}
-          onChange={(e) => setSelectedAccountId(e.target.value)}
-          sx={{
-            minWidth: isMobile ? 140 : 180,
-            mr: 1,
-          }}
-        >
-          {accountList.map((acc) => (
-            <MenuItem key={acc.account_id} value={acc.account_id}>
-              {acc.account_name}
-            </MenuItem>
-          ))}
-        </Select>
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={(() => {
+            const v = String(selectedAccountId ?? "");
+            return accountOptions.find((o) => o.value === v) || null;
+          })()}
+          onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              sx={{
+                "& .MuiInputBase-root": { height: 40, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
 
         <MDButton
           variant="gradient"
           color="info"
           onClick={handleSearch}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 70 : 80,
-          }}
+          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 80 }}
         >
           조회
         </MDButton>
@@ -897,10 +803,7 @@ function AccountAnnualLeaveTab() {
           variant="gradient"
           color="info"
           onClick={handleSave}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 70 : 80,
-          }}
+          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 80 }}
         >
           저장
         </MDButton>
@@ -945,9 +848,7 @@ function AccountAnnualLeaveTab() {
             label="도구ID"
             name="cook_id"
             value={formData.cook_id}
-            onChange={(e) =>
-              setFormData({ ...formData, cook_id: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, cook_id: e.target.value })}
             InputLabelProps={{ style: { fontSize: "0.8rem" } }}
           />
           <TextField
@@ -956,9 +857,7 @@ function AccountAnnualLeaveTab() {
             label="도구명"
             name="cook_name"
             value={formData.cook_name}
-            onChange={(e) =>
-              setFormData({ ...formData, cook_name: e.target.value })
-            }
+            onChange={(e) => setFormData({ ...formData, cook_name: e.target.value })}
             InputLabelProps={{ style: { fontSize: "0.8rem" } }}
           />
           <Box mt={3} display="flex" justifyContent="flex-end" gap={1}>

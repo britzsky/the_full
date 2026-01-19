@@ -1,10 +1,6 @@
 /* eslint-disable react/prop-types */
 import React, { useMemo, useEffect, useState, useCallback } from "react";
-import {
-  useReactTable,
-  getCoreRowModel,
-  flexRender,
-} from "@tanstack/react-table";
+import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { useLocation, useParams } from "react-router-dom";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
@@ -21,6 +17,7 @@ import {
   useTheme,
   useMediaQuery,
 } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
@@ -40,12 +37,12 @@ const DISPATCH_DEL_SAVE_API = "/Account/AccountDispatchMemberDelYnSave"; // del_
 
 // 근무 타입별 배경색
 const typeColors = {
-  "1": "#d9f2d9",
-  "2": "#fff7cc",
-  "3": "#e6d9f2",
-  "4": "#f9d9d9",
-  "5": "#ffe6cc",
-  "6": "#cce6ff",
+  1: "#d9f2d9",
+  2: "#fff7cc",
+  3: "#e6d9f2",
+  4: "#f9d9d9",
+  5: "#ffe6cc",
+  6: "#cce6ff",
 };
 
 // ✅ 셀 비교용 헬퍼: 조회 당시 vs 현재 값이 같은지 판단
@@ -81,10 +78,15 @@ const isCellEqual = (a, b) => {
   );
 };
 
-// 출근현황 셀
-function AttendanceCell({ getValue, row, column, table, typeOptions }) {
-  const val =
-    getValue() || { type: "", start: "", end: "", salary: "", memo: "" };
+// ✅ 출근현황 셀 (포커스 튕김 방지: React.memo)
+const AttendanceCell = React.memo(function AttendanceCell({
+  getValue,
+  row,
+  column,
+  table,
+  typeOptions,
+}) {
+  const val = getValue() || { type: "", start: "", end: "", salary: "", memo: "" };
 
   const times = [];
   for (let h = 5; h <= 20; h++) {
@@ -123,15 +125,11 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
       const baseEnd = parseTime(org.org_end_time);
 
       if (start && end && baseStart && baseEnd) {
-        const diffMinutes =
-          end.diff(start, "minute") - baseEnd.diff(baseStart, "minute");
+        const diffMinutes = end.diff(start, "minute") - baseEnd.diff(baseStart, "minute");
 
         updatedValue.memo =
           diffMinutes > 0
-            ? (
-                Math.floor(diffMinutes / 60) +
-                (diffMinutes % 60 >= 30 ? 0.5 : 0)
-              ).toString()
+            ? (Math.floor(diffMinutes / 60) + (diffMinutes % 60 >= 30 ? 0.5 : 0)).toString()
             : "";
       }
     }
@@ -196,14 +194,8 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
         <input
           type="text"
           placeholder="급여"
-          value={
-            val.salary != null && val.salary !== ""
-              ? Number(val.salary).toLocaleString()
-              : ""
-          }
-          onChange={(e) =>
-            handleChange("salary", e.target.value.replace(/[^0-9]/g, ""))
-          }
+          value={val.salary != null && val.salary !== "" ? Number(val.salary).toLocaleString() : ""}
+          onChange={(e) => handleChange("salary", e.target.value.replace(/[^0-9]/g, ""))}
           style={{
             fontSize: "0.725rem",
             textAlign: "center",
@@ -229,7 +221,7 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
       )}
     </div>
   );
-}
+});
 
 AttendanceCell.propTypes = {
   getValue: PropTypes.func.isRequired,
@@ -256,12 +248,12 @@ function DispatchActionCell({ row, onToggle }) {
       color={isDeleted ? "success" : "error"}
       onClick={() => onToggle(row.original)}
       sx={{
-        minHeight: 20,          // ✅ 높이 줄이기
+        minHeight: 20, // ✅ 높이 줄이기
         height: 20,
-        px: 0.75,               // ✅ 좌우 패딩
-        py: 0,                  // ✅ 상하 패딩
-        minWidth: 52,           // ✅ 폭
-        fontSize: "0.65rem",    // ✅ 글씨
+        px: 0.75, // ✅ 좌우 패딩
+        py: 0, // ✅ 상하 패딩
+        minWidth: 52, // ✅ 폭
+        fontSize: "0.65rem", // ✅ 글씨
         lineHeight: 1,
       }}
     >
@@ -302,6 +294,7 @@ function RecordSheet() {
   const [formData, setFormData] = useState({
     account_id: selectedAccountId,
     name: "",
+    phone: "",
     rrn: "",
     account_number: "",
     note: "",
@@ -335,7 +328,7 @@ function RecordSheet() {
       return;
     }
 
-    formData.del_yn = 'N';
+    formData.del_yn = "N";
 
     api
       .post("/Account/AccountDispatchMemberSave", formData, {
@@ -468,7 +461,8 @@ function RecordSheet() {
 
       // ✅ 등록 저장과 동일한 then 체인 스타일
       api
-        .post("/Account/AccountDispatchMemberSave", 
+        .post(
+          "/Account/AccountDispatchMemberSave",
           {
             account_id,
             member_id,
@@ -477,8 +471,9 @@ function RecordSheet() {
             rrn: row.rrn,
             account_number: row.account_number,
             total: row.total,
-          },{ headers: { "Content-Type": "multipart/form-data" },
-        })
+          },
+          { headers: { "Content-Type": "multipart/form-data" } }
+        )
         .then((response) => {
           if (response.data?.code === 200) {
             Swal.fire({
@@ -596,49 +591,54 @@ function RecordSheet() {
     setDefaultTimes(map);
   }, [sheetRows, timesRows, daysInMonth, memberRows]);
 
-  const dayColumns = Array.from({ length: daysInMonth }, (_, i) => {
-    const date = dayjs(`${year}-${month}-${i + 1}`);
-    const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.day()];
+  // ✅ (포커스 튕김 해결 핵심) dayColumns를 useMemo로 고정
+  const dayColumns = useMemo(
+    () =>
+      Array.from({ length: daysInMonth }, (_, i) => {
+        const date = dayjs(`${year}-${month}-${i + 1}`);
+        const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.day()];
 
-    return {
-      header: `${i + 1}일(${weekday})`,
-      accessorKey: `day_${i + 1}`,
-      cell: (props) => {
-        const typeOptions = (() => {
-          const isType5Member = Object.keys(props.row.original)
-            .filter((k) => k.startsWith("day_"))
-            .some((k) => props.row.original[k]?.type === "5");
+        return {
+          header: `${i + 1}일(${weekday})`,
+          accessorKey: `day_${i + 1}`,
+          cell: (props) => {
+            const typeOptions = (() => {
+              const isType5Member = Object.keys(props.row.original)
+                .filter((k) => k.startsWith("day_"))
+                .some((k) => props.row.original[k]?.type === "5");
 
-          if (isType5Member) {
-            return [
-              { value: "0", label: "-" },
-              { value: "5", label: "파출" },
-            ];
-          }
-          return [
-            { value: "0", label: "-" },
-            { value: "1", label: "영양사" },
-            { value: "2", label: "상용" },
-            { value: "3", label: "초과" },
-            { value: "4", label: "결근" },
-            { value: "6", label: "직원파출" },
-            { value: "7", label: "유틸" },
-            { value: "8", label: "대체근무" },
-            { value: "9", label: "연차" },
-            { value: "10", label: "반차" },
-            { value: "11", label: "대체휴무" },
-            { value: "12", label: "병가" },
-            { value: "13", label: "출산휴가" },
-            { value: "14", label: "육아휴직" },
-            { value: "15", label: "하계휴가" },
-          ];
-        })();
+              if (isType5Member) {
+                return [
+                  { value: "0", label: "-" },
+                  { value: "5", label: "파출" },
+                ];
+              }
+              return [
+                { value: "0", label: "-" },
+                { value: "1", label: "영양사" },
+                { value: "2", label: "상용" },
+                { value: "3", label: "초과" },
+                { value: "4", label: "결근" },
+                { value: "6", label: "직원파출" },
+                { value: "7", label: "유틸" },
+                { value: "8", label: "대체근무" },
+                { value: "9", label: "연차" },
+                { value: "10", label: "반차" },
+                { value: "11", label: "대체휴무" },
+                { value: "12", label: "병가" },
+                { value: "13", label: "출산휴가" },
+                { value: "14", label: "육아휴직" },
+                { value: "15", label: "하계휴가" },
+              ];
+            })();
 
-        return <AttendanceCell {...props} typeOptions={typeOptions} />;
-      },
-      size: "2%",
-    };
-  });
+            return <AttendanceCell {...props} typeOptions={typeOptions} />;
+          },
+          size: "2%",
+        };
+      }),
+    [daysInMonth, year, month]
+  );
 
   const attendanceColumns = useMemo(
     () => [
@@ -654,10 +654,8 @@ function RecordSheet() {
   );
 
   const getOrgTimes = (row, defaultTimesObj) => {
-    const orgStart =
-      row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
-    const orgEnd =
-      row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
+    const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
+    const orgEnd = row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
 
     return { org_start_time: orgStart, org_end_time: orgEnd };
   };
@@ -670,9 +668,7 @@ function RecordSheet() {
       updateData: (rowIndex, columnId, newValue) => {
         setAttendanceRows((old) =>
           old.map((row, index) =>
-            index !== rowIndex
-              ? row
-              : { ...row, [columnId]: { ...row[columnId], ...newValue } }
+            index !== rowIndex ? row : { ...row, [columnId]: { ...row[columnId], ...newValue } }
           )
         );
       },
@@ -703,16 +699,15 @@ function RecordSheet() {
     data: dispatchRows,
     columns: [
       { header: "이름", accessorKey: "name", size: "3%", cell: ReadonlyCell },
+      { header: "연락처", accessorKey: "phone", size: "3%", cell: ReadonlyCell },
       { header: "주민등록번호", accessorKey: "rrn", size: "3%", cell: ReadonlyCell },
       { header: "계좌정보", accessorKey: "account_number", size: "3%", cell: ReadonlyCell },
-      { header: "금액", accessorKey: "total", size: "20%", cell: ReadonlyCell },
+      { header: "금액", accessorKey: "total", size: "15%", cell: ReadonlyCell },
       {
         header: "관리",
         id: "actions",
         size: "1%",
-        cell: ({ row }) => (
-          <DispatchActionCell row={row} onToggle={handleToggleDispatch} />
-        ),
+        cell: ({ row }) => <DispatchActionCell row={row} onToggle={handleToggleDispatch} />,
       },
     ],
     getCoreRowModel: getCoreRowModel(),
@@ -748,7 +743,7 @@ function RecordSheet() {
       border: "1px solid #686D76",
     },
     "thead th:first-of-type": { zIndex: 5 },
-    "& button": { height : "20px !important", padding: "2px"}
+    "& button": { height: "20px !important", padding: "2px" },
   };
 
   // ✅ 출퇴근 일괄 적용
@@ -786,8 +781,7 @@ function RecordSheet() {
     const type5Records = [];
 
     const useDiffMode =
-      originalAttendanceRows &&
-      originalAttendanceRows.length === attendanceRows.length;
+      originalAttendanceRows && originalAttendanceRows.length === attendanceRows.length;
 
     attendanceRows.forEach((row, rowIndex) => {
       const originalRow = useDiffMode ? originalAttendanceRows[rowIndex] : null;
@@ -815,9 +809,7 @@ function RecordSheet() {
             type: Number(val.type),
             start_time: val.start || "",
             end_time: val.end || "",
-            salary: val.salary
-              ? Number(val.salary.toString().replace(/,/g, ""))
-              : 0,
+            salary: val.salary ? Number(val.salary.toString().replace(/,/g, "")) : 0,
             note: val.memo || "",
             position: row.position || "",
             org_start_time,
@@ -853,22 +845,22 @@ function RecordSheet() {
   };
 
   const TYPE_LABEL = {
-    "0": "-",
-    "1": "영양사",
-    "2": "상용",
-    "3": "초과",
-    "4": "결근",
-    "5": "파출",
-    "6": "직원파출",
-    "7": "유틸",
-    "8": "대체근무",
-    "9": "연차",
-    "10": "반차",
-    "11": "대체휴무",
-    "12": "병가",
-    "13": "출산휴가",
-    "14": "육아휴직",
-    "15": "하계휴가",
+    0: "-",
+    1: "영양사",
+    2: "상용",
+    3: "초과",
+    4: "결근",
+    5: "파출",
+    6: "직원파출",
+    7: "유틸",
+    8: "대체근무",
+    9: "연차",
+    10: "반차",
+    11: "대체휴무",
+    12: "병가",
+    13: "출산휴가",
+    14: "육아휴직",
+    15: "하계휴가",
   };
 
   const formatDayCell = (cell) => {
@@ -883,8 +875,6 @@ function RecordSheet() {
         : "";
     const memo = cell.memo ?? cell.note ?? "";
 
-    // 셀 하나에 보기 좋게 줄바꿈
-    // 예: "상용\n09:00~18:00\n급여: 100,000\n메모..."
     const lines = [
       typeLabel,
       start || end ? `${start}~${end}` : "",
@@ -899,7 +889,6 @@ function RecordSheet() {
     const wb = new ExcelJS.Workbook();
     wb.creator = "RecordSheet";
 
-    // 파일명
     const accountName =
       (accountList || []).find((a) => a.account_id === selectedAccountId)?.account_name ||
       account_name ||
@@ -907,22 +896,16 @@ function RecordSheet() {
       "거래처";
     const filename = `출근부_${accountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
 
-    // =========================
-    // 1) 출근 현황 시트
-    // =========================
     const ws1 = wb.addWorksheet("출근현황");
     ws1.properties.defaultRowHeight = 18;
 
-    // 헤더 만들기: 직원명 + day_1..day_n
     const header = ["직원명"];
     for (let d = 1; d <= daysInMonth; d++) header.push(`${d}일`);
     ws1.addRow(header);
 
-    // 헤더 스타일
     ws1.getRow(1).font = { bold: true };
     ws1.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
 
-    // 데이터
     attendanceRows.forEach((row) => {
       const r = [row.name || ""];
       for (let d = 1; d <= daysInMonth; d++) {
@@ -932,13 +915,8 @@ function RecordSheet() {
       ws1.addRow(r);
     });
 
-    // 컬럼 폭 / 줄바꿈 / 고정
-    ws1.columns = [
-      { width: 14 }, // 직원명
-      ...Array.from({ length: daysInMonth }, () => ({ width: 14 })),
-    ];
+    ws1.columns = [{ width: 14 }, ...Array.from({ length: daysInMonth }, () => ({ width: 14 }))];
 
-    // 셀 스타일(줄바꿈)
     ws1.eachRow((row, rowNumber) => {
       row.eachCell((cell) => {
         cell.alignment = {
@@ -955,12 +933,8 @@ function RecordSheet() {
       });
     });
 
-    // 첫 행/첫 열 고정(엑셀 Freeze)
     ws1.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
 
-    // =========================
-    // 2) 직원 정보 시트
-    // =========================
     const ws2 = wb.addWorksheet("직원정보");
     ws2.addRow(["직원명", "직책", "직원파출", "초과", "결근", "비고"]);
     ws2.getRow(1).font = { bold: true };
@@ -997,9 +971,6 @@ function RecordSheet() {
       });
     });
 
-    // =========================
-    // 3) 파출 정보 시트
-    // =========================
     const ws3 = wb.addWorksheet("파출정보");
     ws3.addRow(["이름", "주민등록번호", "계좌정보", "금액", "삭제여부(del_yn)"]);
     ws3.getRow(1).font = { bold: true };
@@ -1014,13 +985,7 @@ function RecordSheet() {
       ]);
     });
 
-    ws3.columns = [
-      { width: 14 },
-      { width: 18 },
-      { width: 26 },
-      { width: 12 },
-      { width: 16 },
-    ];
+    ws3.columns = [{ width: 14 }, { width: 18 }, { width: 26 }, { width: 12 }, { width: 16 }];
 
     ws3.eachRow((row) => {
       row.eachCell((cell) => {
@@ -1034,22 +999,12 @@ function RecordSheet() {
       });
     });
 
-    // =========================
-    // 파일 저장
-    // =========================
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     saveAs(blob, filename);
   };
-
-
-  // ✅ 거래처/연월/필터 변경 시 "파출만" 재조회
-  // useEffect(() => {
-  //   if (!selectedAccountId) return;
-  //   fetchDispatchOnly(dispatchDelFilter);
-  // }, [selectedAccountId, year, month, dispatchDelFilter, fetchDispatchOnly]);
 
   if (loading) return <LoadingScreen />;
 
@@ -1077,21 +1032,39 @@ function RecordSheet() {
             gap: isMobile ? 1 : 2,
           }}
         >
-          <Box sx={{ flexWrap: isMobile ? "wrap" : "nowrap", justifyContent: isMobile ? "flex-start" : "flex-end", display: "flex", justifyContent: "space-between", alignItems: "right", gap: 1 }}>
-            <TextField
-              select
+          <Box
+            sx={{
+              flexWrap: isMobile ? "wrap" : "nowrap",
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "right",
+              gap: 1,
+            }}
+          >
+            {/* ✅ 거래처 select → 검색 가능한 Autocomplete로 변경 (다른 부분은 그대로) */}
+            <Autocomplete
               size="small"
-              value={selectedAccountId}
-              onChange={(e) => setSelectedAccountId(e.target.value)}
-              sx={{ minWidth: isMobile ? 140 : 150 }}
-              SelectProps={{ native: true }}
-            >
-              {(accountList || []).map((row) => (
-                <option key={row.account_id} value={row.account_id}>
-                  {row.account_name}
-                </option>
-              ))}
-            </TextField>
+              options={accountList || []}
+              value={(accountList || []).find((a) => a.account_id === selectedAccountId) || null}
+              onChange={(_, newVal) => {
+                setSelectedAccountId(newVal?.account_id || "");
+              }}
+              getOptionLabel={(opt) => opt?.account_name || ""}
+              isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
+              sx={{ minWidth: 200 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  sx={{
+                    "& .MuiInputBase-root": { height: 40, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
+            />
 
             <Select
               value={year}
@@ -1104,13 +1077,11 @@ function RecordSheet() {
                 },
               }}
             >
-              {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map(
-                (y) => (
-                  <MenuItem key={y} value={y}>
-                    {y}년
-                  </MenuItem>
-                )
-              )}
+              {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+                <MenuItem key={y} value={y}>
+                  {y}년
+                </MenuItem>
+              ))}
             </Select>
 
             <Select
@@ -1155,7 +1126,7 @@ function RecordSheet() {
             >
               엑셀 다운로드
             </MDButton>
-            {/* ✅ 조회: 전체 조회 + 파출은 필터로 다시 맞춤 */}
+
             <MDButton
               variant="gradient"
               color="warning"
@@ -1213,10 +1184,7 @@ function RecordSheet() {
                     <tr key={hg.id}>
                       {hg.headers.map((header) => (
                         <th key={header.id}>
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
                       ))}
                     </tr>
@@ -1239,10 +1207,7 @@ function RecordSheet() {
                               backgroundColor: bg,
                             }}
                           >
-                            {flexRender(
-                              cell.column.columnDef.cell,
-                              cell.getContext()
-                            )}
+                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </td>
                         );
                       })}
@@ -1278,10 +1243,7 @@ function RecordSheet() {
                     <tr key={hg.id}>
                       {hg.headers.map((header) => (
                         <th key={header.id}>
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
                       ))}
                     </tr>
@@ -1292,10 +1254,7 @@ function RecordSheet() {
                     <tr key={row.id}>
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
                     </tr>
@@ -1378,10 +1337,7 @@ function RecordSheet() {
                     <tr key={hg.id}>
                       {hg.headers.map((header) => (
                         <th key={header.id}>
-                          {flexRender(
-                            header.column.columnDef.header,
-                            header.getContext()
-                          )}
+                          {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
                       ))}
                     </tr>
@@ -1392,10 +1348,7 @@ function RecordSheet() {
                     <tr key={row.id}>
                       {row.getVisibleCells().map((cell) => (
                         <td key={cell.id}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}
                     </tr>
@@ -1432,6 +1385,15 @@ function RecordSheet() {
             label="이름"
             name="name"
             value={formData.name}
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            onChange={handleChange}
+          />
+          <TextField
+            fullWidth
+            margin="normal"
+            label="연락처"
+            name="phone"
+            value={formData.phone}
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             onChange={handleChange}
           />

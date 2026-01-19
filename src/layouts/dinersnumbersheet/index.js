@@ -2,16 +2,14 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import { Select, MenuItem, TextField, useMediaQuery, useTheme } from "@mui/material";
+import Autocomplete from "@mui/material/Autocomplete";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import useDinersNumbersheetData, {
-  parseNumber,
-  formatNumber,
-} from "./data/DinersNumberSheetData";
+import useDinersNumbersheetData, { parseNumber, formatNumber } from "./data/DinersNumberSheetData";
 import LoadingScreen from "../loading/loadingscreen";
 import Swal from "sweetalert2";
 import api from "api/api";
@@ -112,11 +110,7 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
   // ✅ 20250819193620: 2층 주간보호(어르신) (조/중/석 평균(있는 항목만)) + 경관식
   // - 2층 주간보호(어르신) = daycare_breakfast/daycare_lunch/daycare_diner
   if (accountId === "20250819193620") {
-    const avgMeals = avgOfExisting(
-      row.daycare_breakfast,
-      row.daycare_lunch,
-      row.daycare_diner
-    );
+    const avgMeals = avgOfExisting(row.daycare_breakfast, row.daycare_lunch, row.daycare_diner);
     const ceremony = parseNumber(row.ceremony);
     return Math.round(avgMeals + ceremony);
   }
@@ -147,22 +141,12 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
     if (accountId === "20250819193651") {
       const breakfastVal = parseNumber(row.breakfast);
 
-      const lunchCols = extras.filter((c) =>
-        ((c.name || "").trim() || "").startsWith("중식")
-      );
-      const dinnerCols = extras.filter((c) =>
-        ((c.name || "").trim() || "").startsWith("석식")
-      );
+      const lunchCols = extras.filter((c) => ((c.name || "").trim() || "").startsWith("중식"));
+      const dinnerCols = extras.filter((c) => ((c.name || "").trim() || "").startsWith("석식"));
 
       // 중식/석식이 여러 개면(혹시라도) 해당 값들을 합산해서 한 끼 값으로 처리
-      const lunchVal = lunchCols.reduce(
-        (sum, c) => sum + parseNumber(row[c.priceKey]),
-        0
-      );
-      const dinnerVal = dinnerCols.reduce(
-        (sum, c) => sum + parseNumber(row[c.priceKey]),
-        0
-      );
+      const lunchVal = lunchCols.reduce((sum, c) => sum + parseNumber(row[c.priceKey]), 0);
+      const dinnerVal = dinnerCols.reduce((sum, c) => sum + parseNumber(row[c.priceKey]), 0);
 
       const avgMeals = avgOfExisting(breakfastVal, lunchVal, dinnerVal);
       return Math.round(avgMeals);
@@ -189,27 +173,18 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
         const name = (col.name || "").trim();
         const value = parseNumber(row[col.priceKey]);
 
-        if (baseNames.includes(name)) {
-          baseValues.push(value);
-        } else {
-          otherSum += value;
-        }
+        if (baseNames.includes(name)) baseValues.push(value);
+        else otherSum += value;
       });
 
       const avgBase =
-        baseValues.length > 0
-          ? baseValues.reduce((sum, v) => sum + v, 0) / baseValues.length
-          : 0;
+        baseValues.length > 0 ? baseValues.reduce((sum, v) => sum + v, 0) / baseValues.length : 0;
 
       return Math.round(avgBase + otherSum);
     }
 
     // 🏫 학교 + 일반 산업체 → "기본 + extraDiet 합"
-    const extraSum = extras.reduce((sum, col) => {
-      const v = parseNumber(row[col.priceKey]);
-      return sum + v;
-    }, 0);
-
+    const extraSum = extras.reduce((sum, col) => sum + parseNumber(row[col.priceKey]), 0);
     return mainMeal + extraSum;
   }
 
@@ -227,16 +202,10 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
   let total = baseTotal;
 
   if (
-    (accountType === "4" ||
-      accountType === "5" ||
-      accountType === 4 ||
-      accountType === 5) &&
+    (accountType === "4" || accountType === "5" || accountType === 4 || accountType === 5) &&
     extras.length > 0
   ) {
-    const extraSum = extras.reduce((sum, col) => {
-      const v = parseNumber(row[col.priceKey]);
-      return sum + v;
-    }, 0);
+    const extraSum = extras.reduce((sum, col) => sum + parseNumber(row[col.priceKey]), 0);
     total += extraSum;
   }
 
@@ -253,9 +222,7 @@ const normalizeValueForCompare = (key, value) => {
   }
 
   if (value === null || value === undefined) return "";
-  if (typeof value === "string") {
-    return value.trim().replace(/\s+/g, " ");
-  }
+  if (typeof value === "string") return value.trim().replace(/\s+/g, " ");
   return value;
 };
 
@@ -266,13 +233,11 @@ const getTableStructure = (
   extraDietCols,
   selectedAccountType
 ) => {
-  const isSchoolOrIndustry =
-    selectedAccountType === "학교" || selectedAccountType === "산업체";
+  const isSchoolOrIndustry = selectedAccountType === "학교" || selectedAccountType === "산업체";
 
   // ✅ 학교/산업체일 때만 특식여부(special_yn) 노출
   if (isSchoolOrIndustry) {
-    const mainKey =
-      selectedAccountId === "20250819193651" ? "breakfast" : "lunch";
+    const mainKey = selectedAccountId === "20250819193651" ? "breakfast" : "lunch";
     const mainLabel =
       selectedAccountId === "20250819193651"
         ? "조식"
@@ -297,10 +262,7 @@ const getTableStructure = (
       { label: "비고" },
     ];
 
-    return {
-      headerRows: [headerRow],
-      visibleColumns: baseColumns,
-    };
+    return { headerRows: [headerRow], visibleColumns: baseColumns };
   }
 
   // =========================================================
@@ -408,12 +370,7 @@ const getTableStructure = (
           { label: "중식취소", rowSpan: 2 },
           { label: "석식취소", rowSpan: 2 },
         ],
-        [
-          { label: "중식" },
-          { label: "석식" },
-          { label: "요양원" },
-          { label: "주간보호" },
-        ],
+        [{ label: "중식" }, { label: "석식" }, { label: "요양원" }, { label: "주간보호" }],
       ],
       visibleColumns: [
         "breakfast",
@@ -707,10 +664,7 @@ const getTableStructure = (
     { label: "석식취소" },
   ];
 
-  return {
-    headerRows: [headerRow],
-    visibleColumns: baseColumns,
-  };
+  return { headerRows: [headerRow], visibleColumns: baseColumns };
 };
 
 function DinersNumberSheet() {
@@ -731,14 +685,16 @@ function DinersNumberSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const {
-    activeRows,
-    setActiveRows,
-    loading,
-    fetchAllData,
-    extraDietCols,
-    accountList,
-  } = useDinersNumbersheetData(selectedAccountId, year, month);
+  const { activeRows, setActiveRows, loading, fetchAllData, extraDietCols, accountList } =
+    useDinersNumbersheetData(selectedAccountId, year, month);
+
+  // ✅ 거래처 Autocomplete 옵션
+  const accountOptions = useMemo(() => {
+    return (accountList || []).map((acc) => ({
+      value: String(acc.account_id),
+      label: acc.account_name,
+    }));
+  }, [accountList]);
 
   // ✅ extraDietCols 레퍼런스 변동으로 originalRows가 덮이는 문제 방지
   const extraDietSignature = useMemo(() => {
@@ -755,17 +711,13 @@ function DinersNumberSheet() {
     DAYCARE_ACCOUNT_IDS.includes(selectedAccountId) &&
     !SPECIAL_LAYOUT_IDS.includes(selectedAccountId);
 
-  const selectedAccount = (accountList || []).find(
-    (acc) => acc.account_id === selectedAccountId
-  );
+  const selectedAccount = (accountList || []).find((acc) => acc.account_id === selectedAccountId);
   const selectedAccountType = selectedAccount?.account_type;
 
-  const isWorkingDayVisible =
-    selectedAccountType === "학교" || selectedAccountType === "산업체";
+  const isWorkingDayVisible = selectedAccountType === "학교" || selectedAccountType === "산업체";
 
   const isWorkingDayChanged =
-    isWorkingDayVisible &&
-    parseNumber(workingDay ?? 0) !== originalWorkingDay;
+    isWorkingDayVisible && parseNumber(workingDay ?? 0) !== originalWorkingDay;
 
   // =========================================================
   // ✅ (C) Shift+드래그 선택 → 입력창 → 일괄 적용
@@ -781,8 +733,7 @@ function DinersNumberSheet() {
     visibleColumnsSnapshot: [],
   });
 
-  const isEditableKey = (key) =>
-    !["total", "diner_date"].includes(key) && key !== "special_yn";
+  const isEditableKey = (key) => !["total", "diner_date"].includes(key) && key !== "special_yn";
 
   const isCellSelected = (rowIndex, colIndex, key) => {
     if (!dragSelect) return false;
@@ -878,7 +829,7 @@ function DinersNumberSheet() {
     setSelectedAccountId((prev) => {
       if (prev) return prev;
 
-      if (account_id && accountList.some((row) => row.account_id === account_id)) {
+      if (account_id && accountList.some((row) => String(row.account_id) === String(account_id))) {
         return account_id;
       }
 
@@ -969,7 +920,6 @@ function DinersNumberSheet() {
     setActiveRows(merged);
     setOriginalRows(merged.map((r) => ({ ...r })));
 
-    // 🔹 근무일수 초기값 세팅
     const rowWithWorkingDay = merged.find(
       (r) => r.working_day !== undefined && r.working_day !== null
     );
@@ -981,17 +931,9 @@ function DinersNumberSheet() {
     setWorkingDay(initialWorkingDay.toString());
     setOriginalWorkingDay(initialWorkingDay);
 
-    // ✅ 계정/기간 변경 시 드래그 선택 초기화
     setDragSelect(null);
     selectRef.current.selecting = false;
-  }, [
-    selectedAccountId,
-    year,
-    month,
-    loading,
-    selectedAccountType,
-    extraDietSignature,
-  ]);
+  }, [selectedAccountId, year, month, loading, selectedAccountType, extraDietSignature]);
 
   // ✅ 셀 변경 (테이블)
   const handleCellChange = (rowIndex, key, value) => {
@@ -1018,7 +960,6 @@ function DinersNumberSheet() {
     const original = originalRows[rowIndex]?.[key];
     const origNorm = normalizeValueForCompare(key, original);
     const currNorm = normalizeValueForCompare(key, value);
-
     return origNorm !== currNorm ? { color: "red" } : { color: "black" };
   };
 
@@ -1041,12 +982,8 @@ function DinersNumberSheet() {
       });
     });
 
-    const workingDayNumber = isWorkingDayVisible
-      ? parseNumber(workingDay ?? 0) || 0
-      : 0;
-
-    const workingDayChanged =
-      isWorkingDayVisible && workingDayNumber !== originalWorkingDay;
+    const workingDayNumber = isWorkingDayVisible ? parseNumber(workingDay ?? 0) || 0 : 0;
+    const workingDayChanged = isWorkingDayVisible && workingDayNumber !== originalWorkingDay;
 
     if (modified.length === 0 && !workingDayChanged) {
       Swal.fire("안내", "변경된 데이터가 없습니다.", "info");
@@ -1075,9 +1012,7 @@ function DinersNumberSheet() {
     }
   };
 
-  if (loading && (!activeRows || activeRows.length === 0)) {
-    return <LoadingScreen />;
-  }
+  if (loading && (!activeRows || activeRows.length === 0)) return <LoadingScreen />;
 
   const { headerRows, visibleColumns } = getTableStructure(
     selectedAccountId,
@@ -1091,6 +1026,7 @@ function DinersNumberSheet() {
   return (
     <DashboardLayout>
       <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
+
       <MDBox
         pt={1}
         pb={1}
@@ -1128,29 +1064,40 @@ function DinersNumberSheet() {
             />
           </>
         )}
-        {accountList.length > 0 && (
-          <TextField
-            select
+
+        {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
+        {(accountList || []).length > 0 && (
+          <Autocomplete
             size="small"
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
-            SelectProps={{ native: true }}
-          >
-            {(accountList || []).map((row) => (
-              <option key={row.account_id} value={row.account_id}>
-                {row.account_name}
-              </option>
-            ))}
-          </TextField>
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={(() => {
+              const v = String(selectedAccountId ?? "");
+              return accountOptions.find((o) => o.value === v) || null;
+            })()}
+            onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
         )}
-        {/* ✅ 거래처 select와 같은 컴포넌트(TextField select)로 통일 */}
+
         <TextField
           select
           size="small"
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+          sx={{ minWidth: isMobile ? 140 : 150 }}
           SelectProps={{ native: true }}
         >
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -1165,7 +1112,7 @@ function DinersNumberSheet() {
           size="small"
           value={month}
           onChange={(e) => setMonth(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+          sx={{ minWidth: isMobile ? 140 : 150 }}
           SelectProps={{ native: true }}
         >
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -1174,6 +1121,7 @@ function DinersNumberSheet() {
             </option>
           ))}
         </TextField>
+
         <MDButton variant="gradient" color="info" onClick={handleSave}>
           저장
         </MDButton>
@@ -1182,13 +1130,7 @@ function DinersNumberSheet() {
       <MDBox pt={3} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
-            <Card
-              sx={{
-                height: "calc(95vh - 160px)",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
+            <Card sx={{ height: "calc(95vh - 160px)", display: "flex", flexDirection: "column" }}>
               <MDBox
                 pt={0}
                 sx={{
@@ -1269,9 +1211,7 @@ function DinersNumberSheet() {
                                 selectRef.current.endRow = rowIndex;
                                 selectRef.current.startCol = colIndex;
                                 selectRef.current.endCol = colIndex;
-                                selectRef.current.visibleColumnsSnapshot = [
-                                  ...visibleColumns,
-                                ];
+                                selectRef.current.visibleColumnsSnapshot = [...visibleColumns];
 
                                 setDragSelect({
                                   startRow: rowIndex,
@@ -1280,11 +1220,9 @@ function DinersNumberSheet() {
                                   endCol: colIndex,
                                 });
 
-                                window.addEventListener(
-                                  "mouseup",
-                                  finishSelectionAndPrompt,
-                                  { once: true }
-                                );
+                                window.addEventListener("mouseup", finishSelectionAndPrompt, {
+                                  once: true,
+                                });
                               }}
                               onMouseEnter={() => {
                                 if (!selectRef.current.selecting) return;
@@ -1309,19 +1247,13 @@ function DinersNumberSheet() {
 
                                 handleCellChange(rowIndex, key, newValue);
 
-                                if (isNumeric) {
-                                  e.currentTarget.innerText =
-                                    formatNumber(newValue);
-                                }
+                                if (isNumeric) e.currentTarget.innerText = formatNumber(newValue);
                               }}
                             >
                               {isSpecial ? (
                                 <select
                                   value={value || "N"}
-                                  onChange={(e) => {
-                                    const newValue = e.target.value;
-                                    handleCellChange(rowIndex, key, newValue);
-                                  }}
+                                  onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                                   style={{
                                     width: "100%",
                                     border: "none",

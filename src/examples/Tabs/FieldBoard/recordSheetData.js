@@ -20,7 +20,7 @@ export default function useRecordsheetData(account_id, year, month) {
       });
 
       const dispatchReq = api.get("/Account/AccountRecordDispatchList", {
-        params: { account_id, year, month, del_yn:"N" },
+        params: { account_id, year, month, del_yn: "N" },
       });
 
       const timesReq = api.get("/Account/AccountMemberRecordTime", {
@@ -42,7 +42,7 @@ export default function useRecordsheetData(account_id, year, month) {
       // ✅ 직원정보
       setMemberRows(
         (memberRes.data || []).map((item) => ({
-          member_id: item.member_id,       // ✅ 추가
+          member_id: item.member_id, // ✅ 추가
           name: item.name,
           position: item.position,
           employ_dispatch: item.employ_dispatch || "",
@@ -58,10 +58,11 @@ export default function useRecordsheetData(account_id, year, month) {
           account_id: item.account_id,
           member_id: item.member_id,
           name: item.name,
+          phone: item.phone,
           rrn: item.rrn,
           account_number: item.account_number,
           total: item.total,
-          del_yn: item.del_yn
+          del_yn: item.del_yn,
         }))
       );
 
@@ -119,7 +120,7 @@ export default function useRecordsheetData(account_id, year, month) {
           name,
           account_id: firstItem.account_id || "",
           member_id: firstItem.member_id || "",
-          position: firstItem.position || "",      // ✅ 여기 추가
+          position: firstItem.position || "", // ✅ 여기 추가
           days: dayValues,
           ...flatDays,
           day_default: dayValues.day_default || null,

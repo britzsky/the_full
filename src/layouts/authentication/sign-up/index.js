@@ -258,15 +258,18 @@ function SignUp() {
       .then((res) => {
         Swal.fire({
           icon: "success",
-          title: "회원가입 완료!",
-          text: "로그인 페이지로 이동합니다.",
+          title: "사용자 등록 완료!",
+          html: `<div style="white-space:pre-line;">
+                관리자 승인 후 로그인이 가능합니다.
+                관리자에게 문의해주세요.
+                </div>`
         }).then(() => navigate("/authentication/sign-in"));
       })
       .catch((err) => {
         console.error(err);
         Swal.fire({
           icon: "error",
-          title: "회원가입 실패",
+          title: "사용자 등록 실패",
           text: "서버에 문제가 발생했습니다.",
         });
       });
@@ -547,7 +550,7 @@ function SignUp() {
               />
             </MDBox>
 
-            {/* ✅ 회원가입 / 취소 버튼 */}
+            {/* ✅ 사용자 등록 / 취소 버튼 */}
             <MDBox mt={4} mb={1} display="flex" gap={1}>
               <MDButton
                 variant="gradient"
@@ -555,7 +558,7 @@ function SignUp() {
                 fullWidth
                 onClick={handleSubmit}
               >
-                회원가입
+                사용자 등록
               </MDButton>
               <MDButton
                 variant="gradient"

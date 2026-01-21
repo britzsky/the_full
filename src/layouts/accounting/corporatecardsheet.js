@@ -61,10 +61,11 @@ const CARD_BRANDS = [
 // ✅ 영수증 타입(상단 테이블용)
 const RECEIPT_TYPES = [
   // { value: "CARD_SLIP_GENERIC", label: "카드전표" },
-  { value: "mart", label: "마트" },
-  { value: "convenience", label: "편의점" },
   { value: "coupang", label: "쿠팡" },
-  { value: "delivery", label: "배달앱" },
+  { value: "gmarket", label: "G마켓" },
+  { value: "11post", label: "11번가" },
+  { value: "naver", label: "네이버" },
+  { value: "homeplus", label: "홈플러스" },
 ];
 
 // ✅ 하단 셀렉트 옵션
@@ -470,7 +471,7 @@ function CorporateCardSheet() {
       cardBrand: auto?.card_brand || DEFAULT_CARD_BRAND,
 
       // ✅ 영수증 타입(추가)
-      receipt_type: "UNKNOWN",
+      receipt_type: "coupang",
 
       receipt_image: "",
       note: "",
@@ -561,6 +562,7 @@ function CorporateCardSheet() {
         formData.append("cardNo", row.cardNo);
         formData.append("cardBrand", row.cardBrand);
         formData.append("saveType", "headoffice");
+        formData.append("receiptType", row.receipt_type);
 
         const res = await api.post("/Corporate/receipt-scan", formData, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
@@ -592,6 +594,7 @@ function CorporateCardSheet() {
           ...(main.cardNo != null ? { cardNo: main.cardNo } : {}),
           ...(main.cardBrand != null ? { cardBrand: main.cardBrand } : {}),
           ...(main.receipt_image != null ? { receipt_image: main.receipt_image } : {}),
+          ...(main.receipt_type != null ? { receipt_type: main.receipt_type } : {}),
         };
 
         // ✅ 상단 반영
@@ -668,13 +671,29 @@ function CorporateCardSheet() {
 
   const normalizeMasterForSave = useCallback((r) => {
     const row = cleanMasterRow(r);
+
+    // ✅ receipt_type 항상 포함(없으면 기본값)
+    row.receipt_type = String(row.receipt_type ?? r.receipt_type ?? "coupang");
+
     MASTER_NUMBER_KEYS.forEach((k) => {
       if (row[k] !== undefined) row[k] = parseNumber(row[k]);
     });
+
     return row;
   }, []);
 
   const saveAll = useCallback(async () => {
+    // ✅ 선택된 상단행의 account_id / payment_dt 확보(최신 masterRows 기준으로 보정)
+    const selectedSaleId = String(selectedMaster?.sale_id || "").trim();
+
+    const selectedTopRow =
+      (selectedSaleId
+        ? (masterRows || []).find((r) => String(r.sale_id || "") === selectedSaleId)
+        : null) || selectedMaster;
+
+    const topAccountId = selectedTopRow?.account_id ?? "";
+    const topPaymentDt = selectedTopRow?.payment_dt ?? "";
+
     const main = masterRows
       .map((r) => {
         if (r.isNew) return normalizeMasterForSave(r);
@@ -695,19 +714,47 @@ function CorporateCardSheet() {
     const item = detailRows
       .map((r, i) => {
         // ✅ 신규 상세행은 무조건 저장 대상
-        if (r?.isNew) return cleanDetailRow(r);
+        if (r?.isNew) {
+          return {
+            ...cleanDetailRow(r),
+            account_id: topAccountId,
+            payment_dt: topPaymentDt,
+          };
+        }
 
         // ✅ 스캔(강제 빨강)은 무조건 저장 대상
-        if (isForcedRedRow(r)) return cleanDetailRow(r);
+        if (isForcedRedRow(r)) {
+          return {
+            ...cleanDetailRow(r),
+            account_id: topAccountId,
+            payment_dt: topPaymentDt,
+          };
+        }
 
         const o = origDetailRows[i] || {};
         const changed = Object.keys(r).some((k) => isDetailFieldChanged(k, o[k], r[k]));
-        return changed ? cleanDetailRow(r) : null;
+
+        return changed
+          ? {
+              ...cleanDetailRow(r),
+              account_id: topAccountId,
+              payment_dt: topPaymentDt,
+            }
+          : null;
       })
       .filter(Boolean);
 
     if (main.length === 0 && item.length === 0) {
       return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
+    }
+
+    // ✅ 선택된 상단행이 없으면 item 저장은 막는 게 안전
+    if (item.length > 0 && (!topAccountId || !topPaymentDt)) {
+      return Swal.fire(
+        "안내",
+        "하단 상세 저장을 위해 상단 결제내역을 먼저 클릭해서 선택해주세요.",
+        "info"
+      );
     }
 
     try {
@@ -736,7 +783,6 @@ function CorporateCardSheet() {
       skipPendingNewMergeRef.current = true;
       await handleFetchMaster();
 
-      // ✅ 저장 후 선택된 상단행이 있다면 다시 상세조회(서버데이터로 리셋)
       if (selectedMaster?.sale_id) {
         await fetchHeadOfficeCorporateCardPaymentDetailList({
           sale_id: selectedMaster.sale_id,
@@ -744,7 +790,6 @@ function CorporateCardSheet() {
           payment_dt: selectedMaster.payment_dt,
         });
       } else {
-        // 안전장치: 선택행 없으면 로컬기준 리셋
         setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
         setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
         setDetailRenderKey((k) => k + 1);
@@ -927,7 +972,7 @@ function CorporateCardSheet() {
       {
         header: "영수증타입",
         key: "receipt_type",
-        editable: false,
+        editable: true,
         size: 120,
         type: "select",
         options: RECEIPT_TYPES,
@@ -1257,7 +1302,7 @@ function CorporateCardSheet() {
                           <Select
                             size="small"
                             fullWidth
-                            value={String(row.receipt_type ?? "UNKNOWN")}
+                            value={String(row.receipt_type ?? "coupang")}
                             onChange={(e) =>
                               handleMasterCellChange(rowIndex, "receipt_type", e.target.value)
                             }

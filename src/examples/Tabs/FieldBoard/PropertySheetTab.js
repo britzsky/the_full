@@ -2,7 +2,14 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
+import {
+  TextField,
+  useTheme,
+  useMediaQuery,
+  IconButton,
+  Tooltip,
+  Autocomplete,
+} from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -17,23 +24,28 @@ function PropertySheetTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
-  const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
-  const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
-
+  const [selectedAccountId, setSelectedAccountId] = useState("");
   const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
-
-  // ✅ localStorage account_id 기준으로 거래처 리스트 필터링
-  const filteredAccountList = useMemo(() => {
-    if (!localAccountId) return accountList || [];
-    return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
-  }, [accountList, localAccountId]);
-
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
 
   const numericCols = ["purchase_price"];
+
+  // ✅ 거래처 옵션(Autocomplete)
+  const accountOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
 
   useEffect(() => {
     if (selectedAccountId) {
@@ -74,21 +86,28 @@ function PropertySheetTab() {
     setOriginalRows(deepCopy);
   }, [activeRows]);
 
-  // ✅ 거래처 기본값
-  // - localStorage account_id가 있으면 무조건 그걸로 고정
-  // - 없으면: 첫 번째 업장 자동 선택
-  useEffect(() => {
-    if (!accountList || accountList.length === 0) return;
+  // ✅ localStorage account_id 있으면 거래처 고정
+  const lockedAccountId = useMemo(() => {
+    const v = localStorage.getItem("account_id");
+    return v ? String(v) : "";
+  }, []);
 
-    if (localAccountId) {
-      setSelectedAccountId(localAccountId);
+  const isAccountLocked = !!lockedAccountId;
+
+  useEffect(() => {
+    if (!accountList?.length) return;
+
+    // 1) localStorage에 account_id 있으면 그걸로 고정
+    if (lockedAccountId) {
+      setSelectedAccountId(String(lockedAccountId));
       return;
     }
 
+    // 2) 없으면 기존 로직(첫 거래처 자동 선택)
     if (!selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountId(String(accountList[0].account_id));
     }
-  }, [accountList, selectedAccountId, localAccountId]);
+  }, [accountList, selectedAccountId, lockedAccountId]);
 
   const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
@@ -103,7 +122,7 @@ function PropertySheetTab() {
     return value.replace(/\s+/g, " ").trim();
   };
 
-  // ✅ 값 비교를 key별로 통일 (type은 string 비교)
+  // ✅ (FIX) 값 비교를 key별로 통일 (type은 string 비교)
   const isSameValue = (key, original, current) => {
     if (key === "type") {
       return String(original ?? "") === String(current ?? "");
@@ -226,7 +245,7 @@ function PropertySheetTab() {
           const original = originalRows[idx] || {};
           let updatedRow = { ...row };
 
-          // ✅ 변경 감지도 동일 비교 로직 사용
+          // ✅ (FIX) 변경 감지도 동일 비교 로직 사용
           const isChanged =
             row.isNew ||
             Object.keys(updatedRow).some((key) => {
@@ -256,6 +275,7 @@ function PropertySheetTab() {
           // 🟧 감가상각은 서버 저장 제외
           delete updatedRow.depreciation;
 
+          // ✅ type은 저장시에도 문자열->그대로(서버가 숫자 원하면 여기서 Number로 변환 가능)
           return { ...updatedRow, account_id: selectedAccountId || row.account_id };
         })
       );
@@ -294,7 +314,6 @@ function PropertySheetTab() {
         confirmButtonColor: "#d33",
         confirmButtonText: "확인",
       });
-      // eslint-disable-next-line no-console
       console.error(error);
     }
   };
@@ -356,6 +375,10 @@ function PropertySheetTab() {
     },
   };
 
+  const getFileIconSx = (isChanged) => ({
+    color: isChanged ? "#d32f2f" : "#1e88e5",
+  });
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -376,24 +399,38 @@ function PropertySheetTab() {
           backgroundColor: "#ffffff",
         }}
       >
-        <TextField
-          select
-          size="small"
-          value={selectedAccountId}
-          onChange={onSearchList}
-          sx={{
-            minWidth: isMobile ? 150 : 200,
-            fontSize: isMobile ? "12px" : "14px",
-          }}
-          SelectProps={{ native: true }}
-          disabled={!!localAccountId} // ✅ localStorage로 고정이면 변경 불가 (원하면 제거)
-        >
-          {(filteredAccountList || []).map((row) => (
-            <option key={row.account_id} value={row.account_id}>
-              {row.account_name}
-            </option>
-          ))}
-        </TextField>
+        {/* ✅ 거래처 Select → 검색 가능한 Autocomplete로 변경 */}
+        {(accountList || []).length > 0 && (
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={selectedAccountOption}
+            disabled={isAccountLocked} // ✅ 잠금
+            onChange={(_, opt) => {
+              if (isAccountLocked) return; // ✅ 혹시 몰라 방어
+              setSelectedAccountId(opt ? opt.value : "");
+            }}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+            filterOptions={(options, state) => {
+              const q = (state.inputValue ?? "").trim().toLowerCase();
+              if (!q) return options;
+              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label={isAccountLocked ? "거래처(고정)" : "거래처 검색"} // ✅ 표시만 살짝
+                placeholder={isAccountLocked ? "" : "거래처명을 입력"}
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
+        )}
 
         <MDButton
           color="info"
@@ -413,7 +450,7 @@ function PropertySheetTab() {
       </MDBox>
 
       {/* 테이블 영역 */}
-      <MDBox pt={1} pb={3} sx={tableSx}>
+      <MDBox pt={0} pb={3} sx={tableSx}>
         <table>
           <thead>
             <tr>
@@ -468,9 +505,12 @@ function PropertySheetTab() {
                       </td>
                     );
 
-                  // ✅ 이미지: 있으면 다운로드/미리보기(파란색), 없으면 업로드 버튼
                   if (["item_img", "receipt_img"].includes(key)) {
                     const hasImage = !!value;
+
+                    // ✅ 원본 대비 변경 여부 (File 객체로 재업로드되면 무조건 변경)
+                    const original = originalRows[rowIndex]?.[key];
+                    const isImgChanged = !isSameValue(key, original, value); // 기존 로직 그대로 활용 가능
 
                     return (
                       <td
@@ -486,55 +526,60 @@ function PropertySheetTab() {
                           accept="image/*"
                           id={`upload-${key}-${rowIndex}`}
                           style={{ display: "none" }}
-                          onChange={(e) => handleCellChange(rowIndex, key, e.target.files?.[0])}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleCellChange(rowIndex, key, file);
+                            e.target.value = ""; // 같은 파일 재선택 가능
+                          }}
                         />
 
-                        {hasImage ? (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: 6,
-                              flexWrap: isMobile ? "wrap" : "nowrap",
-                            }}
-                          >
-                            {/* 다운로드: 서버 문자열일 때만 */}
-                            {typeof value === "string" && (
-                              <Tooltip title="다운로드">
-                                <IconButton
-                                  size="small"
-                                  sx={fileIconSx}
-                                  onClick={() => handleDownload(value)}
-                                >
-                                  <DownloadIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 6,
+                            flexWrap: isMobile ? "wrap" : "nowrap",
+                          }}
+                        >
+                          {/* 업로드/재업로드 */}
+                          <label htmlFor={`upload-${key}-${rowIndex}`}>
+                            <MDButton
+                              component="span"
+                              size="small"
+                              color={hasImage ? "info" : "info"}
+                              sx={{ fontSize: isMobile ? "10px" : "12px" }}
+                            >
+                              {hasImage ? "재업로드" : "이미지 업로드"}
+                            </MDButton>
+                          </label>
 
-                            {/* 미리보기: 서버/로컬 모두 */}
+                          {/* 다운로드: 서버 문자열일 때만 */}
+                          {typeof value === "string" && (
+                            <Tooltip title="다운로드">
+                              <IconButton
+                                size="small"
+                                sx={getFileIconSx(isImgChanged)}
+                                onClick={() => handleDownload(value)}
+                              >
+                                <DownloadIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+
+                          {/* 미리보기: 서버/로컬 모두 */}
+                          {hasImage && (
                             <Tooltip title="미리보기">
                               <IconButton
                                 size="small"
-                                sx={fileIconSx}
+                                sx={getFileIconSx(isImgChanged)} // ✅ 변경 시 빨간색
                                 onClick={() => handleViewImage(value)}
                               >
                                 <ImageSearchIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                          </div>
-                        ) : (
-                          <label htmlFor={`upload-${key}-${rowIndex}`}>
-                            <MDButton
-                              component="span"
-                              size="small"
-                              color="info"
-                              sx={{ fontSize: isMobile ? "10px" : "12px" }}
-                            >
-                              이미지 업로드
-                            </MDButton>
-                          </label>
-                        )}
+                          )}
+                        </div>
                       </td>
                     );
                   }
@@ -608,7 +653,14 @@ function PropertySheetTab() {
             <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
               {() => (
                 <>
-                  <div style={{ position: "absolute", top: 8, right: 8, zIndex: 1000 }}>
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 8,
+                      right: 8,
+                      zIndex: 1000,
+                    }}
+                  >
                     <button
                       onClick={handleCloseViewer}
                       style={{
@@ -627,7 +679,11 @@ function PropertySheetTab() {
                     <img
                       src={encodeURI(viewImageSrc)}
                       alt="미리보기"
-                      style={{ maxWidth: "95vw", maxHeight: "90vh", borderRadius: 8 }}
+                      style={{
+                        maxWidth: "95vw",
+                        maxHeight: "90vh",
+                        borderRadius: 8,
+                      }}
                     />
                   </TransformComponent>
                 </>

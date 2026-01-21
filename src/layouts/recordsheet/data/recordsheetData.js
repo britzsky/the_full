@@ -9,7 +9,10 @@ export default function useRecordsheetData(account_id, year, month) {
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ 전체 데이터 조회 (async/await + Promise.all 전환)
+  const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
+  const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
+
+  // ✅ 전체 데이터 조회
   const fetchAllData = async () => {
     if (!account_id) return;
     setLoading(true);
@@ -31,7 +34,6 @@ export default function useRecordsheetData(account_id, year, month) {
         params: { account_id, year, month },
       });
 
-      // ✅ 모든 요청이 완료될 때까지 기다린 후 결과 받음
       const [memberRes, dispatchRes, timesRes, sheetRes] = await Promise.all([
         memberReq,
         dispatchReq,
@@ -42,7 +44,7 @@ export default function useRecordsheetData(account_id, year, month) {
       // ✅ 직원정보
       setMemberRows(
         (memberRes.data || []).map((item) => ({
-          member_id: item.member_id, // ✅ 추가
+          member_id: item.member_id,
           name: item.name,
           position: item.position,
           employ_dispatch: item.employ_dispatch || "",
@@ -76,31 +78,61 @@ export default function useRecordsheetData(account_id, year, month) {
         }))
       );
 
-      // ✅ 출근현황 sheetRows로 변환
+      // ✅ 출근현황: member_id 기준으로 그룹핑 (중요!)
       const data = sheetRes.data || [];
-      const grouped = {};
-      data.forEach((item) => {
-        const name = item.name || `member_${item.member_id || Math.random()}`;
-        if (!grouped[name]) grouped[name] = {};
+      const grouped = {}; // key: member_id
+
+      data.forEach((item, idx) => {
+        const mid = safeTrim(item.member_id, `tmp_${idx}`);
+        if (!grouped[mid]) {
+          grouped[mid] = {
+            member_id: mid,
+            name: item.name || `member_${mid}`,
+            account_id: item.account_id || "",
+            position: item.position || "",
+            // ✅ row-level 고정값(없으면 나중에 days에서 다시 추론)
+            gubun: safeTrim(item.gubun, ""),
+            position_type: safeTrim(item.position_type, ""),
+            days: {},
+          };
+        }
 
         const dayNum = Number(item.record_date);
         const key = !dayNum || dayNum <= 0 ? "day_default" : `day_${dayNum}`;
 
-        grouped[name][key] = {
+        grouped[mid].days[key] = {
           start_time: item.start_time || "",
           end_time: item.end_time || "",
           type: item.type != null ? String(item.type) : "",
           salary: item.salary || "",
           note: item.note || "",
-          member_id: item.member_id || "",
+          member_id: mid,
           account_id: item.account_id || "",
+          // ✅ 반드시 문자열로
+          position_type: safeTrim(item.position_type, ""),
+          gubun: safeTrim(item.gubun, ""),
         };
       });
 
-      const rows = Object.keys(grouped).map((name) => {
-        const firstItem = data.find((d) => d.name === name) || {};
-        const dayValues = grouped[name];
+      const rows = Object.values(grouped).map((g) => {
+        const dayValues = g.days || {};
 
+        // ✅ row-level gubun/position_type을 days에서 보정(없을 때)
+        const anyDay =
+          Object.values(dayValues).find((v) => v && (v.gubun || v.position_type)) || {};
+        const rowGubun =
+          safeTrim(g.gubun, "") ||
+          safeTrim(dayValues.day_default?.gubun, "") ||
+          safeTrim(anyDay.gubun, "nor") ||
+          "nor";
+
+        const rowPt =
+          safeTrim(g.position_type, "") ||
+          safeTrim(dayValues.day_default?.position_type, "") ||
+          safeTrim(anyDay.position_type, "") ||
+          "";
+
+        // ✅ flatDays 생성: 각 day에 start/end를 추가 + gubun/position_type fallback 적용
         const flatDays = Object.fromEntries(
           Object.entries(dayValues)
             .filter(([k]) => k.startsWith("day_") && k !== "day_default")
@@ -108,22 +140,36 @@ export default function useRecordsheetData(account_id, year, month) {
               key,
               {
                 ...val,
-                start: val.start_time || "",
-                end: val.end_time || "",
-                defaultStart: val.start_time || "",
-                defaultEnd: val.end_time || "",
+                // ✅ 여기서도 보정
+                gubun: safeTrim(val?.gubun, rowGubun),
+                position_type: safeTrim(val?.position_type, rowPt),
+                start: val?.start_time || "",
+                end: val?.end_time || "",
+                defaultStart: val?.start_time || "",
+                defaultEnd: val?.end_time || "",
               },
             ])
         );
 
+        const dayDefault = dayValues.day_default
+          ? {
+              ...dayValues.day_default,
+              gubun: safeTrim(dayValues.day_default.gubun, rowGubun),
+              position_type: safeTrim(dayValues.day_default.position_type, rowPt),
+            }
+          : null;
+
         return {
-          name,
-          account_id: firstItem.account_id || "",
-          member_id: firstItem.member_id || "",
-          position: firstItem.position || "", // ✅ 여기 추가
+          name: g.name,
+          account_id: g.account_id,
+          member_id: g.member_id,
+          position: g.position,
+          // ✅ row-level 확정값 (저장 fallback용)
+          gubun: rowGubun,
+          position_type: rowPt,
           days: dayValues,
           ...flatDays,
-          day_default: dayValues.day_default || null,
+          day_default: dayDefault,
         };
       });
 
@@ -131,7 +177,6 @@ export default function useRecordsheetData(account_id, year, month) {
     } catch (error) {
       console.error("데이터 조회 실패:", error);
     } finally {
-      // ✅ 모든 axios 요청이 끝난 후에 로딩 false
       setLoading(false);
     }
   };

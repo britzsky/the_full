@@ -358,6 +358,10 @@ function PropertySheetTab() {
     },
   };
 
+  const getFileIconSx = (isChanged) => ({
+    color: isChanged ? "#d32f2f" : "#1e88e5",
+  });
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -481,9 +485,12 @@ function PropertySheetTab() {
                       </td>
                     );
 
-                  // ✅ 이미지: 있으면 다운로드/미리보기(파란색), 없으면 업로드 버튼
                   if (["item_img", "receipt_img"].includes(key)) {
                     const hasImage = !!value;
+
+                    // ✅ 원본 대비 변경 여부 (File 객체로 재업로드되면 무조건 변경)
+                    const original = originalRows[rowIndex]?.[key];
+                    const isImgChanged = !isSameValue(key, original, value); // 기존 로직 그대로 활용 가능
 
                     return (
                       <td
@@ -499,55 +506,60 @@ function PropertySheetTab() {
                           accept="image/*"
                           id={`upload-${key}-${rowIndex}`}
                           style={{ display: "none" }}
-                          onChange={(e) => handleCellChange(rowIndex, key, e.target.files?.[0])}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleCellChange(rowIndex, key, file);
+                            e.target.value = ""; // 같은 파일 재선택 가능
+                          }}
                         />
 
-                        {hasImage ? (
-                          <div
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: 6,
-                              flexWrap: isMobile ? "wrap" : "nowrap",
-                            }}
-                          >
-                            {/* 다운로드: 서버 문자열일 때만 */}
-                            {typeof value === "string" && (
-                              <Tooltip title="다운로드">
-                                <IconButton
-                                  size="small"
-                                  sx={fileIconSx}
-                                  onClick={() => handleDownload(value)}
-                                >
-                                  <DownloadIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 6,
+                            flexWrap: isMobile ? "wrap" : "nowrap",
+                          }}
+                        >
+                          {/* 업로드/재업로드 */}
+                          <label htmlFor={`upload-${key}-${rowIndex}`}>
+                            <MDButton
+                              component="span"
+                              size="small"
+                              color={hasImage ? "info" : "info"}
+                              sx={{ fontSize: isMobile ? "10px" : "12px" }}
+                            >
+                              {hasImage ? "재업로드" : "이미지 업로드"}
+                            </MDButton>
+                          </label>
 
-                            {/* 미리보기: 서버/로컬 모두 */}
+                          {/* 다운로드: 서버 문자열일 때만 */}
+                          {typeof value === "string" && (
+                            <Tooltip title="다운로드">
+                              <IconButton
+                                size="small"
+                                sx={getFileIconSx(isImgChanged)}
+                                onClick={() => handleDownload(value)}
+                              >
+                                <DownloadIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+
+                          {/* 미리보기: 서버/로컬 모두 */}
+                          {hasImage && (
                             <Tooltip title="미리보기">
                               <IconButton
                                 size="small"
-                                sx={fileIconSx}
+                                sx={getFileIconSx(isImgChanged)} // ✅ 변경 시 빨간색
                                 onClick={() => handleViewImage(value)}
                               >
                                 <ImageSearchIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                          </div>
-                        ) : (
-                          <label htmlFor={`upload-${key}-${rowIndex}`}>
-                            <MDButton
-                              component="span"
-                              size="small"
-                              color="info"
-                              sx={{ fontSize: isMobile ? "10px" : "12px" }}
-                            >
-                              이미지 업로드
-                            </MDButton>
-                          </label>
-                        )}
+                          )}
+                        </div>
                       </td>
                     );
                   }

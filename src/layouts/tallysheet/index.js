@@ -13,6 +13,8 @@ import {
   useMediaQuery,
   Checkbox,
 } from "@mui/material";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
 import Autocomplete from "@mui/material/Autocomplete";
 import dayjs from "dayjs";
 import Grid from "@mui/material/Grid";
@@ -257,6 +259,9 @@ function TallySheet() {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
+  // ✅ 탭 상태 (0: 현재월, 1: 전월)
+  const [tabValue, setTabValue] = useState(0);
 
   const {
     dataRows,
@@ -605,13 +610,8 @@ function TallySheet() {
     setPreviewImage(null);
   };
 
-  const handleModalOpen2 = async () => {
-    setOpen2(true);
-  };
-
-  const handleModalClose2 = async () => {
-    setOpen2(false);
-  };
+  const handleModalOpen2 = async () => setOpen2(true);
+  const handleModalClose2 = async () => setOpen2(false);
 
   const handleChange2 = (e) => {
     const { name, value, files } = e.target;
@@ -1007,7 +1007,7 @@ function TallySheet() {
         </MDBox>
       </MDBox>
 
-      {/* 현재월 테이블 */}
+      {/* ✅ 현재월/전월 테이블을 "탭"으로 통합 */}
       <MDBox pt={3} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
@@ -1021,37 +1021,44 @@ function TallySheet() {
                 bgColor="info"
                 borderRadius="lg"
                 coloredShadow="info"
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 2,
+                }}
               >
                 <MDTypography variant="h6" color="white">
-                  집계표 {countMonth ? `(${countMonth})` : ""}
+                  집계표
                 </MDTypography>
-              </MDBox>
-              {renderTable(table, originalRows, handleCellChange, dataRows)}
-            </Card>
-          </Grid>
-        </Grid>
-      </MDBox>
 
-      {/* 이전월 테이블 */}
-      <MDBox pt={1} pb={3}>
-        <Grid container spacing={6}>
-          <Grid item xs={12}>
-            <Card>
-              <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-              >
-                <MDTypography variant="h6" color="white">
-                  집계표 {count2Month ? `(${count2Month})` : ""}
-                </MDTypography>
+                <Tabs
+                  value={tabValue}
+                  onChange={(_, v) => setTabValue(v)}
+                  textColor="inherit"
+                  indicatorColor="secondary"
+                  variant={isMobile ? "scrollable" : "standard"}
+                  sx={{
+                    minHeight: 36,
+                    "& .MuiTab-root": {
+                      minHeight: 36,
+                      color: "rgba(255,255,255,0.85)",
+                      fontSize: 13,
+                      fontWeight: 600,
+                    },
+                    "& .Mui-selected": { color: "#fff" },
+                  }}
+                >
+                  <Tab label={countMonth ? `현재월 (${countMonth})` : "현재월"} />
+                  <Tab label={count2Month ? `전월 (${count2Month})` : "전월"} />
+                </Tabs>
               </MDBox>
-              {renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
+
+              <MDBox pt={1}>
+                {tabValue === 0 && renderTable(table, originalRows, handleCellChange, dataRows)}
+                {tabValue === 1 &&
+                  renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
+              </MDBox>
             </Card>
           </Grid>
         </Grid>

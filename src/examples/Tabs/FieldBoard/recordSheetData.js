@@ -9,7 +9,7 @@ export default function useRecordsheetData(account_id, year, month) {
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ 전체 데이터 조회 (async/await + Promise.all 전환)
+  // ✅ 전체 데이터 조회
   const fetchAllData = async () => {
     if (!account_id) return;
     setLoading(true);
@@ -31,7 +31,6 @@ export default function useRecordsheetData(account_id, year, month) {
         params: { account_id, year, month },
       });
 
-      // ✅ 모든 요청이 완료될 때까지 기다린 후 결과 받음
       const [memberRes, dispatchRes, timesRes, sheetRes] = await Promise.all([
         memberReq,
         dispatchReq,
@@ -42,7 +41,7 @@ export default function useRecordsheetData(account_id, year, month) {
       // ✅ 직원정보
       setMemberRows(
         (memberRes.data || []).map((item) => ({
-          member_id: item.member_id, // ✅ 추가
+          member_id: item.member_id,
           name: item.name,
           position: item.position,
           employ_dispatch: item.employ_dispatch || "",
@@ -79,6 +78,7 @@ export default function useRecordsheetData(account_id, year, month) {
       // ✅ 출근현황 sheetRows로 변환
       const data = sheetRes.data || [];
       const grouped = {};
+
       data.forEach((item) => {
         const name = item.name || `member_${item.member_id || Math.random()}`;
         if (!grouped[name]) grouped[name] = {};
@@ -92,8 +92,14 @@ export default function useRecordsheetData(account_id, year, month) {
           type: item.type != null ? String(item.type) : "",
           salary: item.salary || "",
           note: item.note || "",
+
           member_id: item.member_id || "",
           account_id: item.account_id || "",
+
+          // ✅ 핵심: 조회 데이터에서 넘어온 값 보존
+          gubun: item.gubun ?? "nor",
+          position_type: item.position_type ?? "",
+          position: item.position ?? "",
         };
       });
 
@@ -116,11 +122,25 @@ export default function useRecordsheetData(account_id, year, month) {
             ])
         );
 
+        // ✅ row 레벨 기본값도 같이 세팅해두면 프론트에서 상속하기 편함
+        const baseGubun = String(dayValues.day_default?.gubun ?? firstItem.gubun ?? "nor")
+          .trim()
+          .toLowerCase();
+
+        const basePosType = String(
+          dayValues.day_default?.position_type ?? firstItem.position_type ?? ""
+        ).trim();
+
         return {
           name,
           account_id: firstItem.account_id || "",
           member_id: firstItem.member_id || "",
-          position: firstItem.position || "", // ✅ 여기 추가
+          position: firstItem.position || "",
+
+          // ✅ row 기본값
+          gubun: baseGubun,
+          position_type: basePosType,
+
           days: dayValues,
           ...flatDays,
           day_default: dayValues.day_default || null,
@@ -131,7 +151,6 @@ export default function useRecordsheetData(account_id, year, month) {
     } catch (error) {
       console.error("데이터 조회 실패:", error);
     } finally {
-      // ✅ 모든 axios 요청이 끝난 후에 로딩 false
       setLoading(false);
     }
   };

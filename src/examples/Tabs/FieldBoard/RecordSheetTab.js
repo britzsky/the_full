@@ -75,9 +75,17 @@ const isCellEqual = (a, b) => {
   );
 };
 
-// 출근현황 셀
+// ✅ 출근현황 셀 (gubun/position_type 유지 포함)
 function AttendanceCell({ getValue, row, column, table, typeOptions }) {
-  const val = getValue() || { type: "", start: "", end: "", salary: "", memo: "" };
+  const val = getValue() || {
+    type: "",
+    start: "",
+    end: "",
+    salary: "",
+    memo: "",
+    gubun: "",
+    position_type: "",
+  };
 
   const times = [];
   for (let h = 5; h <= 20; h++) {
@@ -98,8 +106,37 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
 
   const handleChange = (field, newVal) => {
     const dayKey = column.id;
-    const baseValue = row.original[dayKey] || {};
-    const updatedValue = { ...baseValue, ...val, [field]: newVal };
+
+    // ✅ baseValue(셀의 원본) / row.original(행 기본값) / 현재 val 순서로 상속
+    const baseValue = row.original?.[dayKey] || {};
+    const baseGubun = String(
+      baseValue.gubun ??
+        val.gubun ??
+        row.original?.gubun ??
+        row.original?.day_default?.gubun ??
+        "nor"
+    )
+      .trim()
+      .toLowerCase();
+
+    const basePosType = String(
+      baseValue.position_type ??
+        val.position_type ??
+        row.original?.position_type ??
+        row.original?.day_default?.position_type ??
+        ""
+    ).trim();
+
+    const updatedValue = {
+      ...baseValue,
+      ...val,
+
+      // ✅ 핵심: gubun / position_type “항상 유지”
+      gubun: baseGubun,
+      position_type: basePosType,
+
+      [field]: newVal,
+    };
 
     // 🔹 초과근무 자동 계산
     if (
@@ -117,7 +154,6 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
 
       if (start && end && baseStart && baseEnd) {
         const diffMinutes = end.diff(start, "minute") - baseEnd.diff(baseStart, "minute");
-
         updatedValue.memo =
           diffMinutes > 0
             ? (Math.floor(diffMinutes / 60) + (diffMinutes % 60 >= 30 ? 0.5 : 0)).toString()
@@ -274,7 +310,6 @@ function RecordSheet() {
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
   const account_name = queryParams.get("name");
-
   const { account_id } = useParams();
 
   const daysInMonth = dayjs(`${year}-${month}`).daysInMonth();
@@ -340,7 +375,6 @@ function RecordSheet() {
             if (result.isConfirmed) {
               handleModalClose();
               setOpen(false);
-              // ✅ 등록 후 파출만 재조회
               await fetchDispatchOnly(dispatchDelFilter);
             }
           });
@@ -383,27 +417,15 @@ function RecordSheet() {
     );
   }, [filteredAccountList, selectedAccountId]);
 
-  // ✅ (NEW) 거래처 변경 빨간 글씨 스타일
-  const accountChanged = useMemo(
-    () => String(selectedAccountId || "") !== String(originalSelectedAccountId || ""),
-    [selectedAccountId, originalSelectedAccountId]
-  );
-
   // ✅ 파출만 재조회 함수 (del_yn 조건 포함)
   const fetchDispatchOnly = useCallback(
     async (overrideDelYn) => {
       if (!selectedAccountId) return;
-
       const del_yn = overrideDelYn ?? dispatchDelFilter;
 
       try {
         const res = await api.get("/Account/AccountRecordDispatchList", {
-          params: {
-            account_id: selectedAccountId,
-            year,
-            month,
-            del_yn,
-          },
+          params: { account_id: selectedAccountId, year, month, del_yn },
         });
 
         const list = res.data?.data || res.data?.list || res.data || [];
@@ -433,7 +455,7 @@ function RecordSheet() {
     [selectedAccountId, year, month, dispatchDelFilter, setDispatchRows]
   );
 
-  // ✅ 파출 삭제/복원 버튼 핸들러 (등록 저장 방식과 동일한 흐름)
+  // ✅ 파출 삭제/복원 버튼 핸들러
   const handleToggleDispatch = useCallback(
     async (row) => {
       const cur = row?.del_yn ?? "N";
@@ -546,26 +568,50 @@ function RecordSheet() {
     setFormData((prev) => ({ ...prev, account_id: selectedAccountId }));
   }, [selectedAccountId]);
 
-  // ✅ sheetRows → attendanceRows 구성 (기존 그대로)
+  // ✅ sheetRows → attendanceRows 구성 (gubun/position_type 포함)
   useEffect(() => {
     if (!sheetRows || !sheetRows.length) return;
 
     const newAttendance = sheetRows.map((item) => {
       const member = memberRows.find((m) => m.member_id === item.member_id);
+
+      // ✅ baseGubun: day_default가 있으면 그걸 최우선
+      const baseGubun = String(item.day_default?.gubun ?? item.gubun ?? "nor")
+        .trim()
+        .toLowerCase();
+
+      const basePosType = String(
+        item.day_default?.position_type ?? item.position_type ?? ""
+      ).trim();
+
       const base = {
         name: item.name,
         account_id: item.account_id,
         member_id: item.member_id,
         position: item.position || member?.position || "",
+
+        // ✅ 행 기본값으로도 들고 있게
+        gubun: baseGubun,
+        position_type: basePosType,
+
         day_default: item.day_default || null,
       };
+
       const dayEntries = {};
       for (let d = 1; d <= daysInMonth; d++) {
         const key = `day_${d}`;
         const source = item[key] || (item.days && item.days[key]) || null;
+
         dayEntries[key] = source
           ? {
               ...source,
+
+              // ✅ 핵심: source에 없으면 base로 상속
+              gubun: String(source.gubun ?? baseGubun)
+                .trim()
+                .toLowerCase(),
+              position_type: String(source.position_type ?? basePosType).trim(),
+
               start: source.start_time || source.start || "",
               end: source.end_time || source.end || "",
               start_time: source.start_time || "",
@@ -576,6 +622,11 @@ function RecordSheet() {
           : {
               account_id: item.account_id,
               member_id: item.member_id,
+
+              // ✅ 빈 날도 gubun/position_type 유지 (이게 저장 때 중요)
+              gubun: baseGubun,
+              position_type: basePosType,
+
               type: "",
               start: "",
               end: "",
@@ -585,12 +636,14 @@ function RecordSheet() {
               memo: "",
             };
       }
+
       return { ...base, ...dayEntries };
     });
 
     setAttendanceRows(newAttendance);
     setOriginalAttendanceRows(JSON.parse(JSON.stringify(newAttendance)));
 
+    // ✅ defaultTimes 맵
     const map = {};
     sheetRows.forEach((item) => {
       map[item.member_id] = {
@@ -607,49 +660,53 @@ function RecordSheet() {
     setDefaultTimes(map);
   }, [sheetRows, timesRows, daysInMonth, memberRows]);
 
-  const dayColumns = Array.from({ length: daysInMonth }, (_, i) => {
-    const date = dayjs(`${year}-${month}-${i + 1}`);
-    const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.day()];
+  const dayColumns = useMemo(
+    () =>
+      Array.from({ length: daysInMonth }, (_, i) => {
+        const date = dayjs(`${year}-${month}-${i + 1}`);
+        const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.day()];
 
-    return {
-      header: `${i + 1}일(${weekday})`,
-      accessorKey: `day_${i + 1}`,
-      cell: (props) => {
-        const typeOptions = (() => {
-          const isType5Member = Object.keys(props.row.original)
-            .filter((k) => k.startsWith("day_"))
-            .some((k) => props.row.original[k]?.type === "5");
+        return {
+          header: `${i + 1}일(${weekday})`,
+          accessorKey: `day_${i + 1}`,
+          cell: (props) => {
+            const typeOptions = (() => {
+              const isType5Member = Object.keys(props.row.original)
+                .filter((k) => k.startsWith("day_"))
+                .some((k) => props.row.original[k]?.type === "5");
 
-          if (isType5Member) {
-            return [
-              { value: "0", label: "-" },
-              { value: "5", label: "파출" },
-            ];
-          }
-          return [
-            { value: "0", label: "-" },
-            { value: "1", label: "영양사" },
-            { value: "2", label: "상용" },
-            { value: "3", label: "초과" },
-            { value: "4", label: "결근" },
-            { value: "6", label: "직원파출" },
-            { value: "7", label: "유틸" },
-            { value: "8", label: "대체근무" },
-            { value: "9", label: "연차" },
-            { value: "10", label: "반차" },
-            { value: "11", label: "대체휴무" },
-            { value: "12", label: "병가" },
-            { value: "13", label: "출산휴가" },
-            { value: "14", label: "육아휴직" },
-            { value: "15", label: "하계휴가" },
-          ];
-        })();
+              if (isType5Member) {
+                return [
+                  { value: "0", label: "-" },
+                  { value: "5", label: "파출" },
+                ];
+              }
+              return [
+                { value: "0", label: "-" },
+                { value: "1", label: "영양사" },
+                { value: "2", label: "상용" },
+                { value: "3", label: "초과" },
+                { value: "4", label: "결근" },
+                { value: "6", label: "직원파출" },
+                { value: "7", label: "유틸" },
+                { value: "8", label: "대체근무" },
+                { value: "9", label: "연차" },
+                { value: "10", label: "반차" },
+                { value: "11", label: "대체휴무" },
+                { value: "12", label: "병가" },
+                { value: "13", label: "출산휴가" },
+                { value: "14", label: "육아휴직" },
+                { value: "15", label: "하계휴가" },
+              ];
+            })();
 
-        return <AttendanceCell {...props} typeOptions={typeOptions} />;
-      },
-      size: "2%",
-    };
-  });
+            return <AttendanceCell {...props} typeOptions={typeOptions} />;
+          },
+          size: "2%",
+        };
+      }),
+    [daysInMonth, year, month]
+  );
 
   const attendanceColumns = useMemo(
     () => [
@@ -667,7 +724,6 @@ function RecordSheet() {
   const getOrgTimes = (row, defaultTimesObj) => {
     const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
     const orgEnd = row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
-
     return { org_start_time: orgStart, org_end_time: orgEnd };
   };
 
@@ -700,7 +756,7 @@ function RecordSheet() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  // ✅ 파출 테이블: 마지막에 삭제/복원 버튼 컬럼 추가
+  // ✅ 파출 테이블
   const dispatchTable = useReactTable({
     data: dispatchRows,
     columns: [
@@ -779,12 +835,13 @@ function RecordSheet() {
     );
   };
 
-  // ✅ 저장 (기존 그대로)
+  // ✅ 저장 (gubun + position_type 포함, rec/dis/nor 분리)
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
 
     const normalRecords = [];
-    const type5Records = [];
+    const disRecords = [];
+    const recRecords = [];
 
     const useDiffMode =
       originalAttendanceRows && originalAttendanceRows.length === attendanceRows.length;
@@ -806,34 +863,53 @@ function RecordSheet() {
 
           if (!val || !val.type || val.type === "0") return;
 
+          const gubun = String(val.gubun ?? row.gubun ?? row.day_default?.gubun ?? "nor")
+            .trim()
+            .toLowerCase();
+
+          const pt = String(
+            val.position_type ?? row.position_type ?? row.day_default?.position_type ?? ""
+          ).trim();
+
           const recordObj = {
+            gubun,
             account_id: val.account_id || row.account_id || "",
             member_id: val.member_id || row.member_id || "",
+
+            // ✅ 둘 다 전송
+            position_type: pt,
+            positionType: pt,
+
             record_date: dayNum,
             record_year: year,
             record_month: month,
             type: Number(val.type),
             start_time: val.start || "",
             end_time: val.end || "",
-            salary: val.salary ? Number(val.salary.toString().replace(/,/g, "")) : 0,
+            salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
             note: val.memo || "",
             position: row.position || "",
             org_start_time,
             org_end_time,
           };
 
-          if (recordObj.type === 5) type5Records.push(recordObj);
+          if (gubun === "dis") disRecords.push(recordObj);
+          else if (gubun === "rec") recRecords.push(recordObj);
           else normalRecords.push(recordObj);
         });
     });
 
-    if (!normalRecords.length && !type5Records.length) {
+    if (!normalRecords.length && !disRecords.length && !recRecords.length) {
       Swal.fire({ title: "안내", text: "변경된 내용이 없습니다.", icon: "info" });
       return;
     }
 
     try {
-      const res = await api.post("/Account/AccountRecordSave", { normalRecords, type5Records });
+      const res = await api.post("/Account/AccountRecordSave", {
+        normalRecords,
+        disRecords,
+        recRecords,
+      });
 
       if (res.data?.code === 200) {
         Swal.fire({ title: "저장", text: "저장 완료", icon: "success" });
@@ -867,7 +943,7 @@ function RecordSheet() {
           gap: isMobile ? 1 : 2,
         }}
       >
-        {/* ✅ 거래처: 문자 검색 가능한 Autocomplete + 변경 시 빨간 글씨 */}
+        {/* ✅ 거래처 */}
         <Autocomplete
           size="small"
           sx={{ minWidth: 200 }}
@@ -934,7 +1010,6 @@ function RecordSheet() {
           출퇴근 일괄 적용
         </MDButton>
 
-        {/* ✅ 조회: 전체 조회 + 파출은 필터로 다시 맞춤 */}
         <MDButton
           variant="gradient"
           color="warning"
@@ -1088,7 +1163,6 @@ function RecordSheet() {
                 파출 정보
               </MDTypography>
 
-              {/* ✅ del_yn 필터 Select + +버튼 */}
               <MDBox display="flex" alignItems="center" gap={1}>
                 <Select
                   value={dispatchDelFilter}

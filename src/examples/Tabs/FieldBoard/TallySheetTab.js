@@ -11,6 +11,8 @@ import {
   useTheme,
   useMediaQuery,
 } from "@mui/material";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
 import Autocomplete from "@mui/material/Autocomplete";
 import dayjs from "dayjs";
 import Grid from "@mui/material/Grid";
@@ -111,6 +113,9 @@ function TallySheetTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
+  // ✅ 탭 상태 (0: 현재월, 1: 전월)
+  const [tabValue, setTabValue] = useState(0);
+
   const {
     dataRows,
     setDataRows,
@@ -170,6 +175,158 @@ function TallySheetTab() {
       setSelectedAccountId(accountList[0].account_id);
     }
   }, [accountList, selectedAccountId, localAccountId]);
+
+  // ======================== ✅ 법인카드 모달 플로우(추가) ========================
+  const [cardChoiceOpen, setCardChoiceOpen] = useState(false); // 등록/수정 선택
+  const [cardCreateOpen, setCardCreateOpen] = useState(false); // 1번 모달(등록)
+  const [cardListOpen, setCardListOpen] = useState(false); // 2번 모달(목록)
+  const [cardEditOpen, setCardEditOpen] = useState(false); // 3번 모달(수정)
+
+  const [cardContext, setCardContext] = useState({
+    isSecond: false,
+    rowIndex: null,
+    colKey: null,
+    dayIndex: null,
+    dateStr: "",
+    cellValue: 0,
+  });
+
+  const [cardRows, setCardRows] = useState([]);
+  const [cardSelectedRow, setCardSelectedRow] = useState(null);
+
+  const [cardForm, setCardForm] = useState({
+    id: null,
+    merchant: "",
+    amount: "",
+    receipt: null,
+  });
+
+  const buildDateStr = (y, m, dayIdx) => {
+    const mm = String(m).padStart(2, "0");
+    const dd = String(dayIdx + 1).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  };
+
+  // ✅ 법인카드 목록 조회 (엔드포인트/필드명은 백엔드에 맞게 수정)
+  const fetchCorpCardList = async (accountId, dateStr) => {
+    // 예시: /Operate/CorpCardPayList?account_id=...&pay_date=YYYY-MM-DD
+    const res = await api.get("/Operate/CorpCardPayList", {
+      params: { account_id: accountId, pay_date: dateStr },
+      validateStatus: () => true,
+    });
+
+    if (res.status !== 200) throw new Error(res.data?.message || "목록 조회 실패");
+    return res.data || [];
+  };
+
+  // ✅ 등록/수정 저장 (엔드포인트/필드명은 백엔드에 맞게 수정)
+  const saveCorpCard = async (mode) => {
+    const fd = new FormData();
+    fd.append("account_id", selectedAccountId);
+    fd.append("pay_date", cardContext.dateStr);
+    fd.append("merchant", cardForm.merchant);
+    fd.append("amount", parseNumber(cardForm.amount));
+
+    if (cardForm.receipt) fd.append("file", cardForm.receipt);
+    if (mode === "edit") fd.append("id", cardForm.id);
+
+    const url = mode === "create" ? "/Operate/CorpCardPayCreate" : "/Operate/CorpCardPayUpdate";
+
+    const res = await api.post(url, fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+      validateStatus: () => true,
+    });
+
+    // 백엔드 응답 규격에 맞게(예: {code:200})라면 아래 조건만 조정
+    if (res.status !== 200 || res.data?.code === 400) {
+      throw new Error(res.data?.message || "저장 실패");
+    }
+    return res.data;
+  };
+
+  // ✅ type=1000 셀 클릭 시 플로우
+  const handleCorpCardCellClick = (rowOriginal, rIdx, colKey, isSecond = false) => {
+    // 총합/비편집 영역 제외
+    if (!rowOriginal || rowOriginal.name === "총합") return;
+    if (colKey === "name" || colKey === "total") return;
+
+    // type 1000만 대상
+    if (String(rowOriginal.type) !== "1000") return;
+
+    const rows = isSecond ? data2Rows : dataRows;
+    const cellVal = parseNumber(rows?.[rIdx]?.[colKey]);
+
+    const dayIndex = Number(String(colKey).replace("day_", "")) - 1;
+    if (Number.isNaN(dayIndex) || dayIndex < 0) return;
+
+    const dateStr = buildDateStr(year, month, dayIndex);
+
+    setCardContext({
+      isSecond,
+      rowIndex: rIdx,
+      colKey,
+      dayIndex,
+      dateStr,
+      cellValue: cellVal,
+    });
+
+    // 값이 0이면 바로 등록 모달
+    if (!cellVal || cellVal === 0) {
+      setCardForm({ id: null, merchant: "", amount: "", receipt: null });
+      setCardCreateOpen(true);
+      return;
+    }
+
+    // 0이 아니면 등록/수정 선택
+    setCardChoiceOpen(true);
+  };
+
+  const openCreateFromChoice = () => {
+    setCardChoiceOpen(false);
+    setCardForm({ id: null, merchant: "", amount: "", receipt: null });
+    setCardCreateOpen(true);
+  };
+
+  const openListFromChoice = async () => {
+    setCardChoiceOpen(false);
+    setCardSelectedRow(null);
+
+    try {
+      Swal.fire({
+        title: "불러오는 중",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const list = await fetchCorpCardList(selectedAccountId, cardContext.dateStr);
+      Swal.close();
+
+      setCardRows(list);
+      setCardListOpen(true);
+    } catch (e) {
+      Swal.close();
+      Swal.fire("오류", e.message || "목록 조회 중 오류", "error");
+    }
+  };
+
+  const openEditFromList = () => {
+    if (!cardSelectedRow) {
+      Swal.fire("안내", "수정할 항목을 선택하세요.", "info");
+      return;
+    }
+
+    setCardForm({
+      id: cardSelectedRow.id, // ✅ 백엔드 PK 필드명에 맞게
+      merchant: cardSelectedRow.merchant || "", // ✅ 필드명에 맞게
+      amount: String(cardSelectedRow.amount ?? ""),
+      receipt: null,
+    });
+
+    setCardListOpen(false);
+    setCardEditOpen(true);
+  };
+  // ======================== ✅ 법인카드 모달 플로우(추가 끝) ========================
 
   // 컬럼 구성
   const columns = useMemo(() => {
@@ -607,6 +764,8 @@ function TallySheetTab() {
                     contentEditable={isEditable}
                     suppressContentEditableWarning
                     style={{ color: isChanged ? "#d32f2f" : "black", width: "80px" }}
+                    // ✅ type=1000 셀 클릭 시 법인카드 모달 플로우 (추가)
+                    onClick={() => handleCorpCardCellClick(row.original, rIdx, colKey, isSecond)}
                     onBlur={(e) => handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond)}
                   >
                     {colKey === "name" ? row.original[colKey] : formatNumber(row.original[colKey])}
@@ -664,6 +823,7 @@ function TallySheetTab() {
 
   return (
     <>
+      {/* 상단 고정 필터/저장 */}
       <MDBox
         pt={1}
         pb={1}
@@ -689,8 +849,8 @@ function TallySheetTab() {
           onChange={(_, newValue) => setSelectedAccountId(newValue ? newValue.account_id : "")}
           getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
           isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
-          disableClearable={!!localAccountId} // localStorage 고정이면 clear 불가
-          disabled={!!localAccountId} // ✅ localStorage로 고정이면 변경 불가 (원하면 제거)
+          disableClearable={!!localAccountId}
+          disabled={!!localAccountId}
           renderInput={(params) => (
             <TextField
               {...params}
@@ -734,32 +894,6 @@ function TallySheetTab() {
           ))}
         </TextField>
 
-        {/* <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleModalOpen2}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 90 : 110,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          거래처 등록
-        </MDButton>
-
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleModalOpen}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 90 : 110,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          거래처 연결
-        </MDButton> */}
-
         <MDButton
           variant="gradient"
           color="info"
@@ -774,54 +908,52 @@ function TallySheetTab() {
         </MDButton>
       </MDBox>
 
-      {/* 현재월 테이블 */}
+      {/* ✅ 테이블 탭(현재월/전월) */}
       <MDBox pt={3} pb={3}>
-        <Grid container spacing={6}>
-          <Grid item xs={12}>
-            <Card>
-              <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-              >
-                <MDTypography variant="h6" color="white">
-                  집계표 {countMonth ? `(${countMonth})` : ""}
-                </MDTypography>
-              </MDBox>
-              {renderTable(table, originalRows, handleCellChange, dataRows)}
-            </Card>
-          </Grid>
-        </Grid>
-      </MDBox>
+        <Card>
+          <MDBox
+            mx={0}
+            mt={-3}
+            py={1}
+            px={2}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="info"
+            sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 2 }}
+          >
+            <MDTypography variant="h6" color="white">
+              집계표
+            </MDTypography>
 
-      {/* 이전월 테이블 */}
-      <MDBox pt={1} pb={3}>
-        <Grid container spacing={6}>
-          <Grid item xs={12}>
-            <Card>
-              <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-              >
-                <MDTypography variant="h6" color="white">
-                  집계표 {count2Month ? `(${count2Month})` : ""}
-                </MDTypography>
-              </MDBox>
-              {renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
-            </Card>
-          </Grid>
-        </Grid>
+            <Tabs
+              value={tabValue}
+              onChange={(_, v) => setTabValue(v)}
+              textColor="inherit"
+              indicatorColor="secondary"
+              variant={isMobile ? "scrollable" : "standard"}
+              sx={{
+                minHeight: 36,
+                "& .MuiTab-root": {
+                  minHeight: 36,
+                  color: "rgba(255,255,255,0.85)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                },
+                "& .Mui-selected": { color: "#fff" },
+              }}
+            >
+              <Tab label={countMonth ? `현재월 (${countMonth})` : "현재월"} />
+              <Tab label={count2Month ? `전월 (${count2Month})` : "전월"} />
+            </Tabs>
+          </MDBox>
+
+          <MDBox pt={1}>
+            {tabValue === 0 && renderTable(table, originalRows, handleCellChange, dataRows)}
+            {tabValue === 1 &&
+              renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
+          </MDBox>
+        </Card>
       </MDBox>
 
       {/* 거래처 연결 모달 */}
@@ -1119,6 +1251,280 @@ function TallySheetTab() {
           )}
         </Box>
       </Modal>
+
+      {/* ======================== ✅ 법인카드 모달 3종 (추가) ======================== */}
+
+      {/* 등록/수정 선택 모달 */}
+      <Modal open={cardChoiceOpen} onClose={() => setCardChoiceOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 420,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            법인카드 결제
+          </Typography>
+          <Typography sx={{ fontSize: 13, mb: 2 }}>
+            이미 입력된 금액이 있습니다.
+            <br />
+            등록 / 수정을 선택하세요. ({cardContext.dateStr})
+          </Typography>
+
+          <Box display="flex" justifyContent="flex-end" gap={1}>
+            <Button variant="contained" color="info" onClick={openCreateFromChoice}>
+              등록
+            </Button>
+            <Button variant="contained" color="primary" onClick={openListFromChoice}>
+              수정
+            </Button>
+            <Button variant="outlined" onClick={() => setCardChoiceOpen(false)}>
+              취소
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* 1) 법인카드 결제 등록 모달 */}
+      <Modal open={cardCreateOpen} onClose={() => setCardCreateOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 520,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            법인카드 결제 등록
+          </Typography>
+
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                size="small"
+                label="사용처"
+                value={cardForm.merchant}
+                onChange={(e) => setCardForm((p) => ({ ...p, merchant: e.target.value }))}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                size="small"
+                label="합계금액"
+                value={cardForm.amount}
+                onChange={(e) => setCardForm((p) => ({ ...p, amount: e.target.value }))}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Typography sx={{ minWidth: 60, fontSize: 13 }}>영수증</Typography>
+                <Button variant="outlined" component="label">
+                  영수증 업로드
+                  <input
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={(e) =>
+                      setCardForm((p) => ({ ...p, receipt: e.target.files?.[0] || null }))
+                    }
+                  />
+                </Button>
+                <Typography sx={{ fontSize: 12, color: "#666" }}>
+                  {cardForm.receipt?.name || ""}
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+
+          <Box mt={3} display="flex" justifyContent="center" gap={2}>
+            <Button
+              variant="contained"
+              color="info"
+              onClick={async () => {
+                try {
+                  await saveCorpCard("create");
+                  Swal.fire("완료", "등록되었습니다.", "success");
+                  setCardCreateOpen(false);
+                } catch (e) {
+                  Swal.fire("오류", e.message || "등록 실패", "error");
+                }
+              }}
+            >
+              저장
+            </Button>
+            <Button variant="contained" color="warning" onClick={() => setCardCreateOpen(false)}>
+              취소
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* 2) 법인카드 결제 목록 모달 */}
+      <Modal open={cardListOpen} onClose={() => setCardListOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 760,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            법인카드 결제 목록
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: "#666", mb: 2 }}>{cardContext.dateStr}</Typography>
+
+          <Box sx={{ maxHeight: 380, overflow: "auto", border: "1px solid #ddd" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f0f0f0" }}>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>사용처</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>금액</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>결제일자</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>영수증</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(cardRows || []).map((r, idx) => {
+                  const selected = cardSelectedRow?.id === r.id;
+                  return (
+                    <tr
+                      key={r.id ?? idx}
+                      onClick={() => setCardSelectedRow(r)}
+                      style={{ background: selected ? "#d3f0ff" : "white", cursor: "pointer" }}
+                    >
+                      <td style={{ border: "1px solid #ddd", padding: 6 }}>{r.merchant}</td>
+                      <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "right" }}>
+                        {formatNumber(r.amount)}
+                      </td>
+                      <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
+                        {r.pay_date}
+                      </td>
+                      <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
+                        {r.receipt_url ? "O" : ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Box>
+
+          <Box mt={2} display="flex" justifyContent="center" gap={2}>
+            <Button variant="contained" color="info" onClick={openEditFromList}>
+              선택
+            </Button>
+            <Button variant="contained" color="warning" onClick={() => setCardListOpen(false)}>
+              취소
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* 3) 법인카드 결제 수정 모달 */}
+      <Modal open={cardEditOpen} onClose={() => setCardEditOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 520,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            법인카드 결제 수정
+          </Typography>
+
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                size="small"
+                label="사용처"
+                value={cardForm.merchant}
+                onChange={(e) => setCardForm((p) => ({ ...p, merchant: e.target.value }))}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                size="small"
+                label="합계금액"
+                value={cardForm.amount}
+                onChange={(e) => setCardForm((p) => ({ ...p, amount: e.target.value }))}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Box display="flex" alignItems="center" gap={1}>
+                <Typography sx={{ minWidth: 60, fontSize: 13 }}>영수증</Typography>
+                <Button variant="outlined" component="label">
+                  영수증 업로드
+                  <input
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={(e) =>
+                      setCardForm((p) => ({ ...p, receipt: e.target.files?.[0] || null }))
+                    }
+                  />
+                </Button>
+                <Typography sx={{ fontSize: 12, color: "#666" }}>
+                  {cardForm.receipt?.name || "(새 파일 선택 시 교체)"}
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+
+          <Box mt={3} display="flex" justifyContent="center" gap={2}>
+            <Button
+              variant="contained"
+              color="info"
+              onClick={async () => {
+                try {
+                  await saveCorpCard("edit");
+                  Swal.fire("완료", "수정되었습니다.", "success");
+                  setCardEditOpen(false);
+                } catch (e) {
+                  Swal.fire("오류", e.message || "수정 실패", "error");
+                }
+              }}
+            >
+              저장
+            </Button>
+            <Button variant="contained" color="warning" onClick={() => setCardEditOpen(false)}>
+              취소
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+      {/* ======================== ✅ 법인카드 모달 3종 (추가 끝) ======================== */}
     </>
   );
 }

@@ -30,6 +30,14 @@ function PropertySheetTab() {
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
 
+  // ✅ 우클릭(컨텍스트) 메뉴 상태
+  const [ctxMenu, setCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
+
   const numericCols = ["purchase_price"];
 
   // ✅ 거래처 옵션(Autocomplete)
@@ -155,6 +163,7 @@ function PropertySheetTab() {
       receipt_img: "",
       note: "",
       depreciation: "",
+      del_yn: "N", // ✅ 기본 N
       isNew: true,
     };
     setRows((prev) => [...prev, newRow]);
@@ -170,6 +179,106 @@ function PropertySheetTab() {
     }
   };
   const handleCloseViewer = () => setViewImageSrc(null);
+
+  // ✅ 우클릭 메뉴 열기
+  const handleRowContextMenu = (e, rowIndex) => {
+    e.preventDefault();
+    setCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  };
+
+  const closeCtxMenu = () => {
+    setCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  };
+
+  // ✅ 행 삭제: del_yn=Y 로 서버에 저장 태우고, 성공하면 화면에서만 제거(재조회 X)
+  const handleDeleteRow = async (rowIndex) => {
+    if (rowIndex == null) return;
+
+    const row = rows[rowIndex];
+    if (!row) return;
+
+    const result = await Swal.fire({
+      title: "행 삭제",
+      text: "해당 행을 삭제할까요?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#9e9e9e",
+      confirmButtonText: "삭제",
+      cancelButtonText: "취소",
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const deleteRow = { ...row };
+
+      // ✅ 삭제 플래그
+      deleteRow.del_yn = "Y";
+
+      // ✅ account_id 보정
+      deleteRow.account_id = selectedAccountId || row.account_id;
+
+      // ✅ 감가상각은 서버 저장 제외
+      delete deleteRow.depreciation;
+
+      // ✅ 숫자 컬럼 콤마 제거
+      numericCols.forEach((col) => {
+        if (deleteRow[col] != null) {
+          deleteRow[col] = deleteRow[col].toString().replace(/,/g, "");
+        }
+      });
+
+      // ✅ 이미지가 File 객체면(로컬 업로드) 삭제 저장에선 굳이 필요 없으니 제거
+      ["item_img", "receipt_img"].forEach((f) => {
+        if (deleteRow[f] && typeof deleteRow[f] === "object") {
+          delete deleteRow[f];
+        }
+      });
+
+      const response = await api.post(`/Operate/PropertiesSave`, [deleteRow], {
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (response?.data?.code === 200) {
+        // ✅ 재조회 없이 화면에서만 제거
+        setRows((prev) => prev.filter((_, i) => i !== rowIndex));
+        setOriginalRows((prev) => prev.filter((_, i) => i !== rowIndex));
+
+        closeCtxMenu();
+
+        Swal.fire({
+          title: "삭제",
+          text: "삭제 처리되었습니다.",
+          icon: "success",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+      } else {
+        Swal.fire({
+          title: "오류",
+          text: "삭제 저장에 실패했습니다.",
+          icon: "error",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        title: "오류",
+        text: "삭제 저장 중 오류가 발생했습니다.",
+        icon: "error",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    }
+  };
 
   const uploadImage = async (file, purchaseDt, account_id) => {
     if (!file) return;
@@ -276,7 +385,10 @@ function PropertySheetTab() {
           delete updatedRow.depreciation;
 
           // ✅ type은 저장시에도 문자열->그대로(서버가 숫자 원하면 여기서 Number로 변환 가능)
-          return { ...updatedRow, account_id: selectedAccountId || row.account_id };
+          return {
+            ...updatedRow,
+            account_id: selectedAccountId || row.account_id,
+          };
         })
       );
 
@@ -421,7 +533,7 @@ function PropertySheetTab() {
             renderInput={(params) => (
               <TextField
                 {...params}
-                label={isAccountLocked ? "거래처(고정)" : "거래처 검색"} // ✅ 표시만 살짝
+                label={isAccountLocked ? "거래처(고정)" : "거래처 검색"}
                 placeholder={isAccountLocked ? "" : "거래처명을 입력"}
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
@@ -435,7 +547,10 @@ function PropertySheetTab() {
         <MDButton
           color="info"
           onClick={handleAddRow}
-          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90 }}
+          sx={{
+            fontSize: isMobile ? "11px" : "13px",
+            minWidth: isMobile ? 70 : 90,
+          }}
         >
           행 추가
         </MDButton>
@@ -443,7 +558,10 @@ function PropertySheetTab() {
         <MDButton
           color="info"
           onClick={handleSave}
-          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 90 }}
+          sx={{
+            fontSize: isMobile ? "11px" : "13px",
+            minWidth: isMobile ? 70 : 90,
+          }}
         >
           저장
         </MDButton>
@@ -462,7 +580,11 @@ function PropertySheetTab() {
 
           <tbody>
             {rows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
+              <tr
+                key={rowIndex}
+                onContextMenu={(e) => handleRowContextMenu(e, rowIndex)} // ✅ 우클릭
+                style={{ cursor: "context-menu" }}
+              >
                 {columns.map((col) => {
                   const key = col.accessorKey;
                   const value = row[key] ?? "";
@@ -510,7 +632,7 @@ function PropertySheetTab() {
 
                     // ✅ 원본 대비 변경 여부 (File 객체로 재업로드되면 무조건 변경)
                     const original = originalRows[rowIndex]?.[key];
-                    const isImgChanged = !isSameValue(key, original, value); // 기존 로직 그대로 활용 가능
+                    const isImgChanged = !isSameValue(key, original, value);
 
                     return (
                       <td
@@ -572,7 +694,7 @@ function PropertySheetTab() {
                             <Tooltip title="미리보기">
                               <IconButton
                                 size="small"
-                                sx={getFileIconSx(isImgChanged)} // ✅ 변경 시 빨간색
+                                sx={getFileIconSx(isImgChanged)}
                                 onClick={() => handleViewImage(value)}
                               >
                                 <ImageSearchIcon fontSize="small" />
@@ -689,6 +811,55 @@ function PropertySheetTab() {
                 </>
               )}
             </TransformWrapper>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ 우클릭 컨텍스트 메뉴 */}
+      {ctxMenu.open && (
+        <div
+          onClick={closeCtxMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeCtxMenu();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 10000,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: ctxMenu.mouseY,
+              left: ctxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={() => handleDeleteRow(ctxMenu.rowIndex)}
+            >
+              🗑️ 행 삭제
+            </button>
           </div>
         </div>
       )}

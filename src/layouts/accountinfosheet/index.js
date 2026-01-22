@@ -1,13 +1,34 @@
-import React, { useMemo, useState, forwardRef, useEffect, useRef } from "react";
+/* eslint-disable react/function-component-definition */
+import React, { useMemo, useState, forwardRef, useEffect, useRef, useCallback } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
+
 import Modal from "@mui/material/Modal";
 import IconButton from "@mui/material/IconButton";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import CloseIcon from "@mui/icons-material/Close";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
+import DownloadIcon from "@mui/icons-material/Download";
+
 import DatePicker from "react-datepicker";
-import { Grid, Box, MenuItem, TextField, Card, Autocomplete } from "@mui/material";
+import {
+  Grid,
+  Box,
+  MenuItem,
+  TextField,
+  Card,
+  Autocomplete,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+
+import Paper from "@mui/material/Paper";
+import Draggable from "react-draggable";
+
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
@@ -47,6 +68,15 @@ const formatNumber = (num) => {
   return Number(num).toLocaleString();
 };
 
+// ✅ 상단 첨부파일 타입(순서 = 이전/다음 순서)
+const FILE_TYPES = [
+  { key: "business_report", label: "영업신고증" },
+  { key: "business_regist", label: "사업자등록증" },
+  { key: "kitchen_drawing", label: "주방도면" },
+  { key: "nutritionist_room_img", label: "영양사실" },
+  { key: "chef_lounge_img", label: "휴게실" },
+];
+
 function AccountInfoSheet() {
   // 🔹 추가 식단가 모달 상태
   const [extraDietModalOpen, setExtraDietModalOpen] = useState(false);
@@ -72,8 +102,6 @@ function AccountInfoSheet() {
     fetchAllData,
   } = useAccountInfosheetData(selectedAccountId);
 
-  const [isOpen, setIsOpen] = useState(false);
-  const [activeImg, setActiveImg] = useState("");
   const didInitAccountRef = useRef(false);
 
   // ✅ accountList 로딩 완료 후, URL에서 받은 account_id가 있을 때 자동 선택
@@ -103,22 +131,261 @@ function AccountInfoSheet() {
     }
   }, [selectedAccountId]);
 
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
-
   const [selectedFiles, setSelectedFiles] = useState({
     business_report: null,
     business_regist: null,
     kitchen_drawing: null,
-    // ✅ 추가
     nutritionist_room_img: null,
     chef_lounge_img: null,
   });
 
-  const handleInputClick = (type) => {
-    if (selectedFiles[type]?.path) {
-      setActiveImg(`${API_BASE_URL}${selectedFiles[type].path}`);
-      setIsOpen(true);
+  // ✅ "{k=v, k2=v2}" 형태 문자열 파싱
+  const parseServerMapString = (s) => {
+    if (!s || typeof s !== "string") return {};
+    const trimmed = s.trim();
+    const body = trimmed.startsWith("{") && trimmed.endsWith("}") ? trimmed.slice(1, -1) : trimmed;
+
+    const out = {};
+    body.split(",").forEach((chunk) => {
+      const part = chunk.trim();
+      if (!part) return;
+      const eq = part.indexOf("=");
+      if (eq < 0) return;
+      const k = part.slice(0, eq).trim();
+      const v = part.slice(eq + 1).trim();
+      out[k] = v;
+    });
+    return out;
+  };
+
+  // ============================================================
+  // ✅ CorporateCardSheet 스타일 "떠있는 창" 이미지 뷰어(드래그/줌/이전/다음)
+  // ============================================================
+  const fileIconSx = { color: "#1e88e5" };
+
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  // ✅ Draggable nodeRef
+  const viewerNodeRef = useRef(null);
+
+  // ✅ blob url cache (type별)
+  const blobCacheRef = useRef({}); // { [type]: { file: File, url: string } }
+
+  const safeJoinUrl = useCallback((path) => {
+    if (!path) return "";
+    const p = String(path);
+    if (/^https?:\/\//i.test(p)) return p;
+
+    const base = String(API_BASE_URL || "").replace(/\/+$/, "");
+    const pp = p.startsWith("/") ? p : `/${p}`;
+    return `${base}${pp}`;
+  }, []);
+
+  const getItemFromSelected = useCallback(
+    (type) => {
+      const v = selectedFiles[type];
+      if (!v) return null;
+
+      // 업로드 전: File
+      if (v instanceof File) {
+        return {
+          type,
+          label: FILE_TYPES.find((x) => x.key === type)?.label || type,
+          kind: "file",
+          file: v,
+        };
+      }
+
+      // 업로드 후: {name, path}
+      if (typeof v === "object" && v.path) {
+        return {
+          type,
+          label: FILE_TYPES.find((x) => x.key === type)?.label || type,
+          kind: "path",
+          path: String(v.path),
+          name: v.name || "",
+        };
+      }
+
+      // 혹시 path 문자열만 들어온 경우도 대응
+      if (typeof v === "string") {
+        return {
+          type,
+          label: FILE_TYPES.find((x) => x.key === type)?.label || type,
+          kind: "path",
+          path: String(v),
+          name: String(v).split("/").pop(),
+        };
+      }
+
+      return null;
+    },
+    [selectedFiles]
+  );
+
+  // ✅ 뷰어에 들어갈 아이템 목록(순서 고정)
+  const imageItems = useMemo(() => {
+    const arr = [];
+    FILE_TYPES.forEach(({ key, label }) => {
+      const it = getItemFromSelected(key);
+      if (!it) return;
+
+      // "input에 값이 있으면" 기준을 맞추기 위해:
+      // - File이면 OK
+      // - path 있으면 OK
+      if (it.kind === "file" || (it.kind === "path" && it.path)) arr.push(it);
+    });
+    return arr;
+  }, [getItemFromSelected]);
+
+  // ✅ 현재 아이템의 src 만들기 (File이면 blob url 생성/캐시)
+  const getSrcOfItem = useCallback(
+    (it) => {
+      if (!it) return "";
+
+      if (it.kind === "path") {
+        return safeJoinUrl(it.path);
+      }
+
+      if (it.kind === "file") {
+        const cached = blobCacheRef.current[it.type];
+        if (cached?.file === it.file && cached?.url) return cached.url;
+
+        // 기존 url 있으면 revoke
+        if (cached?.url) {
+          try {
+            URL.revokeObjectURL(cached.url);
+          } catch (e) {}
+        }
+
+        const url = URL.createObjectURL(it.file);
+        blobCacheRef.current[it.type] = { file: it.file, url };
+        return url;
+      }
+
+      return "";
+    },
+    [safeJoinUrl]
+  );
+
+  // ✅ unmount 시 blob url cleanup
+  useEffect(() => {
+    return () => {
+      const m = blobCacheRef.current || {};
+      Object.keys(m).forEach((k) => {
+        const url = m[k]?.url;
+        if (url) {
+          try {
+            URL.revokeObjectURL(url);
+          } catch (e) {}
+        }
+      });
+      blobCacheRef.current = {};
+    };
+  }, []);
+
+  const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
+
+  const goPrev = useCallback(() => {
+    setViewerIndex((i) =>
+      imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0
+    );
+  }, [imageItems.length]);
+
+  const goNext = useCallback(() => {
+    setViewerIndex((i) => (imageItems.length ? (i + 1) % imageItems.length : 0));
+  }, [imageItems.length]);
+
+  // ✅ 이미지 목록이 바뀌면 index 보정
+  useEffect(() => {
+    if (!viewerOpen) return;
+    if (!imageItems.length) {
+      setViewerIndex(0);
+      return;
     }
+    if (viewerIndex > imageItems.length - 1) setViewerIndex(imageItems.length - 1);
+  }, [viewerOpen, imageItems.length, viewerIndex]);
+
+  // ✅ 키보드 이동(좌/우/ESC) - 입력 중에는 방해 안되게
+  useEffect(() => {
+    if (!viewerOpen) return;
+
+    const onKeyDown = (e) => {
+      const tag = (e.target?.tagName || "").toLowerCase();
+      const isTyping = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
+      if (isTyping) return;
+
+      if (e.key === "Escape") handleCloseViewer();
+      if (e.key === "ArrowLeft") goPrev();
+      if (e.key === "ArrowRight") goNext();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
+
+  const currentImg = imageItems[viewerIndex];
+  const currentSrc = currentImg ? getSrcOfItem(currentImg) : "";
+
+  const handleViewByType = useCallback(
+    (type) => {
+      // type에 해당하는 아이템이 목록에 있는지 확인
+      const idx = imageItems.findIndex((x) => x.type === type);
+      if (idx < 0) return;
+      setViewerIndex(idx);
+      setViewerOpen(true);
+    },
+    [imageItems]
+  );
+
+  const handleDownloadAny = useCallback(
+    (it) => {
+      if (!it) return;
+
+      const filenameBase = it.label || it.type || "download";
+
+      // 서버 path 다운로드: CorporateCardSheet 방식
+      if (it.kind === "path" && it.path) {
+        const url = safeJoinUrl(it.path);
+        const filename = it.name || String(it.path).split("/").pop() || filenameBase;
+
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        return;
+      }
+
+      // 로컬 File 다운로드: blob url로
+      if (it.kind === "file" && it.file) {
+        const url = getSrcOfItem(it);
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.download = it.file.name || filenameBase;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    },
+    [safeJoinUrl, getSrcOfItem]
+  );
+
+  // ✅ input 클릭 시 미리보기 열기(값이 있으면)
+  const handleInputClick = (type) => {
+    const v = selectedFiles[type];
+    if (!v) return;
+
+    // File이든 path든 있으면 viewer 오픈
+    if (v instanceof File) return handleViewByType(type);
+    if (typeof v === "object" && v.path) return handleViewByType(type);
+    if (typeof v === "string" && v) return handleViewByType(type);
   };
 
   // 버튼 클릭 시 input 클릭
@@ -151,21 +418,40 @@ function AccountInfoSheet() {
     if (!hasFile) return alert("업로드할 파일을 선택하세요!");
 
     try {
-      await api.post("/Account/AccountBusinessImgUpload", formData, {
+      const res = await api.post("/Account/AccountBusinessImgUpload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      alert("모든 파일 업로드 완료!");
 
-      setSelectedFiles({
-        business_report: null,
-        business_regist: null,
-        kitchen_drawing: null,
-        nutritionist_room_img: null,
-        chef_lounge_img: null,
+      // ✅ 응답이 {account_id=..., business_report=/image/...} 문자열로 오는 케이스 처리
+      const map = parseServerMapString(res?.data?.data);
+
+      // ✅ 서버가 내려준 path를 버튼 옆 input에 반영
+      const keys = [
+        "business_report",
+        "business_regist",
+        "kitchen_drawing",
+        "nutritionist_room_img",
+        "chef_lounge_img",
+      ];
+
+      const next = {};
+      keys.forEach((k) => {
+        const filePath = map[k];
+        if (filePath) {
+          next[k] = {
+            name: filePath.split("/").pop(),
+            path: filePath,
+          };
+        }
       });
+
+      setSelectedFiles((prev) => ({ ...prev, ...next }));
+
+      Swal.fire("완료", "모든 파일 업로드 완료!", "success");
+      console.log(res);
     } catch (err) {
       console.error(err);
-      alert("업로드 실패!");
+      Swal.fire("실패", "업로드 실패!", "error");
     }
   };
 
@@ -216,7 +502,6 @@ function AccountInfoSheet() {
         "business_report",
         "business_regist",
         "kitchen_drawing",
-        // ✅ 추가
         "nutritionist_room_img",
         "chef_lounge_img",
       ].forEach((key) => {
@@ -380,10 +665,7 @@ function AccountInfoSheet() {
         header: "경비(신규영업, 중도운영)",
         columns: [
           { header: "음식물처리", accessorKey: "food_process" },
-
-          // ✅ 여기 select로 만들 컬럼
           { header: "유형", accessorKey: "food_process_type" },
-
           { header: "식기세척기", accessorKey: "dishwasher" },
           { header: "수량", accessorKey: "dishwasher_cnt" },
           { header: "세스코 방제", accessorKey: "cesco" },
@@ -404,6 +686,10 @@ function AccountInfoSheet() {
           { header: "세팅/바트/그릇", accessorKey: "setting_item" },
           { header: "조리실", accessorKey: "cuisine" },
           { header: "특이사항", accessorKey: "cuisine_note" },
+          { header: "조식시간", accessorKey: "breakfast_time" },
+          { header: "중식시간", accessorKey: "lunch_time" },
+          { header: "석식시간", accessorKey: "dinner_time" },
+          { header: "간식시간", accessorKey: "snack_time" },
         ],
       },
       {
@@ -448,8 +734,6 @@ function AccountInfoSheet() {
           { header: "만족도 조사", accessorKey: "satis_note" },
           { header: "위생점검", accessorKey: "hygiene_note" },
           { header: "이벤트", accessorKey: "event_note" },
-
-          // ✅ Y/N select로 만들 컬럼들
           { header: "집단급식소 여부", accessorKey: "group_feed_yn" },
           { header: "생신잔치 여부", accessorKey: "birthday_note" },
           { header: "영양사실 여부", accessorKey: "nutritionist_room_yn" },
@@ -484,8 +768,6 @@ function AccountInfoSheet() {
       { value: 2, label: "법인" },
       { value: 3, label: "애단원" },
     ],
-
-    // ✅ 추가: 음식물처리 유형
     food_process_type: [
       { value: 0, label: "해당없음" },
       { value: 1, label: "고객사+업체" },
@@ -505,10 +787,10 @@ function AccountInfoSheet() {
     diet_price: "3%",
     basic_price: "3%",
     before_diet_price: "3%",
-    after_dt: "5%",
-    elderly: "5%",
-    snack: "5%",
-    employ: "5%",
+    after_dt: "4%",
+    elderly: "3%",
+    snack: "3%",
+    employ: "3%",
     extra_diet1_price: "4%",
     extra_diet2_price: "4%",
     extra_diet3_price: "4%",
@@ -531,6 +813,10 @@ function AccountInfoSheet() {
     cuisine_note: "5%",
     name: "3%",
     budget_note: "5%",
+    breakfast_time: "2%",
+    lunch_time: "2%",
+    dinner_time: "2%",
+    snack_time: "2%",
     members: "5%",
     work_system: "20%",
     puri_type: "7%",
@@ -573,8 +859,6 @@ function AccountInfoSheet() {
       "puri_type",
       "gas_type",
       "business_type",
-
-      // ✅ select 처리할 컬럼들(직접 편집 막기)
       "food_process_type",
       "group_feed_yn",
       "nutritionist_room_yn",
@@ -595,11 +879,6 @@ function AccountInfoSheet() {
           },
           "& th": { backgroundColor: "#f0f0f0" },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
-          ".ReactModal__Content img": {
-            maxWidth: "90vw",
-            maxHeight: "90vh",
-            objectFit: "contain",
-          },
         }}
       >
         <table>
@@ -783,7 +1062,6 @@ function AccountInfoSheet() {
           confirmButtonText: "확인",
         }).then(async (result) => {
           if (result.isConfirmed) {
-            // ✅ 화면 상태는 굳이 user_id 포함으로 덮어쓸 필요 없으면 기존대로 OK
             setOriginalBasic(formData);
             setOriginalPrice([...priceData]);
             setOriginalEtc([...etcData]);
@@ -864,6 +1142,11 @@ function AccountInfoSheet() {
     }
   };
 
+  if (loading) {
+    // 기존 loading 처리 필요 시 사용 (현재 훅에서 loading 사용)
+    // return <LoadingScreen />;
+  }
+
   return (
     <DashboardLayout>
       <DashboardNavbar title="📋 고객사 상세관리" />
@@ -874,157 +1157,128 @@ function AccountInfoSheet() {
         pb={2}
         sx={{
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
+          alignItems: "center",
           gap: 1,
+          flexWrap: "wrap",
         }}
       >
-        {/* 왼쪽 버튼 그룹 */}
-        <MDBox sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-          {[
-            "business_report",
-            "business_regist",
-            "kitchen_drawing",
-            // ✅ 추가
-            "nutritionist_room_img",
-            "chef_lounge_img",
-          ].map((type) => (
-            <React.Fragment key={type}>
-              <MDButton variant="gradient" color="success" onClick={() => handleFileSelect(type)}>
-                {type === "business_report"
-                  ? "영업신고증"
-                  : type === "business_regist"
-                  ? "사업자등록증"
-                  : type === "kitchen_drawing"
-                  ? "주방도면"
-                  : type === "nutritionist_room_img"
-                  ? "영양사실"
-                  : "휴게실"}
-              </MDButton>
+        {/* ✅ 왼쪽: 업로드 버튼 + input */}
+        <MDBox sx={{ display: "flex", gap: 0.5, alignItems: "center", flexWrap: "wrap" }}>
+          {FILE_TYPES.map(({ key: type, label }) => {
+            const v = selectedFiles[type];
+            const hasPreview =
+              !!v && (v instanceof File || !!v?.path || (typeof v === "string" && v));
 
-              <MDInput
-                value={selectedFiles[type]?.name || ""}
-                readOnly
-                sx={{
-                  width: 110,
-                  cursor: selectedFiles[type]?.path ? "pointer" : "default",
-                }}
-                onClick={() => handleInputClick(type)}
-              />
+            return (
+              <React.Fragment key={type}>
+                <MDButton
+                  variant="gradient"
+                  color="success"
+                  size="small"
+                  onClick={() => handleFileSelect(type)}
+                  sx={{
+                    minWidth: 88,
+                    height: 32,
+                    px: 1,
+                    fontSize: 12,
+                    lineHeight: 1,
+                  }}
+                >
+                  {label}
+                </MDButton>
 
-              <input
-                type="file"
-                id={type}
-                style={{ display: "none" }}
-                onChange={(e) => handleFileChange(type, e)}
-              />
-            </React.Fragment>
-          ))}
+                <MDInput
+                  value={
+                    selectedFiles[type]?.name ||
+                    (selectedFiles[type] instanceof File ? selectedFiles[type].name : "") ||
+                    ""
+                  }
+                  readOnly
+                  inputProps={{ readOnly: true }}
+                  sx={{
+                    width: 100,
+                    "& input": {
+                      height: 32,
+                      boxSizing: "border-box",
+                      padding: "0 8px",
+                      fontSize: 12,
+                      cursor: hasPreview ? "pointer" : "default",
+                    },
+                  }}
+                  onClick={() => handleInputClick(type)}
+                />
 
-          {/* 이미지 뷰어 모달 */}
-          <Modal
-            open={isOpen}
-            onClose={() => setIsOpen(false)}
-            sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                <input
+                  type="file"
+                  id={type}
+                  style={{ display: "none" }}
+                  onChange={(e) => handleFileChange(type, e)}
+                />
+              </React.Fragment>
+            );
+          })}
+
+          <MDButton
+            variant="gradient"
+            color="primary"
+            size="small"
+            onClick={handleFileUpload}
+            sx={{
+              minWidth: 88,
+              height: 32,
+              px: 1,
+              fontSize: 12,
+              lineHeight: 1,
+            }}
           >
-            <Box
-              sx={{
-                width: "100vw",
-                height: "90vh",
-                bgcolor: "rgba(0,0,0,0.9)",
-                position: "relative",
-              }}
-            >
-              <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-                {({ zoomIn, zoomOut, resetTransform }) => (
-                  <>
-                    <Box
-                      sx={{
-                        position: "absolute",
-                        top: 16,
-                        right: 16,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 1,
-                        zIndex: 1000,
-                        bgcolor: "rgba(255,255,255,0.2)",
-                        borderRadius: 2,
-                        p: 1,
-                      }}
-                    >
-                      <IconButton size="small" sx={{ color: "white" }} onClick={() => zoomIn()}>
-                        <ZoomInIcon />
-                      </IconButton>
-                      <IconButton size="small" sx={{ color: "white" }} onClick={() => zoomOut()}>
-                        <ZoomOutIcon />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        sx={{ color: "white" }}
-                        onClick={() => resetTransform()}
-                      >
-                        <RefreshIcon />
-                      </IconButton>
-                    </Box>
-
-                    <TransformComponent>
-                      <img
-                        src={activeImg}
-                        alt="미리보기"
-                        style={{
-                          maxWidth: "80%",
-                          maxHeight: "80%",
-                          margin: "auto",
-                          display: "block",
-                        }}
-                      />
-                    </TransformComponent>
-                  </>
-                )}
-              </TransformWrapper>
-            </Box>
-          </Modal>
-
-          <MDButton variant="gradient" color="primary" onClick={handleFileUpload}>
             업로드
           </MDButton>
         </MDBox>
 
-        {/* ✅ 거래처 검색 가능한 Autocomplete */}
-        {(accountList || []).length > 0 && (
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 200 }}
-            options={accountList || []}
-            // ✅ selectedAccountId로 현재 선택된 객체를 만들어 value에 넣기
-            value={
-              (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) ||
-              null
-            }
-            onChange={(_, newValue) => {
-              setSelectedAccountId(newValue ? newValue.account_id : "");
-            }}
-            // ✅ 입력 텍스트로 검색: account_name 기준
-            getOptionLabel={(option) => option?.account_name ?? ""}
-            isOptionEqualToValue={(option, value) =>
-              String(option?.account_id) === String(value?.account_id)
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="거래처 검색"
-                placeholder="거래처명을 입력"
-                sx={{
-                  "& .MuiInputBase-root": { height: 43, fontSize: 12 },
-                  "& input": { padding: "0 8px" },
-                }}
-              />
-            )}
-          />
-        )}
+        {/* ✅ 오른쪽: 거래처 검색 + 저장 */}
+        <MDBox sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
+          {(accountList || []).length > 0 && (
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 220 }}
+              options={accountList || []}
+              value={
+                (accountList || []).find(
+                  (a) => String(a.account_id) === String(selectedAccountId)
+                ) || null
+              }
+              onChange={(_, newValue) => {
+                setSelectedAccountId(newValue ? newValue.account_id : "");
+              }}
+              getOptionLabel={(option) => option?.account_name ?? ""}
+              isOptionEqualToValue={(option, value) =>
+                String(option?.account_id) === String(value?.account_id)
+              }
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  sx={{
+                    "& .MuiInputBase-root": { height: 32, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
+            />
+          )}
 
-        <MDButton variant="gradient" color="info" onClick={handleSave}>
-          저장
-        </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            size="small"
+            onClick={handleSave}
+            sx={{ minWidth: 88, height: 32, px: 1, fontSize: 12, lineHeight: 1 }}
+          >
+            저장
+          </MDButton>
+        </MDBox>
       </MDBox>
 
       {/* 상단 기본 정보 */}
@@ -1524,6 +1778,236 @@ function AccountInfoSheet() {
       <Card sx={{ p: 1, mb: 1 }}>
         {renderTable(eventData, setEventData, "event", eventTableColumns)}
       </Card>
+
+      {/* ========================= ✅ 떠있는 창 미리보기: 뒤 입력 가능 ========================= */}
+      {viewerOpen && (
+        <Box
+          sx={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2000,
+            pointerEvents: "none",
+          }}
+        >
+          <Draggable
+            nodeRef={viewerNodeRef}
+            handle="#account-info-viewer-titlebar"
+            bounds="parent"
+            cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
+          >
+            <Paper
+              ref={viewerNodeRef}
+              sx={{
+                position: "absolute",
+                top: 120,
+                left: 120,
+                m: 0,
+                width: "450px",
+                height: "650px",
+                maxWidth: "95vw",
+                maxHeight: "90vh",
+                borderRadius: 1.2,
+                border: "1px solid rgba(0,0,0,0.25)",
+                boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+                overflow: "hidden",
+                resize: "both",
+                pointerEvents: "auto",
+                backgroundColor: "#000",
+              }}
+            >
+              <Box
+                id="account-info-viewer-titlebar"
+                sx={{
+                  height: 42,
+                  bgcolor: "#1b1b1b",
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  px: 1,
+                  cursor: "move",
+                  userSelect: "none",
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  sx={{
+                    flex: 1,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    pr: 1,
+                  }}
+                >
+                  {currentImg?.label || "첨부 미리보기"}
+                  {imageItems.length ? `  (${viewerIndex + 1}/${imageItems.length})` : ""}
+                </Typography>
+
+                <Tooltip title="이전(←)">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goPrev();
+                      }}
+                      disabled={imageItems.length <= 1}
+                    >
+                      <ChevronLeftIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="다음(→)">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        goNext();
+                      }}
+                      disabled={imageItems.length <= 1}
+                    >
+                      <ChevronRightIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="새 탭으로 열기">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (currentSrc) window.open(currentSrc, "_blank", "noopener,noreferrer");
+                      }}
+                      disabled={!currentSrc}
+                    >
+                      <OpenInNewIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="다운로드">
+                  <span>
+                    <IconButton
+                      size="small"
+                      sx={{ color: "#fff" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDownloadAny(currentImg);
+                      }}
+                      disabled={!currentImg}
+                    >
+                      <DownloadIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+
+                <Tooltip title="닫기(ESC)">
+                  <IconButton
+                    size="small"
+                    sx={{ color: "#fff" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCloseViewer();
+                    }}
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+
+              <Box sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}>
+                {currentSrc ? (
+                  <TransformWrapper
+                    initialScale={1}
+                    minScale={0.5}
+                    maxScale={6}
+                    centerOnInit
+                    wheel={{ step: 0.12 }}
+                    doubleClick={{ mode: "zoomIn" }}
+                  >
+                    {({ zoomIn, zoomOut, resetTransform }) => (
+                      <>
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            right: 10,
+                            top: 10,
+                            zIndex: 3,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 1,
+                          }}
+                        >
+                          <Tooltip title="확대">
+                            <IconButton
+                              size="small"
+                              onClick={zoomIn}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
+                              <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="축소">
+                            <IconButton
+                              size="small"
+                              onClick={zoomOut}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
+                              <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="리셋">
+                            <IconButton
+                              size="small"
+                              onClick={resetTransform}
+                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
+                            >
+                              <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+
+                        <TransformComponent
+                          wrapperStyle={{ width: "100%", height: "100%" }}
+                          contentStyle={{ width: "100%", height: "100%" }}
+                        >
+                          <Box
+                            sx={{
+                              width: "100%",
+                              height: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <img
+                              src={currentSrc}
+                              alt="미리보기"
+                              style={{
+                                maxWidth: "95%",
+                                maxHeight: "95%",
+                                userSelect: "none",
+                              }}
+                            />
+                          </Box>
+                        </TransformComponent>
+                      </>
+                    )}
+                  </TransformWrapper>
+                ) : (
+                  <Typography sx={{ color: "#fff", p: 2 }}>이미지가 없습니다.</Typography>
+                )}
+              </Box>
+            </Paper>
+          </Draggable>
+        </Box>
+      )}
 
       {/* 🔹 추가 식단가 입력 모달 */}
       <Modal

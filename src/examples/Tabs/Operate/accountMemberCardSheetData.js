@@ -15,7 +15,9 @@ const formatNumber = (value) => {
 // ✅ 시간 normalize (08:00 -> 8:00 같은 형태 정리)
 const normalizeTime = (t) => {
   if (!t) return "";
-  return String(t).trim().replace(/^0(\d):/, "$1:");
+  return String(t)
+    .trim()
+    .replace(/^0(\d):/, "$1:");
 };
 
 export default function useAccountMemberCardSheetData(account_id, activeStatus) {
@@ -77,6 +79,7 @@ export default function useAccountMemberCardSheetData(account_id, activeStatus) 
         employment_contract: item.employment_contract,
         headoffice_note: item.headoffice_note,
         subsidy: item.subsidy,
+        cor_type: item.cor_type,
       }));
 
       setActiveRows(rows);
@@ -109,7 +112,7 @@ export default function useAccountMemberCardSheetData(account_id, activeStatus) 
       })
       .catch((err) => console.error("AccountList 조회 실패:", err));
   }, []);
-  
+
   // =========================
   // 3) 근무형태 리스트 (재조회 가능하도록 함수화)
   // =========================

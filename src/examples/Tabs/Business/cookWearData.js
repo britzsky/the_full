@@ -91,7 +91,6 @@ export default function useCookWearManagerData() {
       const rows = (res.data || []).map((item) => ({
         type: item.type,
         type_name: item.type_name,
-        account_id: item.account_id || (accountList[0]?.account_id ?? ""),
         new_qty: formatNumber(item.new_qty),
         new_dt: item.new_dt || "",
         note: item.note || "",

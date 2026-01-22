@@ -120,6 +120,11 @@ function AccountMemberRecSheet() {
     { value: "N", label: "채용취소" },
   ];
 
+  const corOptions = [
+    { value: "1", label: "(주)더채움" },
+    { value: "2", label: "더채움" },
+  ];
+
   const formatDateForInput = (val) => {
     if (!val && val !== 0) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -134,6 +139,7 @@ function AccountMemberRecSheet() {
 
   const columns = useMemo(
     () => [
+      { header: "구분", accessorKey: "cor_type", size: 50 },
       { header: "성명", accessorKey: "name", size: 50 },
       { header: "주민번호", accessorKey: "rrn", size: 100 },
       { header: "업장명", accessorKey: "account_id", size: 150 },
@@ -336,6 +342,7 @@ function AccountMemberRecSheet() {
       employment_contract: "",
       id: "",
       bankbook: "",
+      cor_type: 1,
     };
 
     setActiveRows((prev) => [newRow, ...prev]);
@@ -352,6 +359,7 @@ function AccountMemberRecSheet() {
       "account_id",
       "idx",
       "use_yn", // ✅ 추가
+      "cor_type",
     ]);
     const nonEditableCols = new Set(["total"]);
 
@@ -709,6 +717,13 @@ function AccountMemberRecSheet() {
                               border: "none",
                             }}
                           >
+                            {colKey === "cor_type" &&
+                              corOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
                             {colKey === "account_id" &&
                               (accountList || []).map((acc) => (
                                 <option key={acc.account_id} value={acc.account_id}>

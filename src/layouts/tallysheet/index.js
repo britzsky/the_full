@@ -1,5 +1,6 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import ReactDOM from "react-dom";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import {
   Modal,
@@ -25,11 +26,178 @@ import MDButton from "components/MDButton";
 import LoadingScreen from "../loading/loadingscreen";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useTallysheetData, { parseNumber, formatNumber } from "./data/TallySheetData";
 import Swal from "sweetalert2";
 import api from "api/api";
 import PropTypes from "prop-types";
+import Draggable from "react-draggable";
+import { API_BASE_URL } from "config";
+
+// ======================== ✅ Floating(비차단) 이미지 미리보기 ========================
+function FloatingImagePreview({ open, src, title = "미리보기", onClose }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!mounted || !open || !src) return null;
+
+  return ReactDOM.createPortal(
+    <Draggable handle=".drag-handle" bounds="parent">
+      <Box
+        sx={{
+          position: "fixed",
+          top: 120,
+          left: 120,
+          zIndex: 4000,
+          width: 460,
+          maxWidth: "92vw",
+          bgcolor: "background.paper",
+          borderRadius: 2,
+          boxShadow: 24,
+          p: 1,
+          pointerEvents: "auto",
+          border: "1px solid #ddd",
+          overflow: "hidden",
+        }}
+      >
+        <Box
+          className="drag-handle"
+          sx={{
+            cursor: "move",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            userSelect: "none",
+            px: 1,
+            py: 0.75,
+            borderRadius: 1,
+            bgcolor: "#f5f5f5",
+            borderBottom: "1px solid #e5e5e5",
+          }}
+        >
+          <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#333" }}>{title}</Typography>
+          <Button size="small" variant="outlined" onClick={onClose}>
+            닫기
+          </Button>
+        </Box>
+
+        <Box sx={{ mt: 1, maxHeight: "75vh", overflow: "auto" }}>
+          <img
+            src={src}
+            alt="preview"
+            style={{
+              width: "100%",
+              height: "auto",
+              borderRadius: 10,
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        </Box>
+      </Box>
+    </Draggable>,
+    document.body
+  );
+}
+
+FloatingImagePreview.propTypes = {
+  open: PropTypes.bool.isRequired,
+  src: PropTypes.string,
+  title: PropTypes.string,
+  onClose: PropTypes.func.isRequired,
+};
+
+// ======================== ✅ 상단 예산/사용/비율 표시 바 (모바일 UI로 통일) ========================
+function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
+  const safeBudget = parseNumber(budget);
+  const safeUsed = parseNumber(used);
+
+  const ratio = useMemo(() => {
+    if (!safeBudget || safeBudget <= 0) return 0;
+    return (safeUsed / safeBudget) * 100;
+  }, [safeBudget, safeUsed]);
+
+  const ratioText = `${ratio.toFixed(2)}%`;
+
+  const items = [
+    { label: "월예산", value: formatNumber(safeBudget) },
+    { label: "사용금액", value: formatNumber(safeUsed) },
+    { label: "예산대비", value: ratioText },
+  ];
+
+  // ✅ monthText를 안 주면 현재 월로 표시 (기존 동작 유지)
+  const monthLabel = monthText ?? dayjs().format("MM월");
+
+  return (
+    <Box
+      sx={{
+        width: "100%",
+        border: "1px solid #111",
+        borderRadius: 1,
+        overflow: "hidden",
+      }}
+    >
+      {/* 타이틀 바 */}
+      <Box
+        sx={{
+          px: 0.5,
+          py: 0.5,
+          bgcolor: "#288ebe",
+          borderBottom: "1px solid #111",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Typography sx={{ fontSize: 12, fontWeight: 900, color: "#fff" }}>{title}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{monthLabel}</Typography>
+      </Box>
+
+      {/* 3칸 그리드 */}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 0,
+        }}
+      >
+        {items.map((it) => (
+          <Box
+            key={it.label}
+            sx={{
+              px: 0.5,
+              py: 0.5,
+              borderRight: "1px solid #111",
+              "&:last-of-type": { borderRight: "none" },
+              bgcolor: "#fff",
+            }}
+          >
+            <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#444" }}>
+              {it.label} : {it.value}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+BudgetSummaryBar.propTypes = {
+  budget: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  used: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  title: PropTypes.string,
+  monthText: PropTypes.string, // (선택) "01월" 같은 표시를 외부에서 넣고 싶을 때
+};
 
 // ======================== 은행/포맷 유틸 ========================
 const KOREAN_BANKS = [
@@ -73,7 +241,6 @@ const formatByGroups = (digits, groups) => {
   return parts.filter(Boolean).join("-");
 };
 
-// 은행별 대표 포맷(대표 패턴 + fallback)
 const BANK_MASKS_BY_NAME = {
   KB국민은행: [
     [3, 2, 6],
@@ -140,13 +307,11 @@ const formatAccountNumber = (bankName, value) => {
 
   if (mask) return formatByGroups(digits, mask);
 
-  // fallback
   if (digits.length <= 9) return formatByGroups(digits, [3, 3, 3]);
   if (digits.length <= 12) return formatByGroups(digits, [3, 3, 6]);
   return formatByGroups(digits, [4, 4, 4, 4]);
 };
 
-// 사업자번호: 10자리 -> 000-00-00000
 const formatBizNo = (value) => {
   const digits = onlyDigits(value).slice(0, 10);
   const a = digits.slice(0, 3);
@@ -157,7 +322,6 @@ const formatBizNo = (value) => {
   return `${a}-${b}-${c}`;
 };
 
-// 연락처(휴대폰) 포맷
 const formatPhone = (value) => {
   const digits = onlyDigits(value).slice(0, 11);
 
@@ -215,7 +379,7 @@ function YourSelectableTable({ data, selected, setSelected }) {
           </tr>
         </thead>
         <tbody>
-          {data.map((row, idx) => (
+          {(data || []).map((row, idx) => (
             <tr
               key={idx}
               style={{
@@ -247,7 +411,11 @@ YourSelectableTable.propTypes = {
 
 // ======================== 메인 집계표 컴포넌트 ========================
 function TallySheet() {
-  const [selectedAccountId, setSelectedAccountId] = useState("");
+  // ✅ localStorage account_id 우선 적용(있으면 고정)
+  const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
+  const isAccountLocked = useMemo(() => !!localAccountId, [localAccountId]);
+  const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+
   const [originalRows, setOriginalRows] = useState([]);
   const [original2Rows, setOriginal2Rows] = useState([]);
   const today = dayjs();
@@ -263,6 +431,8 @@ function TallySheet() {
   // ✅ 탭 상태 (0: 현재월, 1: 전월)
   const [tabValue, setTabValue] = useState(0);
 
+  const hook = useTallysheetData(selectedAccountId, year, month);
+
   const {
     dataRows,
     setDataRows,
@@ -274,42 +444,447 @@ function TallySheet() {
     loading,
     fetchDataRows,
     fetchData2Rows,
-    prevYear,
-    prevMonth,
-  } = useTallysheetData(selectedAccountId, year, month);
 
-  // ✅ 원본 데이터 관리 로직 개선
-  useEffect(() => {
-    setOriginalRows([]);
-    setOriginal2Rows([]);
-  }, [selectedAccountId, year, month]);
+    // ✅ (전월) 날짜
+    prevYear: hookPrevYear,
+    prevMonth: hookPrevMonth,
 
-  useEffect(() => {
-    if (dataRows?.length > 0 && originalRows.length === 0) {
-      setOriginalRows(dataRows.map((r) => ({ ...r })));
-    }
-  }, [dataRows]);
+    // ✅ (예산) - 훅이 지원하면 사용, 아니면 0 처리
+    budgetGrant = 0,
+    budget2Grant = 0,
+    fetchBudgetGrant = async () => {},
+    fetchBudget2Grant = async () => {},
+  } = hook || {};
 
-  useEffect(() => {
-    if (data2Rows?.length > 0 && original2Rows.length === 0) {
-      setOriginal2Rows(data2Rows.map((r) => ({ ...r })));
-    }
-  }, [data2Rows]);
+  // ✅ 전월 year/month를 "현재 선택된 year/month 기준"으로 안전 계산 (훅이 주는 값이 있어도 덮어쓰지 않음)
+  const prevYm = useMemo(() => {
+    const base = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
+    return base.subtract(1, "month");
+  }, [year, month]);
+  const prevYear = useMemo(() => hookPrevYear ?? prevYm.year(), [hookPrevYear, prevYm]);
+  const prevMonth = useMemo(() => hookPrevMonth ?? prevYm.month() + 1, [hookPrevMonth, prevYm]);
 
+  // ✅ localStorage account_id가 있으면 selectedAccountId 강제 고정
   useEffect(() => {
-    if (accountList.length > 0 && !selectedAccountId)
-      setSelectedAccountId(accountList[0].account_id);
-  }, [accountList, selectedAccountId]);
+    if (!localAccountId) return;
+    if (String(selectedAccountId) !== String(localAccountId)) setSelectedAccountId(localAccountId);
+  }, [localAccountId, selectedAccountId]);
+
+  // ✅ localStorage account_id에 해당하는 거래처만 보이도록 필터링
+  const filteredAccountList = useMemo(() => {
+    if (!localAccountId) return accountList || [];
+    return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
+  }, [accountList, localAccountId]);
 
   // ✅ 거래처 Autocomplete value 객체
   const selectedAccountOption = useMemo(() => {
     if (!selectedAccountId) return null;
     return (
-      (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null
+      (filteredAccountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) ||
+      null
     );
-  }, [accountList, selectedAccountId]);
+  }, [filteredAccountList, selectedAccountId]);
 
-  // 컬럼 구성
+  // ✅ 원본 데이터 관리 로직 개선 (+ account/year/month 바뀌면 상태 초기화)
+  useEffect(() => {
+    setDataRows?.([]);
+    setData2Rows?.([]);
+    setOriginalRows([]);
+    setOriginal2Rows([]);
+    setImages(Array(31).fill(null));
+  }, [selectedAccountId, year, month, setDataRows, setData2Rows]);
+
+  useEffect(() => {
+    if ((dataRows || []).length > 0 && originalRows.length === 0) {
+      setOriginalRows((dataRows || []).map((r) => ({ ...r })));
+    }
+  }, [dataRows, originalRows.length]);
+
+  useEffect(() => {
+    if ((data2Rows || []).length > 0 && original2Rows.length === 0) {
+      setOriginal2Rows((data2Rows || []).map((r) => ({ ...r })));
+    }
+  }, [data2Rows, original2Rows.length]);
+
+  // ✅ 거래처 자동 선택: localStorage 있으면 고정, 없으면 첫번째
+  useEffect(() => {
+    if (localAccountId) {
+      setSelectedAccountId(localAccountId);
+      return;
+    }
+    if ((accountList || []).length > 0 && !selectedAccountId) {
+      setSelectedAccountId(accountList[0].account_id);
+    }
+  }, [accountList, selectedAccountId, localAccountId]);
+
+  // ======================== ✅ Floating Preview 상태 ========================
+  const [floatingPreview, setFloatingPreview] = useState({
+    open: false,
+    src: null,
+    title: "미리보기",
+  });
+
+  const openFloatingPreview = useCallback((src, title = "미리보기") => {
+    if (!src) return;
+    setFloatingPreview({ open: true, src, title });
+  }, []);
+
+  const closeFloatingPreview = useCallback(() => {
+    setFloatingPreview((p) => ({ ...p, open: false }));
+  }, []);
+
+  // ======================== ✅ 법인카드 모달 플로우 ========================
+  const [cardChoiceOpen, setCardChoiceOpen] = useState(false);
+  const [cardCreateOpen, setCardCreateOpen] = useState(false);
+  const [cardListOpen, setCardListOpen] = useState(false);
+  const [cardEditOpen, setCardEditOpen] = useState(false);
+  const cardFileRef = useRef(null);
+
+  const [cardContext, setCardContext] = useState({
+    isSecond: false,
+    rowIndex: null,
+    colKey: null,
+    dayIndex: null,
+    dateStr: "",
+    cellValue: 0,
+  });
+
+  const [cardRows, setCardRows] = useState([]);
+  const [cardSelectedRow, setCardSelectedRow] = useState(null);
+  const [cardSelectedKey, setCardSelectedKey] = useState(null);
+
+  const [corpCardList, setCorpCardList] = useState([]);
+  const [corpCardLoading, setCorpCardLoading] = useState(false);
+
+  const [cardForm, setCardForm] = useState({
+    id: null,
+    use_name: "",
+    total: "",
+    receipt_image: null,
+    card_idx: "",
+    receipt_type: "UNKNOWN",
+    card_brand: "",
+    card_no: "",
+    sale_id: "",
+    account_id: "",
+  });
+
+  // ✅ 상대경로면 API_BASE_URL 붙여서 미리보기 깨짐 방지
+  const toPreviewUrl = useCallback((path) => {
+    if (!path) return null;
+    const s = String(path);
+    if (s.startsWith("blob:")) return s;
+    if (s.startsWith("http")) return s;
+    return `${API_BASE_URL}${s}`;
+  }, []);
+
+  const getCorpCardByIdx = useCallback(
+    (idx) => {
+      const key = String(idx ?? "");
+      if (!key) return null;
+      return (corpCardList || []).find((c) => String(c.idx) === key) || null;
+    },
+    [corpCardList]
+  );
+
+  const maskCardNo = (no) => {
+    const s = String(no ?? "").replace(/\s+/g, "");
+    if (!s) return "";
+    const last4 = s.slice(-4);
+    return `****-****-****-${last4}`;
+  };
+
+  const fetchAccountCorporateCardList = useCallback(async (accountId) => {
+    if (!accountId) {
+      setCorpCardList([]);
+      return [];
+    }
+
+    setCorpCardLoading(true);
+    try {
+      const res = await api.get("/Account/AccountCorporateCardList", {
+        params: { account_id: accountId },
+        validateStatus: () => true,
+      });
+
+      if (res.status !== 200) throw new Error(res.data?.message || "법인카드 목록 조회 실패");
+
+      const list = res.data?.data || res.data || [];
+      setCorpCardList(Array.isArray(list) ? list : []);
+      return Array.isArray(list) ? list : [];
+    } finally {
+      setCorpCardLoading(false);
+    }
+  }, []);
+
+  const [cardReceiptPreview, setCardReceiptPreview] = useState(null);
+
+  useEffect(() => {
+    if (!cardSelectedRow) return;
+    setCardReceiptPreview(toPreviewUrl(cardSelectedRow.receipt_image));
+  }, [cardSelectedRow, toPreviewUrl]);
+
+  const handleCardReceiptFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCardForm((p) => ({ ...p, receipt_image: file }));
+    const url = URL.createObjectURL(file);
+    setCardReceiptPreview(url);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (cardReceiptPreview && String(cardReceiptPreview).startsWith("blob:")) {
+        URL.revokeObjectURL(cardReceiptPreview);
+      }
+    };
+  }, [cardReceiptPreview]);
+
+  useEffect(() => {
+    if (!selectedAccountId) return;
+    if (cardCreateOpen || cardEditOpen) {
+      fetchAccountCorporateCardList(selectedAccountId).catch((e) => {
+        Swal.fire("오류", e.message || "법인카드 목록 조회 중 오류", "error");
+      });
+    }
+  }, [selectedAccountId, cardCreateOpen, cardEditOpen, fetchAccountCorporateCardList]);
+
+  useEffect(() => {
+    if (!(cardCreateOpen || cardEditOpen)) return;
+    if (!corpCardList?.length) return;
+
+    setCardForm((p) => {
+      if (p.card_idx) return p;
+      const first = corpCardList[0];
+      return {
+        ...p,
+        card_idx: String(first.idx),
+        card_brand: first.card_brand || "",
+        card_no: first.card_no || "",
+      };
+    });
+  }, [corpCardList, cardCreateOpen, cardEditOpen]);
+
+  const buildDateStr = (y, m, dayIdx) => {
+    const mm = String(m).padStart(2, "0");
+    const dd = String(dayIdx + 1).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  };
+
+  const fetchCorpCardList = async (accountId, dateStr) => {
+    const res = await api.get("/Account/AccountCorporateCardPaymentList", {
+      params: { account_id: accountId, payment_dt: dateStr },
+      validateStatus: () => true,
+    });
+
+    if (res.status !== 200) throw new Error(res.data?.message || "목록 조회 실패");
+    return res.data || [];
+  };
+
+  const saveCorpCardPayment = async (mode) => {
+    const fd = new FormData();
+
+    const submitAccountId =
+      mode === "edit"
+        ? String(cardForm.account_id || selectedAccountId)
+        : String(selectedAccountId);
+
+    fd.append("account_id", submitAccountId);
+    fd.append("cell_date", cardContext.dateStr);
+
+    fd.append("receipt_type", cardForm.receipt_type || "UNKNOWN");
+    fd.append("type", 1000);
+    fd.append("saveType", "cor");
+
+    if (cardForm.card_idx) fd.append("card_idx", cardForm.card_idx);
+
+    const picked = getCorpCardByIdx(cardForm.card_idx);
+    const brand = cardForm.card_brand || picked?.card_brand || "";
+    const no = cardForm.card_no || picked?.card_no || "";
+
+    fd.append("card_brand", brand);
+    fd.append("card_no", no);
+    fd.append("total", parseNumber(cardForm.total));
+
+    if (cardForm.receipt_image) fd.append("file", cardForm.receipt_image);
+
+    if (mode === "edit") {
+      if (cardForm.id != null) fd.append("id", cardForm.id);
+      if (cardForm.sale_id) fd.append("sale_id", String(cardForm.sale_id));
+      fd.append("row_account_id", submitAccountId);
+    }
+
+    try {
+      Swal.fire({
+        title: "영수증 확인 중 입니다.",
+        text: "잠시만 기다려 주세요...",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const res = await api.post("/receipt-scanV3", fd, {
+        headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+        validateStatus: () => true,
+      });
+
+      Swal.close();
+
+      if (res.status === 200) {
+        Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
+
+        // ✅ 성공 후: 빨간색(변경표시) 확실 제거 + 예산 재조회(지원 시)
+        await fetchDataRows?.(selectedAccountId, year, month);
+        await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
+        await fetchBudgetGrant?.(selectedAccountId, year, month);
+        await fetchBudget2Grant?.(selectedAccountId, year, month);
+
+        setOriginalRows([]);
+        setOriginal2Rows([]);
+
+        if (cardFileRef.current) cardFileRef.current.value = "";
+        setCardForm((p) => ({ ...p, receipt_image: null }));
+        setCardReceiptPreview(null);
+        return true;
+      }
+
+      if (res.status === 400) {
+        Swal.fire("실패", res.data?.message || "영수증 인식에 실패했습니다.", "error");
+        return false;
+      }
+
+      Swal.fire(
+        "오류",
+        res.data?.message || `예상치 못한 오류가 발생했습니다. (code: ${res.status})`,
+        "error"
+      );
+      return false;
+    } catch (err) {
+      Swal.close();
+      Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
+      return false;
+    }
+  };
+
+  const handleCorpCardCellClick = (rowOriginal, rIdx, colKey, isSecond = false) => {
+    if (!rowOriginal || rowOriginal.name === "총합") return;
+    if (colKey === "name" || colKey === "total") return;
+    if (String(rowOriginal.type) !== "1000") return;
+
+    const rows = isSecond ? data2Rows : dataRows;
+    const cellVal = parseNumber(rows?.[rIdx]?.[colKey]);
+
+    const dayIndex = Number(String(colKey).replace("day_", "")) - 1;
+    if (Number.isNaN(dayIndex) || dayIndex < 0) return;
+
+    // ✅ 전월 탭이면 prevYear/prevMonth 사용
+    const y = isSecond ? prevYear : year;
+    const m = isSecond ? prevMonth : month;
+    const dateStr = buildDateStr(y, m, dayIndex);
+
+    setCardContext({
+      isSecond,
+      rowIndex: rIdx,
+      colKey,
+      dayIndex,
+      dateStr,
+      cellValue: cellVal,
+    });
+
+    if (!cellVal || cellVal === 0) {
+      setCardForm((p) => ({
+        ...p,
+        id: null,
+        use_name: "",
+        total: "",
+        receipt_image: null,
+        card_idx: "",
+        receipt_type: "UNKNOWN",
+        card_brand: "",
+        card_no: "",
+        sale_id: "",
+        account_id: String(selectedAccountId || ""),
+      }));
+      setCardReceiptPreview(null);
+      setCardCreateOpen(true);
+      return;
+    }
+
+    setCardChoiceOpen(true);
+  };
+
+  const openCreateFromChoice = () => {
+    setCardChoiceOpen(false);
+    setCardForm((p) => ({
+      ...p,
+      id: null,
+      use_name: "",
+      total: "",
+      receipt_image: null,
+      card_idx: "",
+      receipt_type: "UNKNOWN",
+      card_brand: "",
+      card_no: "",
+      sale_id: "",
+      account_id: String(selectedAccountId || ""),
+    }));
+    setCardReceiptPreview(null);
+    setCardCreateOpen(true);
+  };
+
+  const openListFromChoice = async () => {
+    setCardChoiceOpen(false);
+    setCardSelectedRow(null);
+    setCardSelectedKey(null);
+
+    try {
+      Swal.fire({
+        title: "불러오는 중",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const list = await fetchCorpCardList(selectedAccountId, cardContext.dateStr);
+      Swal.close();
+
+      setCardRows(list);
+      setCardListOpen(true);
+    } catch (e) {
+      Swal.close();
+      Swal.fire("오류", e.message || "목록 조회 중 오류", "error");
+    }
+  };
+
+  const openEditFromList = () => {
+    if (!cardSelectedRow) {
+      Swal.fire("안내", "수정할 항목을 선택하세요.", "info");
+      return;
+    }
+
+    setCardForm((p) => ({
+      ...p,
+      id: cardSelectedRow.id,
+      use_name: cardSelectedRow.use_name || "",
+      total: String(cardSelectedRow.total ?? ""),
+      receipt_image: null,
+      card_idx: String(
+        cardSelectedRow.card_idx ?? cardSelectedRow.corp_card_idx ?? cardSelectedRow.idx ?? ""
+      ),
+      receipt_type: cardSelectedRow.receipt_type || p.receipt_type || "UNKNOWN",
+      card_brand: cardSelectedRow.card_brand || p.card_brand || "",
+      card_no: cardSelectedRow.card_no || p.card_no || "",
+      sale_id: String(cardSelectedRow.sale_id ?? ""),
+      account_id: String(cardSelectedRow.account_id ?? selectedAccountId ?? ""),
+    }));
+
+    setCardReceiptPreview(toPreviewUrl(cardSelectedRow.receipt_image));
+    setCardListOpen(false);
+    setCardEditOpen(true);
+  };
+
+  // ======================== 컬럼 구성 ========================
   const columns = useMemo(() => {
     const dayColumns = Array.from({ length: 31 }, (_, i) => ({
       header: `${i + 1}일`,
@@ -323,7 +898,6 @@ function TallySheet() {
     ];
   }, []);
 
-  // 합계 계산
   const makeTableData = (rows) => {
     if (!rows || rows.length === 0) return [];
 
@@ -350,40 +924,46 @@ function TallySheet() {
   const table = useReactTable({ data: tableData, columns, getCoreRowModel: getCoreRowModel() });
   const table2 = useReactTable({ data: table2Data, columns, getCoreRowModel: getCoreRowModel() });
 
-  // ✅ 셀 변경 핸들러
+  // ✅ (핵심) 탭 기준 사용금액(총합)
+  const usedTotalNow = useMemo(() => {
+    const last = (tableData || []).find((r) => r?.name === "총합");
+    return parseNumber(last?.total);
+  }, [tableData]);
+
+  const usedTotalPrev = useMemo(() => {
+    const last = (table2Data || []).find((r) => r?.name === "총합");
+    return parseNumber(last?.total);
+  }, [table2Data]);
+
+  const budgetForTab = tabValue === 1 ? budget2Grant : budgetGrant;
+  const usedForTab = tabValue === 1 ? usedTotalPrev : usedTotalNow;
+
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
     const setter = isSecond ? setData2Rows : setDataRows;
     const rows = isSecond ? data2Rows : dataRows;
-    const row = rows[rowIndex];
+    const row = rows?.[rowIndex];
     if (!row || row.name === "총합" || colKey === "name" || colKey === "total") return;
     const newValue = parseNumber(value);
-    setter(rows.map((r, i) => (i === rowIndex ? { ...r, [colKey]: newValue } : r)));
+    setter?.(rows.map((r, i) => (i === rowIndex ? { ...r, [colKey]: newValue } : r)));
   };
 
   const handleImageUpload = async (e, dayIndex) => {
     const typeForDay = receiptType[dayIndex];
+    if (!typeForDay) return Swal.fire("경고", "영수증 유형을 선택하세요.", "info");
 
-    if (!typeForDay) {
-      return Swal.fire("경고", "영수증 유형을 선택하세요.", "info");
-    }
-
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
-
-    const day = dayIndex + 1;
-    const selectedDate = dayjs(
-      `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
-    );
-
-    if (!selectedDate.isValid() || selectedDate.month() + 1 !== month) {
-      return Swal.fire("경고", "선택한 날짜가 유효하지 않습니다.", "warning");
-    }
 
     setImages((prev) => {
       const newImages = [...prev];
       newImages[dayIndex] = file;
       return newImages;
     });
+
+    const day = dayIndex + 1;
+    const selectedDate = dayjs(
+      `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+    );
 
     const formData = new FormData();
     formData.append("file", file);
@@ -410,8 +990,14 @@ function TallySheet() {
 
       if (res.status === 200) {
         Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
-        await fetchDataRows();
-        await fetchData2Rows();
+
+        await fetchDataRows?.(selectedAccountId, year, month);
+        await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
+        await fetchBudgetGrant?.(selectedAccountId, year, month);
+        await fetchBudget2Grant?.(selectedAccountId, year, month);
+
+        setOriginalRows([]);
+        setOriginal2Rows([]);
       } else if (res.status === 400) {
         Swal.fire("실패", res.data?.message || "영수증 인식에 실패했습니다.", "error");
       } else {
@@ -429,17 +1015,15 @@ function TallySheet() {
     }
   };
 
-  // ✅ 저장
   const handleSave = async () => {
     const getChangedRows = (curr, orig) =>
-      curr
+      (curr || [])
         .map((row, idx) => {
           const changed = {};
           let hasChange = false;
 
-          Object.keys(row).forEach((k) => {
+          Object.keys(row || {}).forEach((k) => {
             if (["name", "total"].includes(k) || row.name === "총합") return;
-
             if (parseNumber(row[k]) !== parseNumber(orig?.[idx]?.[k])) {
               changed[k] = parseNumber(row[k]);
               hasChange = true;
@@ -470,11 +1054,12 @@ function TallySheet() {
           confirmButtonText: "확인",
         }).then(async (result) => {
           if (result.isConfirmed) {
-            const now = await fetchDataRows(selectedAccountId, year, month);
-            const prev = await fetchData2Rows(selectedAccountId, prevYear, prevMonth);
-
-            setOriginalRows((now || []).map((r) => ({ ...r })));
-            setOriginal2Rows((prev || []).map((r) => ({ ...r })));
+            await fetchDataRows?.(selectedAccountId, year, month);
+            await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
+            await fetchBudgetGrant?.(selectedAccountId, year, month);
+            await fetchBudget2Grant?.(selectedAccountId, year, month);
+            setOriginalRows([]);
+            setOriginal2Rows([]);
           }
         });
       } else {
@@ -490,7 +1075,7 @@ function TallySheet() {
     []
   );
 
-  // 모달 상태 및 항목 관리 상태
+  // ======================== 거래처 연결/등록 ========================
   const [open, setOpen] = useState(false);
   const [open2, setOpen2] = useState(false);
   const [leftItems, setLeftItems] = useState([]);
@@ -498,7 +1083,6 @@ function TallySheet() {
   const [selectedLeft, setSelectedLeft] = useState([]);
   const [selectedRight, setSelectedRight] = useState([]);
 
-  // 거래처 연결 모달 오픈
   const handleModalOpen = async () => {
     setOpen(true);
     setSelectedLeft([]);
@@ -522,10 +1106,9 @@ function TallySheet() {
     }
   };
 
-  // 항목 이동(오른쪽)
   const moveRight = () => {
     const duplicates = selectedLeft.filter((item) =>
-      rightItems.some((r) => r.type === item.type && r.del_yn === "N")
+      (rightItems || []).some((r) => r.type === item.type && r.del_yn === "N")
     );
     if (duplicates.length > 0) {
       Swal.fire({ title: "중복", text: "이미 등록되어 있는 항목입니다.", icon: "warning" });
@@ -533,41 +1116,38 @@ function TallySheet() {
     }
 
     const updatedRightItems = [
-      ...rightItems,
+      ...(rightItems || []),
       ...selectedLeft.map((item) => ({ ...item, account_id: selectedAccountId, del_yn: "N" })),
     ];
     setRightItems(updatedRightItems);
     setSelectedLeft([]);
   };
 
-  // 항목 이동(왼쪽) => 삭제 플래그
   const moveLeft = () => {
-    const updatedRightItems = rightItems.map((item) =>
+    const updatedRightItems = (rightItems || []).map((item) =>
       selectedRight.includes(item) ? { ...item, del_yn: "Y" } : item
     );
     setRightItems(updatedRightItems);
     setSelectedRight([]);
   };
 
-  // 거래처 연결 저장
   const handleSubmit = async () => {
     if (!selectedAccountId) {
       return Swal.fire({ title: "계정 선택", text: "계정을 먼저 선택하세요.", icon: "warning" });
     }
 
     try {
-      const payload = rightItems;
+      const payload = rightItems || [];
       const response = await api.post("/Operate/AccountMappingSave", payload);
 
       if (response.data?.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
         setOpen(false);
 
-        const now = await fetchDataRows(selectedAccountId, year, month);
-        const prev = await fetchData2Rows(selectedAccountId, prevYear, prevMonth);
-
-        setOriginalRows((now || []).map((r) => ({ ...r })));
-        setOriginal2Rows((prev || []).map((r) => ({ ...r })));
+        await fetchDataRows?.(selectedAccountId, year, month);
+        await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
+        setOriginalRows([]);
+        setOriginal2Rows([]);
       } else {
         Swal.fire({ title: "오류", text: response.data?.message || "저장 실패", icon: "error" });
       }
@@ -591,12 +1171,7 @@ function TallySheet() {
   };
 
   const [formData, setFormData] = useState(initialForm);
-
-  const [imagePreviews, setImagePreviews] = useState({
-    bank_image: null,
-    biz_image: null,
-  });
-
+  const [imagePreviews, setImagePreviews] = useState({ bank_image: null, biz_image: null });
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
 
@@ -615,15 +1190,11 @@ function TallySheet() {
 
   const handleChange2 = (e) => {
     const { name, value, files } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: files ? files[0] : value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: files ? files[0] : value }));
   };
 
   const handleAddYnChange = (e) => {
     const checked = e.target.checked;
-
     setFormData((prev) => ({
       ...prev,
       add_yn: checked ? "Y" : "N",
@@ -642,7 +1213,6 @@ function TallySheet() {
           bank_no: formatAccountNumber(prev.bank_name || "", prev.bank_no || ""),
         };
       }
-
       return {
         ...prev,
         bank_name: bankName,
@@ -653,26 +1223,17 @@ function TallySheet() {
 
   const handleBankNoChange = (e) => {
     const { value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      bank_no: formatAccountNumber(prev.bank_name || "", value),
-    }));
+    setFormData((prev) => ({ ...prev, bank_no: formatAccountNumber(prev.bank_name || "", value) }));
   };
 
   const handleBizNoChange = (e) => {
     const { value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      biz_no: formatBizNo(value),
-    }));
+    setFormData((prev) => ({ ...prev, biz_no: formatBizNo(value) }));
   };
 
   const handleTelChange = (e) => {
     const { value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      tel: formatPhone(value),
-    }));
+    setFormData((prev) => ({ ...prev, tel: formatPhone(value) }));
   };
 
   const handleImageUploadPreview = (e) => {
@@ -682,11 +1243,9 @@ function TallySheet() {
 
     const previewUrl = URL.createObjectURL(file);
     setImagePreviews((prev) => ({ ...prev, [name]: previewUrl }));
-
     setFormData((prev) => ({ ...prev, [name]: file }));
   };
 
-  // 거래처 저장
   const handleSubmit2 = async () => {
     const requiredFields = [
       "name",
@@ -732,12 +1291,7 @@ function TallySheet() {
 
       const [bankPath, bizPath] = await Promise.all(uploadPromises);
 
-      const payload = {
-        ...formData,
-        bank_image: bankPath,
-        biz_image: bizPath,
-        del_yn: "N",
-      };
+      const payload = { ...formData, bank_image: bankPath, biz_image: bizPath, del_yn: "N" };
 
       const response = await api.post("/Operate/AccountRetailBusinessSave", payload);
       if (response.data?.code === 200) {
@@ -769,7 +1323,6 @@ function TallySheet() {
 
   if (loading) return <LoadingScreen />;
 
-  // ✅ React 기반 색상 비교 렌더링
   const renderTable = (tableInstance, originalData, handleChange, dataState, isSecond = false) => (
     <MDBox
       pt={0}
@@ -815,6 +1368,7 @@ function TallySheet() {
             </tr>
           ))}
         </thead>
+
         <tbody>
           {tableInstance.getRowModel().rows.map((row, rIdx) => (
             <tr key={row.id} className={row.original.name === "총합" ? "total-row" : ""}>
@@ -823,8 +1377,8 @@ function TallySheet() {
                 const isEditable =
                   colKey !== "name" && colKey !== "total" && row.original.name !== "총합";
 
-                const currVal = parseNumber(dataState[rIdx]?.[colKey]);
-                const origVal = parseNumber(originalData[rIdx]?.[colKey]);
+                const currVal = parseNumber(dataState?.[rIdx]?.[colKey]);
+                const origVal = parseNumber(originalData?.[rIdx]?.[colKey]);
                 const isChanged = isEditable && currVal !== origVal;
 
                 return (
@@ -833,6 +1387,7 @@ function TallySheet() {
                     contentEditable={isEditable}
                     suppressContentEditableWarning
                     style={{ color: isChanged ? "#d32f2f" : "black", width: "80px" }}
+                    onClick={() => handleCorpCardCellClick(row.original, rIdx, colKey, isSecond)}
                     onBlur={(e) => handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond)}
                   >
                     {colKey === "name" ? row.original[colKey] : formatNumber(row.original[colKey])}
@@ -842,7 +1397,6 @@ function TallySheet() {
             </tr>
           ))}
 
-          {/* 🔹 총합 밑 이미지첨부 row */}
           <tr>
             <td style={{ fontWeight: "bold", background: "#f0f0f0" }}>이미지첨부</td>
 
@@ -891,6 +1445,14 @@ function TallySheet() {
 
   return (
     <DashboardLayout>
+      {/* ✅ Floating Preview (비차단) */}
+      <FloatingImagePreview
+        open={floatingPreview.open}
+        src={floatingPreview.src}
+        title={floatingPreview.title}
+        onClose={closeFloatingPreview}
+      />
+
       <MDBox
         sx={{
           position: "sticky",
@@ -900,8 +1462,8 @@ function TallySheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-        {/* <HeaderWithLogout showMenuButton title="🧮 집계표" /> */}
         <DashboardNavbar title="🧮 집계표" />
+
         <MDBox
           pt={1}
           pb={1}
@@ -913,16 +1475,19 @@ function TallySheet() {
             gap: isMobile ? 1 : 2,
           }}
         >
-          {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
           <Autocomplete
             size="small"
             sx={{ minWidth: 200 }}
-            options={accountList || []}
+            options={filteredAccountList || []}
             value={selectedAccountOption}
-            onChange={(_, newValue) => setSelectedAccountId(newValue ? newValue.account_id : "")}
+            onChange={(_, newValue) => {
+              if (isAccountLocked) return;
+              setSelectedAccountId(newValue ? newValue.account_id : "");
+            }}
             getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
             isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
-            disableClearable
+            disableClearable={isAccountLocked}
+            disabled={isAccountLocked}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -1007,61 +1572,70 @@ function TallySheet() {
         </MDBox>
       </MDBox>
 
-      {/* ✅ 현재월/전월 테이블을 "탭"으로 통합 */}
       <MDBox pt={3} pb={3}>
-        <Grid container spacing={6}>
-          <Grid item xs={12}>
-            <Card>
-              <MDBox
-                mx={0}
-                mt={-3}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
+        <Card>
+          {/* ✅ 파란 띠 안에 예산바까지 포함 (여기만 수정) */}
+          <MDBox
+            mx={0}
+            mt={-3}
+            py={1}
+            px={2}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="info"
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 1,
+            }}
+          >
+            {/* 1줄: 제목 + 탭 */}
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 1,
+                flexWrap: "wrap",
+              }}
+            >
+              <MDTypography variant="h6" color="white">
+                집계표
+              </MDTypography>
+              {/* 2줄: 예산바 (모바일에서 100% 폭으로 자연스럽게) */}
+              <Box sx={{ width: "65%" }}>
+                <BudgetSummaryBar budget={budgetForTab} used={usedForTab} />
+              </Box>
+              <Tabs
+                value={tabValue}
+                onChange={(_, v) => setTabValue(v)}
+                textColor="inherit"
+                indicatorColor="secondary"
+                variant={isMobile ? "scrollable" : "standard"}
                 sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 2,
+                  minHeight: 36,
+                  "& .MuiTab-root": {
+                    minHeight: 36,
+                    color: "rgba(255,255,255,0.85)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  },
+                  "& .Mui-selected": { color: "#fff" },
                 }}
               >
-                <MDTypography variant="h6" color="white">
-                  집계표
-                </MDTypography>
+                <Tab label={countMonth ? `현재월 (${countMonth})` : "현재월"} />
+                <Tab label={count2Month ? `전월 (${count2Month})` : "전월"} />
+              </Tabs>
+            </Box>
+          </MDBox>
 
-                <Tabs
-                  value={tabValue}
-                  onChange={(_, v) => setTabValue(v)}
-                  textColor="inherit"
-                  indicatorColor="secondary"
-                  variant={isMobile ? "scrollable" : "standard"}
-                  sx={{
-                    minHeight: 36,
-                    "& .MuiTab-root": {
-                      minHeight: 36,
-                      color: "rgba(255,255,255,0.85)",
-                      fontSize: 13,
-                      fontWeight: 600,
-                    },
-                    "& .Mui-selected": { color: "#fff" },
-                  }}
-                >
-                  <Tab label={countMonth ? `현재월 (${countMonth})` : "현재월"} />
-                  <Tab label={count2Month ? `전월 (${count2Month})` : "전월"} />
-                </Tabs>
-              </MDBox>
-
-              <MDBox pt={1}>
-                {tabValue === 0 && renderTable(table, originalRows, handleCellChange, dataRows)}
-                {tabValue === 1 &&
-                  renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
-              </MDBox>
-            </Card>
-          </Grid>
-        </Grid>
+          <MDBox pt={1}>
+            {tabValue === 0 && renderTable(table, originalRows, handleCellChange, dataRows)}
+            {tabValue === 1 &&
+              renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
+          </MDBox>
+        </Card>
       </MDBox>
 
       {/* ================= 거래처 연결 모달(open) ================= */}
@@ -1407,7 +1981,7 @@ function TallySheet() {
         </Box>
       </Modal>
 
-      {/* 🔍 이미지 확대 미리보기 모달 */}
+      {/* 🔍 이미지 확대 미리보기 모달(거래처 등록용) */}
       <Modal open={previewOpen} onClose={handleImagePreviewClose}>
         <Box
           sx={{
@@ -1425,14 +1999,467 @@ function TallySheet() {
             <img
               src={previewImage}
               alt="미리보기"
-              style={{
-                maxWidth: "90vw",
-                maxHeight: "80vh",
-                borderRadius: 8,
-                objectFit: "contain",
-              }}
+              style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: 8, objectFit: "contain" }}
             />
           )}
+        </Box>
+      </Modal>
+
+      {/* ======================== ✅ 법인카드 모달 3종 ======================== */}
+      <Modal open={cardChoiceOpen} onClose={() => setCardChoiceOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 420,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            법인카드 결제
+          </Typography>
+          <Typography sx={{ fontSize: 13, mb: 2 }}>
+            이미 입력된 금액이 있습니다.
+            <br />
+            등록 / 수정을 선택하세요. ({cardContext.dateStr})
+          </Typography>
+
+          <Box display="flex" justifyContent="flex-end" gap={1}>
+            <MDButton variant="contained" color="info" onClick={openCreateFromChoice}>
+              등록
+            </MDButton>
+            <MDButton variant="contained" color="primary" onClick={openListFromChoice}>
+              수정
+            </MDButton>
+            <MDButton variant="outlined" onClick={() => setCardChoiceOpen(false)}>
+              취소
+            </MDButton>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* 1) 법인카드 결제 등록 모달 */}
+      <Modal open={cardCreateOpen} onClose={() => setCardCreateOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 560,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            법인카드 결제 등록
+          </Typography>
+
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <Typography sx={{ fontSize: 12, mb: 0.5, color: "#555" }}>법인카드 선택</Typography>
+              <Select
+                fullWidth
+                size="small"
+                sx={{ height: "35px" }}
+                value={cardForm.card_idx || ""}
+                onChange={(e) => {
+                  const nextIdx = e.target.value;
+                  const picked = (corpCardList || []).find(
+                    (c) => String(c.idx) === String(nextIdx)
+                  );
+
+                  setCardForm((p) => ({
+                    ...p,
+                    card_idx: nextIdx,
+                    card_brand: picked?.card_brand || "",
+                    card_no: picked?.card_no || "",
+                  }));
+                }}
+                displayEmpty
+                disabled={corpCardLoading}
+              >
+                <MenuItem value="">
+                  <em>{corpCardLoading ? "불러오는 중..." : "선택"}</em>
+                </MenuItem>
+                {(corpCardList || []).map((c) => (
+                  <MenuItem key={c.idx} value={String(c.idx)}>
+                    {`${c.card_brand || ""} (${maskCardNo(c.card_no)})`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </Grid>
+
+            <Grid item xs={4}>
+              <Select
+                fullWidth
+                size="small"
+                sx={{ height: "35px" }}
+                value={cardForm.receipt_type || "UNKNOWN"}
+                onChange={(e) => setCardForm((p) => ({ ...p, receipt_type: e.target.value }))}
+                displayEmpty
+              >
+                <MenuItem value="UNKNOWN">
+                  <em>알수없음</em>
+                </MenuItem>
+                <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
+                <MenuItem value="MART_ITEMIZED">마트</MenuItem>
+                <MenuItem value="CONVENIENCE">편의점</MenuItem>
+                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                <MenuItem value="COUPANG_APP">배달앱</MenuItem>
+              </Select>
+            </Grid>
+
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                size="small"
+                label="사용처"
+                value={cardForm.use_name}
+                onChange={(e) => setCardForm((p) => ({ ...p, use_name: e.target.value }))}
+              />
+            </Grid>
+
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                size="small"
+                label="합계금액"
+                value={cardForm.total}
+                onChange={(e) => setCardForm((p) => ({ ...p, total: e.target.value }))}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <Typography sx={{ minWidth: 70, fontSize: 13 }}>영수증 첨부</Typography>
+
+                <Button component="label" variant="contained" color="info">
+                  영수증 업로드
+                  <input
+                    ref={cardFileRef}
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={handleCardReceiptFileChange}
+                  />
+                </Button>
+
+                <Typography sx={{ fontSize: 12, color: "#666" }}>
+                  {cardForm.receipt_image?.name || ""}
+                </Typography>
+
+                {cardReceiptPreview && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() =>
+                      openFloatingPreview(cardReceiptPreview, "법인카드 영수증 미리보기")
+                    }
+                  >
+                    미리보기
+                  </Button>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
+
+          <Box mt={3} display="flex" justifyContent="center" gap={2}>
+            <MDButton
+              variant="contained"
+              color="info"
+              onClick={async () => {
+                if (!cardForm.card_idx) {
+                  Swal.fire("안내", "법인카드를 선택하세요.", "info");
+                  return;
+                }
+                const ok = await saveCorpCardPayment("create");
+                if (ok) {
+                  Swal.fire("완료", "등록되었습니다.", "success");
+                  setCardCreateOpen(false);
+                  setCardReceiptPreview(null);
+                }
+              }}
+            >
+              저장
+            </MDButton>
+            <MDButton variant="contained" color="warning" onClick={() => setCardCreateOpen(false)}>
+              취소
+            </MDButton>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* 2) 법인카드 결제 목록 모달 */}
+      <Modal open={cardListOpen} onClose={() => setCardListOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 820,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            법인카드 결제 목록
+          </Typography>
+          <Typography sx={{ fontSize: 12, color: "#666", mb: 2 }}>{cardContext.dateStr}</Typography>
+
+          <Box sx={{ maxHeight: 380, overflow: "auto", border: "1px solid #ddd" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#f0f0f0" }}>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>사용처</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>금액</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>결제일자</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>영수증</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(cardRows || []).map((r, idx) => {
+                  const rowKey = String(r.id ?? r.sale_id ?? idx);
+                  const selected = cardSelectedKey === rowKey;
+
+                  return (
+                    <tr
+                      key={rowKey}
+                      onClick={() => {
+                        setCardSelectedRow(r);
+                        setCardSelectedKey(rowKey);
+                      }}
+                      style={{
+                        background: selected ? "#d3f0ff" : "#ffffff",
+                        cursor: "pointer",
+                        transition: "background 0.12s ease",
+                      }}
+                    >
+                      <td
+                        style={{
+                          border: "1px solid #ddd",
+                          padding: 6,
+                          fontWeight: selected ? 700 : 400,
+                        }}
+                      >
+                        {r.use_name}
+                      </td>
+                      <td
+                        style={{
+                          border: "1px solid #ddd",
+                          padding: 6,
+                          textAlign: "right",
+                          fontWeight: selected ? 700 : 400,
+                        }}
+                      >
+                        {formatNumber(r.total)}
+                      </td>
+                      <td
+                        style={{
+                          border: "1px solid #ddd",
+                          padding: 6,
+                          textAlign: "center",
+                          fontWeight: selected ? 700 : 400,
+                        }}
+                      >
+                        {r.payment_dt}
+                      </td>
+                      <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
+                        {r.receipt_image ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              openFloatingPreview(
+                                toPreviewUrl(r.receipt_image),
+                                `${r.use_name || "영수증"} (목록)`
+                              );
+                            }}
+                          >
+                            보기
+                          </Button>
+                        ) : (
+                          ""
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Box>
+
+          <Box mt={2} display="flex" justifyContent="center" gap={2}>
+            <MDButton variant="contained" color="info" onClick={openEditFromList}>
+              선택
+            </MDButton>
+            <MDButton variant="contained" color="warning" onClick={() => setCardListOpen(false)}>
+              취소
+            </MDButton>
+          </Box>
+        </Box>
+      </Modal>
+
+      {/* 3) 법인카드 결제 수정 모달 */}
+      <Modal open={cardEditOpen} onClose={() => setCardEditOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 560,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            법인카드 결제 수정
+          </Typography>
+
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <Typography sx={{ fontSize: 12, mb: 0.5, color: "#555" }}>법인카드 선택</Typography>
+              <Select
+                fullWidth
+                size="small"
+                sx={{ height: "35px" }}
+                value={cardForm.card_idx || ""}
+                onChange={(e) => {
+                  const nextIdx = e.target.value;
+                  const picked = (corpCardList || []).find(
+                    (c) => String(c.idx) === String(nextIdx)
+                  );
+                  setCardForm((p) => ({
+                    ...p,
+                    card_idx: nextIdx,
+                    card_brand: picked?.card_brand || "",
+                    card_no: picked?.card_no || "",
+                  }));
+                }}
+                displayEmpty
+                disabled={corpCardLoading}
+              >
+                <MenuItem value="">
+                  <em>{corpCardLoading ? "불러오는 중..." : "선택"}</em>
+                </MenuItem>
+                {(corpCardList || []).map((c) => (
+                  <MenuItem key={c.idx} value={String(c.idx)}>
+                    {`${c.card_brand || ""} (${maskCardNo(c.card_no)})`}
+                  </MenuItem>
+                ))}
+              </Select>
+            </Grid>
+
+            <Grid item xs={4}>
+              <Select
+                fullWidth
+                size="small"
+                sx={{ height: "35px" }}
+                value={cardForm.receipt_type || "UNKNOWN"}
+                onChange={(e) => setCardForm((p) => ({ ...p, receipt_type: e.target.value }))}
+                displayEmpty
+              >
+                <MenuItem value="UNKNOWN">
+                  <em>알수없음</em>
+                </MenuItem>
+                <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
+                <MenuItem value="MART_ITEMIZED">마트</MenuItem>
+                <MenuItem value="CONVENIENCE">편의점</MenuItem>
+                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                <MenuItem value="COUPANG_APP">배달앱</MenuItem>
+              </Select>
+            </Grid>
+
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                size="small"
+                label="사용처"
+                value={cardForm.use_name}
+                onChange={(e) => setCardForm((p) => ({ ...p, use_name: e.target.value }))}
+              />
+            </Grid>
+
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                size="small"
+                label="합계금액"
+                value={cardForm.total}
+                onChange={(e) => setCardForm((p) => ({ ...p, total: e.target.value }))}
+              />
+            </Grid>
+
+            <Grid item xs={12}>
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <Typography sx={{ minWidth: 70, fontSize: 13 }}>영수증 첨부</Typography>
+
+                <Button component="label" variant="contained" color="info">
+                  영수증 업로드
+                  <input
+                    ref={cardFileRef}
+                    type="file"
+                    hidden
+                    accept="image/*"
+                    onChange={handleCardReceiptFileChange}
+                  />
+                </Button>
+
+                <Typography sx={{ fontSize: 12, color: "#666" }}>
+                  {cardForm.receipt_image?.name || ""}
+                </Typography>
+
+                {cardReceiptPreview && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() =>
+                      openFloatingPreview(cardReceiptPreview, "법인카드 영수증 미리보기")
+                    }
+                  >
+                    미리보기
+                  </Button>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
+
+          <Box mt={3} display="flex" justifyContent="center" gap={2}>
+            <MDButton
+              variant="contained"
+              color="info"
+              onClick={async () => {
+                if (!cardForm.card_idx) {
+                  Swal.fire("안내", "법인카드를 선택하세요.", "info");
+                  return;
+                }
+                const ok = await saveCorpCardPayment("edit");
+                if (ok) {
+                  Swal.fire("완료", "수정되었습니다.", "success");
+                  setCardEditOpen(false);
+                }
+              }}
+            >
+              저장
+            </MDButton>
+            <MDButton variant="contained" color="warning" onClick={() => setCardEditOpen(false)}>
+              취소
+            </MDButton>
+          </Box>
         </Box>
       </Modal>
     </DashboardLayout>

@@ -86,7 +86,8 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
         subsidy: item.subsidy,
         note: item.note,
         id: item.id,
-        bankbook: item.bankbook
+        bankbook: item.bankbook,
+        cor_type: item.cor_type,
       }));
 
       // ✅ workSystemList가 이미 있으면 work_system을 idx로 매핑해서 저장
@@ -127,7 +128,7 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
       })
       .catch((err) => console.error("AccountList 조회 실패:", err));
   }, []);
-  
+
   // =========================
   // 3) 근무형태 리스트 (재조회 가능하도록 함수화)
   // =========================

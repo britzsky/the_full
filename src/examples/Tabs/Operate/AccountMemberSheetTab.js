@@ -189,6 +189,11 @@ function AccountMemberSheet() {
     { value: "Y", label: "퇴사" },
   ];
 
+  const corOptions = [
+    { value: "1", label: "(주)더채움" },
+    { value: "2", label: "더채움" },
+  ];
+
   const formatDateForInput = (val) => {
     if (!val && val !== 0) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -218,11 +223,12 @@ function AccountMemberSheet() {
 
   const columns = useMemo(
     () => [
-      { header: "성명", accessorKey: "name", size: 50 },
+      { header: "구분", accessorKey: "cor_type", size: 100 },
+      { header: "성명", accessorKey: "name", size: 100 },
       { header: "주민번호", accessorKey: "rrn", size: 100 },
       { header: "업장명", accessorKey: "account_id", size: 150 },
-      { header: "직책", accessorKey: "position_type", size: 65 },
-      { header: "계좌번호", accessorKey: "account_number", size: 160 },
+      { header: "직책", accessorKey: "position_type", size: 100 },
+      { header: "계좌번호", accessorKey: "account_number", size: 150 },
       { header: "연락처", accessorKey: "phone", size: 100 },
       { header: "주소", accessorKey: "address", size: 150 },
       { header: "계약형태", accessorKey: "contract_type", size: 50 },
@@ -461,6 +467,7 @@ function AccountMemberSheet() {
       employment_contract: "",
       id: "",
       bankbook: "",
+      cor_type: 1,
     };
 
     setActiveRows((prev) => [newRow, ...prev]);
@@ -487,6 +494,7 @@ function AccountMemberSheet() {
       "end_time",
       "account_id",
       "idx",
+      "cor_type",
     ]);
     const nonEditableCols = new Set(["diner_date", "total"]);
 
@@ -530,35 +538,42 @@ function AccountMemberSheet() {
           },
           "& td:nth-of-type(2), & th:nth-of-type(2)": {
             position: "sticky",
-            left: "80px",
+            left: "100px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(3), & th:nth-of-type(3)": {
             position: "sticky",
-            left: "180px",
+            left: "200px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(4), & th:nth-of-type(4)": {
             position: "sticky",
-            left: "330px",
+            left: "300px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(5), & th:nth-of-type(5)": {
             position: "sticky",
-            left: "415px",
+            left: "480px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(6), & th:nth-of-type(6)": {
+            // 계좌번호
             position: "sticky",
-            left: "575px",
+            left: "580px",
             background: "#f0f0f0",
             zIndex: 3,
           },
-          "thead th:nth-of-type(-n+6)": { zIndex: 5 },
+          "& td:nth-of-type(7), & th:nth-of-type(7)": {
+            position: "sticky",
+            left: "730px",
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
+          "thead th:nth-of-type(-n+7)": { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
           "td[contenteditable]": { minWidth: "80px", cursor: "text" },
           "& select": {
@@ -973,6 +988,13 @@ function AccountMemberSheet() {
                               border: "none",
                             }}
                           >
+                            {colKey === "cor_type" &&
+                              corOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
                             {colKey === "del_yn" &&
                               delOptions.map((opt) => (
                                 <option key={opt.value} value={opt.value}>

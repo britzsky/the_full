@@ -67,6 +67,13 @@ const RECEIPT_TYPES = [
   { value: "COUPANG_CARD", label: "배달앱" },
 ];
 
+// ✅ receipt_type 값 보정(조회값이 옵션과 1:1로 매핑되게)
+const RECEIPT_TYPE_SET = new Set(RECEIPT_TYPES.map((o) => String(o.value)));
+const normalizeReceiptTypeVal = (v) => {
+  const s = String(v ?? "").trim();
+  return RECEIPT_TYPE_SET.has(s) ? s : "UNKNOWN";
+};
+
 // ✅ 하단 셀렉트 옵션
 const TAX_TYPES = [
   { value: 1, label: "과세" },
@@ -135,7 +142,6 @@ const defaultPaymentDtForYM = (year, month) => {
   const t = new Date();
   const y = Number(year);
   const m = Number(month);
-
   if (t.getFullYear() === y && t.getMonth() + 1 === m) return todayStr();
   return `${y}-${pad2(m)}-01`;
 };
@@ -300,7 +306,7 @@ function AccountCorporateCardSheet() {
   // accountList 로딩 후 기본 선택값
   useEffect(() => {
     if ((accountList || []).length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountId(String(accountList[0].account_id));
     }
   }, [accountList, selectedAccountId]);
 
@@ -338,6 +344,7 @@ function AccountCorporateCardSheet() {
   }, [selectedAccountId, year, month, fetchAccountCorporateCardList, handleFetchMaster]);
 
   // ✅ 카드 목록을 거래처(account_id)별로 그룹 (String key로!)
+  // ✅ idx(카드 PK) 기반으로 select 매핑되게 idx 포함
   const cardsByAccount = useMemo(() => {
     const list = (activeRows || []).filter((r) => String(r.del_yn || "N") !== "Y");
 
@@ -347,15 +354,18 @@ function AccountCorporateCardSheet() {
       if (!acctKey) continue;
       if (!map[acctKey]) map[acctKey] = [];
       map[acctKey].push({
+        idx: String(r.idx ?? ""), // ✅ idx 포함
         card_no: onlyDigits(r.card_no),
         card_brand: r.card_brand,
       });
     }
 
+    // ✅ 중복 제거: idx 기준
     for (const k of Object.keys(map)) {
       const seen = new Set();
       map[k] = map[k].filter((x) => {
-        const key = `${x.card_brand}|${x.card_no}`;
+        const key = String(x.idx || "");
+        if (!key) return false;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
@@ -372,12 +382,32 @@ function AccountCorporateCardSheet() {
   }, [accountList]);
 
   // ✅ 서버 paymentRows 갱신 시
+  // - receipt_type 옵션값 보정
+  // - card_idx(=idx) 기반으로 카드 select가 조회값에 맞춰 "선택"되도록 보정
+  //   (서버가 card_idx를 주면 그대로 / 없으면 cardNo로 역매핑)
   useEffect(() => {
-    const serverRows = (paymentRows || []).map((r) => ({ ...r }));
+    const serverRows = (paymentRows || []).map((r) => {
+      const acctKey = String(r.account_id ?? selectedAccountId ?? "");
+      const options = cardsByAccount[acctKey] || [];
+
+      const cardNoDigits = onlyDigits(r.cardNo ?? r.card_no ?? "");
+      const serverCardIdx = r.card_idx ?? r.cardIdx ?? r.idx ?? ""; // 안전하게 후보들
+
+      const mappedIdx =
+        String(serverCardIdx || "") ||
+        (cardNoDigits ? String(options.find((o) => o.card_no === cardNoDigits)?.idx || "") : "");
+
+      return {
+        ...r,
+        cardNo: cardNoDigits, // digits 정규화
+        card_idx: mappedIdx, // ✅ select value (idx)
+        receipt_type: normalizeReceiptTypeVal(r.receipt_type),
+      };
+    });
 
     setMasterRows((prev) => {
       const keepNew = !skipPendingNewMergeRef.current;
-      const pendingNew = keepNew ? (prev || []).filter((r) => r?.isNew) : [];
+      const pendingNew = keepNew ? (prev || []).filter((x) => x?.isNew) : [];
       skipPendingNewMergeRef.current = false;
       return [...serverRows, ...pendingNew];
     });
@@ -389,7 +419,7 @@ function AccountCorporateCardSheet() {
     setOrigDetailRows([]);
 
     setMasterRenderKey((k) => k + 1);
-  }, [paymentRows]);
+  }, [paymentRows, cardsByAccount, selectedAccountId]);
 
   // ✅ 상세 rows 갱신 시
   useEffect(() => {
@@ -428,22 +458,23 @@ function AccountCorporateCardSheet() {
     });
   }, []);
 
-  // ✅ 카드 선택
+  // ✅ 카드 선택 (idx 기반)
   const handleCardSelect = useCallback(
-    (rowIndex, cardNoDigits) => {
-      const digits = onlyDigits(cardNoDigits);
+    (rowIndex, cardIdxStr) => {
+      const pickedIdx = String(cardIdxStr || "");
 
       setMasterRows((prev) => {
         const row = prev[rowIndex] || {};
         const acctKey = String(row.account_id || selectedAccountId || "");
         const options = cardsByAccount[acctKey] || [];
-        const picked = options.find((o) => o.card_no === digits);
+        const picked = options.find((o) => String(o.idx) === pickedIdx);
 
         return prev.map((r, i) => {
           if (i !== rowIndex) return r;
           return {
             ...r,
-            cardNo: picked?.card_no || digits,
+            card_idx: picked?.idx || "",
+            cardNo: picked?.card_no || "",
             cardBrand: picked?.card_brand || r.cardBrand || DEFAULT_CARD_BRAND,
           };
         });
@@ -473,6 +504,10 @@ function AccountCorporateCardSheet() {
       vat: 0,
       taxFree: 0,
       totalCard: 0,
+
+      // ✅ idx 기반 카드 select 매핑용
+      card_idx: "",
+
       cardNo: "",
       cardBrand: DEFAULT_CARD_BRAND,
 
@@ -592,18 +627,32 @@ function AccountCorporateCardSheet() {
           ...(main.vat != null ? { vat: parseNumber(main.vat) } : {}),
           ...(main.taxFree != null ? { taxFree: parseNumber(main.taxFree) } : {}),
           ...(main.totalCard != null ? { totalCard: parseNumber(main.totalCard) } : {}),
-          ...(main.cardNo != null ? { cardNo: main.cardNo } : {}),
+          ...(main.cardNo != null ? { cardNo: onlyDigits(main.cardNo) } : {}),
           ...(main.cardBrand != null ? { cardBrand: main.cardBrand } : {}),
           ...(main.receipt_image != null ? { receipt_image: main.receipt_image } : {}),
+          ...(main.receipt_type != null
+            ? { receipt_type: normalizeReceiptTypeVal(main.receipt_type) }
+            : {}),
         };
 
         setMasterRows((prev) =>
           prev.map((r, i) => {
             if (i !== rowIndex) return r;
+
+            const acctKey = String((patch.account_id ?? r.account_id) || "");
+            const options = cardsByAccount[acctKey] || [];
+            const digits =
+              patch.cardNo !== undefined ? onlyDigits(patch.cardNo) : onlyDigits(r.cardNo);
+            const mappedIdx = digits
+              ? String(options.find((o) => o.card_no === digits)?.idx || "")
+              : "";
+
             return {
               ...r,
               ...patch,
               account_id: patch.account_id !== undefined ? patch.account_id : r.account_id ?? "",
+              cardNo: digits,
+              card_idx: mappedIdx || r.card_idx || "",
             };
           })
         );
@@ -655,7 +704,13 @@ function AccountCorporateCardSheet() {
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [masterRows, handleFetchMaster, fetchAccountCorporateCardPaymentDetailList]
+    [
+      masterRows,
+      handleFetchMaster,
+      fetchAccountCorporateCardPaymentDetailList,
+      cardsByAccount,
+      selectedAccountId,
+    ]
   );
 
   // ========================= 저장: main + item 한 번에 =========================
@@ -672,6 +727,22 @@ function AccountCorporateCardSheet() {
     MASTER_NUMBER_KEYS.forEach((k) => {
       if (row[k] !== undefined) row[k] = parseNumber(row[k]);
     });
+
+    // ✅ receipt_type 보정(혹시 모를 비정상 값 저장 방지)
+    if (row.receipt_type !== undefined) {
+      row.receipt_type = normalizeReceiptTypeVal(row.receipt_type);
+    }
+
+    // ✅ card_idx는 문자열로
+    if (row.card_idx !== undefined && row.card_idx !== null) {
+      row.card_idx = String(row.card_idx);
+    }
+
+    // ✅ cardNo digits 정규화
+    if (row.cardNo !== undefined && row.cardNo !== null) {
+      row.cardNo = onlyDigits(row.cardNo);
+    }
+
     return row;
   }, []);
 
@@ -859,7 +930,6 @@ function AccountCorporateCardSheet() {
   useEffect(() => {
     if (!cardModalOpen) return;
     if (!modalAccountId) return;
-
     fetchAccountCorporateCardList(modalAccountId);
   }, [cardModalOpen, modalAccountId, fetchAccountCorporateCardList]);
 
@@ -928,11 +998,11 @@ function AccountCorporateCardSheet() {
       { header: "결제일자", key: "payment_dt", editable: true, editType: "date", size: 130 },
       { header: "사용처", key: "use_name", editable: true, size: 140 },
       { header: "사업자번호", key: "bizNo", editable: true, size: 120 },
-      { header: "총구매금액", key: "total", editable: true, size: 110 },
-      { header: "총부가세", key: "vat", editable: true, size: 90 },
-      { header: "총면세", key: "taxFree", editable: true, size: 90 },
-      { header: "총카드금액", key: "totalCard", editable: true, size: 110 },
-      { header: "카드번호", key: "cardNo", editable: false, size: 200 },
+      { header: "부가세", key: "vat", editable: true, size: 90 },
+      { header: "면세", key: "taxFree", editable: true, size: 90 },
+      { header: "과세", key: "tax", editable: true, size: 90 },
+      { header: "합계금액", key: "total", editable: true, size: 110 },
+      { header: "카드번호", key: "cardNo", editable: false, size: 200 }, // ✅ 표시 컬럼은 cardNo지만, select value는 card_idx로 매핑
       { header: "카드사", key: "cardBrand", editable: false, size: 130 },
       {
         header: "영수증타입",
@@ -1218,6 +1288,7 @@ function AccountCorporateCardSheet() {
                       );
                     }
 
+                    // ✅ 카드번호 Select: 조회값과 매핑되도록 idx(card_idx)로 value 처리
                     if (key === "cardNo") {
                       const acctKey = String(row.account_id || selectedAccountId || "");
                       const options = cardsByAccount[acctKey] || [];
@@ -1228,7 +1299,7 @@ function AccountCorporateCardSheet() {
                           <Select
                             size="small"
                             fullWidth
-                            value={onlyDigits(row.cardNo) || ""}
+                            value={String(row.card_idx || "")} // ✅ idx 기반
                             onChange={(e) => handleCardSelect(rowIndex, e.target.value)}
                             onClick={(ev) => ev.stopPropagation()}
                             displayEmpty
@@ -1246,10 +1317,7 @@ function AccountCorporateCardSheet() {
                             </MenuItem>
 
                             {options.map((opt) => (
-                              <MenuItem
-                                key={`${opt.card_brand}-${opt.card_no}`}
-                                value={opt.card_no}
-                              >
+                              <MenuItem key={String(opt.idx)} value={String(opt.idx)}>
                                 {opt.card_brand} / {maskCardNo(opt.card_no)}
                               </MenuItem>
                             ))}
@@ -1272,7 +1340,7 @@ function AccountCorporateCardSheet() {
                           <Select
                             size="small"
                             fullWidth
-                            value={String(row.receipt_type ?? "UNKNOWN")}
+                            value={normalizeReceiptTypeVal(row.receipt_type ?? "UNKNOWN")}
                             onChange={(e) =>
                               handleMasterCellChange(rowIndex, "receipt_type", e.target.value)
                             }

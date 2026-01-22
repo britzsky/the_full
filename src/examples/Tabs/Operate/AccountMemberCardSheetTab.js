@@ -141,6 +141,11 @@ function AccountMemberSheet() {
     { value: "Y", label: "퇴사" },
   ];
 
+  const corOptions = [
+    { value: "1", label: "(주)더채움" },
+    { value: "2", label: "더채움" },
+  ];
+
   const formatDateForInput = (val) => {
     if (!val && val !== 0) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -155,6 +160,7 @@ function AccountMemberSheet() {
 
   const columns = useMemo(
     () => [
+      { header: "구분", accessorKey: "cor_type", size: 50 },
       { header: "성명", accessorKey: "name", size: 50 },
       { header: "업장명", accessorKey: "account_id", size: 150 },
       {
@@ -319,6 +325,7 @@ function AccountMemberSheet() {
       start_time: ws0?.start_time ?? startTimes?.[0] ?? "6:00",
       end_time: ws0?.end_time ?? endTimes?.[0] ?? "10:00",
       note: "",
+      cor_type: 1,
     };
 
     setActiveRows((prev) => [newRow, ...prev]);
@@ -327,7 +334,14 @@ function AccountMemberSheet() {
 
   const renderTable = (tableInst, rows, originals) => {
     const dateFields = new Set(["join_dt"]);
-    const selectFields = new Set(["position_type", "start_time", "end_time", "account_id", "idx"]);
+    const selectFields = new Set([
+      "position_type",
+      "start_time",
+      "end_time",
+      "account_id",
+      "idx",
+      "cor_type",
+    ]);
     const nonEditableCols = new Set(["diner_date", "total"]);
 
     return (
@@ -572,6 +586,13 @@ function AccountMemberSheet() {
                               border: "none",
                             }}
                           >
+                            {colKey === "cor_type" &&
+                              corOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
                             {colKey === "account_id" &&
                               (accountList || []).map((acc) => (
                                 <option key={acc.account_id} value={acc.account_id}>

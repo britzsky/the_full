@@ -72,6 +72,7 @@ export default function useAccountMemberRecSheetData(account_id, activeStatus) {
         bankbook: item.bankbook,
         use_yn: item.use_yn,
         note: item.note,
+        cor_type: item.cor_type,
       }));
 
       // ✅ workSystemList가 이미 있으면 work_system을 idx로 매핑해서 저장

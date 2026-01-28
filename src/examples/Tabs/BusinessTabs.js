@@ -19,14 +19,14 @@ function BusinessTabs() {
 
   const tabLabels = [
     "📞 TM 영업관리",
-    "🚙 법인차량 관리",
+    // "🚙 법인차량 관리",
     "🧥 조리복 재고관리",
     "🎉 고객사 행사관리",
   ];
 
   const tabComponents = [
     <TeleManagerTab key="tele" />,
-    <CorCarTab key="car" />,
+    // <CorCarTab key="car" />,
     <CookWearTab key="cook" />,
     <AccountEventTab key="account" />,
   ];
@@ -35,7 +35,7 @@ function BusinessTabs() {
       <MDBox
         sx={{
           position: "sticky",
-          top: 0,             // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
+          top: 0, // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
           zIndex: 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",

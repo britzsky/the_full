@@ -17,19 +17,14 @@ import Dialog from "@mui/material/Dialog";
 import DialogContent from "@mui/material/DialogContent";
 import Backdrop from "@mui/material/Backdrop";
 import CircularProgress from "@mui/material/CircularProgress";
-
+import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { API_BASE_URL } from "config";
 import useCarManagerData from "./corCarData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
-import {
-  Download,
-  Trash2,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { Download, Trash2, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 
 const MAX_FILES = 5;
 
@@ -118,9 +113,7 @@ function CorCarTabStyled() {
   const getCellStyle = (rowIndex, key, value) => {
     const original = originalRows[rowIndex]?.[key];
     if (typeof original === "string" && typeof value === "string") {
-      return normalize(original) !== normalize(value)
-        ? { color: "red" }
-        : { color: "black" };
+      return normalize(original) !== normalize(value) ? { color: "red" } : { color: "black" };
     }
     return original !== value ? { color: "red" } : { color: "black" };
   };
@@ -301,8 +294,7 @@ function CorCarTabStyled() {
   // 차량 등록 Modal
   // ================================
   const handleModalOpen = () => setOpen(true);
-  const handleModalClose = () =>
-    setFormData({ car_number: "", car_name: "" }) || setOpen(false);
+  const handleModalClose = () => setFormData({ car_number: "", car_name: "" }) || setOpen(false);
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -411,7 +403,11 @@ function CorCarTabStyled() {
         if (!hasFieldChanges && !hasImageChanges) continue;
 
         if (hasImageChanges && !row.service_dt) {
-          await Swal.fire("경고", "이미지를 업로드/삭제하려면 먼저 날짜를 입력해주세요.", "warning");
+          await Swal.fire(
+            "경고",
+            "이미지를 업로드/삭제하려면 먼저 날짜를 입력해주세요.",
+            "warning"
+          );
           continue;
         }
 
@@ -502,78 +498,89 @@ function CorCarTabStyled() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <>
-      {/* 상단 차량 선택 + 버튼 영역 - 모바일에서 줄바꿈 */}
+    <DashboardLayout>
       <MDBox
-        pt={1}
-        pb={1}
-        gap={1}
         sx={{
-          display: "flex",
-          justifyContent: isMobile ? "space-between" : "flex-end",
-          alignItems: "center",
-          flexWrap: isMobile ? "wrap" : "nowrap",
           position: "sticky",
+          top: 0,
           zIndex: 10,
-          top: 78,
           backgroundColor: "#ffffff",
+          borderBottom: "1px solid #eee",
         }}
       >
-        {carSelectList.length > 0 && (
-          <TextField
-            select
-            size="small"
-            value={selectedCar}
-            onChange={(e) => setSelectedCar(e.target.value)}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
-            SelectProps={{ native: true }}
-            disabled={saving}
-          >
-            {carSelectList.map((car) => (
-              <option key={car.car_number} value={car.car_number}>
-                {car.full_name}
-              </option>
-            ))}
-          </TextField>
-        )}
-
-        <Box
+        {/* <HeaderWithLogout showMenuButton title="🚌 출근부" /> */}
+        <DashboardNavbar title="🚙 법인차량 관리" />
+        {/* 상단 차량 선택 + 버튼 영역 - 모바일에서 줄바꿈 */}
+        <MDBox
+          pt={1}
+          pb={1}
+          gap={1}
           sx={{
             display: "flex",
-            gap: 1,
+            justifyContent: isMobile ? "space-between" : "flex-end",
+            alignItems: "center",
             flexWrap: isMobile ? "wrap" : "nowrap",
+            position: "sticky",
+            zIndex: 10,
+            top: 78,
+            backgroundColor: "#ffffff",
           }}
         >
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleAddRow}
-            disabled={saving}
-            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
-          >
-            행 추가
-          </MDButton>
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleModalOpen}
-            disabled={saving}
-            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
-          >
-            차량등록
-          </MDButton>
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleSave}
-            disabled={saving}
-            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
-          >
-            저장
-          </MDButton>
-        </Box>
-      </MDBox>
+          {carSelectList.length > 0 && (
+            <TextField
+              select
+              size="small"
+              value={selectedCar}
+              onChange={(e) => setSelectedCar(e.target.value)}
+              sx={{ minWidth: isMobile ? 140 : 150 }}
+              SelectProps={{ native: true }}
+              disabled={saving}
+            >
+              {carSelectList.map((car) => (
+                <option key={car.car_number} value={car.car_number}>
+                  {car.full_name}
+                </option>
+              ))}
+            </TextField>
+          )}
 
+          <Box
+            sx={{
+              display: "flex",
+              gap: 1,
+              flexWrap: isMobile ? "wrap" : "nowrap",
+            }}
+          >
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleAddRow}
+              disabled={saving}
+              sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
+            >
+              행 추가
+            </MDButton>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleModalOpen}
+              disabled={saving}
+              sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
+            >
+              차량등록
+            </MDButton>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleSave}
+              disabled={saving}
+              sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
+            >
+              저장
+            </MDButton>
+          </Box>
+        </MDBox>
+      </MDBox>
       <MDBox pt={1} pb={3} sx={tableSx}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
@@ -708,7 +715,11 @@ function CorCarTabStyled() {
                                           onClick={() => toggleImageDeleted(rowIndex, imgIndex)}
                                           disabled={saving}
                                         >
-                                          {isDeleted ? <RotateCcw size={14} /> : <Trash2 size={14} />}
+                                          {isDeleted ? (
+                                            <RotateCcw size={14} />
+                                          ) : (
+                                            <Trash2 size={14} />
+                                          )}
                                         </IconButton>
                                       </Box>
                                     </Box>
@@ -845,13 +856,9 @@ function CorCarTabStyled() {
                             <input
                               type="text"
                               disabled={saving}
-                              value={
-                                value ? Number(value.replace(/,/g, "")).toLocaleString() : ""
-                              }
+                              value={value ? Number(value.replace(/,/g, "")).toLocaleString() : ""}
                               onChange={(e) => {
-                                const raw = e.target.value
-                                  .replace(/,/g, "")
-                                  .replace(/[^\d]/g, "");
+                                const raw = e.target.value.replace(/,/g, "").replace(/[^\d]/g, "");
                                 handleCellChange(rowIndex, col.accessorKey, raw);
                               }}
                               style={{
@@ -986,9 +993,7 @@ function CorCarTabStyled() {
           )}
 
           <IconButton
-            onClick={() =>
-              setCurrentIndex((prev) => Math.min(prev + 1, previewList.length - 1))
-            }
+            onClick={() => setCurrentIndex((prev) => Math.min(prev + 1, previewList.length - 1))}
             disabled={currentIndex === previewList.length - 1}
             sx={{
               position: "absolute",
@@ -1022,7 +1027,7 @@ function CorCarTabStyled() {
           {savingText || "이미지 등록중..."}
         </Typography>
       </Backdrop>
-    </>
+    </DashboardLayout>
   );
 }
 

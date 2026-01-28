@@ -9,7 +9,10 @@ import { TextField } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "api/api";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import useAccountMembersheetData, { parseNumber, formatNumber } from "./data/AccountMemberSheetData";
+import useAccountMembersheetData, {
+  parseNumber,
+  formatNumber,
+} from "./data/AccountMemberSheetData";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
@@ -84,6 +87,7 @@ function AccountMemberSheet() {
     { value: "3", label: "조리장" },
     { value: "4", label: "조리사" },
     { value: "5", label: "조리원" },
+    { value: "6", label: "유틸" },
   ];
 
   const contractOptions = [
@@ -124,7 +128,12 @@ function AccountMemberSheet() {
       { header: "퇴사여부", accessorKey: "del_yn", size: 80 },
       { header: "퇴사일", accessorKey: "del_dt", size: 80 },
       { header: "퇴사사유", accessorKey: "del_note", size: 100 },
-      { header: "급여(월)", accessorKey: "salary", size: 80, cell: (info) => formatNumber(info.getValue()) },
+      {
+        header: "급여(월)",
+        accessorKey: "salary",
+        size: 80,
+        cell: (info) => formatNumber(info.getValue()),
+      },
       { header: "근무형태", accessorKey: "work_system", size: 100 },
       { header: "시작", accessorKey: "start_time", size: 60 },
       { header: "마감", accessorKey: "end_time", size: 60 },
@@ -206,11 +215,8 @@ function AccountMemberSheet() {
     }
   };
 
-
   const handleAddRow = () => {
-
-    const defaultAccountId =
-      selectedAccountId || (accountList?.[0]?.account_id ?? "");
+    const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
 
     const newRow = {
       name: "",
@@ -241,7 +247,7 @@ function AccountMemberSheet() {
       subsidy: "",
       total: 0,
     };
-    
+
     setActiveRows((prev) => [newRow, ...prev]);
 
     // setTimeout(() => {
@@ -268,7 +274,14 @@ function AccountMemberSheet() {
       "industrial_insurance",
       "employment_insurance",
     ]);
-    const selectFields = new Set(["position_type", "del_yn", "contract_type", "start_time", "end_time", "account_id"]);
+    const selectFields = new Set([
+      "position_type",
+      "del_yn",
+      "contract_type",
+      "start_time",
+      "end_time",
+      "account_id",
+    ]);
     const nonEditableCols = new Set(["diner_date", "total"]);
 
     return (
@@ -361,7 +374,6 @@ function AccountMemberSheet() {
             border: "none",
             background: "transparent",
           },
-
         }}
       >
         <table className="dinersheet-table">
@@ -386,8 +398,12 @@ function AccountMemberSheet() {
                   const originalValue = originals?.[rowIndex]?.[colKey];
 
                   const isNumeric = numericCols.includes(colKey);
-                  const normCurrent = isNumeric ? Number(currentValue ?? 0) : String(currentValue ?? "");
-                  const normOriginal = isNumeric ? Number(originalValue ?? 0) : String(originalValue ?? "");
+                  const normCurrent = isNumeric
+                    ? Number(currentValue ?? 0)
+                    : String(currentValue ?? "");
+                  const normOriginal = isNumeric
+                    ? Number(originalValue ?? 0)
+                    : String(originalValue ?? "");
                   const isChanged = normCurrent !== normOriginal;
 
                   const isEditable = !nonEditableCols.has(colKey);
@@ -397,7 +413,11 @@ function AccountMemberSheet() {
                   const handleCellChange = (newValue) => {
                     const updatedRows = rows.map((r, idx) =>
                       idx === rowIndex
-                        ? { ...r, [colKey]: newValue, total: calculateTotal({ ...r, [colKey]: newValue }) }
+                        ? {
+                            ...r,
+                            [colKey]: newValue,
+                            total: calculateTotal({ ...r, [colKey]: newValue }),
+                          }
                         : r
                     );
                     setActiveRows(updatedRows);
@@ -407,31 +427,30 @@ function AccountMemberSheet() {
                     <td
                       key={cell.id}
                       style={{
-                        textAlign:
-                          [
-                            "rrn",
-                            "account_number",
-                            "phone",
-                            "name",
-                            "contract_type",
-                            "join_dt",
-                            "act_join_dt",
-                            "ret_set_dt",
-                            "loss_major_insurances",
-                            "del_yn",
-                            "del_dt",
-                            "work_system",
-                            "start_time",
-                            "end_time",
-                            "national_pension",
-                            "health_insurance",
-                            "industrial_insurance",
-                            "employment_insurance",
-                          ].includes(colKey)
-                            ? "center"
-                            : colKey === "salary"
-                            ? "right"
-                            : "left",
+                        textAlign: [
+                          "rrn",
+                          "account_number",
+                          "phone",
+                          "name",
+                          "contract_type",
+                          "join_dt",
+                          "act_join_dt",
+                          "ret_set_dt",
+                          "loss_major_insurances",
+                          "del_yn",
+                          "del_dt",
+                          "work_system",
+                          "start_time",
+                          "end_time",
+                          "national_pension",
+                          "health_insurance",
+                          "industrial_insurance",
+                          "employment_insurance",
+                        ].includes(colKey)
+                          ? "center"
+                          : colKey === "salary"
+                          ? "right"
+                          : "left",
                       }}
                       contentEditable={isEditable && !isSelect && !isDate}
                       suppressContentEditableWarning
@@ -454,7 +473,12 @@ function AccountMemberSheet() {
                         <select
                           value={currentValue ?? ""}
                           onChange={(e) => handleCellChange(e.target.value)}
-                          style={{ width: "100%", background: "transparent", cursor: "pointer", border: "none" }}
+                          style={{
+                            width: "100%",
+                            background: "transparent",
+                            cursor: "pointer",
+                            border: "none",
+                          }}
                         >
                           {colKey === "account_id" &&
                             (accountList || []).map((acc) => (

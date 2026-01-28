@@ -62,6 +62,8 @@ import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseTally from "layouts/accounting/accountpurchasetally";
 import HeadOfficeCorporateCardManager from "layouts/accounting/corporatecardsheet";
 import AccountCorporateCardManager from "layouts/accounting/accountcorporatecardsheet";
+import PurchaseDeadLineManager from "examples/Tabs/Accounting/AccountPurchaseDeadlineTab";
+
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
 // 현장
@@ -312,8 +314,8 @@ const routes = [
         name: "📦 매입",
         key: "accounting",
         //icon: <Icon fontSize="small">*</Icon>,
-        route: "/purchase/purchasetally",
-        component: <PurchaseTally />,
+        route: "/purchaseDeadLineManager/purchasetally",
+        component: <PurchaseDeadLineManager />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
         accessMode: "OR",
       },

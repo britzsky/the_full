@@ -177,6 +177,7 @@ function AccountMemberSheet() {
     { value: "3", label: "조리장" },
     { value: "4", label: "조리사" },
     { value: "5", label: "조리원" },
+    { value: "6", label: "유틸" },
   ];
 
   const contractOptions = [
@@ -264,12 +265,6 @@ function AccountMemberSheet() {
     []
   );
 
-  // ✅ (수정) 기존 select onChange 핸들러는 Autocomplete로 대체하므로 제거/미사용 가능
-  // const onSearchList = (e) => {
-  //   setLoading(true);
-  //   setSelectedAccountId(e.target.value);
-  // };
-
   const table = useReactTable({
     data: activeRows,
     columns,
@@ -351,7 +346,9 @@ function AccountMemberSheet() {
     }
   };
 
-  // 모달 열기: 현재 workSystemList로 스냅샷 생성
+  // =========================
+  // ✅ 근무형태 모달 로직
+  // =========================
   const openWorkSystemModal = async () => {
     const latest = await fetchWorkSystemList({ snapshot: true });
 
@@ -364,7 +361,6 @@ function AccountMemberSheet() {
     setWsOpen(false);
   };
 
-  // 모달 행추가
   const handleWsAddRow = () => {
     const newRow = {
       idx: null,
@@ -376,12 +372,10 @@ function AccountMemberSheet() {
     setWsOriginal((prev) => [newRow, ...prev]);
   };
 
-  // 모달 셀 변경
   const handleWsChange = (rowIndex, key, value) => {
     setWsRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r)));
   };
 
-  // 변경분 추출
   const getWsChangedRows = () => {
     const norm = (v) => String(v ?? "");
     return wsRows.filter((r, i) => {
@@ -396,7 +390,6 @@ function AccountMemberSheet() {
     });
   };
 
-  // 모달 저장
   const handleWsSave = async () => {
     const changed = getWsChangedRows();
 
@@ -421,6 +414,156 @@ function AccountMemberSheet() {
       setWsOriginal(latest || []);
 
       setWsOpen(false);
+    } catch (err) {
+      Swal.fire("저장 실패", err?.message || "오류", "error");
+    }
+  };
+
+  // =========================
+  // ✅ 유틸관리 모달 로직 (추가)
+  // =========================
+  const [utilOpen, setUtilOpen] = useState(false);
+
+  // 왼쪽: /Account/AccountUtilMemberList (member_id, position_type)
+  const [utilMemberRows, setUtilMemberRows] = useState([]);
+  const [utilSelectedMember, setUtilSelectedMember] = useState(null);
+
+  // 가운데: /Account/AccountUtilMappingList (member_id로 조회) -> idx, account_id, member_id, name, position_type
+  const [utilMappingRows, setUtilMappingRows] = useState([]);
+  const [utilSelectedMappingRowIndex, setUtilSelectedMappingRowIndex] = useState(null); // (추후 삭제 기능에 쓸 수 있음)
+
+  // 오른쪽: /Account/AccountList -> account_id, account_name
+  const [utilAccountRows, setUtilAccountRows] = useState([]);
+  const [utilSelectedAccount, setUtilSelectedAccount] = useState(null);
+
+  const fetchUtilMemberList = useCallback(async () => {
+    const res = await api.get("/Account/AccountUtilMemberList");
+    const list = res?.data?.data ?? res?.data ?? [];
+    return Array.isArray(list) ? list : [];
+  }, []);
+
+  const fetchUtilMappingList = useCallback(async (memberId) => {
+    if (!memberId) return [];
+    const res = await api.get("/Account/AccountUtilMappingList", {
+      params: { member_id: memberId },
+    });
+    const list = res?.data?.data ?? res?.data ?? [];
+    return Array.isArray(list) ? list : [];
+  }, []);
+
+  const fetchUtilAccountList = useCallback(async () => {
+    const res = await api.get("/Account/AccountList", {
+      params: { account_type: 0 },
+    });
+    const list = res?.data?.data ?? res?.data ?? [];
+    return Array.isArray(list) ? list : [];
+  }, []);
+
+  const openUtilModal = async () => {
+    try {
+      // 모달 초기화
+      setUtilSelectedMember(null);
+      setUtilSelectedAccount(null);
+      setUtilSelectedMappingRowIndex(null);
+      setUtilMappingRows([]);
+
+      const [members, accounts] = await Promise.all([
+        fetchUtilMemberList(),
+        fetchUtilAccountList(),
+      ]);
+      setUtilMemberRows(members || []);
+      setUtilAccountRows(accounts || []);
+
+      setUtilOpen(true);
+    } catch (err) {
+      Swal.fire("조회 실패", err?.message || "오류", "error");
+    }
+  };
+
+  const closeUtilModal = () => {
+    setUtilOpen(false);
+  };
+
+  const handleSelectUtilMember = async (row) => {
+    try {
+      setUtilSelectedMember(row);
+      setUtilSelectedMappingRowIndex(null);
+
+      const memberId = row?.member_id;
+      if (!memberId) {
+        setUtilMappingRows([]);
+        return;
+      }
+
+      const mappings = await fetchUtilMappingList(memberId);
+      setUtilMappingRows(mappings || []);
+    } catch (err) {
+      Swal.fire("조회 실패", err?.message || "오류", "error");
+    }
+  };
+
+  const handleAddMappingFromRight = () => {
+    if (!utilSelectedMember?.member_id) {
+      Swal.fire("안내", "왼쪽에서 유틸 직원을 먼저 선택해주세요.", "info");
+      return;
+    }
+    if (!utilSelectedAccount?.account_id) {
+      Swal.fire("안내", "오른쪽에서 업장을 먼저 선택해주세요.", "info");
+      return;
+    }
+
+    const member_id = utilSelectedMember.member_id;
+    const position_type = utilSelectedMember.position_type;
+    const account_id = utilSelectedAccount.account_id;
+
+    // 중복 방지: 같은 member_id + account_id 이미 있으면 추가 안함
+    const exists = (utilMappingRows || []).some(
+      (r) =>
+        String(r.member_id) === String(member_id) && String(r.account_id) === String(account_id)
+    );
+    if (exists) {
+      Swal.fire("안내", "이미 매핑된 업장입니다.", "info");
+      return;
+    }
+
+    const newRow = {
+      idx: null, // 신규
+      account_id,
+      member_id,
+      name: utilSelectedMember.name ?? utilSelectedMember.member_name ?? "",
+      position_type,
+    };
+
+    setUtilMappingRows((prev) => [newRow, ...(prev || [])]);
+  };
+
+  const handleUtilSave = async () => {
+    if (!utilSelectedMember?.member_id) {
+      Swal.fire("안내", "왼쪽에서 유틸 직원을 먼저 선택해주세요.", "info");
+      return;
+    }
+
+    try {
+      // 서버 스펙이 명확하지 않아서, member_id + data 함께 전송 (대부분 이 형태로 처리 가능)
+      const payload = {
+        member_id: utilSelectedMember.member_id,
+        data: utilMappingRows || [],
+      };
+
+      const res = await api.post("/Account/AccountUtilMemberMappingSave", utilMappingRows);
+      const ok = res?.status === 200 || res?.data?.code === 200;
+
+      if (!ok) {
+        Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
+        return;
+      }
+
+      Swal.fire("저장 완료", "유틸 매핑이 저장되었습니다.", "success");
+
+      // 저장 후 가운데 재조회
+      const latest = await fetchUtilMappingList(utilSelectedMember.member_id);
+      setUtilMappingRows(latest || []);
+      setUtilOpen(false);
     } catch (err) {
       Swal.fire("저장 실패", err?.message || "오류", "error");
     }
@@ -922,7 +1065,6 @@ function AccountMemberSheet() {
                                 onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
                                 getOptionLabel={(opt) => opt?.label ?? ""}
                                 isOptionEqualToValue={(opt, val) => opt.value === val.value}
-                                // ✅ 옵션 목록도 변경상태면 빨강 (원하면 여기서는 항상 기본색으로 둬도 됨)
                                 renderOption={(props, option) => (
                                   <li
                                     {...props}
@@ -1060,6 +1202,15 @@ function AccountMemberSheet() {
     );
   };
 
+  // 유틸관리 모달에서 업장명 표시용 맵
+  const utilAccountNameMap = useMemo(() => {
+    const m = new Map();
+    (utilAccountRows || []).forEach((a) => {
+      m.set(String(a.account_id), a.account_name);
+    });
+    return m;
+  }, [utilAccountRows]);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -1127,6 +1278,11 @@ function AccountMemberSheet() {
 
         <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
           근무형태 관리
+        </MDButton>
+
+        {/* ✅ 유틸관리 버튼 추가 */}
+        <MDButton variant="gradient" color="warning" onClick={openUtilModal}>
+          유틸관리
         </MDButton>
 
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>
@@ -1306,6 +1462,324 @@ function AccountMemberSheet() {
                   })}
                 </tbody>
               </table>
+            </MDBox>
+          </MDBox>
+        </Box>
+      </Modal>
+
+      {/* =========================
+          ✅ 유틸관리 모달 (추가)
+         ========================= */}
+      <Modal open={utilOpen} onClose={closeUtilModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile ? "98vw" : "92vw",
+            maxWidth: 1200,
+            height: isMobile ? "90vh" : "80vh",
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <MDBox
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: 30,
+              bgcolor: "#fff",
+              px: 2,
+              py: 1,
+              borderBottom: "1px solid #e0e0e0",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+            }}
+          >
+            <MDTypography variant="h6">유틸관리</MDTypography>
+
+            <MDBox display="flex" gap={1}>
+              <MDButton variant="gradient" color="info" onClick={handleUtilSave}>
+                저장
+              </MDButton>
+              <MDButton variant="outlined" color="secondary" onClick={closeUtilModal}>
+                닫기
+              </MDButton>
+            </MDBox>
+          </MDBox>
+
+          <MDBox
+            sx={{
+              flex: 1,
+              display: "flex",
+              gap: 1,
+              p: 1.5,
+              overflow: "hidden",
+              bgcolor: "#fff",
+            }}
+          >
+            {/* 왼쪽 테이블 */}
+            <MDBox
+              sx={{
+                flex: 1,
+                minWidth: 240,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  유틸 직원 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  행 클릭 → 가운데 매핑 조회
+                </MDTypography>
+              </MDBox>
+
+              <MDBox
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  "& table": { width: "100%", borderCollapse: "collapse" },
+                  "& th, & td": {
+                    borderBottom: "1px solid #eee",
+                    padding: "8px 6px",
+                    fontSize: 12,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  },
+                  "& th": {
+                    position: "sticky",
+                    top: 0,
+                    bgcolor: "#f7f7f7",
+                    zIndex: 2,
+                  },
+                }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 110 }}>성명</th>
+                      <th style={{ width: 90 }}>직책</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(utilMemberRows || []).map((r, i) => {
+                      const selected =
+                        String(utilSelectedMember?.member_id ?? "") === String(r.member_id ?? "");
+                      const posLabel =
+                        positionOptions.find((p) => String(p.value) === String(r.position_type))
+                          ?.label ?? String(r.position_type ?? "");
+
+                      return (
+                        <tr
+                          key={`${r.member_id ?? "m"}-${i}`}
+                          onClick={() => handleSelectUtilMember(r)}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",
+                          }}
+                        >
+                          <td style={{ fontWeight: selected ? 700 : 400 }}>{r.name ?? ""}</td>
+                          <td style={{ fontWeight: selected ? 700 : 400 }}>{posLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MDBox>
+            </MDBox>
+
+            {/* 가운데 테이블 */}
+            <MDBox
+              sx={{
+                flex: 1.2,
+                minWidth: 360,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  매핑 목록 (가운데)
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  선택된 유틸:{" "}
+                  <b>{utilSelectedMember?.member_id ? utilSelectedMember.member_id : "-"}</b>
+                </MDTypography>
+              </MDBox>
+
+              <MDBox
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  "& table": { width: "100%", borderCollapse: "collapse" },
+                  "& th, & td": {
+                    borderBottom: "1px solid #eee",
+                    padding: "8px 6px",
+                    fontSize: 12,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  },
+                  "& th": {
+                    position: "sticky",
+                    top: 0,
+                    bgcolor: "#f7f7f7",
+                    zIndex: 2,
+                  },
+                }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 70 }}>순번</th>
+                      <th style={{ width: 120 }}>고객사</th>
+                      <th style={{ width: 110 }}>성명</th>
+                      <th style={{ width: 90 }}>직책</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(utilMappingRows || []).map((r, i) => {
+                      const selected = utilSelectedMappingRowIndex === i;
+                      const posLabel =
+                        positionOptions.find((p) => String(p.value) === String(r.position_type))
+                          ?.label ?? String(r.position_type ?? "");
+                      const accName = utilAccountNameMap.get(String(r.account_id ?? "")) ?? "";
+                      const accText = accName
+                        ? `${r.account_id ?? ""} (${accName})`
+                        : String(r.account_id ?? "");
+
+                      return (
+                        <tr
+                          key={`${r.idx ?? "new"}-${r.account_id ?? "a"}-${i}`}
+                          onClick={() => setUtilSelectedMappingRowIndex(i)}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: selected ? "rgba(255,193,7,0.12)" : "#fff",
+                          }}
+                        >
+                          <td>{r.idx ?? ""}</td>
+                          <td style={{ textAlign: "left" }}>{accText}</td>
+                          <td>{r.name ?? ""}</td>
+                          <td>{posLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MDBox>
+            </MDBox>
+
+            {/* 가운데-오른쪽 컨트롤 */}
+            <MDBox
+              sx={{
+                width: isMobile ? 54 : 70,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <MDButton
+                variant="gradient"
+                color="info"
+                onClick={handleAddMappingFromRight}
+                sx={{ minWidth: isMobile ? 46 : 56, px: 0 }}
+              >
+                {"<"}
+              </MDButton>
+              <MDTypography variant="caption" sx={{ color: "#666", textAlign: "center" }}>
+                업장 → 매핑
+              </MDTypography>
+            </MDBox>
+
+            {/* 오른쪽 테이블 */}
+            <MDBox
+              sx={{
+                flex: 1,
+                minWidth: 300,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  업장 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  행 선택 후 &lt; 버튼
+                </MDTypography>
+              </MDBox>
+
+              <MDBox
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  "& table": { width: "100%", borderCollapse: "collapse" },
+                  "& th, & td": {
+                    borderBottom: "1px solid #eee",
+                    padding: "8px 6px",
+                    fontSize: 12,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  },
+                  "& th": {
+                    position: "sticky",
+                    top: 0,
+                    bgcolor: "#f7f7f7",
+                    zIndex: 2,
+                  },
+                }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th>고객사</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(utilAccountRows || []).map((r, i) => {
+                      const selected =
+                        String(utilSelectedAccount?.account_id ?? "") ===
+                        String(r.account_id ?? "");
+                      return (
+                        <tr
+                          key={`${r.account_id ?? "a"}-${i}`}
+                          onClick={() => setUtilSelectedAccount(r)}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",
+                          }}
+                        >
+                          <td style={{ textAlign: "left", fontWeight: selected ? 700 : 400 }}>
+                            {r.account_name ?? ""}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MDBox>
             </MDBox>
           </MDBox>
         </Box>

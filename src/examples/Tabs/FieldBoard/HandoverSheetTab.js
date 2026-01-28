@@ -305,23 +305,23 @@ export default function HandoverSheetTab() {
     // 6. 내용 채우기
     addSection("1. 업무 현황");
     addRowBlock("▶ 급식 대상자 수", cleanedForm.meal_number);
-    addRowBlock("▶ 식수 운영 방식 및 배식 방식", cleanedForm.catering_ration);
-    addRowBlock("▶ 일반 식단 운영 방식", cleanedForm.normal_diet);
+    addRowBlock("▶ 식수 운영 방식 및 배식방식", cleanedForm.catering_ration);
+    addRowBlock("▶ 일일 식단 운영 방식", cleanedForm.normal_diet);
     addRowBlock("▶ 주방 인력 구성 (이름, 연락처)", cleanedForm.kitchen_member);
-    addRowBlock("▶ 근무자 시간 및 스케줄 근무 형태", cleanedForm.work_type);
+    addRowBlock("▶ 근무 시간 및 스케줄 근무 형태", cleanedForm.work_type);
     addRowBlock("▶ 발주 프로그램 아이디 & 비밀번호", cleanedForm.order_program_info);
-    addRowBlock("▶ 식재료 발주 방식 및 인원수", cleanedForm.ingredients_order_type);
+    addRowBlock("▶ 식재료 발주 방식 및 1인량", cleanedForm.ingredients_order_type);
     addRowBlock("▶ 검수 및 입고 방법", cleanedForm.inspection_store_type);
     addRowBlock("▶ 재고 관리 방법", cleanedForm.stock_manage_type);
 
     addSection("2. 주요 업무 및 주의사항");
-    addRowBlock("▶ 식단 구성 및 제출 주기", cleanedForm.diet_submit_cycle);
+    addRowBlock("▶ 식단 작성 및 제출 주기", cleanedForm.diet_submit_cycle);
     addRowBlock("▶ 위생 점검 사항", cleanedForm.hygiene_note);
-    addRowBlock("▶ 주요 문제", cleanedForm.hot_issue);
-    addRowBlock("▶ (운영방) 케어포 등 프로그램 사용 여부", cleanedForm.program_use_whether);
+    addRowBlock("▶ 주요 문서", cleanedForm.hot_issue);
+    addRowBlock("▶ 요양원) 케어포 등 프로그램 사용 여부", cleanedForm.program_use_whether);
     addRowBlock("▶ 라운딩 횟수 및 만족도 조사 여부", cleanedForm.rounding_satis_whether);
     addRowBlock("▶ 클레임 및 민원 이력", cleanedForm.complain_note);
-    addRowBlock("▶ 매니저 연락처", cleanedForm.manager_phone);
+    addRowBlock("▶ 대내외 연락처", cleanedForm.manager_phone);
     addRowBlock("▶ 쓰레기 처리 방식", cleanedForm.trash_treatment_type);
     addRowBlock("▶ 정기 일정", cleanedForm.regular_schedule);
 
@@ -469,7 +469,6 @@ export default function HandoverSheetTab() {
               <td>{renderInput("handover_location")}</td>
             </tr>
           </thead>
-
           <tbody>
             {/* 1. 업무 현황 */}
             <tr>
@@ -483,17 +482,17 @@ export default function HandoverSheetTab() {
               <td>
                 ▶ 식수 운영 방식 및 배식 방식 <br />
                 <span style={{ color: "red", fontSize: isMobile ? "9px" : "11px" }}>
-                  (예 : 선택식, 일품식, 샐러드바식, 식판배식, 그룹배식 등) <br />* 그릇 세척, 음식물
-                  처리 시 아웃소싱도 나누어 기재
+                  (예 : 선택식, 일품식 / 바트배식, 식판배식, 그릇배식 등) <br />* 그 외 셀프바 및
+                  간편식 제공 시 어떤식으로 나가는지 기재 필요
                 </span>
               </td>
               <td colSpan={5}>{renderInput("catering_ration", { multiline: true })}</td>
             </tr>
             <tr>
               <td>
-                ▶ 일반 식단 운영 방식
+                ▶ 일일 식단 운영 방식
                 <br />
-                (예: 1일 3식, 간식 포함 여부, 식사제공시간 등)
+                (예 : 1일 3식, 간식 포함 여부, 식사제공시간, 생신잔치 유무 등)
               </td>
               <td colSpan={5}>{renderInput("normal_diet", { multiline: true })}</td>
             </tr>
@@ -502,7 +501,7 @@ export default function HandoverSheetTab() {
               <td colSpan={5}>{renderInput("kitchen_member", { multiline: true })}</td>
             </tr>
             <tr>
-              <td>▶ 근무자 시간 및 스케줄 근무 형태</td>
+              <td>▶ 근무 시간 및 스케줄 근무 형태</td>
               <td colSpan={5}>{renderInput("work_type", { multiline: true })}</td>
             </tr>
             <tr>
@@ -511,7 +510,7 @@ export default function HandoverSheetTab() {
             </tr>
             <tr>
               <td>
-                ▶ 식재료 발주 방식 및 인원수
+                ▶ 식재료 발주 방식 및 1인량
                 <br />
                 (업체명, 발주 요일, 발주 방법 등)
               </td>
@@ -529,7 +528,7 @@ export default function HandoverSheetTab() {
               <td>
                 ▶ 재고 관리 방법
                 <br />
-                (보관 방식, 소진기한 관리 등)
+                (보관방식, 소비기한 관리 등)
               </td>
               <td colSpan={5}>{renderInput("stock_manage_type", { multiline: true })}</td>
             </tr>
@@ -540,9 +539,9 @@ export default function HandoverSheetTab() {
             </tr>
             <tr>
               <td>
-                ▶ 식단 구성 및 제출 주기
+                ▶ 식단 작성 및 제출 주기
                 <br />
-                (계절별 메뉴, 영양사 검토 포함)
+                (제출부서, 제출일정 포함)
               </td>
               <td colSpan={5}>{renderInput("diet_submit_cycle", { multiline: true })}</td>
             </tr>
@@ -556,14 +555,14 @@ export default function HandoverSheetTab() {
             </tr>
             <tr>
               <td>
-                ▶ 주요 문제
+                ▶ 주요 문서
                 <br />
-                (일일 점식구, 우샘검검표, 주방도구 소독일지 등)
+                (일일 급식일지, 위생점검표, 주방도구 소독일지, 월별 교육, 조리지시서 등)
               </td>
               <td colSpan={5}>{renderInput("hot_issue", { multiline: true })}</td>
             </tr>
             <tr>
-              <td>▶ (운영방) 케어포 등 프로그램 사용 여부</td>
+              <td>▶ 요양원) 케어포 등 프로그램 사용 여부</td>
               <td colSpan={5}>{renderInput("program_use_whether")}</td>
             </tr>
             <tr>
@@ -580,9 +579,9 @@ export default function HandoverSheetTab() {
             </tr>
             <tr>
               <td>
-                ▶ 매니저 연락처
+                ▶ 대내외 연락처
                 <br />
-                (식당소장, 점검담당자, 긴급대출출입 등 주요 연락처)
+                (식재업체, 점검담당자, 긴급파출업체 등 주요 연락처)
               </td>
               <td colSpan={5}>{renderInput("manager_phone", { multiline: true })}</td>
             </tr>
@@ -590,7 +589,7 @@ export default function HandoverSheetTab() {
               <td>
                 ▶ 쓰레기 처리 방식
                 <br />
-                (업체 수거/분리배출 규칙 등)
+                (업체수거 / 쓰레기봉투구매 등)
               </td>
               <td colSpan={5}>{renderInput("trash_treatment_type", { multiline: true })}</td>
             </tr>
@@ -598,7 +597,7 @@ export default function HandoverSheetTab() {
               <td>
                 ▶ 정기 일정
                 <br />
-                (예: 주간 교육, 회의, 설비점검 등)
+                (예: 주기적 교육, 회의, 설비점검 등)
               </td>
               <td colSpan={5}>{renderInput("regular_schedule", { multiline: true })}</td>
             </tr>

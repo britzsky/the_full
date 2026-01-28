@@ -42,6 +42,74 @@ import api from "api/api";
 import { useParams } from "react-router-dom";
 import { API_BASE_URL } from "config";
 
+// =========================
+// ✅ 계약기간 직접입력 유틸
+// =========================
+function formatDateObj(dt) {
+  if (!dt) return "";
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const d = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// ✅ YYYY-MM-DD 포맷 만들기(숫자만, 자동 하이픈)
+function formatYMDInput(raw) {
+  const digits = String(raw || "")
+    .replace(/\D/g, "")
+    .slice(0, 8); // YYYYMMDD
+  const y = digits.slice(0, 4);
+  const m = digits.slice(4, 6);
+  const d = digits.slice(6, 8);
+
+  let out = y;
+  if (m) out += `-${m}`;
+  if (d) out += `-${d}`;
+  return out;
+}
+
+// ✅ "YYYY-MM-DD" 유효하면 Date 반환, 아니면 null
+function tryParseYMD(ymd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd || ""))) return null;
+  const [yy, mm, dd] = String(ymd).split("-").map(Number);
+  const dt = new Date(yy, mm - 1, dd);
+  if (dt.getFullYear() !== yy || dt.getMonth() !== mm - 1 || dt.getDate() !== dd) return null;
+  return dt;
+}
+
+// ✅ DatePicker 커스텀 인풋 (컴포넌트 밖에 두어야 포커스 안날아감)
+const DatePickerTextInput = forwardRef(function DatePickerTextInput(
+  { value, onClick, onChange, placeholder, inputColor = "black" },
+  ref
+) {
+  return (
+    <MDInput
+      value={value || ""}
+      onClick={onClick}
+      onChange={onChange}
+      placeholder={placeholder}
+      inputRef={ref}
+      sx={{
+        flex: 1,
+        fontSize: "13px",
+        "& input": {
+          padding: "4px 4px",
+          height: "20px",
+          color: inputColor,
+        },
+      }}
+    />
+  );
+});
+
+DatePickerTextInput.propTypes = {
+  value: PropTypes.string,
+  onClick: PropTypes.func,
+  onChange: PropTypes.func,
+  placeholder: PropTypes.string,
+  inputColor: PropTypes.string,
+};
+
 // 숫자 컬럼만 천단위 콤마 포맷
 const numericCols = [
   "basic_price",
@@ -393,39 +461,86 @@ function AccountInfoSheet() {
     document.getElementById(type).click();
   };
 
+  // ✅ 추가: 어떤 타입이 변경되었는지 추적
+  const [dirtyFiles, setDirtyFiles] = useState(() => new Set());
+
   // input 변경 시 파일 상태 업데이트
   const handleFileChange = (type, e) => {
+    const file = e.target.files?.[0] || null;
+
+    // 같은 파일 다시 선택 가능하도록 value 초기화
+    e.target.value = "";
+
+    if (!file) return;
+
     setSelectedFiles((prev) => ({
       ...prev,
-      [type]: e.target.files[0],
+      [type]: file,
     }));
+
+    setDirtyFiles((prev) => {
+      const next = new Set(prev);
+      next.add(type);
+      return next;
+    });
   };
 
-  // 한 번에 업로드
+  // ✅ 업로드 응답을 {key: path} 형태로 최대한 복원
+  const normalizeUploadMap = (raw) => {
+    if (!raw) return {};
+
+    // 1) 이미 객체로 온 경우
+    if (typeof raw === "object") return raw;
+
+    // 2) 문자열인 경우
+    const s = String(raw).trim();
+
+    // 2-1) JSON처럼 생긴 경우 먼저 JSON.parse 시도
+    // (예: {"business_report":"/image/a.png"} )
+    if (s.startsWith("{") && s.includes(":")) {
+      try {
+        const obj = JSON.parse(s);
+        if (obj && typeof obj === "object") return obj;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // 2-2) "{k=v, k2=v2}" 형태 파싱
+    return parseServerMapString(s);
+  };
+
+  // 한 번에 업로드 (✅ dirty만)
   const handleFileUpload = async () => {
     const formData = new FormData();
     const account_id = basicInfo.account_id;
     formData.append("account_id", account_id);
 
     let hasFile = false;
-    Object.entries(selectedFiles).forEach(([type, file]) => {
-      if (file && file instanceof File) {
+    dirtyFiles.forEach((type) => {
+      const file = selectedFiles[type];
+      if (file instanceof File) {
         formData.append(type, file);
         hasFile = true;
       }
     });
 
-    if (!hasFile) return alert("업로드할 파일을 선택하세요!");
+    if (!hasFile) {
+      Swal.fire("안내", "변경된(선택된) 파일이 없습니다.", "info");
+      return;
+    }
 
     try {
       const res = await api.post("/Account/AccountBusinessImgUpload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      // ✅ 응답이 {account_id=..., business_report=/image/...} 문자열로 오는 케이스 처리
-      const map = parseServerMapString(res?.data?.data);
+      // ✅ 성공 판정(서버 규격에 맞춰 하나만 택)
+      const ok = res?.status === 200 && (res?.data?.code === 200 || res?.data?.code === undefined); // code 없을 수도 있으니
 
-      // ✅ 서버가 내려준 path를 버튼 옆 input에 반영
+      const raw = res?.data?.data ?? res?.data; // data가 없고 res.data에 있을 수도
+      const map = normalizeUploadMap(raw);
+
       const keys = [
         "business_report",
         "business_regist",
@@ -436,19 +551,38 @@ function AccountInfoSheet() {
 
       const next = {};
       keys.forEach((k) => {
-        const filePath = map[k];
-        if (filePath) {
-          next[k] = {
-            name: filePath.split("/").pop(),
-            path: filePath,
-          };
-        }
+        const filePath = map?.[k];
+        if (filePath) next[k] = { name: String(filePath).split("/").pop(), path: filePath };
       });
 
+      const hasAnyReturned = Object.keys(next).length > 0;
+
+      if (!hasAnyReturned) {
+        // ✅ 업로드는 성공했는데 서버가 path를 안 준 케이스:
+        // 👉 초기화하면 안 됨. 서버값으로 다시 조회해서 맞추기.
+        if (ok) {
+          await fetchAllData(selectedAccountId); // ✅ 서버값으로 동기화
+          setDirtyFiles(new Set()); // ✅ 업로드한 건 처리 완료로 본다
+          Swal.fire("완료", "업로드 완료(응답 path 없음) - 재조회로 동기화했습니다.", "success");
+          return;
+        }
+
+        // ok도 아니면 진짜 실패 가능성
+        Swal.fire("실패", "업로드 응답을 확인할 수 없습니다.", "error");
+        return;
+      }
+
+      // ✅ 정상: 내려온 애들 반영
       setSelectedFiles((prev) => ({ ...prev, ...next }));
 
-      Swal.fire("완료", "모든 파일 업로드 완료!", "success");
-      console.log(res);
+      // ✅ 반영된 key만 dirty에서 제거
+      setDirtyFiles((prev) => {
+        const n = new Set(prev);
+        Object.keys(next).forEach((k) => n.delete(k));
+        return n;
+      });
+
+      Swal.fire("완료", "선택한 파일 업로드 완료!", "success");
     } catch (err) {
       console.error(err);
       Swal.fire("실패", "업로드 실패!", "error");
@@ -471,6 +605,10 @@ function AccountInfoSheet() {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
 
+  // ✅ 계약기간 입력용 텍스트(직접입력 지원)
+  const [contractStartText, setContractStartText] = useState("");
+  const [contractEndText, setContractEndText] = useState("");
+
   useEffect(() => {
     setFormData(basicInfo);
     setPriceData(priceRows);
@@ -484,38 +622,57 @@ function AccountInfoSheet() {
     setOriginalManager(managerRows);
     setOriginalEvent(eventRows);
 
+    // ✅ 계약기간 초기화 + 텍스트 동기화
     if (basicInfo.contract_start) {
       const [y, m, d] = basicInfo.contract_start.split("-");
-      setStartDate(new Date(y, m - 1, d));
+      const dt = new Date(y, m - 1, d);
+      setStartDate(dt);
+      setContractStartText(formatDateObj(dt));
+    } else {
+      setStartDate(null);
+      setContractStartText("");
     }
+
     if (basicInfo.contract_end) {
       const [y, m, d] = basicInfo.contract_end.split("-");
-      setEndDate(new Date(y, m - 1, d));
+      const dt = new Date(y, m - 1, d);
+      setEndDate(dt);
+      setContractEndText(formatDateObj(dt));
+    } else {
+      setEndDate(null);
+      setContractEndText("");
     }
 
-    // ✅ 상단 첨부 이미지 path 세팅
-    if (businessImgRows && businessImgRows.length > 0 && businessImgRows[0]) {
-      const img = businessImgRows[0] || {};
-      const newSelectedFiles = {};
+    const keys = [
+      "business_report",
+      "business_regist",
+      "kitchen_drawing",
+      "nutritionist_room_img",
+      "chef_lounge_img",
+    ];
 
-      [
-        "business_report",
-        "business_regist",
-        "kitchen_drawing",
-        "nutritionist_room_img",
-        "chef_lounge_img",
-      ].forEach((key) => {
-        const filePath = img[key];
+    // 서버에서 내려온 row
+    const img = (businessImgRows && businessImgRows.length > 0 && businessImgRows[0]) || null;
+
+    setSelectedFiles((prev) => {
+      const updated = { ...prev };
+
+      keys.forEach((key) => {
+        const filePath = img?.[key];
+
         if (filePath) {
-          newSelectedFiles[key] = {
-            name: filePath.split("/").pop(),
+          updated[key] = {
+            name: String(filePath).split("/").pop(),
             path: filePath,
           };
+        } else {
+          // ✅ 서버에 값이 없으면 input 비우기
+          updated[key] = null;
         }
       });
 
-      setSelectedFiles((prev) => ({ ...prev, ...newSelectedFiles }));
-    }
+      return updated;
+    });
 
     // 🔹 extra_diet1~5 name/price 초기화 (priceRows[0] 기준으로 우선)
     const extraSource = priceRows[0] || basicInfo || {};
@@ -575,30 +732,6 @@ function AccountInfoSheet() {
     return base === current ? "black" : "red";
   };
 
-  // 달력용 MDInput (forwardRef 필수)
-  const DatePickerInput = forwardRef(({ value, onClick, placeholder, field }, ref) => {
-    const basicVal = basicInfo[field] ?? "";
-    const currentVal = value ?? "";
-
-    return (
-      <MDInput
-        value={value}
-        onClick={onClick}
-        placeholder={placeholder}
-        inputRef={ref}
-        sx={{
-          flex: 1,
-          fontSize: "13px",
-          "& input": {
-            padding: "4px 4px",
-            height: "20px",
-            color: String(currentVal) === String(basicVal) ? "black" : "red",
-          },
-        }}
-      />
-    );
-  });
-
   // 🔹 식단가 추가 버튼/모달 사용 여부
   const isExtraDietEnabled =
     Number(formData.account_type) === 4 || Number(formData.account_type) === 5;
@@ -609,14 +742,6 @@ function AccountInfoSheet() {
     formData.account_type === "산업체" ||
     Number(formData.account_type) === 4 ||
     Number(formData.account_type) === 5;
-
-  DatePickerInput.propTypes = {
-    value: PropTypes.string,
-    onClick: PropTypes.func,
-    placeholder: PropTypes.string,
-    style: PropTypes.object,
-    field: PropTypes.string,
-  };
 
   // ----------------- 테이블 컬럼 -----------------
   const priceTableColumns = useMemo(() => {
@@ -1321,26 +1446,80 @@ function AccountInfoSheet() {
                 >
                   계약기간
                 </MDTypography>
+                {/* ✅ 계약 시작: 달력 + 직접입력(포커스 안날아감) */}
                 <DatePicker
                   selected={startDate}
+                  value={contractStartText}
+                  dateFormat="yyyy-MM-dd"
+                  placeholderText="YYYY-MM-DD"
+                  customInput={
+                    <DatePickerTextInput
+                      placeholder="YYYY-MM-DD"
+                      inputColor={
+                        String(contractStartText || "") ===
+                        String(originalBasic.contract_start ?? "")
+                          ? "black"
+                          : "red"
+                      }
+                    />
+                  }
                   onChange={(date) => {
                     setStartDate(date);
-                    handleChange("contract_start", date ? date.toISOString().slice(0, 10) : "");
+                    const ymd = date ? formatDateObj(date) : "";
+                    setContractStartText(ymd);
+                    handleChange("contract_start", ymd);
                   }}
-                  dateFormat="yyyy-MM-dd"
-                  customInput={<DatePickerInput field="contract_start" />}
-                  placeholderText="To"
+                  onChangeRaw={(e) => {
+                    const formatted = formatYMDInput(e.target.value);
+                    setContractStartText(formatted);
+                    handleChange("contract_start", formatted);
+
+                    if (!formatted) {
+                      setStartDate(null);
+                      return;
+                    }
+                    if (formatted.length === 10) {
+                      const parsed = tryParseYMD(formatted);
+                      if (parsed) setStartDate(parsed);
+                    }
+                  }}
                 />
-                ~
+                ~{/* ✅ 계약 종료: 달력 + 직접입력(포커스 안날아감) */}
                 <DatePicker
                   selected={endDate}
+                  value={contractEndText}
+                  dateFormat="yyyy-MM-dd"
+                  placeholderText="YYYY-MM-DD"
+                  customInput={
+                    <DatePickerTextInput
+                      placeholder="YYYY-MM-DD"
+                      inputColor={
+                        String(contractEndText || "") === String(originalBasic.contract_end ?? "")
+                          ? "black"
+                          : "red"
+                      }
+                    />
+                  }
                   onChange={(date) => {
                     setEndDate(date);
-                    handleChange("contract_end", date ? date.toISOString().slice(0, 10) : "");
+                    const ymd = date ? formatDateObj(date) : "";
+                    setContractEndText(ymd);
+                    handleChange("contract_end", ymd);
                   }}
-                  dateFormat="yyyy-MM-dd"
-                  customInput={<DatePickerInput field="contract_end" />}
-                  placeholderText="To"
+                  onChangeRaw={(e) => {
+                    const formatted = formatYMDInput(e.target.value);
+                    setContractEndText(formatted);
+                    handleChange("contract_end", formatted);
+
+                    if (!formatted) {
+                      setEndDate(null);
+                      return;
+                    }
+                    if (formatted.length === 10) {
+                      const parsed = tryParseYMD(formatted);
+                      if (parsed) setEndDate(parsed);
+                    }
+                  }}
                 />
               </Grid>
 

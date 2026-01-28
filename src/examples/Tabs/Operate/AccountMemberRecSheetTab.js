@@ -395,6 +395,30 @@ function AccountMemberRecSheet() {
             top: 0,
             zIndex: 2,
           },
+          "& td:nth-of-type(1), & th:nth-of-type(1)": {
+            position: "sticky",
+            left: 0,
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
+          "& td:nth-of-type(2), & th:nth-of-type(2)": {
+            position: "sticky",
+            left: "90px",
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
+          "& td:nth-of-type(3), & th:nth-of-type(3)": {
+            position: "sticky",
+            left: "170px",
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
+          "& td:nth-of-type(4), & th:nth-of-type(4)": {
+            position: "sticky",
+            left: "274px",
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
           "td[contenteditable]": { minWidth: "80px", cursor: "text" },
           "& select": {

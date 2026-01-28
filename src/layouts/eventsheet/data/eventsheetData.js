@@ -10,7 +10,6 @@ export default function useEventsheetData(currentYear, currentMonth) {
   const eventList = async () => {
     setLoading(true);
     try {
-
       // ✅ 월이 한 자리일 경우 앞에 0 붙이기
       const formattedMonth = currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
 
@@ -21,6 +20,7 @@ export default function useEventsheetData(currentYear, currentMonth) {
       const rows = (res.data || []).map((item) => ({
         idx: item.idx,
         menu_date: item.menu_date,
+        end_date: item.end_date,
         content: item.content || "",
         type: item.type,
         update_dt: item.update_dt,

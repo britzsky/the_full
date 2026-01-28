@@ -63,6 +63,7 @@ export default function ProfitLossTableTab() {
     "utility_bills",
     "duty_secure",
     "person_cost",
+    "event_cost",
   ];
 
   // ✅ 숨길 컬럼
@@ -80,7 +81,16 @@ export default function ProfitLossTableTab() {
     },
     {
       group: "매입",
-      cols: ["식자재", "음식물처리", "식기세척기", "세스코방제", "정수기", "기타경비", "매입소계"],
+      cols: [
+        "식자재",
+        "음식물처리",
+        "식기세척기",
+        "세스코방제",
+        "정수기",
+        "기타경비",
+        "이벤트",
+        "매입소계",
+      ],
     },
     { group: "인건", cols: ["인건비정보", "파출비", "인건소계"] },
     { group: "간접", cols: ["수도광열비", "세금정보", "간접소계"] },
@@ -107,6 +117,7 @@ export default function ProfitLossTableTab() {
     세스코방제: { value: "cesco", ratio: "cesco_ratio" },
     정수기: { value: "water_puri", ratio: "water_ratio" },
     기타경비: { value: "etc_cost", ratio: "etc_ratio" },
+    이벤트: { value: "event_cost", ratio: "event_ratio" },
     매입소계: { value: "purchase_total", ratio: "purchase_total_ratio" },
     // 인건
     인건비정보: { value: "person_cost", ratio: "person_ratio" },

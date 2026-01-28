@@ -1,0 +1,37 @@
+/* ====== 캘린더 버튼/연월(title) 작게 ====== */
+.account-event-calendar .fc .fc-toolbar-title {
+    font-size: 0.95rem;
+    /* 연월 텍스트 */
+    font-weight: 700;
+}
+
+.account-event-calendar .fc .fc-button {
+    padding: 2px 6px;
+    /* 버튼 여백 줄이기 */
+    font-size: 0.75rem;
+    /* 버튼 글자 */
+    line-height: 1.1;
+}
+
+.account-event-calendar .fc .fc-button .fc-icon {
+    font-size: 0.9em;
+    /* prev/next 화살표 아이콘 크기 */
+}
+
+/* ====== 일자 cell 높이 줄이기 ====== */
+.account-event-calendar .fc .fc-daygrid-day-frame {
+    min-height: 60px !important;
+    /* ✅ 여기 숫자만 조절하면 됨 (예: 60~90) */
+}
+
+.account-event-calendar .fc .fc-daygrid-day-number {
+    font-size: 0.75rem;
+    /* 일자 숫자 */
+    padding: 2px 4px;
+}
+
+.account-event-calendar .fc .fc-daygrid-event {
+    font-size: 0.70rem;
+    /* 일정 텍스트 */
+    line-height: 1.1;
+}

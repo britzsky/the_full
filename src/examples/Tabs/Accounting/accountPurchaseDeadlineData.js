@@ -53,7 +53,8 @@ export default function useAccountPurchaseDeadlineData() {
         sale_id: item.sale_id,
         account_id: item.account_id,
         account_name: item.account_name || "",
-        name: item.name || "",
+        use_name: item.use_name || "",
+        bizNo: item.bizNo || "",
         saleDate: item.saleDate || "",
         total: formatNumber(item.total),
         vat: formatNumber(item.vat),
@@ -66,7 +67,7 @@ export default function useAccountPurchaseDeadlineData() {
         note: item.note || "",
         type: item.type,
         bizNo: item.bizNo,
-        ceo_name: item.ceo_name
+        ceo_name: item.ceo_name,
       }));
 
       setRows(mapped);

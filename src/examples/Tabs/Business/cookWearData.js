@@ -89,6 +89,7 @@ export default function useCookWearManagerData() {
     try {
       const res = await api.get("/Business/CookWearNewList");
       const rows = (res.data || []).map((item) => ({
+        idx: item.idx,
         type: item.type,
         type_name: item.type_name,
         new_qty: formatNumber(item.new_qty),

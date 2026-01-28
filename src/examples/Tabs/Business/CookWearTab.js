@@ -254,6 +254,7 @@ function CookWearTabStyled() {
 
       const formattedNewList = cookWearNewRows.map((row) => ({
         ...row,
+        idx: row.idx,
         item: row.item,
         type: row.type,
         note: row.note,
@@ -710,6 +711,7 @@ function CookWearTabStyled() {
             setCookWearNewRows([
               ...cookWearNewRows,
               {
+                idx: "",
                 type: "",
                 type_name: "",
                 account_id: accountList[0]?.account_id ?? "",

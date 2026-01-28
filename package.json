@@ -23,7 +23,7 @@
     "@fullcalendar/react": "^6.1.19",
     "@mui/icons-material": "^5.11.16",
     "@mui/material": "^5.12.3",
-    "@mui/x-date-pickers": "^6.19.0",
+    "@mui/x-date-pickers": "^6.20.2",
     "@tanstack/react-table": "^8.21.3",
     "axios": "^1.11.0",
     "chart.js": "4.3.0",

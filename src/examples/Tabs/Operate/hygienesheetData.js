@@ -36,7 +36,8 @@ export default function useHygienesheetData() {
         clean_note: item.clean_note || "",
         note: item.note || "",
         reg_dt: item.reg_dt,
-        mod_dt: item.mod_dt
+        mod_dt: item.mod_dt,
+        del_yn: item.del_yn,
       }));
 
       setHygieneListRows(rows.map((row) => ({ ...row })));

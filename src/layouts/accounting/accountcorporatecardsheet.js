@@ -63,8 +63,8 @@ const RECEIPT_TYPES = [
   { value: "CARD_SLIP_GENERIC", label: "카드전표" },
   { value: "MART_ITEMIZED", label: "마트" },
   { value: "CONVENIENCE", label: "편의점" },
-  { value: "COUPANG_APP", label: "쿠팡" },
-  { value: "COUPANG_CARD", label: "배달앱" },
+  { value: "COUPANG_CARD", label: "쿠팡" },
+  { value: "COUPANG_APP", label: "배달앱" },
 ];
 
 // ✅ receipt_type 값 보정(조회값이 옵션과 1:1로 매핑되게)
@@ -147,7 +147,7 @@ const defaultPaymentDtForYM = (year, month) => {
 };
 
 // ✅ 숫자 컬럼(콤마 표시/저장시 제거)
-const MASTER_NUMBER_KEYS = ["total", "vat", "taxFree", "totalCard"];
+const MASTER_NUMBER_KEYS = ["total", "vat", "taxFree", "totalCard", "tax"];
 
 // ✅ 상세(하단)에서 숫자로 취급할 컬럼들
 const DETAIL_NUMBER_KEYS = ["qty", "amount", "unitPrice"];

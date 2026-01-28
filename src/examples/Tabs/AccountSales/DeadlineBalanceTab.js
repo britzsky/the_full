@@ -38,6 +38,10 @@ export default function DeadlineBalanceTab() {
   const lastSelectedAccountId = useRef(null);
   const [refetchTrigger, setRefetchTrigger] = useState(false);
 
+  // ✅ 왼쪽 테이블 스크롤 유지용 ref
+  const leftTableScrollRef = useRef(null);
+  const leftScrollTopRef = useRef(0);
+
   const {
     balanceRows,
     depositRows,
@@ -46,6 +50,16 @@ export default function DeadlineBalanceTab() {
     fetchDepositHistoryList,
     fetchAccountDeadlineDifferencePriceSearch, // ✅ 추가
   } = useDeadlineBalanceData(year, month);
+
+  // =========================================================
+  // ✅ 권한(특정 user_id만 편집/저장/입금 가능)
+  // =========================================================
+  const allowedEditors = useMemo(() => new Set(["yh2", "sy9", "britzsky", "ww1"]), []);
+  const userId = useMemo(() => {
+    const v = localStorage.getItem("user_id");
+    return (v ?? "").trim();
+  }, []);
+  const canEdit = useMemo(() => allowedEditors.has(userId), [allowedEditors, userId]);
 
   // 🔹 입금 모달 관련
   const [modalOpen, setModalOpen] = useState(false);
@@ -66,9 +80,7 @@ export default function DeadlineBalanceTab() {
   // ✅ balanceRows가 갱신된 뒤 자동으로 다시 선택
   useEffect(() => {
     if (refetchTrigger && balanceRows.length > 0) {
-      const refreshed = balanceRows.find(
-        (r) => r.account_id === lastSelectedAccountId.current
-      );
+      const refreshed = balanceRows.find((r) => r.account_id === lastSelectedAccountId.current);
       if (refreshed) {
         handleSelectCustomer(refreshed);
       }
@@ -95,13 +107,31 @@ export default function DeadlineBalanceTab() {
     );
   }, [balanceRows]);
 
-  const handleSelectCustomer = (row) => {
+  // ✅ 거래처 선택(행 클릭): 스크롤 위치 저장/복원 + 우측 입금내역 조회
+  const handleSelectCustomer = async (row) => {
+    // ✅ 현재 스크롤 위치 저장
+    if (leftTableScrollRef.current) {
+      leftScrollTopRef.current = leftTableScrollRef.current.scrollTop || 0;
+    }
+
     setSelectedCustomer(row);
     lastSelectedAccountId.current = row.account_id;
-    fetchDepositHistoryList(row.account_id, year);
+
+    // ✅ 우측 입금내역 조회
+    await fetchDepositHistoryList(row.account_id, year);
+
+    // ✅ 렌더 후 스크롤 위치 복원
+    requestAnimationFrame(() => {
+      if (leftTableScrollRef.current) {
+        leftTableScrollRef.current.scrollTop = leftScrollTopRef.current;
+      }
+    });
   };
 
   const handleChange = (accountName, key, rawValue) => {
+    // ✅ 권한 없으면 입력 차단(이중 안전장치)
+    if (!canEdit) return;
+
     setEditableRows((prevRows) =>
       prevRows.map((r) => {
         if (r.account_name !== accountName) return r;
@@ -113,17 +143,18 @@ export default function DeadlineBalanceTab() {
           const numericValue = parseNumber(rawValue);
           updated[key] = numericValue;
 
-          const livingDiff =
-            parseNumber(updated.living_cost) - parseNumber(original.living_cost);
-          const basicDiff =
-            parseNumber(updated.basic_cost) - parseNumber(original.basic_cost);
-          const employDiff =
-            parseNumber(updated.employ_cost) - parseNumber(original.employ_cost);
+          const livingDiff = parseNumber(updated.living_cost) - parseNumber(original.living_cost);
+          const basicDiff = parseNumber(updated.basic_cost) - parseNumber(original.basic_cost);
+          const employDiff = parseNumber(updated.employ_cost) - parseNumber(original.employ_cost);
           const integrityDiff =
             parseNumber(updated.integrity_cost) - parseNumber(original.integrity_cost);
 
           updated.balance_price =
-            parseNumber(original.balance_price) + livingDiff + basicDiff + employDiff + integrityDiff;
+            parseNumber(original.balance_price) +
+            livingDiff +
+            basicDiff +
+            employDiff +
+            integrityDiff;
         } else {
           updated[key] = rawValue;
         }
@@ -164,16 +195,35 @@ export default function DeadlineBalanceTab() {
     return { color: "black" };
   };
 
+  const makeDepositForm = (overrides = {}) => ({
+    customer_name: "",
+    account_id: "",
+    input_dt: dayjs().format("YYYY-MM-DD"),
+    balance_dt: dayjs().format("YYYY-MM"),
+    type: 0,
+    deposit_amount: "",
+    input_price: "",
+    difference_price: "",
+    note: "",
+    balance_price: "", // 참고용(화면/계산)
+    before_price: "", // ✅ 저장 시점에만 넣을 거라 평소엔 비워둠
+    ...overrides,
+  });
+
   // 🔹 입금 모달
   const handleDepositModalOpen = () => {
+    // ✅ 권한 없으면 차단
+    if (!canEdit) {
+      Swal.fire("권한 없음", "입금 등록 권한이 없습니다.", "warning");
+      return;
+    }
+
     if (!selectedCustomer) {
       Swal.fire("거래처를 선택하세요", "", "warning");
       return;
     }
 
-    const latestCustomer = balanceRows.find(
-      (r) => r.account_id === selectedCustomer.account_id
-    );
+    const latestCustomer = balanceRows.find((r) => r.account_id === selectedCustomer.account_id);
 
     if (!latestCustomer) {
       Swal.fire("데이터가 존재하지 않습니다.", "", "error");
@@ -215,6 +265,9 @@ export default function DeadlineBalanceTab() {
 
   // 🔹 입금 폼 변경
   const handleDepositChange = async (e) => {
+    // ✅ 권한 없으면 변경 차단
+    if (!canEdit) return;
+
     const { name, value } = e.target;
     let updated = { ...depositForm };
 
@@ -249,21 +302,16 @@ export default function DeadlineBalanceTab() {
           updated.deposit_amount = formatNumber(diff);
         } else {
           if (value === "1")
-            updated.deposit_amount =
-              formatNumber(selectedCustomer.living_cost) || "";
+            updated.deposit_amount = formatNumber(selectedCustomer.living_cost) || "";
           else if (value === "2")
-            updated.deposit_amount =
-              formatNumber(selectedCustomer.basic_cost) || "";
+            updated.deposit_amount = formatNumber(selectedCustomer.basic_cost) || "";
           else if (value === "3")
-            updated.deposit_amount =
-              formatNumber(selectedCustomer.employ_cost) || "";
-           else if (value === "5")
-            updated.deposit_amount =
-              formatNumber(selectedCustomer.integrity_cost) || "";
+            updated.deposit_amount = formatNumber(selectedCustomer.employ_cost) || "";
+          else if (value === "5")
+            updated.deposit_amount = formatNumber(selectedCustomer.integrity_cost) || "";
         }
       } else if (value === "4") {
-        updated.deposit_amount =
-          formatNumber(selectedCustomer.balance_price) || "";
+        updated.deposit_amount = formatNumber(selectedCustomer.balance_price) || "";
       } else {
         updated.deposit_amount = "";
       }
@@ -273,6 +321,12 @@ export default function DeadlineBalanceTab() {
   };
 
   const handleSaveDeposit = async () => {
+    // ✅ 권한 없으면 저장 차단
+    if (!canEdit) {
+      Swal.fire("권한 없음", "입금 저장 권한이 없습니다.", "warning");
+      return;
+    }
+
     if (depositForm.type == 1) {
       if (parseNumber(depositForm.deposit_amount) === 0) {
         Swal.fire("생계비 잔액이 0원 입니다.", "", "success");
@@ -309,15 +363,19 @@ export default function DeadlineBalanceTab() {
     try {
       const payload = {
         ...depositForm,
+        // ✅ 숫자형 정리
         deposit_amount: parseNumber(depositForm.deposit_amount),
         input_price: parseNumber(depositForm.input_price),
         difference_price: parseNumber(depositForm.difference_price),
+
+        // ✅ 저장 시점 balance_price 계산
         balance_price:
-          parseNumber(depositForm.balance_price) -
-          parseNumber(depositForm.input_price),
+          parseNumber(depositForm.balance_price) - parseNumber(depositForm.input_price),
+
         year,
         month,
       };
+
       await api.post("/Account/AccountDepositHistorySave", payload);
       Swal.fire("입금 내역이 저장되었습니다.", "", "success");
       await fetchDeadlineBalanceList();
@@ -332,16 +390,24 @@ export default function DeadlineBalanceTab() {
 
   // 🔹 변경사항 저장
   const handleSaveChanges = async () => {
+    // ✅ 권한 없으면 저장 차단
+    if (!canEdit) {
+      Swal.fire("권한 없음", "저장 권한이 없습니다.", "warning");
+      return;
+    }
+
     const modifiedRows = editableRows
       .map((r) => {
         const originalRow = balanceRows.find((o) => o.account_name === r.account_name);
         if (!originalRow) return null;
+
         const changed =
           parseNumber(originalRow.living_cost) !== parseNumber(r.living_cost) ||
           parseNumber(originalRow.basic_cost) !== parseNumber(r.basic_cost) ||
           parseNumber(originalRow.employ_cost) !== parseNumber(r.employ_cost) ||
           parseNumber(originalRow.integrity_cost) !== parseNumber(r.integrity_cost) ||
           originalRow.input_exp !== r.input_exp;
+
         if (!changed) return null;
 
         return {
@@ -437,7 +503,9 @@ export default function DeadlineBalanceTab() {
     [isMobile]
   );
 
-  if (loading) return <LoadingScreen />;
+  // ✅ 초기 로딩만 전체 로딩 화면 표시 (행 클릭 시 스크롤 튐 방지)
+  const isInitialLoading = loading && balanceRows.length === 0;
+  if (isInitialLoading) return <LoadingScreen />;
 
   return (
     <>
@@ -460,12 +528,19 @@ export default function DeadlineBalanceTab() {
             flexWrap: "wrap",
           }}
         >
+          {/* ✅ 읽기전용 사용자 안내(선택사항) */}
+          {!canEdit && (
+            <MDTypography variant="button" color="error" fontWeight="bold">
+              🚫 현재 계정({userId || "unknown"})은 조회만 가능합니다. (입력/저장/입금 불가)
+            </MDTypography>
+          )}
+
           <TextField
             select
             size="small"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            sx={{ minWidth: isMobile ? 140 : 150 }} // ← 거래처와 동일
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -474,13 +549,13 @@ export default function DeadlineBalanceTab() {
               </option>
             ))}
           </TextField>
-  
+
           <TextField
             select
             size="small"
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+            sx={{ minWidth: isMobile ? 140 : 150 }} // ← 거래처와 동일
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -498,10 +573,20 @@ export default function DeadlineBalanceTab() {
             mt: isMobile ? 1 : 0,
           }}
         >
-          <MDButton variant="gradient" color="info" onClick={handleDepositModalOpen}>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleDepositModalOpen}
+            disabled={!canEdit}
+          >
             입금
           </MDButton>
-          <MDButton variant="gradient" color="success" onClick={handleSaveChanges}>
+          <MDButton
+            variant="gradient"
+            color="success"
+            onClick={handleSaveChanges}
+            disabled={!canEdit}
+          >
             저장
           </MDButton>
         </MDBox>
@@ -529,11 +614,9 @@ export default function DeadlineBalanceTab() {
             </MDTypography>
           </MDBox>
 
-          <Box sx={tableSx}>
+          <Box sx={tableSx} ref={leftTableScrollRef}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead
-                style={{ position: "sticky", top: 0, background: "#f0f0f0", zIndex: 2 }}
-              >
+              <thead style={{ position: "sticky", top: 0, background: "#f0f0f0", zIndex: 2 }}>
                 <tr>
                   {columns.map((col) => (
                     <th key={col.accessorKey}>{col.header}</th>
@@ -541,86 +624,107 @@ export default function DeadlineBalanceTab() {
                 </tr>
               </thead>
               <tbody>
-                {editableRows.map((row, i) => (
-                  <tr key={i}>
-                    {columns.map((col) => {
-                      const key = col.accessorKey;
-                      const value = row[key];
+                {editableRows.map((row, i) => {
+                  const isSelected = selectedCustomer?.account_id === row.account_id;
 
-                      if (key === "account_name") {
+                  return (
+                    <tr key={i}>
+                      {columns.map((col) => {
+                        const key = col.accessorKey;
+                        const value = row[key];
+
+                        const baseTdStyle = {
+                          cursor: key === "account_name" ? "pointer" : "default",
+                          backgroundColor: isSelected ? "#ffe4e1" : "transparent",
+                          fontWeight: isSelected ? "bold" : "normal",
+                        };
+
+                        if (key === "account_name") {
+                          return (
+                            <td
+                              key={key}
+                              style={baseTdStyle}
+                              onClick={() => handleSelectCustomer(row)}
+                            >
+                              {value}
+                            </td>
+                          );
+                        }
+
+                        if (
+                          [
+                            "living_cost",
+                            "basic_cost",
+                            "employ_cost",
+                            "integrity_cost",
+                            "input_exp",
+                            "balance_price",
+                          ].includes(key)
+                        ) {
+                          return (
+                            <td key={key} align="right" style={baseTdStyle}>
+                              <input
+                                type="text"
+                                disabled={!canEdit} // ✅ 입력 막기
+                                value={
+                                  key === "input_exp" ? value ?? "" : formatNumber(value ?? "")
+                                }
+                                onChange={(e) =>
+                                  handleChange(row.account_name, key, e.target.value)
+                                }
+                                onBlur={(e) => {
+                                  if (!canEdit) return;
+                                  if (key !== "input_exp") {
+                                    const formatted = formatNumber(parseNumber(e.target.value));
+                                    setEditableRows((prev) =>
+                                      prev.map((r) =>
+                                        r.account_name === row.account_name
+                                          ? { ...r, [key]: parseNumber(formatted) }
+                                          : r
+                                      )
+                                    );
+                                  }
+                                }}
+                                style={{
+                                  width: key === "input_exp" ? "100px" : "80px",
+                                  border: "none",
+                                  textAlign: key === "input_exp" ? "left" : "right",
+                                  background: "transparent",
+                                  ...(canEdit
+                                    ? getCellStyle(row.account_name, key)
+                                    : { color: "black" }),
+                                  // ✅ 읽기전용 느낌(선택사항)
+                                  opacity: canEdit ? 1 : 0.75,
+                                  cursor: canEdit ? "text" : "not-allowed",
+                                }}
+                              />
+                            </td>
+                          );
+                        }
+
+                        // 일반 표시 셀(예: before_price2)
                         return (
                           <td
                             key={key}
+                            align="right"
                             style={{
-                              cursor: "pointer",
-                              backgroundColor:
-                                selectedCustomer?.account_name === row.account_name
-                                  ? "#ffe4e1"
-                                  : "transparent",
-                              fontWeight:
-                                selectedCustomer?.account_name === row.account_name
-                                  ? "bold"
-                                  : "normal",
+                              ...baseTdStyle,
+                              // ✅ 선택 행이면 무조건 분홍색이 우선
+                              backgroundColor: isSelected
+                                ? "#ffe4e1"
+                                : key === "before_price2"
+                                ? "#FDE7B3"
+                                : "transparent",
+                              fontWeight: "bold",
                             }}
-                            onClick={() => handleSelectCustomer(row)}
                           >
-                            {value}
+                            {formatNumber(value)}
                           </td>
                         );
-                      }
-
-                      if (
-                        ["living_cost", "basic_cost", "employ_cost", "integrity_cost", "input_exp", "balance_price"].includes(
-                          key
-                        )
-                      ) {
-                        return (
-                          <td key={key} align="right">
-                            <input
-                              type="text"
-                              value={key === "input_exp" ? value ?? "" : formatNumber(value ?? "")}
-                              onChange={(e) =>
-                                handleChange(row.account_name, key, e.target.value)
-                              }
-                              onBlur={(e) => {
-                                if (key !== "input_exp") {
-                                  const formatted = formatNumber(parseNumber(e.target.value));
-                                  setEditableRows((prev) =>
-                                    prev.map((r) =>
-                                      r.account_name === row.account_name
-                                        ? { ...r, [key]: parseNumber(formatted) }
-                                        : r
-                                    )
-                                  );
-                                }
-                              }}
-                              style={{
-                                width: key === "input_exp" ? "100px" : "80px",
-                                border: "none",
-                                textAlign: key === "input_exp" ? "left" : "right",
-                                background: "transparent",
-                                ...getCellStyle(row.account_name, key),
-                              }}
-                            />
-                          </td>
-                        );
-                      }
-
-                      return (
-                        <td
-                          key={key}
-                          align="right"
-                          style={{
-                            fontWeight: "bold",
-                            backgroundColor: key === "before_price2" ? "#FDE7B3" : "",
-                          }}
-                        >
-                          {formatNumber(value)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </Box>
@@ -648,9 +752,7 @@ export default function DeadlineBalanceTab() {
 
           <Box sx={tableSx}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead
-                style={{ position: "sticky", top: 0, background: "#f0f0f0", zIndex: 2 }}
-              >
+              <thead style={{ position: "sticky", top: 0, background: "#f0f0f0", zIndex: 2 }}>
                 <tr>
                   {columns2.map((col) => (
                     <th key={col.accessorKey}>{col.header}</th>
@@ -664,9 +766,7 @@ export default function DeadlineBalanceTab() {
                       {columns2.map((col) => {
                         const key = col.accessorKey;
                         const value = row[key];
-                        if (
-                          ["deposit_amount", "input_price", "difference_price"].includes(key)
-                        ) {
+                        if (["deposit_amount", "input_price", "difference_price"].includes(key)) {
                           return (
                             <td key={key} align="right">
                               {formatNumber(value)}
@@ -710,6 +810,7 @@ export default function DeadlineBalanceTab() {
             margin="dense"
             disabled
           />
+
           <Box display="flex" gap={1} mb={2} flexDirection={isMobile ? "column" : "row"}>
             <TextField
               margin="normal"
@@ -720,6 +821,7 @@ export default function DeadlineBalanceTab() {
               onChange={handleDepositChange}
               fullWidth
               InputLabelProps={{ shrink: true }}
+              disabled={!canEdit}
             />
             <TextField
               select
@@ -729,6 +831,7 @@ export default function DeadlineBalanceTab() {
               value={depositForm.type}
               SelectProps={{ native: true }}
               onChange={handleDepositChange}
+              disabled={!canEdit}
             >
               <option value="">선택</option>
               <option value="1">생계비</option>
@@ -738,6 +841,7 @@ export default function DeadlineBalanceTab() {
               <option value="4">미수잔액</option>
             </TextField>
           </Box>
+
           <TextField
             label="입금금액"
             name="deposit_amount"
@@ -753,6 +857,7 @@ export default function DeadlineBalanceTab() {
             onChange={handleDepositChange}
             fullWidth
             margin="dense"
+            disabled={!canEdit}
           />
           <TextField
             label="차액"
@@ -769,12 +874,19 @@ export default function DeadlineBalanceTab() {
             onChange={handleDepositChange}
             fullWidth
             margin="dense"
+            disabled={!canEdit}
           />
+
           <Box display="flex" justifyContent="flex-end" gap={1} mt={2}>
             <Button variant="contained" onClick={handleDepositModalClose}>
               취소
             </Button>
-            <Button variant="contained" color="primary" onClick={handleSaveDeposit}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleSaveDeposit}
+              disabled={!canEdit}
+            >
               저장
             </Button>
           </Box>

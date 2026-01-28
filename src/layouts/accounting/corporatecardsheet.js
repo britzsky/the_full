@@ -142,7 +142,7 @@ const defaultPaymentDtForYM = (year, month) => {
 };
 
 // ✅ 숫자 컬럼(콤마 표시/저장시 제거)
-const MASTER_NUMBER_KEYS = ["total", "vat", "taxFree", "totalCard"];
+const MASTER_NUMBER_KEYS = ["total", "vat", "taxFree", "totalCard", "tax"];
 
 // ✅ 상세(하단)에서 숫자로 취급할 컬럼들
 const DETAIL_NUMBER_KEYS = ["qty", "amount", "unitPrice"];

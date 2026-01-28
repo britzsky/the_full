@@ -7,15 +7,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
 import api from "api/api";
-import {
-  Modal,
-  Box,
-  Button,
-  TextField,
-  Typography,
-  Select,
-  MenuItem,
-} from "@mui/material";
+import { Modal, Box, Button, TextField, Typography, Select, MenuItem } from "@mui/material";
 
 import useOperateSchedulesheetData from "./data/OperateScheduleSheetData";
 import "./fullcalendar-custom.css";
@@ -25,13 +17,15 @@ import LoadingScreen from "../loading/loadingscreen";
 function OperateScheduleSheet() {
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
-  const { eventListRows, eventList, loading } =
-    useOperateSchedulesheetData(currentYear, currentMonth);
+  const { eventListRows, eventList, loading } = useOperateSchedulesheetData(
+    currentYear,
+    currentMonth
+  );
 
   const [displayDate, setDisplayDate] = useState(dayjs());
   const [events, setEvents] = useState([]);
   const [open, setOpen] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(null);      // 시작일
+  const [selectedDate, setSelectedDate] = useState(null); // 시작일
   const [selectedEndDate, setSelectedEndDate] = useState(null); // 종료일
   const [inputValue, setInputValue] = useState("");
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -71,7 +65,7 @@ function OperateScheduleSheet() {
       case "11": // 오후반차
         return "#1A0841";
       default:
-      return "#F2921D";
+        return "#F2921D";
     }
   };
 
@@ -162,8 +156,8 @@ function OperateScheduleSheet() {
       return;
     }
 
-    setSelectedDate(arg.dateStr);       // 시작일
-    setSelectedEndDate(arg.dateStr);    // 종료일 = 시작일 (1일짜리)
+    setSelectedDate(arg.dateStr); // 시작일
+    setSelectedEndDate(arg.dateStr); // 종료일 = 시작일 (1일짜리)
 
     setSelectedEvent(null);
     setInputValue("");
@@ -255,13 +249,9 @@ function OperateScheduleSheet() {
     };
 
     try {
-      const response = await api.post(
-        "/Operate/OperateScheduleSave",
-        newEvent,
-        {
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+      const response = await api.post("/Operate/OperateScheduleSave", newEvent, {
+        headers: { "Content-Type": "application/json" },
+      });
 
       if (response.data.code === 200) {
         Swal.fire("저장 완료", "일정이 저장되었습니다.", "success");
@@ -306,11 +296,9 @@ function OperateScheduleSheet() {
       };
 
       try {
-        const response = await api.post(
-          "/Operate/OperateScheduleSave",
-          cancelEvent,
-          { headers: { "Content-Type": "application/json" } }
-        );
+        const response = await api.post("/Operate/OperateScheduleSave", cancelEvent, {
+          headers: { "Content-Type": "application/json" },
+        });
 
         if (response.data.code === 200) {
           Swal.fire("취소 완료", "일정이 취소되었습니다.", "success");
@@ -356,11 +344,9 @@ function OperateScheduleSheet() {
       };
 
       try {
-        const response = await api.post(
-          "/Operate/OperateScheduleSave",
-          restoreEvent,
-          { headers: { "Content-Type": "application/json" } }
-        );
+        const response = await api.post("/Operate/OperateScheduleSave", restoreEvent, {
+          headers: { "Content-Type": "application/json" },
+        });
 
         if (response.data.code === 200) {
           Swal.fire("복원 완료", "일정이 복원되었습니다.", "success");
@@ -399,9 +385,7 @@ function OperateScheduleSheet() {
     <DashboardLayout>
       {/* <HeaderWithLogout showMenuButton title="📅 운영 일정관리 (내부 관리용)" /> */}
       <DashboardNavbar title="📅 운영 일정관리 (내부 관리용)" />
-      {loading && (
-        <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>
-      )}
+      {loading && <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>}
 
       {/* ✅ 커스텀 헤더 */}
       <Box
@@ -456,11 +440,11 @@ function OperateScheduleSheet() {
         headerToolbar={false}
         initialDate={displayDate.toDate()}
         events={events}
-        dateClick={handleDateClick}   // 하루 클릭
+        dateClick={handleDateClick} // 하루 클릭
         eventClick={handleEventClick}
-        selectable={true}             // 🔥 기간 선택 가능
+        selectable={true} // 🔥 기간 선택 가능
         selectMirror={true}
-        select={handleSelectRange}    // 🔥 드래그로 선택 시 호출
+        select={handleSelectRange} // 🔥 드래그로 선택 시 호출
         eventColor="#F2921D"
         eventTextColor="#fff"
         height="80vh"
@@ -483,20 +467,21 @@ function OperateScheduleSheet() {
               {/* 일정 내용 (한 줄, 길면 ... 처리) */}
               <div
                 style={{
-                  fontSize: "11px",
-                  //lineHeight: "1.3",
+                  fontSize: "10px",
                   textAlign: "center",
                   width: "100%",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  // ✅ 말줄임 제거
+                  overflow: "visible",
+                  textOverflow: "clip",
+                  // ✅ 줄바꿈 허용
+                  whiteSpace: "normal",
+                  wordBreak: "break-word", // 단어가 길어도 줄바꿈
+                  overflowWrap: "anywhere", // 긴 문자열(공백없어도) 줄바꿈
                   textDecoration: isCanceled ? "line-through" : "none",
+                  lineHeight: 1.2,
                 }}
               >
-                {/* [타입] 내용 (이름) */}
-                {typeLabel && (
-                  <span style={{ marginRight: 2 }}>[{typeLabel}] </span>
-                )}
+                {typeLabel && <span style={{ marginRight: 2 }}>[{typeLabel}] </span>}
                 {arg.event.title}
                 {userName && <span style={{ marginLeft: 2 }}>({userName})</span>}
               </div>
@@ -572,7 +557,6 @@ function OperateScheduleSheet() {
               ))}
             </Select>
 
-
             {/* 담당자 선택 */}
             <Select
               size="small"
@@ -591,7 +575,7 @@ function OperateScheduleSheet() {
               </MenuItem>
               {operateMemberList.map((member) => (
                 <MenuItem key={member.user_id} value={member.user_id}>
-                  {member.user_name}{" "}[{getPositionLabel(member.position)}]
+                  {member.user_name} [{getPositionLabel(member.position)}]
                 </MenuItem>
               ))}
             </Select>
@@ -634,11 +618,7 @@ function OperateScheduleSheet() {
             )}
 
             {selectedEvent && isSelectedCanceled && (
-              <Button
-                variant="contained"
-                color="success"
-                onClick={handleRestoreEvent}
-              >
+              <Button variant="contained" color="success" onClick={handleRestoreEvent}>
                 복원
               </Button>
             )}
@@ -655,11 +635,7 @@ function OperateScheduleSheet() {
               닫기
             </Button>
 
-            <Button
-              variant="contained"
-              sx={{ color: "#ffffff" }}
-              onClick={handleSave}
-            >
+            <Button variant="contained" sx={{ color: "#ffffff" }} onClick={handleSave}>
               저장
             </Button>
           </Box>

@@ -47,7 +47,7 @@ function SignUp() {
     zipcode: "",
     department: "", // 부서 코드
     position: "",   // 직책 코드
-    join_date: "",  // 🔹 입사일자 (YYYY-MM-DD)
+    join_dt: "",  // 🔹 입사일자 (YYYY-MM-DD)
     account_id: "", // 🔹 영양사일 때 선택할 거래처
     birth_date: "",  // 🔹 생년월일 추가
   });
@@ -66,6 +66,45 @@ function SignUp() {
     },
     "& .MuiInputLabel-root": {
       fontSize: "0.7rem",
+    },
+  };
+
+  // 🔹 부서/직책 라벨 위치 보정
+  const selectLabelSx = {
+    fontSize: "0.7rem",
+    lineHeight: 1.4,
+    overflow: "visible",
+    transform: "translate(14px, 13px) scale(1)",
+    "&.MuiInputLabel-shrink": {
+      transform: "translate(14px, -7px) scale(0.75)",
+      backgroundColor: "#fff",
+      paddingLeft: "4px",
+      paddingRight: "4px",
+    },
+  };
+
+  // 🔹 MDInput 라벨 잘림/겹침 방지 스타일
+  const inputSx = {
+    "& .MuiInputLabel-root": {
+      fontSize: "0.7rem",
+      lineHeight: 1.3,
+    },
+    "& .MuiOutlinedInput-input": {
+      paddingTop: "12px",
+      paddingBottom: "12px",
+      fontSize: "0.85rem",
+    },
+  };
+
+  // 🔹 달력 팝업이 뒤 요소와 겹치지 않도록 z-index / 배경 보강
+  const datePickerSx = {
+    "& .react-datepicker-popper": {
+      zIndex: 2000,
+    },
+    "& .react-datepicker": {
+      backgroundColor: "#fff",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+      border: "1px solid #e0e0e0",
     },
   };
 
@@ -143,13 +182,13 @@ function SignUp() {
   // 🔹 입사일자 변경 (Date → YYYY-MM-DD)
   const handleJoinDateChange = (date) => {
     if (!date) {
-      handleInputChange("join_date", "");
+      handleInputChange("join_dt", "");
       return;
     }
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
     const day = String(date.getDate()).padStart(2, "0");
-    handleInputChange("join_date", `${year}-${month}-${day}`);
+    handleInputChange("join_dt", `${year}-${month}-${day}`);
   };
 
   // 🔹 생년월일 변경 (Date → YYYY-MM-DD)
@@ -192,7 +231,7 @@ function SignUp() {
       "phone",
       "address",
       "address_detail",
-      "join_date", // 🔹 입사일자는 항상 필수
+      "join_dt", // 🔹 입사일자는 항상 필수
     ];
 
     // 본사 → 부서/직책 필수
@@ -232,7 +271,7 @@ function SignUp() {
       user_name: form.user_name,
       password: form.password,
       user_type: form.user_type,
-      join_date: form.join_date,
+      join_dt: form.join_dt,
       department: form.department !== "" ? Number(form.department) : null,
       position: form.position !== "" ? Number(form.position) : null,
     };
@@ -288,6 +327,7 @@ function SignUp() {
                 value={form.user_name}
                 onChange={(e) => handleInputChange("user_name", e.target.value)}
                 fullWidth
+                sx={inputSx}
                 error={!!errors.user_name}
                 helperText={errors.user_name}
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -301,6 +341,7 @@ function SignUp() {
                 value={form.user_id}
                 onChange={(e) => handleInputChange("user_id", e.target.value)}
                 fullWidth
+                sx={inputSx}
                 error={!!errors.user_id}
                 helperText={errors.user_id}
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -314,6 +355,7 @@ function SignUp() {
                 value={form.password}
                 onChange={(e) => handleInputChange("password", e.target.value)}
                 fullWidth
+                sx={inputSx}
                 error={!!errors.password}
                 helperText={errors.password}
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -326,10 +368,11 @@ function SignUp() {
               sx={{
                 "& .react-datepicker-wrapper": { width: "100%" },
                 "& .react-datepicker__input-container": { width: "100%" },
+                ...datePickerSx,
               }}
             >
               <DatePicker
-                selected={form.join_date ? new Date(form.join_date) : null}
+                selected={form.join_dt ? new Date(form.join_dt) : null}
                 onChange={handleJoinDateChange}
                 dateFormat="yyyy-MM-dd"
                 locale="ko"  // 🔹 한글 달력 적용
@@ -338,8 +381,9 @@ function SignUp() {
                     type="text"
                     label="입사일자"
                     fullWidth
-                    error={!!errors.join_date}
-                    helperText={errors.join_date}
+                    sx={inputSx}
+                    error={!!errors.join_dt}
+                    helperText={errors.join_dt}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
                   />
                 }
@@ -352,6 +396,7 @@ function SignUp() {
               sx={{
                 "& .react-datepicker-wrapper": { width: "100%" },
                 "& .react-datepicker__input-container": { width: "100%" },
+                ...datePickerSx,
               }}
             >
               <DatePicker
@@ -371,6 +416,7 @@ function SignUp() {
                     type="text"
                     label="생년월일"
                     fullWidth
+                    sx={inputSx}
                     error={!!errors.birth_date}
                     helperText={errors.birth_date}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -411,7 +457,7 @@ function SignUp() {
                   error={!!errors.department}
                   sx={{ flex: 1, ...selectSx }}
                 >
-                  <InputLabel>부서</InputLabel>
+                  <InputLabel sx={selectLabelSx}>부서</InputLabel>
                   <Select
                     label="부서"
                     value={form.department}
@@ -437,7 +483,7 @@ function SignUp() {
                   error={!!errors.position}
                   sx={{ flex: 1, ...selectSx }}
                 >
-                  <InputLabel>직책</InputLabel>
+                  <InputLabel sx={selectLabelSx}>직책</InputLabel>
                   <Select
                     label="직책"
                     value={form.position}
@@ -465,7 +511,7 @@ function SignUp() {
                   error={!!errors.account_id}
                   sx={selectSx}
                 >
-                  <InputLabel>근무지(거래처)</InputLabel>
+                  <InputLabel sx={selectLabelSx}>근무지(거래처)</InputLabel>
                   <Select
                     label="근무지(거래처)"
                     value={form.account_id}
@@ -497,6 +543,7 @@ function SignUp() {
                 value={form.phone}
                 onChange={(e) => handlePhoneChange(e.target.value)}
                 fullWidth
+                sx={inputSx}
                 error={!!errors.phone}
                 helperText={errors.phone}
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -510,6 +557,7 @@ function SignUp() {
                 value={form.address}
                 onChange={(e) => handleInputChange("address", e.target.value)}
                 fullWidth
+                sx={inputSx}
                 readOnly
                 error={!!errors.address}
                 helperText={errors.address}
@@ -532,6 +580,7 @@ function SignUp() {
                 value={form.address_detail}
                 onChange={(e) => handleInputChange("address_detail", e.target.value)}
                 fullWidth
+                sx={inputSx}
                 error={!!errors.address_detail}
                 helperText={errors.address_detail}
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -545,6 +594,7 @@ function SignUp() {
                 value={form.zipcode}
                 onChange={(e) => handleInputChange("zipcode", e.target.value)}
                 fullWidth
+                sx={inputSx}
                 readOnly
                 InputLabelProps={{ style: { fontSize: "0.7rem" } }}
               />

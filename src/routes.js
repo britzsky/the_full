@@ -106,7 +106,7 @@ const routes = [
         allowedPositions: [0, 1], // 🔹 직책권한
 
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["mh3", "mh3"],
+        allowUserIds: ["mh3", "mh3", "ww1"],
 
         // (옵션) ✅ 특정 아이디는 무조건 차단
         //denyUserIds: ["baduser"],
@@ -190,7 +190,7 @@ const routes = [
         component: <AccountSales />,
         allowedDepartments: [0, 4, 6], // 🔹 부서권한
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["dh2", "dh2"],
+        allowUserIds: ["dh2", "dh2", "ww1"],
         accessMode: "OR",
       },
     ],

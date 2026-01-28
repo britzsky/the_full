@@ -192,6 +192,12 @@ const ProtectedRoute = ({
   onlyUserIds,
 }) => {
   const { deptCode, posCode, userId } = getUserCodes();
+  const isLoggedIn = !!userId;
+
+  // ✅ 로그인 자체가 안 되어 있으면 먼저 로그인 화면으로 이동
+  if (!isLoggedIn) {
+    return <Navigate to="/authentication/sign-in" replace />;
+  }
 
   // route 형식으로 임시 객체 만들어서 재사용
   const routeLike = {
@@ -298,7 +304,7 @@ export default function App() {
   // Change the openConfigurator state
   const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
 
-  const isAuthed = !!localStorage.getItem("token"); // 프로젝트 기준에 맞게 (user_id 등)
+  const isAuthed = !!localStorage.getItem("user_id"); // 로그인 여부는 user_id 기준
 
   // Setting the dir attribute for the body element
   useEffect(() => {
@@ -316,21 +322,29 @@ export default function App() {
       if (route.collapse) return getRoutes(route.collapse);
 
       if (route.route) {
+        const isAuthRoute =
+          route.route === "/authentication/sign-in" ||
+          route.route === "/authentication/sign-up";
+
         return (
           <Route
             path={route.route}
             key={route.key}
             element={
-              <ProtectedRoute
-                allowedDepartments={route.allowedDepartments}
-                allowedPositions={route.allowedPositions}
-                accessMode={route.accessMode}
-                allowUserIds={route.allowUserIds}
-                denyUserIds={route.denyUserIds}
-                onlyUserIds={route.onlyUserIds}
-              >
-                {route.component}
-              </ProtectedRoute>
+              isAuthRoute ? (
+                route.component
+              ) : (
+                <ProtectedRoute
+                  allowedDepartments={route.allowedDepartments}
+                  allowedPositions={route.allowedPositions}
+                  accessMode={route.accessMode}
+                  allowUserIds={route.allowUserIds}
+                  denyUserIds={route.denyUserIds}
+                  onlyUserIds={route.onlyUserIds}
+                >
+                  {route.component}
+                </ProtectedRoute>
+              )
             }
           />
         );
@@ -411,7 +425,7 @@ export default function App() {
     <CacheProvider value={rtlCache}>
       <ThemeProvider theme={darkMode ? themeDarkRTL : themeRTL}>
         <CssBaseline />
-        {layout === "dashboard" && deptCode !== 7 && (
+        {layout === "dashboard" && isAuthed && deptCode !== 7 && (
           <>
             <Sidenav
               color={sidenavColor}
@@ -432,7 +446,7 @@ export default function App() {
   ) : (
     <ThemeProvider theme={darkMode ? themeDark : theme}>
       <CssBaseline />
-      {layout === "dashboard" && deptCode !== 7 && (
+      {layout === "dashboard" && isAuthed && deptCode !== 7 && (
         <>
           <Sidenav
             color={sidenavColor}

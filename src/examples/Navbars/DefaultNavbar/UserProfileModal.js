@@ -69,6 +69,33 @@ function UserProfileModal({ open, onClose }) {
     "& .MuiInputLabel-root": { fontSize: "0.7rem" },
   };
 
+  // 회원가입과 동일한 라벨 잘림 방지 스타일
+  const inputSx = {
+    "& .MuiInputLabel-root": {
+      fontSize: "0.7rem",
+      lineHeight: 1.3,
+    },
+    "& .MuiOutlinedInput-input": {
+      paddingTop: "12px",
+      paddingBottom: "12px",
+      fontSize: "0.85rem",
+    },
+  };
+
+  // 부서/직책/근무지 라벨 위치 보정
+  const selectLabelSx = {
+    fontSize: "0.7rem",
+    lineHeight: 1.4,
+    overflow: "visible",
+    transform: "translate(14px, 13px) scale(1)",
+    "&.MuiInputLabel-shrink": {
+      transform: "translate(14px, -7px) scale(0.75)",
+      backgroundColor: "#fff",
+      paddingLeft: "4px",
+      paddingRight: "4px",
+    },
+  };
+
   const USER_TYPE_OPTIONS = useMemo(
     () => [
       { label: "ceo", labelKo: "ceo", code: "1" },
@@ -220,17 +247,17 @@ function UserProfileModal({ open, onClose }) {
     fetchUser();
   }, [open, onClose, fetchAccountList]);
 
-    const datePickerSx = {
+  const datePickerSx = {
     "& .react-datepicker-popper": {
-        zIndex: 99999,
+      zIndex: 99999,
     },
     "& .react-datepicker": {
-        zIndex: 99999,
+      zIndex: 99999,
     },
     "& .react-datepicker__portal": {
-        zIndex: 99999,
+      zIndex: 99999,
     },
-    };
+  };
 
   // ✅ 저장: SignUp의 handleSubmit과 동일한 방식(info/detail payload)
   const handleSave = async () => {
@@ -359,6 +386,7 @@ function UserProfileModal({ open, onClose }) {
                     value={form.user_name}
                     onChange={(e) => handleInputChange("user_name", e.target.value)}
                     fullWidth
+                    sx={inputSx}
                     error={!!errors.user_name}
                     helperText={errors.user_name}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -371,6 +399,7 @@ function UserProfileModal({ open, onClose }) {
                     label="아이디"
                     value={form.user_id}
                     fullWidth
+                    sx={inputSx}
                     disabled
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
                   />
@@ -383,6 +412,7 @@ function UserProfileModal({ open, onClose }) {
                     value={form.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
                     fullWidth
+                    sx={inputSx}
                     error={!!errors.password}
                     helperText={errors.password}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -408,6 +438,7 @@ function UserProfileModal({ open, onClose }) {
                         type="text"
                         label="입사일자"
                         fullWidth
+                        sx={inputSx}
                         error={!!errors.join_dt}
                         helperText={errors.join_dt}
                         InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -436,7 +467,13 @@ function UserProfileModal({ open, onClose }) {
                     maxDate={new Date()}
                     minDate={new Date(1950, 0, 1)}
                     customInput={
-                      <MDInput type="text" label="생년월일" fullWidth InputLabelProps={{ style: { fontSize: "0.7rem" } }} />
+                      <MDInput
+                        type="text"
+                        label="생년월일"
+                        fullWidth
+                        sx={inputSx}
+                        InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                      />
                     }
                   />
                 </MDBox>
@@ -464,15 +501,15 @@ function UserProfileModal({ open, onClose }) {
                 {form.user_type === "2" && (
                   <MDBox mb={2} display="flex" gap={1}>
                     <FormControl fullWidth error={!!errors.department} sx={{ flex: 1, ...selectSx }}>
-                      <InputLabel>부서</InputLabel>
+                      <InputLabel sx={selectLabelSx}>부서</InputLabel>
                       <Select label="부서" value={form.department} onChange={(e) => handleInputChange("department", e.target.value)}>
-                        <MenuItem value="0">대표</MenuItem>
+                        {/* <MenuItem value="0">대표</MenuItem> */}
                         <MenuItem value="2">회계팀</MenuItem>
                         <MenuItem value="3">인사팀</MenuItem>
                         <MenuItem value="4">영업팀</MenuItem>
                         <MenuItem value="5">운영팀</MenuItem>
                         <MenuItem value="6">개발팀</MenuItem>
-                        <MenuItem value="7">현장</MenuItem>
+                        {/* <MenuItem value="7">현장</MenuItem> */}
                       </Select>
                       {errors.department && (
                         <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
@@ -482,16 +519,18 @@ function UserProfileModal({ open, onClose }) {
                     </FormControl>
 
                     <FormControl fullWidth error={!!errors.position} sx={{ flex: 1, ...selectSx }}>
-                      <InputLabel>직책</InputLabel>
+                      <InputLabel sx={selectLabelSx}>직책</InputLabel>
                       <Select label="직책" value={form.position} onChange={(e) => handleInputChange("position", e.target.value)}>
-                        <MenuItem value="0">대표</MenuItem>
+                        {/* <MenuItem value="0">대표</MenuItem> */}
                         <MenuItem value="1">팀장</MenuItem>
-                        <MenuItem value="2">부장</MenuItem>
+                        <MenuItem value="2">파트장</MenuItem>
+                        <MenuItem value="3">매니저</MenuItem>
+                        {/* <MenuItem value="2">부장</MenuItem>
                         <MenuItem value="3">차장</MenuItem>
                         <MenuItem value="4">과장</MenuItem>
                         <MenuItem value="5">대리</MenuItem>
                         <MenuItem value="6">주임</MenuItem>
-                        <MenuItem value="7">사원</MenuItem>
+                        <MenuItem value="7">사원</MenuItem> */}
                       </Select>
                       {errors.position && (
                         <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
@@ -506,7 +545,7 @@ function UserProfileModal({ open, onClose }) {
                 {form.user_type === "3" && (
                   <MDBox mb={2}>
                     <FormControl fullWidth error={!!errors.account_id} sx={selectSx}>
-                      <InputLabel>근무지(거래처)</InputLabel>
+                      <InputLabel sx={selectLabelSx}>근무지(거래처)</InputLabel>
                       <Select
                         label="근무지(거래처)"
                         value={form.account_id}
@@ -534,6 +573,7 @@ function UserProfileModal({ open, onClose }) {
                     value={form.phone}
                     onChange={(e) => handlePhoneChange(e.target.value)}
                     fullWidth
+                    sx={inputSx}
                     error={!!errors.phone}
                     helperText={errors.phone}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -546,6 +586,7 @@ function UserProfileModal({ open, onClose }) {
                     label="주소"
                     value={form.address}
                     fullWidth
+                    sx={inputSx}
                     readOnly
                     error={!!errors.address}
                     helperText={errors.address}
@@ -563,6 +604,7 @@ function UserProfileModal({ open, onClose }) {
                     value={form.address_detail}
                     onChange={(e) => handleInputChange("address_detail", e.target.value)}
                     fullWidth
+                    sx={inputSx}
                     error={!!errors.address_detail}
                     helperText={errors.address_detail}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
@@ -575,6 +617,7 @@ function UserProfileModal({ open, onClose }) {
                     label="우편번호"
                     value={form.zipcode}
                     fullWidth
+                    sx={inputSx}
                     readOnly
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
                   />
@@ -606,7 +649,7 @@ function UserProfileModal({ open, onClose }) {
 
 UserProfileModal.defaultProps = {
   open: false,
-  onClose: () => {},
+  onClose: () => { },
 };
 
 UserProfileModal.propTypes = {

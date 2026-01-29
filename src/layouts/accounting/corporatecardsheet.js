@@ -466,6 +466,7 @@ function CorporateCardSheet() {
       total: 0,
       vat: 0,
       taxFree: 0,
+      tax: 0,
       totalCard: 0,
       cardNo: auto?.card_no || "",
       cardBrand: auto?.card_brand || DEFAULT_CARD_BRAND,
@@ -589,6 +590,7 @@ function CorporateCardSheet() {
           ...(main.bizNo != null ? { bizNo: main.bizNo } : {}),
           ...(main.total != null ? { total: parseNumber(main.total) } : {}),
           ...(main.vat != null ? { vat: parseNumber(main.vat) } : {}),
+          ...(main.tax != null ? { tax: parseNumber(main.tax) } : {}),
           ...(main.taxFree != null ? { taxFree: parseNumber(main.taxFree) } : {}),
           ...(main.totalCard != null ? { totalCard: parseNumber(main.totalCard) } : {}),
           ...(main.cardNo != null ? { cardNo: main.cardNo } : {}),
@@ -736,10 +738,10 @@ function CorporateCardSheet() {
 
         return changed
           ? {
-              ...cleanDetailRow(r),
-              account_id: topAccountId,
-              payment_dt: topPaymentDt,
-            }
+            ...cleanDetailRow(r),
+            account_id: topAccountId,
+            payment_dt: topPaymentDt,
+          }
           : null;
       })
       .filter(Boolean);
@@ -962,9 +964,9 @@ function CorporateCardSheet() {
       { header: "결제일자", key: "payment_dt", editable: true, editType: "date", size: 130 },
       { header: "사용처", key: "use_name", editable: true, size: 140 },
       { header: "사업자번호", key: "bizNo", editable: true, size: 120 },
+      { header: "과세", key: "tax", editable: true, size: 90 },
       { header: "부가세", key: "vat", editable: true, size: 90 },
       { header: "면세", key: "taxFree", editable: true, size: 90 },
-      { header: "과세", key: "tax", editable: true, size: 90 },
       { header: "합계금액", key: "total", editable: true, size: 110 },
       { header: "카드번호", key: "cardNo", editable: false, size: 200 },
       { header: "카드사", key: "cardBrand", editable: false, size: 130 },
@@ -1184,8 +1186,8 @@ function CorporateCardSheet() {
                   style={{
                     background:
                       selectedMaster?.sale_id &&
-                      selectedMaster?.sale_id === row.sale_id &&
-                      row.sale_id
+                        selectedMaster?.sale_id === row.sale_id &&
+                        row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1214,8 +1216,8 @@ function CorporateCardSheet() {
                     const changed = row.isNew
                       ? true
                       : MASTER_NUMBER_KEYS.includes(key)
-                      ? parseNumber(origRaw) !== parseNumber(rawVal)
-                      : isChangedValue(origRaw, rawVal);
+                        ? parseNumber(origRaw) !== parseNumber(rawVal)
+                        : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
                       const acctName =
@@ -1511,8 +1513,8 @@ function CorporateCardSheet() {
                       const changed = row?.isNew
                         ? true
                         : isForcedRedRow(row)
-                        ? true
-                        : isDetailFieldChanged(key, orig, rawVal);
+                          ? true
+                          : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");

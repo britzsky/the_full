@@ -289,9 +289,9 @@ function AccountPurchaseDeadlineTab() {
       { header: "구매일자", accessorKey: "saleDate", size: 110 },
       { header: "구매처", accessorKey: "use_name", size: 180 },
       { header: "사업자번호", accessorKey: "bizNo", size: 100 },
+      { header: "과세", accessorKey: "tax", size: 80 },
       { header: "부가세", accessorKey: "vat", size: 80 },
       { header: "면세", accessorKey: "taxFree", size: 80 },
-      { header: "과세", accessorKey: "tax", size: 80 },
       { header: "구분", accessorKey: "payType", size: 80 },
       { header: "현금합계", accessorKey: "totalCash", size: 80 },
       { header: "카드합계", accessorKey: "totalCard", size: 80 },
@@ -937,9 +937,8 @@ function AccountPurchaseDeadlineTab() {
     ];
 
     const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const filename = `세금계산서_출력용_${getAccountName() || "전체"}_${filters.fromDate}_${
-      filters.toDate
-    }_${ymd}.xlsx`;
+    const filename = `세금계산서_출력용_${getAccountName() || "전체"}_${filters.fromDate}_${filters.toDate
+      }_${ymd}.xlsx`;
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {

@@ -1,6 +1,16 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
-import { Modal, Box, Select, MenuItem, Typography, Button, TextField, useTheme, useMediaQuery } from "@mui/material";
+import {
+  Modal,
+  Box,
+  Select,
+  MenuItem,
+  Typography,
+  Button,
+  TextField,
+  useTheme,
+  useMediaQuery,
+} from "@mui/material";
 import dayjs from "dayjs";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
@@ -29,7 +39,13 @@ function YourSelectableTable({ data, selected, setSelected }) {
     maxHeight: "550px",
     overflow: "auto",
     "& table": { borderCollapse: "collapse", width: "100%", minWidth: "100%", borderSpacing: 0 },
-    "& th, & td": { border: "1px solid #686D76", textAlign: "center", padding: "4px", whiteSpace: "nowrap", fontSize: "12px" },
+    "& th, & td": {
+      border: "1px solid #686D76",
+      textAlign: "center",
+      padding: "4px",
+      whiteSpace: "nowrap",
+      fontSize: "12px",
+    },
     "& th": { backgroundColor: "#f0f0f0", position: "sticky", top: 0, zIndex: 2 },
   };
 
@@ -48,11 +64,7 @@ function YourSelectableTable({ data, selected, setSelected }) {
             <tr
               key={idx}
               style={{
-                background: isSelected(row)
-                  ? "#d3f0ff"
-                  : row.del_yn === "Y"
-                  ? "#E0E0E0"
-                  : "white",
+                background: isSelected(row) ? "#d3f0ff" : row.del_yn === "Y" ? "#E0E0E0" : "white",
               }}
             >
               <td>
@@ -86,7 +98,7 @@ function TallySheetTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
-  const [images, setImages] = useState(Array(31).fill(null)); // 1~31일 이미지  
+  const [images, setImages] = useState(Array(31).fill(null)); // 1~31일 이미지
   const [receiptType, setReceiptType] = useState("");
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -117,13 +129,13 @@ function TallySheetTab() {
   useEffect(() => {
     // 데이터 조회가 끝났을 때만 originalRows 설정
     if (dataRows?.length > 0 && originalRows.length === 0) {
-      setOriginalRows(dataRows.map(r => ({ ...r })));
+      setOriginalRows(dataRows.map((r) => ({ ...r })));
     }
   }, [dataRows]);
 
   useEffect(() => {
     if (data2Rows?.length > 0 && original2Rows.length === 0) {
-      setOriginal2Rows(data2Rows.map(r => ({ ...r })));
+      setOriginal2Rows(data2Rows.map((r) => ({ ...r })));
     }
   }, [data2Rows]);
 
@@ -152,19 +164,17 @@ function TallySheetTab() {
 
     // 각 행의 합계 계산
     const calculatedRows = rows.map((r) => {
-      const total = Array.from({ length: 31 }, (_, i) =>
-        parseNumber(r[`day_${i + 1}`])
-      ).reduce((sum, val) => sum + val, 0);
+      const total = Array.from({ length: 31 }, (_, i) => parseNumber(r[`day_${i + 1}`])).reduce(
+        (sum, val) => sum + val,
+        0
+      );
       return { ...r, total };
     });
 
     // 세로 합계 계산 (총합 행)
     const totals = {};
     for (let i = 1; i <= 31; i++)
-      totals[`day_${i}`] = calculatedRows.reduce(
-        (sum, r) => sum + parseNumber(r[`day_${i}`]),
-        0
-      );
+      totals[`day_${i}`] = calculatedRows.reduce((sum, r) => sum + parseNumber(r[`day_${i}`]), 0);
     const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
 
     return [...calculatedRows, { name: "총합", ...totals, total: grandTotal }];
@@ -275,7 +285,6 @@ function TallySheetTab() {
       const payload = { nowList: changedNow, beforeList: changedBefore };
       const res = await api.post("/Operate/TallySheetSave", payload);
       if (res.data.code === 200) {
-
         Swal.fire({
           title: "저장",
           text: "저장되었습니다.",
@@ -286,8 +295,8 @@ function TallySheetTab() {
           if (result.isConfirmed) {
             await fetchDataRows(selectedAccountId, year, month);
             await fetchData2Rows(selectedAccountId, year, month);
-            setOriginalRows(dataRows.map(r => ({ ...r })));
-            setOriginal2Rows(data2Rows.map(r => ({ ...r })));
+            setOriginalRows(dataRows.map((r) => ({ ...r })));
+            setOriginal2Rows(data2Rows.map((r) => ({ ...r })));
           }
         });
       }
@@ -310,7 +319,6 @@ function TallySheetTab() {
   const [rightItems, setRightItems] = useState([]);
   const [selectedLeft, setSelectedLeft] = useState([]);
   const [selectedRight, setSelectedRight] = useState([]);
-
 
   // 모달 오픈 시 데이터 조회 (handleModalOpen 로직은 변경 없음)
   const handleModalOpen = async () => {
@@ -336,8 +344,8 @@ function TallySheetTab() {
 
   // 항목 이동 (moveRight 로직은 변경 없음)
   const moveRight = () => {
-    const duplicates = selectedLeft.filter(item =>
-      rightItems.some(r => r.type === item.type && r.del_yn === "N")
+    const duplicates = selectedLeft.filter((item) =>
+      rightItems.some((r) => r.type === item.type && r.del_yn === "N")
     );
 
     if (duplicates.length > 0) {
@@ -347,7 +355,7 @@ function TallySheetTab() {
 
     const updatedRightItems = [
       ...rightItems,
-      ...selectedLeft.map(item => ({ ...item, account_id: selectedAccountId, del_yn: "N" }))
+      ...selectedLeft.map((item) => ({ ...item, account_id: selectedAccountId, del_yn: "N" })),
     ];
 
     setRightItems(updatedRightItems);
@@ -357,10 +365,8 @@ function TallySheetTab() {
   // 항목 이동 (moveLeft 로직은 변경 없음)
   const moveLeft = () => {
     // 선택된 항목에 del_yn = "Y" 플래그를 붙여 저장 시 삭제 처리하도록 표시
-    const updatedRightItems = rightItems.map(item =>
-      selectedRight.includes(item)
-        ? { ...item, del_yn: "Y" } 
-        : item
+    const updatedRightItems = rightItems.map((item) =>
+      selectedRight.includes(item) ? { ...item, del_yn: "Y" } : item
     );
 
     setRightItems(updatedRightItems);
@@ -376,7 +382,7 @@ function TallySheetTab() {
     try {
       const payload = rightItems; // rightItems 배열 전체를 서버에 전달
       const response = await api.post("/Operate/AccountMappingSave", payload);
-      
+
       if (response.data.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
         setOpen(false);
@@ -426,18 +432,11 @@ function TallySheetTab() {
       [name]: files ? files[0] : value, // 파일은 files[0], 나머지는 value
     }));
   };
-  
+
   // 모달 내 저장 (handleSubmit 로직은 변경 없음)
   // ======================= 거래처 저장 =======================
   const handleSubmit2 = async () => {
-    const requiredFields = [
-      "name",
-      "biz_no",
-      "ceo_name",
-      "tel",
-      "bank_image",
-      "biz_image",
-    ];
+    const requiredFields = ["name", "biz_no", "ceo_name", "tel", "bank_image", "biz_image"];
 
     const missing = requiredFields.filter((key) => !formData[key]);
     if (missing.length > 0) {
@@ -456,7 +455,7 @@ function TallySheetTab() {
       const uploadPromises = imageFields.map(async (field) => {
         const file = formData[field];
         if (!file || typeof file === "string") return file; // 이미 경로일 경우
-        
+
         try {
           const formDataToSend = new FormData();
           formDataToSend.append("file", file);
@@ -476,18 +475,18 @@ function TallySheetTab() {
               confirmButtonColor: "#d33",
               confirmButtonText: "확인",
             });
-    
+
             return res.data.image_path;
           }
         } catch (err) {
-            Swal.fire({
-              title: "실패",
-              text: err,
-              icon: "error",
-              confirmButtonColor: "#d33",
-              confirmButtonText: "확인",
-            });
-    
+          Swal.fire({
+            title: "실패",
+            text: err,
+            icon: "error",
+            confirmButtonColor: "#d33",
+            confirmButtonText: "확인",
+          });
+
           throw err;
         }
       });
@@ -587,10 +586,26 @@ function TallySheetTab() {
       pt={0}
       sx={{
         overflowX: "auto",
-        "& table": { borderCollapse: "separate", width: "max-content", minWidth: "50%", borderSpacing: 0 },
-        "& th, & td": { border: "1px solid #686D76", textAlign: "center", whiteSpace: "nowrap", fontSize: "12px", padding: "4px" },
+        "& table": {
+          borderCollapse: "separate",
+          width: "max-content",
+          minWidth: "50%",
+          borderSpacing: 0,
+        },
+        "& th, & td": {
+          border: "1px solid #686D76",
+          textAlign: "center",
+          whiteSpace: "nowrap",
+          fontSize: "12px",
+          padding: "4px",
+        },
         "& th": { backgroundColor: "#f0f0f0", position: "sticky", top: 0, zIndex: 2 },
-        "& td:first-of-type, & th:first-of-type": { position: "sticky", left: 0, background: "#f0f0f0", zIndex: 3 },
+        "& td:first-of-type, & th:first-of-type": {
+          position: "sticky",
+          left: 0,
+          background: "#f0f0f0",
+          zIndex: 3,
+        },
         "& .total-row": { backgroundColor: "#FFE3A9", fontWeight: "bold" },
       }}
     >
@@ -618,7 +633,7 @@ function TallySheetTab() {
                 const colKey = cell.column.columnDef.accessorKey;
                 const isEditable =
                   colKey !== "name" &&
-                  colKey !== "total" &&       // ✅ total 컬럼은 편집 금지
+                  colKey !== "total" && // ✅ total 컬럼은 편집 금지
                   row.original.name !== "총합";
 
                 const currVal = parseNumber(dataState[rIdx]?.[colKey]);
@@ -630,15 +645,11 @@ function TallySheetTab() {
                     key={cell.id}
                     contentEditable={isEditable}
                     suppressContentEditableWarning
-                    style={{ color: isChanged ? "#d32f2f" : "black", width:"80px" }}
+                    style={{ color: isChanged ? "#d32f2f" : "black", width: "80px" }}
                     //className={isEditable && isChanged ? "edited-cell" : ""}
-                    onBlur={(e) =>
-                      handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond)
-                    }
+                    onBlur={(e) => handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond)}
                   >
-                    {colKey === "name"
-                      ? row.original[colKey]
-                      : formatNumber(row.original[colKey])}
+                    {colKey === "name" ? row.original[colKey] : formatNumber(row.original[colKey])}
                   </td>
                 );
               })}
@@ -647,7 +658,6 @@ function TallySheetTab() {
           {/* 🔹 총합 밑 이미지첨부 row */}
           <tr>
             <td style={{ fontWeight: "bold", background: "#f0f0f0" }}>이미지첨부</td>
-
             {Array.from({ length: 31 }, (_, i) => (
               <td
                 key={`img_${i}`}
@@ -685,7 +695,6 @@ function TallySheetTab() {
                 />
               </td>
             ))}
-
             <td></td> {/* 합계 컬럼 비워둠 */}
           </tr>
         </tbody>
@@ -698,14 +707,14 @@ function TallySheetTab() {
       <MDBox
         sx={{
           position: "sticky",
-          top: 0,             // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
+          top: 0, // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
           zIndex: 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}
       >
-      {/* 🔹 공통 헤더 사용 */}
-      <HeaderWithLogout showMenuButton title="🧮 집계표" />
+        {/* 🔹 공통 헤더 사용 */}
+        <HeaderWithLogout showMenuButton title="🧮 집계표" />
         <MDBox
           pt={1}
           pb={1}
@@ -805,8 +814,19 @@ function TallySheetTab() {
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card>
-              <MDBox mx={0} mt={-3} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
-                <MDTypography variant="h6" color="white">집계표 {countMonth ? `(${countMonth})` : ""}</MDTypography>
+              <MDBox
+                mx={0}
+                mt={-3}
+                py={1}
+                px={2}
+                variant="gradient"
+                bgColor="info"
+                borderRadius="lg"
+                coloredShadow="info"
+              >
+                <MDTypography variant="h6" color="white">
+                  집계표 {countMonth ? `(${countMonth})` : ""}
+                </MDTypography>
               </MDBox>
               {renderTable(table, originalRows, handleCellChange, dataRows)}
             </Card>
@@ -819,8 +839,19 @@ function TallySheetTab() {
         <Grid container spacing={6}>
           <Grid item xs={12}>
             <Card>
-              <MDBox mx={0} mt={-3} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
-                <MDTypography variant="h6" color="white">집계표 {count2Month ? `(${count2Month})` : ""}</MDTypography>
+              <MDBox
+                mx={0}
+                mt={-3}
+                py={1}
+                px={2}
+                variant="gradient"
+                bgColor="info"
+                borderRadius="lg"
+                coloredShadow="info"
+              >
+                <MDTypography variant="h6" color="white">
+                  집계표 {count2Month ? `(${count2Month})` : ""}
+                </MDTypography>
               </MDBox>
               {renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
             </Card>
@@ -829,50 +860,140 @@ function TallySheetTab() {
       </MDBox>
       {/* 등록 모달 */}
       <Modal open={open} onClose={() => setOpen(false)}>
-        <MDBox sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 800, bgcolor: "background.paper", borderRadius: 2, p: 3 }}>
-          <MDBox mx={0} mt={-2} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
-            <MDTypography variant="h6" color="white">거래처 등록</MDTypography>
+        <MDBox
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 800,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            p: 3,
+          }}
+        >
+          <MDBox
+            mx={0}
+            mt={-2}
+            py={1}
+            px={2}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="info"
+          >
+            <MDTypography variant="h6" color="white">
+              거래처 등록
+            </MDTypography>
           </MDBox>
           <Grid container spacing={2}>
             <Grid item xs={5}>
-              <YourSelectableTable data={leftItems} selected={selectedLeft} setSelected={setSelectedLeft} />
+              <YourSelectableTable
+                data={leftItems}
+                selected={selectedLeft}
+                setSelected={setSelectedLeft}
+              />
             </Grid>
-            <Grid item xs={2} display="flex" flexDirection="column" justifyContent="center" alignItems="center">
-              <MDButton variant="gradient" color="info" onClick={moveRight}>{">"}</MDButton>
-              <MDButton variant="gradient" color="primary"onClick={moveLeft}>{"<"}</MDButton>
+            <Grid
+              item
+              xs={2}
+              display="flex"
+              flexDirection="column"
+              justifyContent="center"
+              alignItems="center"
+            >
+              <MDButton variant="gradient" color="info" onClick={moveRight}>
+                {">"}
+              </MDButton>
+              <MDButton variant="gradient" color="primary" onClick={moveLeft}>
+                {"<"}
+              </MDButton>
             </Grid>
             <Grid item xs={5}>
-              <YourSelectableTable data={rightItems} selected={selectedRight} setSelected={setSelectedRight} />
+              <YourSelectableTable
+                data={rightItems}
+                selected={selectedRight}
+                setSelected={setSelectedRight}
+              />
             </Grid>
           </Grid>
           <MDBox mt={2} display="flex" justifyContent="flex-end" gap={1}>
-            <MDButton variant="gradient" color="primary" onClick={() => setOpen(false)}>취소</MDButton>
-            <MDButton variant="gradient" color="info" onClick={handleSubmit}>저장</MDButton>
+            <MDButton variant="gradient" color="primary" onClick={() => setOpen(false)}>
+              취소
+            </MDButton>
+            <MDButton variant="gradient" color="info" onClick={handleSubmit}>
+              저장
+            </MDButton>
           </MDBox>
         </MDBox>
       </Modal>
 
       {/* 등록 모달 */}
       <Modal open={open} onClose={() => setOpen(false)}>
-        <MDBox sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: 800, bgcolor: "background.paper", borderRadius: 2, p: 3 }}>
-          <MDBox mx={0} mt={-2} py={1} px={2} variant="gradient" bgColor="info" borderRadius="lg" coloredShadow="info">
-            <MDTypography variant="h6" color="white">거래처 등록</MDTypography>
+        <MDBox
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 800,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            p: 3,
+          }}
+        >
+          <MDBox
+            mx={0}
+            mt={-2}
+            py={1}
+            px={2}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="info"
+          >
+            <MDTypography variant="h6" color="white">
+              거래처 등록
+            </MDTypography>
           </MDBox>
           <Grid container spacing={2}>
             <Grid item xs={5}>
-              <YourSelectableTable data={leftItems} selected={selectedLeft} setSelected={setSelectedLeft} />
+              <YourSelectableTable
+                data={leftItems}
+                selected={selectedLeft}
+                setSelected={setSelectedLeft}
+              />
             </Grid>
-            <Grid item xs={2} display="flex" flexDirection="column" justifyContent="center" alignItems="center">
-              <MDButton variant="gradient" color="info" onClick={moveRight}>{">"}</MDButton>
-              <MDButton variant="gradient" color="primary"onClick={moveLeft}>{"<"}</MDButton>
+            <Grid
+              item
+              xs={2}
+              display="flex"
+              flexDirection="column"
+              justifyContent="center"
+              alignItems="center"
+            >
+              <MDButton variant="gradient" color="info" onClick={moveRight}>
+                {">"}
+              </MDButton>
+              <MDButton variant="gradient" color="primary" onClick={moveLeft}>
+                {"<"}
+              </MDButton>
             </Grid>
             <Grid item xs={5}>
-              <YourSelectableTable data={rightItems} selected={selectedRight} setSelected={setSelectedRight} />
+              <YourSelectableTable
+                data={rightItems}
+                selected={selectedRight}
+                setSelected={setSelectedRight}
+              />
             </Grid>
           </Grid>
           <MDBox mt={2} display="flex" justifyContent="flex-end" gap={1}>
-            <MDButton variant="gradient" color="primary" onClick={() => setOpen(false)}>취소</MDButton>
-            <MDButton variant="gradient" color="info" onClick={handleSubmit}>저장</MDButton>
+            <MDButton variant="gradient" color="primary" onClick={() => setOpen(false)}>
+              취소
+            </MDButton>
+            <MDButton variant="gradient" color="info" onClick={handleSubmit}>
+              저장
+            </MDButton>
           </MDBox>
         </MDBox>
       </Modal>
@@ -970,9 +1091,7 @@ function TallySheetTab() {
 
           {/* 통장사본 첨부 */}
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>
-              통장사본 (필수)
-            </Typography>
+            <Typography sx={{ fontSize: "0.8rem", minWidth: "120px" }}>통장사본 (필수)</Typography>
             <Box sx={{ flex: 1, display: "flex", flexDirection: "column", gap: 0.5 }}>
               <Button
                 variant="outlined"
@@ -1087,11 +1206,7 @@ function TallySheetTab() {
             >
               취소
             </Button>
-            <Button
-              variant="contained"
-              onClick={handleSubmit2}
-              sx={{ color: "#ffffff" }}
-            >
+            <Button variant="contained" onClick={handleSubmit2} sx={{ color: "#ffffff" }}>
               저장
             </Button>
           </Box>

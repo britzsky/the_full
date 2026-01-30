@@ -47,6 +47,7 @@ import PeopleCountingManager from "layouts/headoffice/headofficetab";
 import WeekMenuManager from "layouts/weekmenusheet";
 import EventManager from "layouts/eventsheet";
 import CarManager from "examples/Tabs/Business/CorCarTab";
+import ElectronicPaymentManager from "layouts/headoffice/headofficetab_2";
 // 영업
 import BusinessSchedule from "layouts/business/BusinessScheduleSheet";
 import TeleManager from "layouts/business/telemanager";
@@ -149,6 +150,17 @@ const routes = [
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
         accessMode: "AND",
       },
+      // {
+      //   type: "collapse",
+      //   name: "📝 전자결재 관리",
+      //   key: "weekmenu",
+      //   //icon: <Icon fontSize="small">*</Icon>,
+      //   route: "/electronicpaymentmanager",
+      //   component: <ElectronicPaymentManager />,
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
+      //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+      //   accessMode: "AND",
+      // },
     ],
   },
   {

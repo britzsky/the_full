@@ -463,8 +463,8 @@ function TallySheetTab() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => { },
-    fetchBudget2Grant = async () => { },
+    fetchBudgetGrant = async () => {},
+    fetchBudget2Grant = async () => {},
   } = hook || {};
 
   const prevYm = useMemo(() => {
@@ -1610,6 +1610,10 @@ function TallySheetTab() {
     selectOtherRowForInlineEdit(first, rowKey);
   }, [otherListOpen, otherRows, otherSelectedRow]);
 
+  // ✅ 직접 입력은 type=1만 허용
+  // ✅ 직접 입력 허용 타입 (1~4)
+  const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
+
   // ======================== ✅ "type != 1 직접입력 불가" + "1002/1003 모달 제외" 라우팅 ========================
   const shouldBlockModalByType = useCallback((typeValue) => {
     const t = String(typeValue ?? "");
@@ -1704,10 +1708,6 @@ function TallySheetTab() {
 
   const budgetForTab = tabValue === 1 ? budget2Grant : budgetGrant;
   const usedForTab = tabValue === 1 ? usedTotalPrev : usedTotalNow;
-
-  // ✅ 직접 입력은 type=1만 허용
-  // ✅ 직접 입력 허용 타입 (1~4)
-  const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
 
   // ✅ 직접 입력은 type=1~4 허용
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
@@ -2230,10 +2230,10 @@ function TallySheetTab() {
                       cursor: !isBaseCell
                         ? "default"
                         : canInlineEdit
-                          ? "text"
-                          : shouldBlockModalByType(rowType)
-                            ? "not-allowed"
-                            : "pointer",
+                        ? "text"
+                        : shouldBlockModalByType(rowType)
+                        ? "not-allowed"
+                        : "pointer",
                       background: activeCellBg || activeRowBg || baseBg || "",
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
@@ -2619,8 +2619,8 @@ function TallySheetTab() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                    ? "기타(직접입력)"
-                    : ""
+                  ? "기타(직접입력)"
+                  : ""
               }
               onChange={handleBankSelect}
               displayEmpty
@@ -2638,18 +2638,18 @@ function TallySheetTab() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-                <TextField
-                  fullWidth
-                  required
-                  margin="normal"
-                  label="은행명 직접입력"
-                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                  name="bank_name"
-                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                  onChange={handleChange2}
-                  sx={{ mt: 1 }}
-                />
-              )}
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                label="은행명 직접입력"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="bank_name"
+                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                onChange={handleChange2}
+                sx={{ mt: 1 }}
+              />
+            )}
           </Box>
 
           <TextField
@@ -2952,11 +2952,11 @@ function TallySheetTab() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    card_idx: v,
-                                    card_brand: picked?.card_brand || x.card_brand || "",
-                                    card_no: picked?.card_no || x.card_no || "",
-                                  }
+                                      ...x,
+                                      card_idx: v,
+                                      card_brand: picked?.card_brand || x.card_brand || "",
+                                      card_no: picked?.card_no || x.card_no || "",
+                                    }
                                   : x
                               )
                             );
@@ -3093,7 +3093,7 @@ function TallySheetTab() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                      String(orig.receipt_type || "UNKNOWN") ||
+                        String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -3332,14 +3332,14 @@ function TallySheetTab() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    payType: v,
-                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                    cash_receipt_type:
-                                      v === "1"
-                                        ? String(x.cash_receipt_type ?? "3")
-                                        : String(x.cash_receipt_type ?? "3"),
-                                  }
+                                      ...x,
+                                      payType: v,
+                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                      cash_receipt_type:
+                                        v === "1"
+                                          ? String(x.cash_receipt_type ?? "3")
+                                          : String(x.cash_receipt_type ?? "3"),
+                                    }
                                   : x
                               )
                             );
@@ -3490,9 +3490,9 @@ function TallySheetTab() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                      String(orig.cash_receipt_type ?? "3") ||
+                        String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -3806,7 +3806,7 @@ function TallySheetTab() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 

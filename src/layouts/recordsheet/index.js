@@ -127,6 +127,16 @@ const AttendanceCell = React.memo(function AttendanceCell({
       [field]: newVal,
     };
 
+    // ✅ type을 0으로 내리면 나머지 값도 초기화
+    if (field === "type" && (newVal === "0" || newVal === "")) {
+      updatedValue.start = "";
+      updatedValue.end = "";
+      updatedValue.start_time = "";
+      updatedValue.end_time = "";
+      updatedValue.salary = "";
+      updatedValue.memo = "";
+    }
+
     // 🔹 초과근무 자동 계산
     if (
       updatedValue.type === "3" &&
@@ -475,6 +485,7 @@ function RecordSheet() {
             rrn: row.rrn,
             account_number: row.account_number,
             total: row.total,
+            phone: row.phone,
           },
           { headers: { "Content-Type": "multipart/form-data" } }
         )
@@ -785,7 +796,7 @@ function RecordSheet() {
     );
   };
 
-  // ✅ 저장: gubun/position_type row fallback을 반드시 적용
+  // ✅ 저장: "0(-)로 변경"도 삭제/초기화로 저장되게 수정본 (전체 교체)
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
 
@@ -809,20 +820,70 @@ function RecordSheet() {
           const dayNum = parseInt(key.replace("day_", ""), 10);
           if (Number.isNaN(dayNum) || dayNum === 0) return;
 
+          const originalVal = useDiffMode && originalRow ? originalRow[key] : null;
+
+          // ✅ 1) 변경감지: 원본과 같으면 스킵
           if (useDiffMode) {
-            const originalVal = originalRow ? originalRow[key] : null;
             if (isCellEqual(val, originalVal)) return;
           }
 
-          if (!val || !val.type || val.type === "0") return;
+          // 현재/원본 type 정리
+          const curType = safeTrim(val?.type, "");
+          const orgType = safeTrim(originalVal?.type, "");
 
-          const gubun = safeTrim(val.gubun, rowGubun); // ✅ 핵심
-          const pt = safeTrim(val.position_type, rowPt); // ✅ 핵심
+          // ✅ 2) "0(-)" 또는 ""(빈값)으로 바꾼 경우도 저장해야 함
+          //    단, 원래도 "0/빈값" 이면 굳이 저장할 필요 없음
+          const cleared =
+            (curType === "0" || curType === "") && !(orgType === "" || orgType === "0");
+
+          // 공통 gubun/position_type 보정
+          const gubun = safeTrim(val?.gubun, rowGubun);
+          const pt = safeTrim(val?.position_type, rowPt);
+
+          // ✅ 2-1) 삭제/초기화 레코드 생성 (type=0 으로 전송)
+          if (cleared) {
+            const recordObj = {
+              gubun,
+              account_id: val?.account_id || row.account_id || "",
+              member_id: val?.member_id || row.member_id || "",
+
+              // ✅ 둘 다 전송
+              position_type: pt,
+              positionType: pt,
+
+              record_date: dayNum,
+              record_year: year,
+              record_month: month,
+
+              // ✅ 핵심: 삭제/초기화 의미
+              type: 0,
+              start_time: "",
+              end_time: "",
+              salary: 0,
+              note: "",
+              position: row.position || "",
+              org_start_time,
+              org_end_time,
+            };
+
+            const g = safeTrim(recordObj.gubun, "nor").toLowerCase();
+            if (g === "dis") disRecords.push(recordObj);
+            else if (g === "rec") recRecords.push(recordObj);
+            else normalRecords.push(recordObj);
+
+            console.log("SAVE(clear) record:", recordObj);
+            return;
+          }
+
+          // ✅ 3) 여기부터는 "실제 값 있는 경우"만 저장
+          //    (원래 로직에서 0은 무시했는데, 이제는 cleared 아닌 0/빈값만 무시)
+          if (!val || !curType || curType === "0") return;
 
           const recordObj = {
             gubun,
             account_id: val.account_id || row.account_id || "",
             member_id: val.member_id || row.member_id || "",
+
             // ✅ 둘 다 전송
             position_type: pt,
             positionType: pt,
@@ -830,10 +891,11 @@ function RecordSheet() {
             record_date: dayNum,
             record_year: year,
             record_month: month,
-            type: Number(val.type),
+            type: Number(curType),
+
             start_time: val.start || "",
             end_time: val.end || "",
-            salary: val.salary ? Number(val.salary.toString().replace(/,/g, "")) : 0,
+            salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
             note: val.memo || "",
             position: row.position || "",
             org_start_time,
@@ -841,7 +903,6 @@ function RecordSheet() {
           };
 
           const g = safeTrim(recordObj.gubun, "nor").toLowerCase();
-
           if (g === "dis") disRecords.push(recordObj);
           else if (g === "rec") recRecords.push(recordObj);
           else normalRecords.push(recordObj);

@@ -466,8 +466,8 @@ function TallySheet() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => {},
-    fetchBudget2Grant = async () => {},
+    fetchBudgetGrant = async () => { },
+    fetchBudget2Grant = async () => { },
   } = hook || {};
 
   const prevYm = useMemo(() => {
@@ -2221,10 +2221,10 @@ function TallySheet() {
                       cursor: !isBaseCell
                         ? "default"
                         : canInlineEdit
-                        ? "text"
-                        : shouldBlockModalByType(rowType)
-                        ? "not-allowed"
-                        : "pointer",
+                          ? "text"
+                          : shouldBlockModalByType(rowType)
+                            ? "not-allowed"
+                            : "pointer",
                       background: activeCellBg || activeRowBg || baseBg || "",
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
@@ -2626,8 +2626,8 @@ function TallySheet() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                  ? "기타(직접입력)"
-                  : ""
+                    ? "기타(직접입력)"
+                    : ""
               }
               onChange={handleBankSelect}
               displayEmpty
@@ -2645,18 +2645,18 @@ function TallySheet() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-              <TextField
-                fullWidth
-                required
-                margin="normal"
-                label="은행명 직접입력"
-                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                name="bank_name"
-                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                onChange={handleChange2}
-                sx={{ mt: 1 }}
-              />
-            )}
+                <TextField
+                  fullWidth
+                  required
+                  margin="normal"
+                  label="은행명 직접입력"
+                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                  name="bank_name"
+                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                  onChange={handleChange2}
+                  sx={{ mt: 1 }}
+                />
+              )}
           </Box>
 
           <TextField
@@ -2959,11 +2959,11 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                      ...x,
-                                      card_idx: v,
-                                      card_brand: picked?.card_brand || x.card_brand || "",
-                                      card_no: picked?.card_no || x.card_no || "",
-                                    }
+                                    ...x,
+                                    card_idx: v,
+                                    card_brand: picked?.card_brand || x.card_brand || "",
+                                    card_no: picked?.card_no || x.card_no || "",
+                                  }
                                   : x
                               )
                             );
@@ -3016,7 +3016,7 @@ function TallySheet() {
                           <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
                         </Select>
                       </td>
@@ -3100,7 +3100,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                        String(orig.receipt_type || "UNKNOWN") ||
+                      String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -3339,14 +3339,14 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                      ...x,
-                                      payType: v,
-                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                      cash_receipt_type:
-                                        v === "1"
-                                          ? String(x.cash_receipt_type ?? "3")
-                                          : String(x.cash_receipt_type ?? "3"),
-                                    }
+                                    ...x,
+                                    payType: v,
+                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                    cash_receipt_type:
+                                      v === "1"
+                                        ? String(x.cash_receipt_type ?? "3")
+                                        : String(x.cash_receipt_type ?? "3"),
+                                  }
                                   : x
                               )
                             );
@@ -3416,12 +3416,11 @@ function TallySheet() {
                           <MenuItem value="UNKNOWN">
                             <em>알수없음</em>
                           </MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                          <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
                         </Select>
                       </td>
 
@@ -3498,9 +3497,9 @@ function TallySheet() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                        String(orig.cash_receipt_type ?? "3") ||
+                      String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                        String(orig.receipt_type ?? "UNKNOWN");
+                      String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -3734,12 +3733,11 @@ function TallySheet() {
                           <MenuItem value="UNKNOWN">
                             <em>알수없음</em>
                           </MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                          <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
                         </Select>
                       </td>
 
@@ -3815,7 +3813,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                        String(orig.receipt_type ?? "UNKNOWN");
+                      String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 
@@ -4012,7 +4010,7 @@ function TallySheet() {
                 <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
               </Select>
             </Grid>
@@ -4194,12 +4192,11 @@ function TallySheet() {
                 <MenuItem value="UNKNOWN">
                   <em>알수없음</em>
                 </MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
               </Select>
             </Grid>
 
@@ -4344,12 +4341,11 @@ function TallySheet() {
                 <MenuItem value="UNKNOWN">
                   <em>알수없음</em>
                 </MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                <MenuItem value="CONVENIENCE">편의점</MenuItem>
+                {/*<MenuItem value="CONVENIENCE">편의점</MenuItem>
                 <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                <MenuItem value="COUPANG_APP">배달앱</MenuItem>*/}
               </Select>
             </Grid>
 

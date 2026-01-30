@@ -998,9 +998,9 @@ function AccountCorporateCardSheet() {
       { header: "결제일자", key: "payment_dt", editable: true, editType: "date", size: 130 },
       { header: "사용처", key: "use_name", editable: true, size: 140 },
       { header: "사업자번호", key: "bizNo", editable: true, size: 120 },
+      { header: "과세", key: "tax", editable: true, size: 90 },
       { header: "부가세", key: "vat", editable: true, size: 90 },
       { header: "면세", key: "taxFree", editable: true, size: 90 },
-      { header: "과세", key: "tax", editable: true, size: 90 },
       { header: "합계금액", key: "total", editable: true, size: 110 },
       { header: "카드번호", key: "cardNo", editable: false, size: 200 }, // ✅ 표시 컬럼은 cardNo지만, select value는 card_idx로 매핑
       { header: "카드사", key: "cardBrand", editable: false, size: 130 },
@@ -1218,8 +1218,8 @@ function AccountCorporateCardSheet() {
                   style={{
                     background:
                       selectedMaster?.sale_id &&
-                      selectedMaster?.sale_id === row.sale_id &&
-                      row.sale_id
+                        selectedMaster?.sale_id === row.sale_id &&
+                        row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1248,8 +1248,8 @@ function AccountCorporateCardSheet() {
                     const changed = row.isNew
                       ? true
                       : MASTER_NUMBER_KEYS.includes(key)
-                      ? parseNumber(origRaw) !== parseNumber(rawVal)
-                      : isChangedValue(origRaw, rawVal);
+                        ? parseNumber(origRaw) !== parseNumber(rawVal)
+                        : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
                       const acctName =
@@ -1311,8 +1311,8 @@ function AccountCorporateCardSheet() {
                                 {!acctKey
                                   ? "거래처 선택"
                                   : options.length === 0
-                                  ? "등록된 카드 없음"
-                                  : "카드 선택"}
+                                    ? "등록된 카드 없음"
+                                    : "카드 선택"}
                               </em>
                             </MenuItem>
 
@@ -1549,8 +1549,8 @@ function AccountCorporateCardSheet() {
                       const changed = row?.isNew
                         ? true
                         : isForcedRedRow(row)
-                        ? true
-                        : isDetailFieldChanged(key, orig, rawVal);
+                          ? true
+                          : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");

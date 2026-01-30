@@ -61,12 +61,12 @@ function RTL() {
               <ComplexStatisticsCard
                 color="dark"
                 icon="weekend"
-                title="أموال اليوم"
+                title="오늘 매출"
                 count={281}
                 percentage={{
                   color: "success",
                   amount: "+55%",
-                  label: "من الأسبوع الماضي",
+                  label: "지난주 대비",
                 }}
               />
             </MDBox>
@@ -75,12 +75,12 @@ function RTL() {
             <MDBox mb={1.5}>
               <ComplexStatisticsCard
                 icon="leaderboard"
-                title="مستخدمو اليوم"
+                title="오늘 사용자"
                 count="2,300"
                 percentage={{
                   color: "success",
                   amount: "+3%",
-                  label: "من الأسبوع الماضي",
+                  label: "지난주 대비",
                 }}
               />
             </MDBox>
@@ -90,12 +90,12 @@ function RTL() {
               <ComplexStatisticsCard
                 color="success"
                 icon="store"
-                title="عملاء جدد"
+                title="신규 고객"
                 count="34k"
                 percentage={{
                   color: "success",
                   amount: "+1%",
-                  label: "من الشهر الماضي",
+                  label: "지난달 대비",
                 }}
               />
             </MDBox>
@@ -105,12 +105,12 @@ function RTL() {
               <ComplexStatisticsCard
                 color="primary"
                 icon="person_add"
-                title="مبيعات"
+                title="판매"
                 count="+91"
                 percentage={{
                   color: "success",
                   amount: "",
-                  label: "مقارنة بيوم أمس",
+                  label: "어제와 비교",
                 }}
               />
             </MDBox>
@@ -122,9 +122,9 @@ function RTL() {
               <MDBox mb={3}>
                 <ReportsBarChart
                   color="info"
-                  title="مشاهدات الموقع"
-                  description="آخر أداء للحملة"
-                  date="الحملة أرسلت قبل يومين"
+                  title="사이트 조회수"
+                  description="최근 캠페인 성과"
+                  date="캠페인이 2일 전에 발송됨"
                   chart={reportsBarChartData}
                 />
               </MDBox>
@@ -133,13 +133,13 @@ function RTL() {
               <MDBox mb={3}>
                 <ReportsLineChart
                   color="success"
-                  title="المبيعات اليومية"
+                  title="일일 매출"
                   description={
                     <>
-                      (<strong>+15%</strong>) زيادة في مبيعات اليوم..
+                      (<strong>+15%</strong>) 오늘 매출 증가..
                     </>
                   }
-                  date="تم التحديث منذ 4 دقائق"
+                  date="4분 전에 업데이트됨"
                   chart={sales}
                 />
               </MDBox>
@@ -148,9 +148,9 @@ function RTL() {
               <MDBox mb={3}>
                 <ReportsLineChart
                   color="dark"
-                  title="المهام المكتملة"
-                  description="آخر أداء للحملة"
-                  date="تم تحديثه للتو"
+                  title="완료된 작업"
+                  description="최근 캠페인 성과"
+                  date="방금 업데이트됨"
                   chart={tasks}
                 />
               </MDBox>

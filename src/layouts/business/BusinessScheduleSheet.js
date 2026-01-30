@@ -506,8 +506,8 @@ function BusinessScheduleSheet() {
             {selectedDate &&
               (selectedEndDate && selectedEndDate !== selectedDate
                 ? `${dayjs(selectedDate).format("YYYY년 MM월 DD일")} ~ ${dayjs(
-                    selectedEndDate
-                  ).format("YYYY년 MM월 DD일")}`
+                  selectedEndDate
+                ).format("YYYY년 MM월 DD일")}`
                 : dayjs(selectedDate).format("YYYY년 MM월 DD일"))}
           </Typography>
 

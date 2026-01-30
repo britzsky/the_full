@@ -13,7 +13,7 @@ Coded by www.creative-tim.com
 * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 
 // react-router components
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
@@ -86,6 +86,22 @@ import FieldBoardTabs from "examples/Tabs/FieldBoardTabs";
 
 // 🔹 사용자 부서/직책/아이디 코드 가져오기 (localStorage 기준)
 const getUserCodes = () => {
+  const localSessionId = localStorage.getItem("login_session_id");
+  const tabSessionId = sessionStorage.getItem("login_session_id");
+  const localUserId = localStorage.getItem("user_id");
+  const tabUserId = sessionStorage.getItem("login_user_id");
+
+  if (
+    localSessionId &&
+    tabSessionId &&
+    localSessionId !== tabSessionId &&
+    localUserId &&
+    tabUserId &&
+    localUserId !== tabUserId
+  ) {
+    return { deptCode: null, posCode: null, userId: null };
+  }
+
   const dept = localStorage.getItem("department"); // ex: "2"
   const pos = localStorage.getItem("position"); // ex: "4"
   const userId = localStorage.getItem("user_id"); // ✅ 특정 아이디 권한용 (키가 다르면 여기만 수정)
@@ -265,6 +281,8 @@ export default function App() {
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
   const { pathname } = useLocation();
+  const [, setAuthTick] = useState(0);
+  const sessionPopupOpenRef = useRef(false);
 
   // 🔹 현재 로그인한 유저의 부서/직책/아이디
   const { deptCode, posCode, userId } = getUserCodes();
@@ -304,17 +322,197 @@ export default function App() {
   // Change the openConfigurator state
   const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
 
-  const isAuthed = !!localStorage.getItem("user_id"); // 로그인 여부는 user_id 기준
+  const localSessionId = localStorage.getItem("login_session_id");
+  const tabSessionId = sessionStorage.getItem("login_session_id");
+  const localUserId = localStorage.getItem("user_id");
+  const tabUserId = sessionStorage.getItem("login_user_id");
+  const isSessionMatched =
+    !localSessionId || !tabSessionId
+      ? false
+      : localSessionId === tabSessionId || (localUserId && tabUserId && localUserId === tabUserId);
+  const isAuthed = !!localStorage.getItem("user_id") && isSessionMatched;
 
   // Setting the dir attribute for the body element
   useEffect(() => {
     document.body.setAttribute("dir", direction);
   }, [direction]);
 
+  useEffect(() => {
+    // 최초 진입 시 탭 세션을 로컬 세션과 동기화
+    const localSessionId = localStorage.getItem("login_session_id");
+    if (localSessionId && !sessionStorage.getItem("login_session_id")) {
+      sessionStorage.setItem("login_session_id", localSessionId);
+      const storedUserId = localStorage.getItem("user_id");
+      if (storedUserId) sessionStorage.setItem("login_user_id", storedUserId);
+    }
+
+    // 다른 탭에서 다른 계정으로 로그인되면 안내 후 이 탭을 로그인 화면으로 돌림
+    const showSessionChangedPopup = (nextSessionId) => {
+      const currentLocalUserId = localStorage.getItem("user_id");
+      const currentTabUserId = sessionStorage.getItem("login_user_id");
+      if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
+        sessionStorage.setItem("login_session_id", nextSessionId || "");
+        setAuthTick((prev) => prev + 1);
+        return;
+      }
+      if (sessionPopupOpenRef.current) return;
+      sessionPopupOpenRef.current = true;
+
+      Swal.fire({
+        title: "로그인 변경",
+        text: "다른 계정으로 로그인되었습니다.",
+        icon: "warning",
+        confirmButtonText: "확인",
+        confirmButtonColor: "#d33",
+      }).then(() => {
+        sessionStorage.removeItem("login_session_id");
+        setAuthTick((prev) => prev + 1);
+        sessionPopupOpenRef.current = false;
+        window.location.hash = "/authentication/sign-in";
+      });
+    };
+
+    // 포커스/가시성 변경 시 세션 불일치 재검사
+    const checkSessionMismatch = () => {
+      const currentLocalSession = localStorage.getItem("login_session_id");
+      const currentTabSession = sessionStorage.getItem("login_session_id");
+      const currentLocalUserId = localStorage.getItem("user_id");
+      const currentTabUserId = sessionStorage.getItem("login_user_id");
+      if (currentLocalSession && !currentTabSession) {
+        sessionStorage.setItem("login_session_id", currentLocalSession);
+        if (currentLocalUserId) sessionStorage.setItem("login_user_id", currentLocalUserId);
+        setAuthTick((prev) => prev + 1);
+        return;
+      }
+
+      if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
+        if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+        }
+        return;
+      }
+
+      if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
+        if (currentLocalUserId && !currentTabUserId) {
+          sessionStorage.setItem("login_user_id", currentLocalUserId);
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        showSessionChangedPopup(currentLocalSession);
+      }
+    };
+
+    // 다른 탭의 storage 변경 이벤트에 반응
+    const handleStorage = (event) => {
+      if (!event) return;
+
+      const watchKeys = new Set([
+        "login_session_id",
+        "user_id",
+        "user_type",
+        "position",
+        "department",
+        "account_id",
+      ]);
+
+      if (!watchKeys.has(event.key)) return;
+
+      const currentLocalSession = localStorage.getItem("login_session_id");
+      const currentTabSession = sessionStorage.getItem("login_session_id");
+      const currentLocalUserId = localStorage.getItem("user_id");
+      const currentTabUserId = sessionStorage.getItem("login_user_id");
+      if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
+        if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+        }
+        return;
+      }
+
+      if (event.key === "login_session_id" && currentLocalSession) {
+        if (!currentTabSession) {
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          if (currentLocalUserId) sessionStorage.setItem("login_user_id", currentLocalUserId);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        if (currentLocalUserId && !currentTabUserId) {
+          sessionStorage.setItem("login_user_id", currentLocalUserId);
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        if (
+          currentLocalSession !== currentTabSession &&
+          currentLocalUserId &&
+          currentTabUserId &&
+          currentLocalUserId === currentTabUserId
+        ) {
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        if (currentLocalSession !== currentTabSession) {
+          showSessionChangedPopup(currentLocalSession);
+          return;
+        }
+      }
+
+      if (currentLocalSession && !currentTabSession) {
+        sessionStorage.setItem("login_session_id", currentLocalSession);
+        if (currentLocalUserId) sessionStorage.setItem("login_user_id", currentLocalUserId);
+        setAuthTick((prev) => prev + 1);
+        return;
+      }
+
+      if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
+        if (currentLocalUserId && !currentTabUserId) {
+          sessionStorage.setItem("login_user_id", currentLocalUserId);
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
+          sessionStorage.setItem("login_session_id", currentLocalSession);
+          setAuthTick((prev) => prev + 1);
+          return;
+        }
+        showSessionChangedPopup(currentLocalSession);
+        return;
+      }
+
+      setAuthTick((prev) => prev + 1);
+    };
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("focus", checkSessionMismatch);
+    document.addEventListener("visibilitychange", checkSessionMismatch);
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", checkSessionMismatch);
+      document.removeEventListener("visibilitychange", checkSessionMismatch);
+    };
+  }, []);
+
   // Setting page scroll to 0 when changing the route
   useEffect(() => {
     document.documentElement.scrollTop = 0;
     document.scrollingElement.scrollTop = 0;
+  }, [pathname]);
+
+  useEffect(() => {
+    if (pathname === "/authentication/sign-in") {
+      sessionStorage.removeItem("login_session_id");
+      sessionStorage.removeItem("login_user_id");
+      setAuthTick((prev) => prev + 1);
+    }
   }, [pathname]);
 
   const getRoutes = (allRoutes) =>

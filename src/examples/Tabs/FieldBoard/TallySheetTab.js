@@ -1621,12 +1621,15 @@ function TallySheetTab() {
       if (!rowOriginal || rowOriginal.name === "총합") return;
       if (colKey === "name" || colKey === "total") return;
 
-      // ✅ 클릭된 셀/행 기억(하이라이트용)
       setActiveCell({ isSecond: !!isSecond, rowIndex: rIdx, colKey });
 
       const t = String(rowOriginal.type ?? "");
+      if (!t) return;
 
       if (shouldBlockModalByType(t)) return;
+
+      // ✅ type 1~4 는 직접 입력 대상이므로 모달/기타 클릭로직 타지 않게 종료
+      if (INLINE_EDIT_TYPES.has(t)) return;
 
       if (t === "1000") {
         handleCorpCardCellClick(rowOriginal, rIdx, colKey, isSecond);
@@ -1638,11 +1641,15 @@ function TallySheetTab() {
         return;
       }
 
-      if (t === "1") return;
-
       handleOtherCellClick(rowOriginal, rIdx, colKey, isSecond);
     },
-    [shouldBlockModalByType, handleCorpCardCellClick, handleCashCellClick, handleOtherCellClick]
+    [
+      INLINE_EDIT_TYPES,
+      shouldBlockModalByType,
+      handleCorpCardCellClick,
+      handleCashCellClick,
+      handleOtherCellClick,
+    ]
   );
 
   // ======================== 컬럼 구성 ========================
@@ -1699,11 +1706,16 @@ function TallySheetTab() {
   const usedForTab = tabValue === 1 ? usedTotalPrev : usedTotalNow;
 
   // ✅ 직접 입력은 type=1만 허용
+  // ✅ 직접 입력 허용 타입 (1~4)
+  const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
+
+  // ✅ 직접 입력은 type=1~4 허용
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
     const rows = isSecond ? data2Rows : dataRows;
     const row = rows?.[rowIndex];
     if (!row || row.name === "총합" || colKey === "name" || colKey === "total") return;
-    if (String(row.type ?? "") !== "1") return;
+
+    if (!INLINE_EDIT_TYPES.has(String(row.type ?? ""))) return;
 
     const setter = isSecond ? setData2Rows : setDataRows;
     const newValue = parseNumber(value);
@@ -2185,7 +2197,7 @@ function TallySheetTab() {
                 const isBaseCell = colKey !== "name" && colKey !== "total" && !isTotalRow;
 
                 const rowType = String(row.original.type ?? "");
-                const canInlineEdit = rowType === "1";
+                const canInlineEdit = INLINE_EDIT_TYPES.has(rowType);
                 const isEditable = isBaseCell && canInlineEdit;
 
                 const currVal = parseNumber(dataState?.[rIdx]?.[colKey]);

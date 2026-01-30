@@ -639,7 +639,8 @@ function AccountPurchaseDeadlineTab() {
         }
       }
 
-      if (modifiedDetail.length > 0) {
+      const hasDetailData = Array.isArray(detailRows) && detailRows.length > 0;
+      if (hasDetailData && modifiedDetail.length > 0) {
         const res2 = await api.post("/Account/AccountPurchaseDetailSave", modifiedDetail, {
           headers: { "Content-Type": "application/json" },
           validateStatus: () => true,
@@ -937,8 +938,9 @@ function AccountPurchaseDeadlineTab() {
     ];
 
     const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const filename = `세금계산서_출력용_${getAccountName() || "전체"}_${filters.fromDate}_${filters.toDate
-      }_${ymd}.xlsx`;
+    const filename = `세금계산서_출력용_${getAccountName() || "전체"}_${filters.fromDate}_${
+      filters.toDate
+    }_${ymd}.xlsx`;
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {

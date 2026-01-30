@@ -751,7 +751,6 @@ function RecordSheet() {
       { header: "직원파출", accessorKey: "employ_dispatch", size: "3%", cell: ReadonlyCell },
       { header: "초과", accessorKey: "over_work", size: "3%", cell: ReadonlyCell },
       { header: "결근", accessorKey: "non_work", size: "3%", cell: ReadonlyCell },
-      { header: "비고", accessorKey: "note", size: "20%", cell: ReadonlyCell },
     ],
     getCoreRowModel: getCoreRowModel(),
   });

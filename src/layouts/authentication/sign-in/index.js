@@ -98,6 +98,10 @@ function Basic() {
           localStorage.setItem("position", response.data.position);
           localStorage.setItem("department", response.data.department);
           localStorage.setItem("account_id", response.data.account_id);
+          const sessionId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+          localStorage.setItem("login_session_id", sessionId);
+          sessionStorage.setItem("login_session_id", sessionId);
+          sessionStorage.setItem("login_user_id", String(response.data.user_id || ""));
 
           const department = response.data.department;
 

@@ -26,6 +26,9 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
     localStorage.removeItem("position");
     localStorage.removeItem("department");
     localStorage.removeItem("account_id");
+    localStorage.removeItem("login_session_id");
+    sessionStorage.removeItem("login_session_id");
+    sessionStorage.removeItem("login_user_id");
 
     navigate("/authentication/sign-in");
   };

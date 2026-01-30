@@ -3403,12 +3403,11 @@ function TallySheetTab() {
                           <MenuItem value="UNKNOWN">
                             <em>알수없음</em>
                           </MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                          <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                          {/* <MenuItem value="COUPANG_CARD">쿠팡</MenuItem> */}
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
                         </Select>
                       </td>
 
@@ -3721,12 +3720,11 @@ function TallySheetTab() {
                           <MenuItem value="UNKNOWN">
                             <em>알수없음</em>
                           </MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                          <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                          <MenuItem value="CONVENIENCE">편의점</MenuItem>
+                          {/*  <MenuItem value="CONVENIENCE">편의점</MenuItem>
                           <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                          <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                          <MenuItem value="COUPANG_APP">배달앱</MenuItem> */}
                         </Select>
                       </td>
 
@@ -3999,7 +3997,7 @@ function TallySheetTab() {
                 <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem> */}
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
               </Select>
             </Grid>
@@ -4181,12 +4179,11 @@ function TallySheetTab() {
                 <MenuItem value="UNKNOWN">
                   <em>알수없음</em>
                 </MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
               </Select>
             </Grid>
 
@@ -4331,12 +4328,11 @@ function TallySheetTab() {
                 <MenuItem value="UNKNOWN">
                   <em>알수없음</em>
                 </MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                <MenuItem value="CONVENIENCE">편의점</MenuItem>
+                {/*<MenuItem value="CONVENIENCE">편의점</MenuItem>
                 <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표</MenuItem>
+                <MenuItem value="COUPANG_APP">배달앱</MenuItem>*/}
               </Select>
             </Grid>
 

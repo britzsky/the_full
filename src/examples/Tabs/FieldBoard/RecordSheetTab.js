@@ -18,8 +18,6 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import api from "api/api";
 import dayjs from "dayjs";
 import PropTypes from "prop-types";
@@ -27,10 +25,6 @@ import Icon from "@mui/material/Icon";
 import useRecordsheetData from "./recordSheetData";
 import Swal from "sweetalert2";
 import LoadingScreen from "layouts/loading/loadingscreen";
-
-// ✅ 너네 백엔드에 맞게 수정해야 하는 API 2개
-const DISPATCH_LIST_API = "/Account/AccountDispatchMemberList"; // 파출 목록 조회 (del_yn 포함)
-const DISPATCH_DEL_SAVE_API = "/Account/AccountDispatchMemberDelYnSave"; // del_yn 저장(삭제/복원)
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -332,6 +326,31 @@ function RecordSheet() {
 
   const [open, setOpen] = useState(false);
   const handleModalOpen = () => setOpen(true);
+
+  // ✅ "출근한 사람"으로 카운트할 타입들(원하는대로 조정)
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]); // 영양사/상용/초과/파출/직원파출/유틸/대체근무
+
+  const isWorkingType = (cell) => {
+    const t = safeTrim(cell?.type, "");
+    // "0"이나 ""은 제외
+    if (!t || t === "0") return false;
+    return COUNT_TYPES.has(t);
+  };
+
+  // ✅ day_1~day_N 별 출근자 수 계산
+  const dayWorkCounts = useMemo(() => {
+    const counts = {};
+    for (let d = 1; d <= daysInMonth; d++) counts[`day_${d}`] = 0;
+
+    (attendanceRows || []).forEach((row) => {
+      for (let d = 1; d <= daysInMonth; d++) {
+        const key = `day_${d}`;
+        if (isWorkingType(row?.[key])) counts[key] += 1;
+      }
+    });
+
+    return counts;
+  }, [attendanceRows, daysInMonth]);
 
   const [formData, setFormData] = useState({
     account_id: selectedAccountId,
@@ -762,6 +781,7 @@ function RecordSheet() {
     columns: [
       { header: "직원명", accessorKey: "name", size: "3%", cell: ReadonlyCell },
       { header: "직책", accessorKey: "position", size: "3%", cell: ReadonlyCell },
+      { header: "근로일수", accessorKey: "working_day", size: "3%", cell: ReadonlyCell },
       { header: "직원파출", accessorKey: "employ_dispatch", size: "3%", cell: ReadonlyCell },
       { header: "초과", accessorKey: "over_work", size: "3%", cell: ReadonlyCell },
       { header: "결근", accessorKey: "non_work", size: "3%", cell: ReadonlyCell },
@@ -1155,6 +1175,43 @@ function RecordSheet() {
                       })}
                     </tr>
                   ))}
+                  {/* ✅ (NEW) 일자별 출근자 수 요약 행 */}
+                  <tr>
+                    {/* 첫 컬럼(직원명 자리) */}
+                    <td
+                      style={{
+                        position: "sticky",
+                        left: 0,
+                        bottom: 0, // ✅ 하단 고정
+                        background: "#f0f0f0",
+                        zIndex: 6, // ✅ 헤더/첫컬럼과 겹침 우선순위
+                        fontWeight: "bold",
+                      }}
+                    >
+                      출근자 수
+                    </td>
+
+                    {/* day_1 ~ day_N */}
+                    {Array.from({ length: daysInMonth }, (_, i) => {
+                      const key = `day_${i + 1}`;
+                      const cnt = dayWorkCounts[key] || 0;
+                      return (
+                        <td
+                          key={key}
+                          style={{
+                            position: "sticky",
+                            bottom: 0, // ✅ 하단 고정
+                            backgroundColor: "#fafafa",
+                            fontWeight: "bold",
+                            textAlign: "center",
+                            zIndex: 5, // ✅ 일반 셀보다 위
+                          }}
+                        >
+                          {cnt}
+                        </td>
+                      );
+                    })}
+                  </tr>
                 </tbody>
               </table>
             </MDBox>

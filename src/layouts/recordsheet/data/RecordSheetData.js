@@ -47,6 +47,7 @@ export default function useRecordsheetData(account_id, year, month) {
           member_id: item.member_id,
           name: item.name,
           position: item.position,
+          working_day: item.working_day,
           employ_dispatch: item.employ_dispatch || "",
           over_work: item.over_work || "",
           non_work: item.non_work || "",

@@ -53,8 +53,8 @@ export default function ProfitLossTableTab() {
     );
   }, [accountList, selectedAccountId]);
 
-  // ✅ 입력 가능한 항목
-  const editableFields = [
+  // ✅ 숫자 입력 가능한 항목
+  const editableNumberFields = [
     "food_process",
     "dishwasher",
     "cesco",
@@ -64,7 +64,14 @@ export default function ProfitLossTableTab() {
     "duty_secure",
     "person_cost",
     "event_cost",
+    // "utility_bills_note" ❌ 숫자에서 제외
   ];
+
+  // ✅ 텍스트 입력 가능한 항목
+  const editableTextFields = ["utility_bills_note"];
+
+  // (기존 editableFields는 더 이상 쓰지 않거나, 아래처럼 합쳐서 쓰고 싶으면)
+  const editableFields = [...editableNumberFields, ...editableTextFields];
 
   // ✅ 숨길 컬럼
   const hiddenCols = ["주간일반", "주간직원"];
@@ -93,7 +100,7 @@ export default function ProfitLossTableTab() {
       ],
     },
     { group: "인건", cols: ["인건비정보", "파출비", "인건소계"] },
-    { group: "간접", cols: ["수도광열비", "세금정보", "간접소계"] },
+    { group: "간접", cols: ["수도광열비", "비고", "세금정보", "간접소계"] },
   ];
 
   // ✅ 컬럼 → DB 필드 매핑
@@ -125,6 +132,7 @@ export default function ProfitLossTableTab() {
     인건소계: { value: "person_total", ratio: "person_total_ratio" },
     // 간접
     수도광열비: { value: "utility_bills", ratio: "utility_ratio" },
+    비고: { value: "utility_bills_note" },
     세금정보: { value: "duty_secure", ratio: "duty_secure_ratio" },
     간접소계: { value: "indirect_total", ratio: "indirect_total_ratio" },
     // 영업이익
@@ -142,12 +150,18 @@ export default function ProfitLossTableTab() {
     const modifiedRows = editRows
       .map((row) => {
         const changedFields = {};
-        editableFields.forEach((field) => {
+        // ✅ 숫자 필드 diff
+        editableNumberFields.forEach((field) => {
           const original = Number(row._original[field] ?? 0);
           const current = Number(row[field] ?? 0);
-          if (original !== current) {
-            changedFields[field] = row[field];
-          }
+          if (original !== current) changedFields[field] = row[field];
+        });
+
+        // ✅ 텍스트 필드 diff
+        editableTextFields.forEach((field) => {
+          const original = String(row._original[field] ?? "").trim();
+          const current = String(row[field] ?? "").trim();
+          if (original !== current) changedFields[field] = row[field] ?? "";
         });
 
         if (Object.keys(changedFields).length > 0) {
@@ -178,9 +192,17 @@ export default function ProfitLossTableTab() {
 
   // ✅ 숫자 입력 핸들러 (콤마 제거 → 숫자 저장)
   const handleInputChange = (rowIdx, field, value) => {
-    const numericValue = value === "" || value === null ? null : Number(value.replace(/,/g, ""));
     const newRows = [...editRows];
-    newRows[rowIdx][field] = numericValue;
+
+    if (editableTextFields.includes(field)) {
+      // ✅ 텍스트는 그대로 저장
+      newRows[rowIdx][field] = value;
+    } else {
+      // ✅ 숫자: 콤마 제거 후 Number
+      const numericValue = value === "" || value === null ? null : Number(value.replace(/,/g, ""));
+      newRows[rowIdx][field] = numericValue;
+    }
+
     setEditRows(newRows);
   };
 
@@ -300,14 +322,44 @@ export default function ProfitLossTableTab() {
                       {filteredHeaders.flatMap((h) =>
                         h.cols.map((col) => {
                           const field = fieldMap[col]?.value;
-                          const isEditable = editableFields.includes(field);
-                          const originalValue = Number(r._original[field] ?? 0);
-                          const currentValue = Number(r[field] ?? 0);
-                          const isChanged = isEditable && originalValue !== currentValue;
+
+                          const isText = editableTextFields.includes(field);
+                          const isNumber = editableNumberFields.includes(field);
+
+                          // 변경 여부 체크도 타입별로
+                          const isChanged = (() => {
+                            if (isText) {
+                              const o = String(r._original[field] ?? "").trim();
+                              const c = String(r[field] ?? "").trim();
+                              return o !== c;
+                            }
+                            if (isNumber) {
+                              const o = Number(r._original[field] ?? 0);
+                              const c = Number(r[field] ?? 0);
+                              return o !== c;
+                            }
+                            return false;
+                          })();
 
                           return (
                             <td key={col}>
-                              {isEditable ? (
+                              {isText ? (
+                                <input
+                                  type="text"
+                                  value={r[field] ?? ""}
+                                  style={{
+                                    width: "120px", // ✅ 텍스트는 좀 넓게
+                                    height: "20px",
+                                    fontSize: "12px",
+                                    fontWeight: "bold",
+                                    textAlign: "left", // ✅ 텍스트는 좌측 정렬 추천
+                                    border: "none",
+                                    background: "transparent",
+                                    color: isChanged ? "red" : "black",
+                                  }}
+                                  onChange={(e) => handleInputChange(i, field, e.target.value)}
+                                />
+                              ) : isNumber ? (
                                 <input
                                   type="text"
                                   value={
@@ -328,6 +380,7 @@ export default function ProfitLossTableTab() {
                                   onChange={(e) => handleInputChange(i, field, e.target.value)}
                                 />
                               ) : (
+                                // ✅ 수정 불가 컬럼
                                 formatNumber(r[field] ?? 0)
                               )}
                             </td>

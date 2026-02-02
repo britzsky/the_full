@@ -3431,7 +3431,7 @@ function TallySheet() {
                           <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
+                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
                         </Select>
                       </td>
@@ -4207,7 +4207,7 @@ function TallySheet() {
                 <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
+                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
               </Select>
             </Grid>

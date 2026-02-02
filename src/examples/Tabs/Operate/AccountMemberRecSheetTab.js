@@ -1,5 +1,11 @@
+/* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
-import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
+import {
+  useReactTable,
+  getCoreRowModel,
+  getSortedRowModel,
+  flexRender,
+} from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -36,11 +42,16 @@ function AccountMemberRecSheet() {
 
   const [loading, setLoading] = useState(true);
 
+  // ✅ 정렬 상태 (실입사일)
+  const [sorting, setSorting] = useState([]);
+
+  // ✅ 스냅샷 갱신 트리거 (재조회/저장 성공 시 올려줌)
+  const [snapshotTick, setSnapshotTick] = useState(0);
+
   // ✅ 이미지 뷰어
   const [viewImageSrc, setViewImageSrc] = useState(null);
 
   const numericCols = ["salary"];
-
   const imageFields = ["employment_contract", "id", "bankbook"];
 
   const normalizeTime = (t) => {
@@ -50,13 +61,29 @@ function AccountMemberRecSheet() {
       .replace(/^0(\d):/, "$1:");
   };
 
+  // ✅ row 고정키(_rid) 보장: 정렬해도 원본매칭/수정대상 식별 유지
+  const ensureRowId = useCallback((row) => {
+    if (!row) return row;
+    if (row._rid) return row;
+
+    const base = row.member_id ?? row.rrn ?? "";
+    if (base) return { ...row, _rid: String(base) };
+
+    return { ...row, _rid: `NEW_${Date.now()}_${Math.random().toString(16).slice(2)}` };
+  }, []);
+
   // 조회
   useEffect(() => {
     setLoading(true);
-    fetchAccountMembersAllList().then(() => setLoading(false));
+    fetchAccountMembersAllList()
+      .then(() => {
+        // ✅ 재조회 완료 시 스냅샷 갱신 트리거
+        setSnapshotTick((t) => t + 1);
+      })
+      .finally(() => setLoading(false));
   }, [selectedAccountId, activeStatus]);
 
-  // (기존 로직 유지) total 계산 — 현재 컬럼에 meal 컬럼이 없어도 0으로 유지됨
+  // total 계산
   const calculateTotal = (row) => {
     const breakfast = parseNumber(row.breakfast);
     const lunch = parseNumber(row.lunch);
@@ -66,19 +93,23 @@ function AccountMemberRecSheet() {
     return Math.round(avgMeals + ceremony);
   };
 
-  // activeRows 변경 시 total 반영 + 원본 스냅샷
+  /**
+   * ✅ 스냅샷 최신화
+   */
   useEffect(() => {
-    if (activeRows && activeRows.length > 0) {
-      const updated = activeRows.map((row) => ({
-        ...row,
-        total: calculateTotal(row),
-      }));
-      setActiveRows(updated);
-      setOriginalRows(updated);
-    } else {
+    if (!activeRows || activeRows.length === 0) {
       setOriginalRows([]);
+      return;
     }
-  }, [activeRows?.length]);
+
+    const updated = activeRows.map((row) => {
+      const r = ensureRowId(row);
+      return { ...r, total: calculateTotal(r) };
+    });
+
+    setActiveRows(updated);
+    setOriginalRows(updated.map((r) => ({ ...r })));
+  }, [snapshotTick]); // ✅ 여기!
 
   // 시간 옵션
   const generateTimeOptions = (startHHMM, endHHMM, stepMinutes = 30) => {
@@ -114,7 +145,6 @@ function AccountMemberRecSheet() {
     { value: "2", label: "프리랜서" },
   ];
 
-  // ✅ 채용여부(use_yn) 옵션
   const useYnOptions = [
     { value: "D", label: "진행중" },
     { value: "Y", label: "채용확정" },
@@ -138,6 +168,15 @@ function AccountMemberRecSheet() {
     }
   };
 
+  const toDateMs = (v) => {
+    if (!v) return 0;
+    if (v instanceof Date) return v.getTime();
+    const s = String(v).trim();
+    if (!s) return 0;
+    const ms = Date.parse(s);
+    return Number.isNaN(ms) ? 0 : ms;
+  };
+
   const columns = useMemo(
     () => [
       { header: "구분", accessorKey: "cor_type", size: 50 },
@@ -149,7 +188,39 @@ function AccountMemberRecSheet() {
       { header: "연락처", accessorKey: "phone", size: 100 },
       { header: "주소", accessorKey: "address", size: 150 },
       { header: "계약형태", accessorKey: "contract_type", size: 50 },
-      { header: "실입사일", accessorKey: "act_join_dt", size: 80 },
+
+      {
+        accessorKey: "act_join_dt",
+        size: 80,
+        enableSorting: true,
+        sortingFn: (rowA, rowB, columnId) => {
+          const a = toDateMs(rowA.getValue(columnId));
+          const b = toDateMs(rowB.getValue(columnId));
+          return a === b ? 0 : a > b ? 1 : -1;
+        },
+        header: ({ column }) => {
+          const sorted = column.getIsSorted();
+          return (
+            <div
+              onClick={column.getToggleSortingHandler()}
+              style={{
+                cursor: "pointer",
+                userSelect: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+              title="정렬"
+            >
+              실입사일
+              <span style={{ fontSize: 11 }}>
+                {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : ""}
+              </span>
+            </div>
+          );
+        },
+      },
+
       {
         header: "급여(월)",
         accessorKey: "salary",
@@ -161,14 +232,13 @@ function AccountMemberRecSheet() {
       { header: "마감", accessorKey: "end_time", size: 60 },
       { header: "채용여부", accessorKey: "use_yn", size: 60 },
       { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
-      { header: "근로계약서", accessorKey: "employment_contract", size: 90 }, // ✅ 이미지
-      { header: "신분증", accessorKey: "id", size: 80 }, // ✅ 이미지
-      { header: "통장사본", accessorKey: "bankbook", size: 80 }, // ✅ 이미지
+      { header: "근로계약서", accessorKey: "employment_contract", size: 90 },
+      { header: "신분증", accessorKey: "id", size: 80 },
+      { header: "통장사본", accessorKey: "bankbook", size: 80 },
     ],
     []
   );
 
-  // ✅ 거래처 Autocomplete 옵션
   const accountOptions = useMemo(
     () =>
       (accountList || []).map((acc) => ({
@@ -178,41 +248,45 @@ function AccountMemberRecSheet() {
     [accountList]
   );
 
-  // ✅ Autocomplete value 객체
   const selectedAccountOption = useMemo(() => {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
-  const onSearchList = (e) => {
-    setLoading(true);
-    setSelectedAccountId(e.target.value);
-  };
-
   const table = useReactTable({
     data: activeRows,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    onSortingChange: setSorting,
+    state: { sorting },
+    getRowId: (row) => String(row?._rid ?? row?.member_id ?? row?.rrn ?? `ROW_${Math.random()}`),
   });
 
-  // ✅ 이미지 뷰어
-  const handleViewImage = (value) => {
-    if (!value) return;
-    if (typeof value === "object") {
-      setViewImageSrc(URL.createObjectURL(value));
-    } else {
-      setViewImageSrc(`${API_BASE_URL}${value}`);
-    }
+  // ✅ 원본을 _rid로 매칭
+  const originalMap = useMemo(() => {
+    const m = new Map();
+    (originalRows || []).forEach((r) => m.set(String(r._rid), r));
+    return m;
+  }, [originalRows]);
+
+  const updateRowByRid = (rid, patch) => {
+    setActiveRows((prev) =>
+      (prev || []).map((r) => (String(r._rid) === String(rid) ? { ...r, ...patch } : r))
+    );
   };
 
+  const handleViewImage = (value) => {
+    if (!value) return;
+    if (typeof value === "object") setViewImageSrc(URL.createObjectURL(value));
+    else setViewImageSrc(`${API_BASE_URL}${value}`);
+  };
   const handleCloseViewer = () => setViewImageSrc(null);
 
-  // ✅ 다운로드 (서버 문자열일 때만)
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
     const url = `${API_BASE_URL}${path}`;
     const filename = path.split("/").pop() || "download";
-
     const a = document.createElement("a");
     a.href = url;
     a.target = "_blank";
@@ -223,16 +297,12 @@ function AccountMemberRecSheet() {
     document.body.removeChild(a);
   }, []);
 
-  // ✅ 아이콘 컬러
   const fileIconSx = { color: "#1e88e5" };
 
-  // ✅ 업로드(이미지)
   const uploadImage = async (file, field, row) => {
     const formData = new FormData();
     formData.append("file", file);
-
-    // hygiene와 동일하게 OperateImgUpload 사용
-    formData.append("type", "member"); // 서버에서 type 분기 없으면 "hygiene"로 바꿔도 됨
+    formData.append("type", "member");
     const gubun = `${field}_${row.member_id || row.rrn || Date.now()}`;
     formData.append("gubun", gubun);
     formData.append("folder", row.account_id || selectedAccountId || "common");
@@ -241,26 +311,55 @@ function AccountMemberRecSheet() {
       headers: { "Content-Type": "multipart/form-data" },
     });
 
-    if (res.data.code === 200) {
-      return res.data.image_path;
-    }
+    if (res.data.code === 200) return res.data.image_path;
     throw new Error(res.data.message || "이미지 업로드 실패");
   };
 
+  // =========================================================
+  // ✅ 채용확정(Y) 중복 체크: /Operate/AccountMemberAllList
+  //   - param: { account_id, del_yn: "N" }
+  //   - 비교: name, rrn, account_id
+  //   - 동일 member_id는 자기 자신이므로 중복 제외
+  // =========================================================
+  const fetchAccountMemberAllList = async (account_id) => {
+    const params = {};
+    params.account_id = account_id;
+    params.del_yn = "N";
+
+    const res = await api.get("/Operate/AccountMemberAllList", {
+      params,
+    });
+
+    // ✅ 백엔드 응답 키가 어떤 형태든 최대한 배열을 찾아서 사용
+    const payload = res.data;
+    const list =
+      payload?.data ??
+      payload?.result ??
+      payload?.list ??
+      payload?.rows ??
+      payload?.items ??
+      payload;
+
+    return Array.isArray(list) ? list : [];
+  };
+
+  const normalizeKey = (v) => String(v ?? "").trim();
+
   const handleSave = async () => {
-    const changedRows = activeRows.filter((row, idx) => {
-      const original = originalRows[idx];
+    const originalByRid = new Map((originalRows || []).map((r) => [String(r._rid), r]));
+
+    const changedRows = (activeRows || []).filter((row) => {
+      const rid = String(row?._rid ?? "");
+      const original = originalByRid.get(rid);
       if (!original) return true;
 
       return Object.keys(row).some((key) => {
-        // 이미지 필드: object(File)로 바뀌면 무조건 변경
         if (imageFields.includes(key)) {
           const v = row[key];
           const o = original[key];
           if (typeof v === "object" && v) return true;
           return String(v ?? "") !== String(o ?? "");
         }
-
         if (numericCols.includes(key)) {
           return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
         }
@@ -279,14 +378,89 @@ function AccountMemberRecSheet() {
       const cleanRow = (row) => {
         const newRow = { ...row };
         Object.keys(newRow).forEach((key) => {
-          if (newRow[key] === "" || newRow[key] === undefined) {
-            newRow[key] = null;
-          }
+          if (newRow[key] === "" || newRow[key] === undefined) newRow[key] = null;
         });
         return newRow;
       };
 
-      // ✅ 이미지가 File이면 업로드 후 경로 문자열로 치환
+      // =========================================================
+      // ✅ 1) 채용확정(Y)인 행들만 중복 체크
+      //    - (name, rrn, account_id) 동일한 기존 데이터가 있으면 저장 막기
+      // =========================================================
+      const mustCheckRows = changedRows.filter((r) => String(r.use_yn ?? "") === "Y");
+
+      // account_id 없는 경우는 체크 불가 → 저장 막고 안내
+      const invalidAccountRows = mustCheckRows.filter((r) => !normalizeKey(r.account_id));
+      if (invalidAccountRows.length > 0) {
+        Swal.fire(
+          "저장 불가",
+          "채용확정(Y) 행에 업장명이 비어있는 항목이 있습니다. 업장명을 선택 후 저장해주세요.",
+          "warning"
+        );
+        return;
+      }
+
+      // account_id별로 1번만 조회하도록 캐시
+      const cache = new Map(); // account_id -> list
+      const getListByAccount = async (account_id) => {
+        const key = normalizeKey(account_id);
+        if (cache.has(key)) return cache.get(key);
+        const list = await fetchAccountMemberAllList(key);
+        cache.set(key, list);
+        return list;
+      };
+
+      const duplicates = [];
+      for (const row of mustCheckRows) {
+        const accId = normalizeKey(row.account_id);
+        const list = await getListByAccount(accId);
+
+        const rowName = normalizeKey(row.name);
+        const rowRrn = normalizeKey(row.rrn);
+        const rowMemberId = normalizeKey(row.member_id);
+
+        const found = list.find((m) => {
+          const mName = normalizeKey(m.name);
+          const mRrn = normalizeKey(m.rrn);
+          const mAcc = normalizeKey(m.account_id);
+          const mMemberId = normalizeKey(m.member_id);
+
+          // ✅ 자기 자신이면 중복 제외
+          if (rowMemberId && mMemberId && rowMemberId === mMemberId) return false;
+
+          return mName === rowName && mRrn === rowRrn && mAcc === accId;
+        });
+
+        if (found) {
+          duplicates.push({
+            name: row.name,
+            rrn: row.rrn,
+            account_id: row.account_id,
+          });
+        }
+      }
+
+      if (duplicates.length > 0) {
+        const msg = duplicates
+          .slice(0, 10)
+          .map((d) => `- ${d.name || ""} / ${d.rrn || ""} / ${d.account_id || ""}`)
+          .join("<br/>");
+
+        Swal.fire({
+          icon: "warning",
+          title: "저장 불가",
+          html:
+            `채용확정(Y) 항목 중 이미 등록된 직원이 있습니다.<br/>` +
+            `성명/주민번호/업장명이 동일한 데이터는 저장할 수 없습니다.<br/><br/>` +
+            `${msg}` +
+            (duplicates.length > 10 ? `<br/><br/>외 ${duplicates.length - 10}건` : ""),
+        });
+        return;
+      }
+
+      // =========================================================
+      // ✅ 2) 이미지 업로드 포함 저장 데이터 가공
+      // =========================================================
       const processed = await Promise.all(
         changedRows.map(async (row) => {
           const newRow = cleanRow(row);
@@ -298,10 +472,7 @@ function AccountMemberRecSheet() {
             }
           }
 
-          return {
-            ...newRow,
-            user_id: userId,
-          };
+          return { ...newRow, user_id: userId };
         })
       );
 
@@ -309,11 +480,17 @@ function AccountMemberRecSheet() {
 
       if (res.data.code === 200) {
         Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
-        await fetchAccountMembersAllList(); // 재조회(원본 스냅샷 갱신)
+
+        // ✅ 저장 성공 후 재조회 + 스냅샷 갱신 트리거
+        setLoading(true);
+        await fetchAccountMembersAllList();
+        setSnapshotTick((t) => t + 1);
+        setLoading(false);
       } else {
         Swal.fire("저장 실패", res.data.message || "서버 오류", "error");
       }
     } catch (err) {
+      setLoading(false);
       Swal.fire("저장 실패", err.message || String(err), "error");
     }
   };
@@ -323,6 +500,7 @@ function AccountMemberRecSheet() {
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
     const newRow = {
+      _rid: `NEW_${Date.now()}_${Math.random().toString(16).slice(2)}`,
       name: "",
       rrn: "",
       address: "",
@@ -338,7 +516,7 @@ function AccountMemberRecSheet() {
       end_time: workSystemList?.[0]?.end_time
         ? normalizeTime(workSystemList[0].end_time)
         : endTimes?.[0] ?? "10:00",
-      use_yn: "D", // ✅ 기본값
+      use_yn: "D",
       note: "",
       employment_contract: "",
       id: "",
@@ -346,11 +524,11 @@ function AccountMemberRecSheet() {
       cor_type: 1,
     };
 
-    setActiveRows((prev) => [newRow, ...prev]);
-    setOriginalRows((prev) => [newRow, ...prev]);
+    setActiveRows((prev) => [newRow, ...(prev || [])]);
+    setOriginalRows((prev) => [newRow, ...(prev || [])]);
   };
 
-  const renderTable = (table, rows, originals) => {
+  const renderTable = (tableInstance) => {
     const dateFields = new Set(["act_join_dt"]);
     const selectFields = new Set([
       "contract_type",
@@ -359,7 +537,7 @@ function AccountMemberRecSheet() {
       "end_time",
       "account_id",
       "idx",
-      "use_yn", // ✅ 추가
+      "use_yn",
       "cor_type",
     ]);
     const nonEditableCols = new Set(["total"]);
@@ -443,7 +621,7 @@ function AccountMemberRecSheet() {
       >
         <table className="dinersheet-table">
           <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
+            {tableInstance.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th key={header.id} style={{ width: header.column.columnDef.size }}>
@@ -455,366 +633,332 @@ function AccountMemberRecSheet() {
           </thead>
 
           <tbody>
-            {table.getRowModel().rows.map((row, rowIndex) => (
-              <tr key={row.id}>
-                {row.getVisibleCells().map((cell) => {
-                  const colKey = cell.column.columnDef.accessorKey;
-                  const currentValue = row.getValue(colKey);
-                  const originalValue = originals?.[rowIndex]?.[colKey];
+            {tableInstance.getRowModel().rows.map((row) => {
+              const rid = String(row.original?._rid ?? "");
 
-                  // ✅ 변경 여부(이미지 포함)
-                  const isNumeric = numericCols.includes(colKey);
-                  const isImage = imageFields.includes(colKey);
+              return (
+                <tr key={row.id}>
+                  {row.getVisibleCells().map((cell) => {
+                    const colKey = cell.column.columnDef.accessorKey;
+                    const currentValue = row.getValue(colKey);
 
-                  const normCurrent = isImage
-                    ? typeof currentValue === "object"
-                      ? "__FILE__"
-                      : String(currentValue ?? "")
-                    : isNumeric
-                    ? Number(currentValue ?? 0)
-                    : String(currentValue ?? "");
+                    const originalRow = originalMap.get(rid) || {};
+                    const originalValue = originalRow?.[colKey];
 
-                  const normOriginal = isImage
-                    ? String(originalValue ?? "")
-                    : isNumeric
-                    ? Number(originalValue ?? 0)
-                    : String(originalValue ?? "");
+                    const isNumeric = numericCols.includes(colKey);
+                    const isImage = imageFields.includes(colKey);
 
-                  const isChanged = normCurrent !== normOriginal;
+                    const normCurrent = isImage
+                      ? typeof currentValue === "object"
+                        ? "__FILE__"
+                        : String(currentValue ?? "")
+                      : isNumeric
+                      ? Number(currentValue ?? 0)
+                      : String(currentValue ?? "");
 
-                  const isEditable = !nonEditableCols.has(colKey);
-                  const isSelect = selectFields.has(colKey);
-                  const isDate = dateFields.has(colKey);
+                    const normOriginal = isImage
+                      ? String(originalValue ?? "")
+                      : isNumeric
+                      ? Number(originalValue ?? 0)
+                      : String(originalValue ?? "");
 
-                  const handleCellChange = (newValue) => {
-                    const updatedRows = rows.map((r, idx) => {
-                      if (idx !== rowIndex) return r;
+                    const isChanged = normCurrent !== normOriginal;
 
-                      // ✅ 근무형태(idx) 변경 시 start/end 자동 세팅
+                    const isEditable = !nonEditableCols.has(colKey);
+                    const isSelect = selectFields.has(colKey);
+                    const isDate = dateFields.has(colKey);
+
+                    const handleCellChange = (newValue) => {
                       if (colKey === "idx") {
                         const selected = (workSystemList || []).find(
                           (w) => String(w.idx) === String(newValue)
                         );
-                        return {
-                          ...r,
-                          idx: newValue,
-                          start_time: selected?.start_time
-                            ? normalizeTime(selected.start_time)
-                            : r.start_time,
-                          end_time: selected?.end_time
-                            ? normalizeTime(selected.end_time)
-                            : r.end_time,
-                          total: calculateTotal({
-                            ...r,
-                            idx: newValue,
-                            start_time: selected?.start_time
-                              ? normalizeTime(selected.start_time)
-                              : r.start_time,
-                            end_time: selected?.end_time
-                              ? normalizeTime(selected.end_time)
-                              : r.end_time,
-                          }),
-                        };
+
+                        const start_time = selected?.start_time
+                          ? normalizeTime(selected.start_time)
+                          : row.original?.start_time;
+
+                        const end_time = selected?.end_time
+                          ? normalizeTime(selected.end_time)
+                          : row.original?.end_time;
+
+                        const next = { idx: newValue, start_time, end_time };
+
+                        updateRowByRid(rid, {
+                          ...next,
+                          total: calculateTotal({ ...row.original, ...next }),
+                        });
+                        return;
                       }
 
-                      return {
-                        ...r,
-                        [colKey]: newValue,
-                        total: calculateTotal({ ...r, [colKey]: newValue }),
+                      const patch = { [colKey]: newValue };
+                      updateRowByRid(rid, {
+                        ...patch,
+                        total: calculateTotal({ ...row.original, ...patch }),
+                      });
+                    };
+
+                    if (isImage) {
+                      const value = currentValue ?? "";
+                      const hasImage = !!value;
+                      const inputId = `upload-${colKey}-${row.id}`;
+
+                      const rowActionSx = {
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        flexWrap: "nowrap",
+                        whiteSpace: "nowrap",
                       };
-                    });
 
-                    setActiveRows(updatedRows);
-                  };
+                      const actionBtnSx = {
+                        fontSize: isMobile ? "10px" : "11px",
+                        minWidth: 44,
+                        px: 1,
+                        py: 0.5,
+                        lineHeight: 1.2,
+                        whiteSpace: "nowrap",
+                      };
 
-                  // ✅ 이미지 컬럼 렌더링 (아이콘/버튼 한줄 고정)
-                  if (isImage) {
-                    const value = currentValue ?? "";
-                    const hasImage = !!value;
-                    const inputId = `upload-${colKey}-${rowIndex}`;
+                      const iconBtnSx = { ...fileIconSx, p: 0.5 };
 
-                    const rowActionSx = {
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                      flexWrap: "nowrap", // ✅ 줄바꿈 금지
-                      whiteSpace: "nowrap", // ✅ 텍스트 줄바꿈 금지
-                    };
+                      return (
+                        <td
+                          key={cell.id}
+                          className={isChanged ? "edited-cell" : ""}
+                          style={{ textAlign: "center" }}
+                        >
+                          <input
+                            type="file"
+                            accept="image/*"
+                            id={inputId}
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              handleCellChange(file);
+                            }}
+                          />
 
-                    const actionBtnSx = {
-                      fontSize: isMobile ? "10px" : "11px",
-                      minWidth: 44, // ✅ 버튼 폭 축소
-                      px: 1,
-                      py: 0.5,
-                      lineHeight: 1.2,
-                      whiteSpace: "nowrap",
-                    };
+                          {hasImage ? (
+                            <div style={rowActionSx}>
+                              {typeof value === "string" && (
+                                <Tooltip title="다운로드">
+                                  <IconButton
+                                    size="small"
+                                    sx={iconBtnSx}
+                                    onClick={() => handleDownload(value)}
+                                  >
+                                    <DownloadIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
 
-                    const iconBtnSx = { ...fileIconSx, p: 0.5 }; // ✅ 아이콘 버튼 패딩 축소
+                              <Tooltip title="미리보기">
+                                <IconButton
+                                  size="small"
+                                  sx={iconBtnSx}
+                                  onClick={() => handleViewImage(value)}
+                                >
+                                  <ImageSearchIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+
+                              <label htmlFor={inputId} style={{ display: "inline-flex" }}>
+                                <MDButton
+                                  size="small"
+                                  component="span"
+                                  color="info"
+                                  sx={actionBtnSx}
+                                >
+                                  변경
+                                </MDButton>
+                              </label>
+                            </div>
+                          ) : (
+                            <div style={rowActionSx}>
+                              <label htmlFor={inputId} style={{ display: "inline-flex" }}>
+                                <MDButton
+                                  size="small"
+                                  component="span"
+                                  color="info"
+                                  sx={actionBtnSx}
+                                >
+                                  업로드
+                                </MDButton>
+                              </label>
+                            </div>
+                          )}
+                        </td>
+                      );
+                    }
 
                     return (
                       <td
                         key={cell.id}
-                        className={isChanged ? "edited-cell" : ""}
-                        style={{ textAlign: "center" }}
+                        style={{
+                          textAlign: [
+                            "rrn",
+                            "account_number",
+                            "phone",
+                            "contract_type",
+                            "act_join_dt",
+                            "idx",
+                            "start_time",
+                            "end_time",
+                            "use_yn",
+                          ].includes(colKey)
+                            ? "center"
+                            : colKey === "salary"
+                            ? "right"
+                            : "left",
+                        }}
+                        contentEditable={isEditable && !isSelect && !isDate}
+                        suppressContentEditableWarning
+                        className={isEditable && isChanged ? "edited-cell" : ""}
+                        onBlur={
+                          isEditable && !isSelect && !isDate
+                            ? (e) => {
+                                let newValue = e.target.innerText.trim();
+                                if (isNumeric) newValue = parseNumber(newValue);
+                                handleCellChange(newValue);
+                                if (isNumeric) e.currentTarget.innerText = formatNumber(newValue);
+                              }
+                            : undefined
+                        }
                       >
-                        <input
-                          type="file"
-                          accept="image/*"
-                          id={inputId}
-                          style={{ display: "none" }}
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (!file) return;
-                            handleCellChange(file);
-                          }}
-                        />
-
-                        {hasImage ? (
-                          <div style={rowActionSx}>
-                            {typeof value === "string" && (
-                              <Tooltip title="다운로드">
-                                <IconButton
-                                  size="small"
-                                  sx={iconBtnSx}
-                                  onClick={() => handleDownload(value)}
-                                >
-                                  <DownloadIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-
-                            <Tooltip title="미리보기">
-                              <IconButton
-                                size="small"
-                                sx={iconBtnSx}
-                                onClick={() => handleViewImage(value)}
-                              >
-                                <ImageSearchIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-
-                            <label htmlFor={inputId} style={{ display: "inline-flex" }}>
-                              <MDButton size="small" component="span" color="info" sx={actionBtnSx}>
-                                변경
-                              </MDButton>
-                            </label>
-                          </div>
+                        {isSelect ? (
+                          colKey === "idx" ? (
+                            <Autocomplete
+                              size="small"
+                              options={(workSystemList || []).map((w) => ({
+                                value: String(w.idx),
+                                label: w.work_system,
+                              }))}
+                              value={(() => {
+                                const v = String(currentValue ?? "");
+                                return (
+                                  (workSystemList || [])
+                                    .map((w) => ({ value: String(w.idx), label: w.work_system }))
+                                    .find((o) => o.value === v) || null
+                                );
+                              })()}
+                              onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
+                              getOptionLabel={(opt) => opt?.label ?? ""}
+                              isOptionEqualToValue={(opt, val) => opt.value === val.value}
+                              renderInput={(params) => (
+                                <TextField
+                                  {...params}
+                                  variant="standard"
+                                  placeholder="검색"
+                                  InputProps={{ ...params.InputProps, disableUnderline: true }}
+                                  inputProps={{
+                                    ...params.inputProps,
+                                    style: {
+                                      fontSize: "12px",
+                                      padding: 0,
+                                      color: isChanged ? "#d32f2f" : "inherit",
+                                      fontWeight: isChanged ? 600 : 400,
+                                    },
+                                  }}
+                                />
+                              )}
+                              sx={{
+                                width: "100%",
+                                "& .MuiInputBase-root": { minHeight: 24 },
+                                "& .MuiAutocomplete-input": {
+                                  fontSize: "12px",
+                                  padding: "0px !important",
+                                  color: isChanged ? "#d32f2f" : "inherit",
+                                  fontWeight: isChanged ? 600 : 400,
+                                },
+                                "& .MuiSvgIcon-root": {
+                                  fontSize: 18,
+                                  color: isChanged ? "#d32f2f" : "inherit",
+                                },
+                              }}
+                            />
+                          ) : (
+                            <select
+                              value={currentValue ?? ""}
+                              onChange={(e) => handleCellChange(e.target.value)}
+                              className={isChanged ? "edited-cell" : ""}
+                              style={{
+                                width: "100%",
+                                background: "transparent",
+                                cursor: "pointer",
+                                border: "none",
+                              }}
+                            >
+                              {colKey === "cor_type" &&
+                                corOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              {colKey === "account_id" &&
+                                (accountList || []).map((acc) => (
+                                  <option key={acc.account_id} value={acc.account_id}>
+                                    {acc.account_name}
+                                  </option>
+                                ))}
+                              {colKey === "use_yn" &&
+                                useYnOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              {colKey === "position_type" &&
+                                positionOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              {colKey === "contract_type" &&
+                                contractOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              {colKey === "start_time" && (
+                                <>
+                                  <option value="">없음</option>
+                                  {startTimes.map((t) => (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </>
+                              )}
+                              {colKey === "end_time" && (
+                                <>
+                                  <option value="">없음</option>
+                                  {endTimes.map((t) => (
+                                    <option key={t} value={t}>
+                                      {t}
+                                    </option>
+                                  ))}
+                                </>
+                              )}
+                            </select>
+                          )
+                        ) : isDate ? (
+                          <input
+                            type="date"
+                            value={formatDateForInput(currentValue)}
+                            onChange={(e) => handleCellChange(e.target.value)}
+                            className={isChanged ? "edited-cell" : ""}
+                          />
                         ) : (
-                          <div style={rowActionSx}>
-                            <label htmlFor={inputId} style={{ display: "inline-flex" }}>
-                              <MDButton size="small" component="span" color="info" sx={actionBtnSx}>
-                                업로드
-                              </MDButton>
-                            </label>
-                          </div>
+                          (isNumeric ? formatNumber(currentValue) : currentValue) ?? ""
                         )}
                       </td>
                     );
-                  }
-
-                  return (
-                    <td
-                      key={cell.id}
-                      style={{
-                        textAlign: [
-                          "rrn",
-                          "account_number",
-                          "phone",
-                          "contract_type",
-                          "act_join_dt",
-                          "idx",
-                          "start_time",
-                          "end_time",
-                          "use_yn",
-                        ].includes(colKey)
-                          ? "center"
-                          : colKey === "salary"
-                          ? "right"
-                          : "left",
-                      }}
-                      contentEditable={isEditable && !isSelect && !isDate}
-                      suppressContentEditableWarning
-                      className={isEditable && isChanged ? "edited-cell" : ""}
-                      onBlur={
-                        isEditable && !isSelect && !isDate
-                          ? (e) => {
-                              let newValue = e.target.innerText.trim();
-                              if (isNumeric) newValue = parseNumber(newValue);
-                              handleCellChange(newValue);
-
-                              if (isNumeric) {
-                                e.currentTarget.innerText = formatNumber(newValue);
-                              }
-                            }
-                          : undefined
-                      }
-                    >
-                      {isSelect ? (
-                        colKey === "idx" ? (
-                          <Autocomplete
-                            size="small"
-                            options={(workSystemList || []).map((w) => ({
-                              value: String(w.idx),
-                              label: w.work_system,
-                            }))}
-                            value={(() => {
-                              const v = String(currentValue ?? "");
-                              return (
-                                (workSystemList || [])
-                                  .map((w) => ({ value: String(w.idx), label: w.work_system }))
-                                  .find((o) => o.value === v) || null
-                              );
-                            })()}
-                            onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
-                            getOptionLabel={(opt) => opt?.label ?? ""}
-                            isOptionEqualToValue={(opt, val) => opt.value === val.value}
-                            renderOption={(props, option) => (
-                              <li
-                                {...props}
-                                style={{
-                                  fontSize: "12px",
-                                  paddingTop: 4,
-                                  paddingBottom: 4,
-                                  color: isChanged ? "#d32f2f" : "inherit", // ✅ 목록 글씨도 같이 빨강
-                                  fontWeight: isChanged ? 600 : 400,
-                                }}
-                              >
-                                {option.label}
-                              </li>
-                            )}
-                            renderInput={(params) => (
-                              <TextField
-                                {...params}
-                                variant="standard"
-                                placeholder="검색"
-                                InputProps={{
-                                  ...params.InputProps,
-                                  disableUnderline: true,
-                                }}
-                                inputProps={{
-                                  ...params.inputProps,
-                                  style: {
-                                    fontSize: "12px",
-                                    padding: 0,
-                                    color: isChanged ? "#d32f2f" : "inherit", // ✅ 입력 글씨 빨강
-                                    fontWeight: isChanged ? 600 : 400,
-                                  },
-                                }}
-                              />
-                            )}
-                            sx={{
-                              width: "100%",
-                              "& .MuiInputBase-root": { minHeight: 24 },
-
-                              // ✅ 선택된 값(입력부) 빨강 강제
-                              "& .MuiAutocomplete-input": {
-                                fontSize: "12px",
-                                padding: "0px !important",
-                                color: isChanged ? "#d32f2f" : "inherit",
-                                fontWeight: isChanged ? 600 : 400,
-                              },
-
-                              // ✅ 아이콘도 같이 빨강(원하면)
-                              "& .MuiSvgIcon-root": {
-                                fontSize: 18,
-                                color: isChanged ? "#d32f2f" : "inherit",
-                              },
-
-                              // ✅ 펼친 목록 글씨
-                              "& .MuiAutocomplete-option": { fontSize: "12px", minHeight: 28 },
-                            }}
-                            ListboxProps={{
-                              style: { fontSize: "12px" },
-                            }}
-                          />
-                        ) : (
-                          // ✅ 나머지 select는 기존대로 유지
-                          <select
-                            value={currentValue ?? ""}
-                            onChange={(e) => handleCellChange(e.target.value)}
-                            className={isChanged ? "edited-cell" : ""}
-                            style={{
-                              width: "100%",
-                              background: "transparent",
-                              cursor: "pointer",
-                              border: "none",
-                            }}
-                          >
-                            {colKey === "cor_type" &&
-                              corOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-
-                            {colKey === "account_id" &&
-                              (accountList || []).map((acc) => (
-                                <option key={acc.account_id} value={acc.account_id}>
-                                  {acc.account_name}
-                                </option>
-                              ))}
-
-                            {colKey === "use_yn" &&
-                              useYnOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-
-                            {colKey === "position_type" &&
-                              positionOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-
-                            {colKey === "contract_type" &&
-                              contractOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </option>
-                              ))}
-
-                            {colKey === "start_time" && (
-                              <>
-                                <option value="">없음</option>
-                                {startTimes.map((t) => (
-                                  <option key={t} value={t}>
-                                    {t}
-                                  </option>
-                                ))}
-                              </>
-                            )}
-
-                            {colKey === "end_time" && (
-                              <>
-                                <option value="">없음</option>
-                                {endTimes.map((t) => (
-                                  <option key={t} value={t}>
-                                    {t}
-                                  </option>
-                                ))}
-                              </>
-                            )}
-                          </select>
-                        )
-                      ) : isDate ? (
-                        <input
-                          type="date"
-                          value={formatDateForInput(currentValue)}
-                          onChange={(e) => handleCellChange(e.target.value)}
-                          className={isChanged ? "edited-cell" : ""}
-                        />
-                      ) : (
-                        (isNumeric ? formatNumber(currentValue) : currentValue) ?? ""
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </MDBox>
@@ -867,7 +1011,6 @@ function AccountMemberRecSheet() {
           }}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
-          // ✅ (선택) 검색 품질: 이름에 포함되면 매칭
           filterOptions={(options, state) => {
             const q = (state.inputValue ?? "").trim().toLowerCase();
             if (!q) return options;
@@ -898,12 +1041,11 @@ function AccountMemberRecSheet() {
       <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
-            {renderTable(table, activeRows, originalRows)}
+            {renderTable(table)}
           </Grid>
         </Grid>
       </MDBox>
 
-      {/* ✅ 이미지 뷰어 */}
       {viewImageSrc && (
         <div
           style={{

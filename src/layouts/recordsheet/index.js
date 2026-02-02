@@ -40,14 +40,92 @@ const typeColors = {
   6: "#cce6ff",
 };
 
+const TYPE_LABEL = {
+  0: "-",
+  1: "영양사",
+  2: "상용",
+  3: "초과",
+  4: "결근",
+  5: "파출",
+  6: "직원파출",
+  7: "유틸",
+  8: "대체근무",
+  9: "연차",
+  10: "반차",
+  11: "대체휴무",
+  12: "병가",
+  13: "출산휴가",
+  14: "육아휴직",
+  15: "하계휴가",
+};
+
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
 const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
+// ✅ 계좌정보에서 은행명 추출
+// 예) "농협 130033-52-192654" -> "농협"
+// 예) "국민은행 123-456-789" -> "국민은행"
+// 예) "신한 110-..." -> "신한"
+// 예) "카카오뱅크 3333-..." -> "카카오뱅크"
+// ✅ 은행명 추출
+const extractBankName = (accountNumber) => {
+  const s = safeTrim(accountNumber, "");
+  if (!s) return "";
+
+  // 앞 토큰이 보통 은행명
+  const firstToken = s.split(/\s+/)[0] || "";
+
+  // "농협", "국민은행", "NH농협", "IBK기업" 등 대응
+  const m = s.match(/^([A-Za-z가-힣]+(?:은행)?)/) || firstToken.match(/^([A-Za-z가-힣]+(?:은행)?)/);
+
+  return safeTrim(m?.[1] ?? firstToken, "");
+};
+
+// ✅ 계좌번호만 추출 (은행명 제거 + 숫자/하이픈만 남기기)
+const extractAccountOnly = (accountNumber) => {
+  const s = safeTrim(accountNumber, "");
+  if (!s) return "";
+
+  // 1) 은행명 부분 제거(앞쪽)
+  const bank = extractBankName(s);
+  let rest = s;
+  if (bank) {
+    // "은행명 " 또는 "은행명" 제거
+    rest = rest.replace(new RegExp(`^\\s*${bank}\\s*`), "");
+  }
+
+  // 2) 남은 문자열에서 숫자/하이픈만 추출
+  //    (띄어쓰기, 괄호, 기타 문자 제거)
+  const only = rest.replace(/[^0-9-]/g, "").trim();
+
+  // 3) 혹시 bank 제거 후 아무것도 안 남으면(은행명 없이 계좌번호만 있었던 케이스)
+  //    원본에서 다시 추출
+  if (!only) {
+    return s.replace(/[^0-9-]/g, "").trim();
+  }
+
+  return only;
+};
+
+// ✅ 숫자/문자 모두 보기좋게(엑셀 셀) 표시
+const formatMoneyLike = (v) => {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+
+  // 이미 "6회, 520000원" 같은 문자열이면 그대로
+  if (/[가-힣]/.test(s) || /회/.test(s) || /원/.test(s)) return s;
+
+  // 숫자로만 들어오면 콤마
+  const n = Number(s.replace(/,/g, ""));
+  if (!Number.isNaN(n)) return n.toLocaleString();
+
+  return s;
+};
+
 // ✅ 셀 비교용 헬퍼
 const normalizeCell = (cell) => {
-  if (!cell) {
-    return { type: "", start: "", end: "", salary: 0, memo: "" };
-  }
+  if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "" };
 
   const toNum = (v) => {
     if (v == null || v === "") return 0;
@@ -90,8 +168,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
   for (let h = 5; h <= 20; h++) {
     for (let m of ["00", "30"]) {
       if (h === 20 && m !== "00") continue;
-      // ✅ padStart 두번째 인자는 "0"
-      times.push(`${h.toString().padStart(2, "")}:${m}`);
+      times.push(`${h.toString().padStart(2, "0")}:${m}`);
     }
   }
 
@@ -107,27 +184,25 @@ const AttendanceCell = React.memo(function AttendanceCell({
   const handleChange = (field, newVal) => {
     const dayKey = column.id;
 
-    // ✅ row.original은 "현재 row"지만, 안전하게 row-level도 fallback으로 씀
     const rowGubun = safeTrim(row.original?.gubun, "nor");
     const rowPt = safeTrim(row.original?.position_type, "");
 
-    const baseValue = row.original[dayKey] || {};
+    const baseValue = row.original?.[dayKey] || {};
 
     const updatedValue = {
       ...baseValue,
       ...val,
 
-      // ✅ 핵심: gubun/position_type는 절대 날아가면 안됨
+      // ✅ gubun/position_type 유지
       gubun: safeTrim(baseValue.gubun ?? val.gubun ?? rowGubun, "nor"),
       position_type: safeTrim(baseValue.position_type ?? val.position_type ?? rowPt, ""),
 
-      // 기존 유지
       gubun_raw: baseValue.gubun ?? val.gubun ?? rowGubun,
 
       [field]: newVal,
     };
 
-    // ✅ type을 0으로 내리면 나머지 값도 초기화
+    // ✅ type을 0/-로 내리면 나머지 초기화
     if (field === "type" && (newVal === "0" || newVal === "")) {
       updatedValue.start = "";
       updatedValue.end = "";
@@ -293,6 +368,7 @@ function RecordSheet() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
+
   const [attendanceRows, setAttendanceRows] = useState([]);
   const [originalAttendanceRows, setOriginalAttendanceRows] = useState([]);
   const [defaultTimes, setDefaultTimes] = useState({});
@@ -313,17 +389,507 @@ function RecordSheet() {
   const [open, setOpen] = useState(false);
   const handleModalOpen = () => setOpen(true);
 
-  // ✅ "출근한 사람"으로 카운트할 타입들(원하는대로 조정)
-  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]); // 영양사/상용/초과/파출/직원파출/유틸/대체근무
+  const [excelDownloading, setExcelDownloading] = useState(false);
 
+  // =========================
+  // ✅ 1) payload 안전 처리 (문자열 JSON 파싱까지)
+  // =========================
+  const parseMaybeJson = (payload) => {
+    if (typeof payload !== "string") return payload;
+    const s = payload.trim();
+    if (!s) return payload;
+    if (!(s.startsWith("{") || s.startsWith("["))) return payload;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return payload;
+    }
+  };
+
+  const extractArray = (payload) => {
+    payload = parseMaybeJson(payload);
+
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
+
+    if (Array.isArray(payload.resultList)) return payload.resultList;
+    if (Array.isArray(payload.result)) return payload.result;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.list)) return payload.list;
+    if (Array.isArray(payload.rows)) return payload.rows;
+
+    if (payload.data && typeof payload.data === "object") {
+      if (Array.isArray(payload.data.resultList)) return payload.data.resultList;
+      if (Array.isArray(payload.data.list)) return payload.data.list;
+      if (Array.isArray(payload.data.rows)) return payload.data.rows;
+      if (Array.isArray(payload.data.data)) return payload.data.data;
+    }
+
+    const v1 = Object.values(payload).find(Array.isArray);
+    if (v1) return v1;
+
+    if (payload.data && typeof payload.data === "object") {
+      const v2 = Object.values(payload.data).find(Array.isArray);
+      if (v2) return v2;
+    }
+
+    return [];
+  };
+
+  // ✅ type 키가 record_type/work_type 등으로 올 수 있어서 통일
+  const pickType = (src) =>
+    safeTrim(
+      src?.type ??
+        src?.record_type ??
+        src?.work_type ??
+        src?.recordType ??
+        src?.workType ??
+        src?.work_kind ??
+        src?.work_cd ??
+        "",
+      ""
+    );
+
+  // =========================
+  // ✅ 2) day 소스 찾기 (pivot/obj/arr)
+  // =========================
+  const getDaySource = (item, d) => {
+    if (!item) return null;
+    const key = `day_${d}`;
+
+    if (item[key]) return item[key];
+
+    if (item.days && typeof item.days === "object" && !Array.isArray(item.days)) {
+      if (item.days[key]) return item.days[key];
+      if (item.days[d]) return item.days[d];
+    }
+
+    if (Array.isArray(item.days)) {
+      const found =
+        item.days.find((x) => Number(x?.record_date) === d) ||
+        item.days.find((x) => Number(x?.record_day) === d) ||
+        item.days.find((x) => Number(x?.day) === d) ||
+        item.days.find((x) => Number(x?.date) === d);
+      if (found) return found;
+    }
+
+    const key2 = `day_${String(d).padStart(2, "0")}`;
+    if (item[key2]) return item[key2];
+    if (item.days && typeof item.days === "object" && item.days[key2]) return item.days[key2];
+
+    return null;
+  };
+
+  // =========================
+  // ✅ 3) long 형태(record_date 1줄=하루)을 pivot 형태(day_1..day_N)로 변환
+  // =========================
+  const normalizeSheetRows = (rows, daysInMonthArg) => {
+    const arr = Array.isArray(rows) ? rows : [];
+    if (arr.length === 0) return [];
+
+    const sample = arr[0] || {};
+    const keys = Object.keys(sample);
+
+    const hasPivotDayKey = keys.some((k) => /^day_\d+$/.test(k));
+    const hasDaysField = sample.days && typeof sample.days === "object";
+    if (hasPivotDayKey || hasDaysField) return arr;
+
+    const hasLongDay =
+      sample.record_date != null ||
+      sample.record_day != null ||
+      sample.day != null ||
+      sample.date != null;
+
+    if (!hasLongDay) return arr;
+
+    const map = new Map();
+
+    for (const r of arr) {
+      const mid = r.member_id;
+      if (!mid) continue;
+
+      if (!map.has(mid)) {
+        map.set(mid, {
+          name: r.name,
+          account_id: r.account_id,
+          member_id: r.member_id,
+          position: r.position || "",
+          gubun: r.gubun ?? "nor",
+          position_type: r.position_type ?? "",
+          day_default: r.day_default || null,
+        });
+      }
+
+      const g = map.get(mid);
+      const dayNum = Number(r.record_date ?? r.record_day ?? r.day ?? r.date);
+
+      if (dayNum >= 1 && dayNum <= daysInMonthArg) {
+        g[`day_${dayNum}`] = { ...r };
+      }
+    }
+
+    return Array.from(map.values());
+  };
+
+  // =========================
+  // ✅ 4) sheetRows -> attendanceRows
+  // =========================
+  const buildAttendanceRowsFromSheet = (
+    sheetRowsArg,
+    memberRowsArg,
+    timesRowsArg,
+    daysInMonthArg
+  ) => {
+    const normalizedSheetRows = normalizeSheetRows(sheetRowsArg, daysInMonthArg);
+
+    const newAttendance = (normalizedSheetRows || []).map((item) => {
+      const member = (memberRowsArg || []).find((m) => m.member_id === item.member_id);
+
+      const baseGubun = safeTrim(item.gubun ?? item.day_default?.gubun, "nor");
+      const basePt = safeTrim(item.position_type ?? item.day_default?.position_type, "");
+
+      const base = {
+        name: item.name,
+        account_id: item.account_id,
+        member_id: item.member_id,
+        position: item.position || member?.position || "",
+        gubun: baseGubun,
+        position_type: basePt,
+        day_default: item.day_default || null,
+      };
+
+      const dayEntries = {};
+      for (let d = 1; d <= daysInMonthArg; d++) {
+        const key = `day_${d}`;
+        const source = getDaySource(item, d) || item[key] || null;
+
+        const t = pickType(source);
+
+        dayEntries[key] = source
+          ? {
+              ...source,
+              type: t,
+
+              gubun: safeTrim(source.gubun, baseGubun),
+              position_type: safeTrim(source.position_type, basePt),
+
+              start: source.start_time || source.start || "",
+              end: source.end_time || source.end || "",
+              start_time: source.start_time || "",
+              end_time: source.end_time || "",
+              salary: source.salary || "",
+              memo: source.memo ?? source.note ?? "",
+            }
+          : {
+              account_id: item.account_id,
+              member_id: item.member_id,
+              gubun: baseGubun,
+              position_type: basePt,
+
+              type: "",
+              start: "",
+              end: "",
+              start_time: "",
+              end_time: "",
+              salary: "",
+              memo: "",
+            };
+      }
+
+      return { ...base, ...dayEntries };
+    });
+
+    const defaultTimesMap = {};
+    (normalizedSheetRows || []).forEach((item) => {
+      defaultTimesMap[item.member_id] = {
+        start:
+          item.day_default?.start_time ||
+          (timesRowsArg || []).find((t) => t.member_id === item.member_id)?.start_time ||
+          "",
+        end:
+          item.day_default?.end_time ||
+          (timesRowsArg || []).find((t) => t.member_id === item.member_id)?.end_time ||
+          "",
+      };
+    });
+
+    return { attendanceRowsBuilt: newAttendance, defaultTimesMap };
+  };
+
+  // ✅ 거래처 1개에 대한 모든 데이터 조회 함수 (엑셀 전체다운용)
+  const fetchBundleForAccount = async (accountId) => {
+    const sheetRes = await api.get("/Account/AccountRecordSheetList", {
+      params: { account_id: accountId, year, month },
+    });
+    const sheetRowsArg = extractArray(sheetRes.data);
+
+    const memberRes = await api.get("/Account/AccountRecordMemberList", {
+      params: { account_id: accountId, year, month },
+    });
+    const memberRowsArg = extractArray(memberRes.data);
+
+    const timeRes = await api.get("/Account/AccountMemberRecordTime", {
+      params: { account_id: accountId, year, month },
+    });
+    const timesRowsArg = extractArray(timeRes.data);
+
+    const [disN, disY] = await Promise.all([
+      api.get("/Account/AccountRecordDispatchList", {
+        params: { account_id: accountId, year, month, del_yn: "N" },
+      }),
+      api.get("/Account/AccountRecordDispatchList", {
+        params: { account_id: accountId, year, month, del_yn: "Y" },
+      }),
+    ]);
+
+    const dispatchN = extractArray(disN.data);
+    const dispatchY = extractArray(disY.data);
+    const dispatchRowsArg = [
+      ...(Array.isArray(dispatchN) ? dispatchN : []),
+      ...(Array.isArray(dispatchY) ? dispatchY : []),
+    ];
+
+    return { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg };
+  };
+
+  // ✅ 엑셀 셀 출력 문자열
+  function formatDayCell(cell) {
+    const t = safeTrim(cell?.type, "");
+    if (!cell || !t || t === "0") return "";
+
+    const typeLabel = TYPE_LABEL[String(t)] ?? String(t);
+
+    const start = cell.start || cell.start_time || "";
+    const end = cell.end || cell.end_time || "";
+    const salary =
+      cell.salary != null && String(cell.salary).trim() !== ""
+        ? Number(String(cell.salary).replace(/,/g, "")).toLocaleString()
+        : "";
+    const memo = cell.memo ?? cell.note ?? "";
+
+    const lines = [
+      typeLabel,
+      start || end ? `${start}~${end}` : "",
+      salary ? `급여: ${salary}` : "",
+      memo ? `메모: ${memo}` : "",
+    ].filter(Boolean);
+
+    return lines.join("\n");
+  }
+
+  // ✅ 거래처 전체 엑셀 다운로드 (2시트: 출근현황/파출정보)
+  const handleExcelDownloadAllAccounts = async () => {
+    if (excelDownloading) return;
+    if (!accountList || accountList.length === 0) return;
+
+    setExcelDownloading(true);
+
+    try {
+      Swal.fire({
+        title: "엑셀 생성 중...",
+        text: "거래처별 데이터를 조회하고 있습니다.",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "RecordSheet";
+
+      const filename = `출근부_전체거래처_${year}-${String(month).padStart(2, "0")}.xlsx`;
+
+      const wsAttend = wb.addWorksheet("출근현황(전체)");
+      const wsDispatch = wb.addWorksheet("파출정보(전체)");
+
+      const addSectionTitle = (ws, title, colCount) => {
+        ws.addRow([title]);
+        const r = ws.lastRow.number;
+        ws.mergeCells(r, 1, r, colCount);
+        const cell = ws.getCell(r, 1);
+        cell.font = { bold: true, size: 12 };
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+        ws.getRow(r).height = 20;
+      };
+
+      const styleHeaderRow = (ws, rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.font = { bold: true };
+        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF0F0F0" },
+          };
+        });
+      };
+
+      const styleDataRow = (ws, rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+      };
+
+      // =========================
+      // ✅ 출근현황(전체) : 기존처럼 업장별 섹션 유지
+      // =========================
+      const attendColCount = 1 + daysInMonth;
+      wsAttend.columns = [
+        { width: 14 },
+        ...Array.from({ length: daysInMonth }, () => ({ width: 14 })),
+      ];
+
+      // =========================
+      // ✅ 파출정보(전체) : 업장별 섹션 제거 + 한 번에 쭉
+      //    + 은행 컬럼 추가
+      //    + 금액은 total 대신 salary 사용
+      // =========================
+      const dispatchHeader = [
+        "거래처",
+        "이름",
+        "연락처",
+        "주민등록번호",
+        "은행",
+        "계좌정보",
+        "급여", // ✅ total 대신 salary
+        "삭제여부(del_yn)",
+      ];
+
+      wsDispatch.columns = [
+        { width: 18 }, // 거래처
+        { width: 12 }, // 이름
+        { width: 14 }, // 연락처
+        { width: 18 }, // 주민등록번호
+        { width: 12 }, // 은행
+        { width: 28 }, // 계좌정보
+        { width: 14 }, // 급여
+        { width: 14 }, // 삭제여부
+      ];
+
+      // ✅ 파출정보 제목(한 번만)
+      addSectionTitle(
+        wsDispatch,
+        `■ 파출정보 / ${year}-${String(month).padStart(2, "0")}`,
+        dispatchHeader.length
+      );
+      wsDispatch.addRow(dispatchHeader);
+      styleHeaderRow(wsDispatch, wsDispatch.lastRow.number);
+
+      // ✅ 파출정보 누적 rows
+      const allDispatchRows = [];
+
+      for (let i = 0; i < accountList.length; i++) {
+        const acc = accountList[i];
+        const accId = acc.account_id;
+        const accName = acc.account_name || accId;
+
+        const { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg } =
+          await fetchBundleForAccount(accId);
+
+        // ----- 출근현황 섹션 (기존 그대로) -----
+        const { attendanceRowsBuilt } = buildAttendanceRowsFromSheet(
+          sheetRowsArg,
+          memberRowsArg,
+          timesRowsArg,
+          daysInMonth
+        );
+
+        addSectionTitle(
+          wsAttend,
+          `■ ${accName} (${accId})  /  ${year}-${String(month).padStart(2, "0")}`,
+          attendColCount
+        );
+
+        const header = ["직원명", ...Array.from({ length: daysInMonth }, (_, d) => `${d + 1}일`)];
+        wsAttend.addRow(header);
+        styleHeaderRow(wsAttend, wsAttend.lastRow.number);
+
+        (attendanceRowsBuilt || []).forEach((row) => {
+          const r = [row.name || ""];
+          for (let d = 1; d <= daysInMonth; d++) {
+            const key = `day_${d}`;
+            r.push(formatDayCell(row[key]));
+          }
+          wsAttend.addRow(r);
+          styleDataRow(wsAttend, wsAttend.lastRow.number);
+        });
+
+        wsAttend.addRow([]);
+        wsAttend.addRow([]);
+
+        // ----- 파출정보는 "모아서 한 번에" -----
+        (dispatchRowsArg || []).forEach((d) => {
+          allDispatchRows.push({
+            accName,
+            name: d.name || "",
+            phone: d.phone || "",
+            rrn: d.rrn || "",
+            account_number: d.account_number || "",
+            salary: d.salary ?? "", // ✅ salary 우선
+            total: d.total ?? "",
+            del_yn: d.del_yn ?? "N",
+          });
+        });
+      }
+
+      // ✅ 파출정보 시트에 누적된 데이터 한 번에 출력
+      allDispatchRows.forEach((d) => {
+        const bank = extractBankName(d.account_number);
+        const accountOnly = extractAccountOnly(d.account_number); // ✅ 추가
+        const pay = d.salary !== "" && d.salary != null ? d.salary : d.total;
+
+        wsDispatch.addRow([
+          d.accName,
+          d.name,
+          d.phone,
+          d.rrn,
+          bank,
+          accountOnly, // ✅ 여기: 계좌정보는 계좌번호만
+          formatMoneyLike(pay),
+          d.del_yn,
+        ]);
+
+        styleDataRow(wsDispatch, wsDispatch.lastRow.number);
+      });
+
+      wsAttend.views = [{ state: "frozen", xSplit: 0, ySplit: 0 }];
+      wsDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }]; // 제목+헤더 고정 느낌
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      saveAs(blob, filename);
+
+      Swal.fire({ title: "완료", text: "엑셀 다운로드가 완료되었습니다.", icon: "success" });
+    } catch (e) {
+      console.error(e);
+      Swal.fire({ title: "실패", text: "엑셀 생성 중 오류가 발생했습니다.", icon: "error" });
+    } finally {
+      setExcelDownloading(false);
+    }
+  };
+
+  // ✅ "출근한 사람" 카운트 타입
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
-    // "0"이나 ""은 제외
     if (!t || t === "0") return false;
     return COUNT_TYPES.has(t);
   };
 
-  // ✅ day_1~day_N 별 출근자 수 계산
   const dayWorkCounts = useMemo(() => {
     const counts = {};
     for (let d = 1; d <= daysInMonth; d++) counts[`day_${d}`] = 0;
@@ -429,15 +995,10 @@ function RecordSheet() {
 
       try {
         const res = await api.get("/Account/AccountRecordDispatchList", {
-          params: {
-            account_id: selectedAccountId,
-            year,
-            month,
-            del_yn,
-          },
+          params: { account_id: selectedAccountId, year, month, del_yn },
         });
 
-        const list = res.data?.data || res.data?.list || res.data || [];
+        const list = extractArray(res.data);
 
         setDispatchRows(
           (Array.isArray(list) ? list : []).map((item) => ({
@@ -448,6 +1009,7 @@ function RecordSheet() {
             rrn: item.rrn,
             account_number: item.account_number,
             total: item.total,
+            salary: item.salary, // ✅ 혹시 백엔드가 주면 화면에서도 쓸 수 있게 유지
             del_yn: item.del_yn ?? "N",
             dispatch_id: item.dispatch_id ?? item.id,
           }))
@@ -510,6 +1072,7 @@ function RecordSheet() {
             rrn: row.rrn,
             account_number: row.account_number,
             total: row.total,
+            salary: row.salary, // ✅ 같이 보냄(백엔드가 받으면 사용)
             phone: row.phone,
           },
           { headers: { "Content-Type": "multipart/form-data" } }
@@ -568,85 +1131,32 @@ function RecordSheet() {
     setFormData((prev) => ({ ...prev, account_id: selectedAccountId }));
   }, [selectedAccountId]);
 
-  // ✅ sheetRows → attendanceRows 구성
+  // ✅ 화면도 buildAttendanceRowsFromSheet 로 통일 (pivot/long 모두 대응)
   useEffect(() => {
-    if (!sheetRows || !sheetRows.length) return;
+    if (!sheetRows || !sheetRows.length) {
+      setAttendanceRows([]);
+      setOriginalAttendanceRows([]);
+      setDefaultTimes({});
+      return;
+    }
 
-    const newAttendance = sheetRows.map((item) => {
-      const member = memberRows.find((m) => m.member_id === item.member_id);
+    const { attendanceRowsBuilt, defaultTimesMap } = buildAttendanceRowsFromSheet(
+      sheetRows,
+      memberRows,
+      timesRows,
+      daysInMonth
+    );
 
-      // ✅ row-level gubun/position_type 확보 (hook에서 이미 넣어줌)
-      const baseGubun = safeTrim(item.gubun ?? item.day_default?.gubun, "nor");
-      const basePt = safeTrim(item.position_type ?? item.day_default?.position_type, "");
+    setAttendanceRows(attendanceRowsBuilt);
+    setOriginalAttendanceRows(JSON.parse(JSON.stringify(attendanceRowsBuilt)));
+    setDefaultTimes(defaultTimesMap);
+  }, [sheetRows, memberRows, timesRows, daysInMonth]);
 
-      const base = {
-        name: item.name,
-        account_id: item.account_id,
-        member_id: item.member_id,
-        position: item.position || member?.position || "",
-        // ✅ row에 고정으로 보관 (저장 fallback)
-        gubun: baseGubun,
-        position_type: basePt,
-        day_default: item.day_default || null,
-      };
-
-      const dayEntries = {};
-      for (let d = 1; d <= daysInMonth; d++) {
-        const key = `day_${d}`;
-        const source = item[key] || (item.days && item.days[key]) || null;
-
-        dayEntries[key] = source
-          ? {
-              ...source,
-              // ✅ 반드시 값 유지
-              gubun: safeTrim(source.gubun, baseGubun),
-              position_type: safeTrim(source.position_type, basePt),
-
-              start: source.start_time || source.start || "",
-              end: source.end_time || source.end || "",
-              start_time: source.start_time || "",
-              end_time: source.end_time || "",
-              salary: source.salary || "",
-              memo: source.memo ?? source.note ?? "",
-            }
-          : {
-              account_id: item.account_id,
-              member_id: item.member_id,
-              // ✅ 빈 날도 반드시 유지
-              gubun: baseGubun,
-              position_type: basePt,
-
-              type: "",
-              start: "",
-              end: "",
-              start_time: "",
-              end_time: "",
-              salary: "",
-              memo: "",
-            };
-      }
-
-      return { ...base, ...dayEntries };
-    });
-
-    setAttendanceRows(newAttendance);
-    setOriginalAttendanceRows(JSON.parse(JSON.stringify(newAttendance)));
-
-    const map = {};
-    sheetRows.forEach((item) => {
-      map[item.member_id] = {
-        start:
-          item.day_default?.start_time ||
-          timesRows.find((t) => t.member_id === item.member_id)?.start_time ||
-          "",
-        end:
-          item.day_default?.end_time ||
-          timesRows.find((t) => t.member_id === item.member_id)?.end_time ||
-          "",
-      };
-    });
-    setDefaultTimes(map);
-  }, [sheetRows, timesRows, daysInMonth, memberRows]);
+  const getOrgTimes = (row, defaultTimesObj) => {
+    const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
+    const orgEnd = row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
+    return { org_start_time: orgStart, org_end_time: orgEnd };
+  };
 
   const dayColumns = useMemo(
     () =>
@@ -661,7 +1171,7 @@ function RecordSheet() {
             const typeOptions = (() => {
               const isType5Member = Object.keys(props.row.original)
                 .filter((k) => k.startsWith("day_"))
-                .some((k) => props.row.original[k]?.type === "5");
+                .some((k) => safeTrim(props.row.original[k]?.type, "") === "5");
 
               if (isType5Member) {
                 return [
@@ -669,12 +1179,14 @@ function RecordSheet() {
                   { value: "5", label: "파출" },
                 ];
               }
+
               return [
                 { value: "0", label: "-" },
                 { value: "1", label: "영양사" },
                 { value: "2", label: "상용" },
                 { value: "3", label: "초과" },
                 { value: "4", label: "결근" },
+                { value: "5", label: "파출" },
                 { value: "6", label: "직원파출" },
                 { value: "7", label: "유틸" },
                 { value: "8", label: "대체근무" },
@@ -708,12 +1220,6 @@ function RecordSheet() {
     ],
     [dayColumns]
   );
-
-  const getOrgTimes = (row, defaultTimesObj) => {
-    const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
-    const orgEnd = row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
-    return { org_start_time: orgStart, org_end_time: orgEnd };
-  };
 
   const attendanceTable = useReactTable({
     data: attendanceRows,
@@ -752,7 +1258,7 @@ function RecordSheet() {
       { header: "연락처", accessorKey: "phone", size: "3%", cell: ReadonlyCell },
       { header: "주민등록번호", accessorKey: "rrn", size: "3%", cell: ReadonlyCell },
       { header: "계좌정보", accessorKey: "account_number", size: "3%", cell: ReadonlyCell },
-      { header: "금액", accessorKey: "total", size: "15%", cell: ReadonlyCell },
+      { header: "금액", accessorKey: "total", size: "15%", cell: ReadonlyCell }, // 화면은 기존 유지
       {
         header: "관리",
         id: "actions",
@@ -801,11 +1307,13 @@ function RecordSheet() {
       prevRows.map((row) => {
         const updated = { ...row };
         const { org_start_time, org_end_time } = getOrgTimes(row, defaultTimes);
+
         Object.keys(updated)
           .filter((k) => k.startsWith("day_"))
           .forEach((dayKey) => {
             const cell = updated[dayKey];
             if (!cell) return;
+
             const typeNum = Number(cell.type);
             if (typeNum === 1 || typeNum === 2) {
               updated[dayKey] = {
@@ -817,12 +1325,13 @@ function RecordSheet() {
               };
             }
           });
+
         return updated;
       })
     );
   };
 
-  // ✅ 저장: "0(-)로 변경"도 삭제/초기화로 저장되게 수정본 (전체 교체)
+  // ✅ 저장
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
 
@@ -848,40 +1357,29 @@ function RecordSheet() {
 
           const originalVal = useDiffMode && originalRow ? originalRow[key] : null;
 
-          // ✅ 1) 변경감지: 원본과 같으면 스킵
           if (useDiffMode) {
             if (isCellEqual(val, originalVal)) return;
           }
 
-          // 현재/원본 type 정리
           const curType = safeTrim(val?.type, "");
           const orgType = safeTrim(originalVal?.type, "");
 
-          // ✅ 2) "0(-)" 또는 ""(빈값)으로 바꾼 경우도 저장해야 함
-          //    단, 원래도 "0/빈값" 이면 굳이 저장할 필요 없음
           const cleared =
             (curType === "0" || curType === "") && !(orgType === "" || orgType === "0");
 
-          // 공통 gubun/position_type 보정
           const gubun = safeTrim(val?.gubun, rowGubun);
           const pt = safeTrim(val?.position_type, rowPt);
 
-          // ✅ 2-1) 삭제/초기화 레코드 생성 (type=0 으로 전송)
           if (cleared) {
             const recordObj = {
               gubun,
               account_id: val?.account_id || row.account_id || "",
               member_id: val?.member_id || row.member_id || "",
-
-              // ✅ 둘 다 전송
               position_type: pt,
               positionType: pt,
-
               record_date: dayNum,
               record_year: year,
               record_month: month,
-
-              // ✅ 핵심: 삭제/초기화 의미
               type: 0,
               start_time: "",
               end_time: "",
@@ -896,29 +1394,21 @@ function RecordSheet() {
             if (g === "dis") disRecords.push(recordObj);
             else if (g === "rec") recRecords.push(recordObj);
             else normalRecords.push(recordObj);
-
-            console.log("SAVE(clear) record:", recordObj);
             return;
           }
 
-          // ✅ 3) 여기부터는 "실제 값 있는 경우"만 저장
-          //    (원래 로직에서 0은 무시했는데, 이제는 cleared 아닌 0/빈값만 무시)
           if (!val || !curType || curType === "0") return;
 
           const recordObj = {
             gubun,
             account_id: val.account_id || row.account_id || "",
             member_id: val.member_id || row.member_id || "",
-
-            // ✅ 둘 다 전송
             position_type: pt,
             positionType: pt,
-
             record_date: dayNum,
             record_year: year,
             record_month: month,
             type: Number(curType),
-
             start_time: val.start || "",
             end_time: val.end || "",
             salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
@@ -932,8 +1422,6 @@ function RecordSheet() {
           if (g === "dis") disRecords.push(recordObj);
           else if (g === "rec") recRecords.push(recordObj);
           else normalRecords.push(recordObj);
-
-          console.log("SAVE record:", recordObj);
         });
     });
 
@@ -961,179 +1449,8 @@ function RecordSheet() {
     }
   };
 
-  // --- 이하 UI/엑셀 로직은 네 원본 그대로 유지 가능 ---
-  // (너무 길어서 생략하면 “전체소스”가 아니라서, 아래는 네 원본을 그대로 붙여넣으면 돼)
-  // 여기서는 요청 포인트인 gubun/position_type 문제 해결에 필요한 “전체 구성”은 이미 포함되어 있음.
-
-  // ⚠️ 아래 TYPE_LABEL/formatDayCell/handleExcelDownload/렌더 부분은
-  // 네가 올린 원본 그대로 이어붙이면 된다.
-
-  // ======= (원본 그대로) =======
-  const TYPE_LABEL = {
-    0: "-",
-    1: "영양사",
-    2: "상용",
-    3: "초과",
-    4: "결근",
-    5: "파출",
-    6: "직원파출",
-    7: "유틸",
-    8: "대체근무",
-    9: "연차",
-    10: "반차",
-    11: "대체휴무",
-    12: "병가",
-    13: "출산휴가",
-    14: "육아휴직",
-    15: "하계휴가",
-  };
-
-  const formatDayCell = (cell) => {
-    if (!cell || !cell.type || cell.type === "0") return "";
-    const typeLabel = TYPE_LABEL[String(cell.type)] ?? String(cell.type);
-
-    const start = cell.start || cell.start_time || "";
-    const end = cell.end || cell.end_time || "";
-    const salary =
-      cell.salary != null && String(cell.salary).trim() !== ""
-        ? Number(String(cell.salary).replace(/,/g, "")).toLocaleString()
-        : "";
-    const memo = cell.memo ?? cell.note ?? "";
-
-    const lines = [
-      typeLabel,
-      start || end ? `${start}~${end}` : "",
-      salary ? `급여: ${salary}` : "",
-      memo ? `메모: ${memo}` : "",
-    ].filter(Boolean);
-
-    return lines.join("\n");
-  };
-
-  const handleExcelDownload = async () => {
-    const wb = new ExcelJS.Workbook();
-    wb.creator = "RecordSheet";
-
-    const accountName =
-      (accountList || []).find((a) => a.account_id === selectedAccountId)?.account_name ||
-      account_name ||
-      selectedAccountId ||
-      "거래처";
-    const filename = `출근부_${accountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
-
-    const ws1 = wb.addWorksheet("출근현황");
-    ws1.properties.defaultRowHeight = 18;
-
-    const header = ["직원명"];
-    for (let d = 1; d <= daysInMonth; d++) header.push(`${d}일`);
-    ws1.addRow(header);
-
-    ws1.getRow(1).font = { bold: true };
-    ws1.getRow(1).alignment = { vertical: "middle", horizontal: "center" };
-
-    attendanceRows.forEach((row) => {
-      const r = [row.name || ""];
-      for (let d = 1; d <= daysInMonth; d++) {
-        const key = `day_${d}`;
-        r.push(formatDayCell(row[key]));
-      }
-      ws1.addRow(r);
-    });
-
-    ws1.columns = [{ width: 14 }, ...Array.from({ length: daysInMonth }, () => ({ width: 14 }))];
-
-    ws1.eachRow((row, rowNumber) => {
-      row.eachCell((cell) => {
-        cell.alignment = {
-          wrapText: true,
-          vertical: "top",
-          horizontal: rowNumber === 1 ? "center" : "left",
-        };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-    });
-
-    ws1.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
-
-    const ws2 = wb.addWorksheet("직원정보");
-    ws2.addRow(["직원명", "직책", "직원파출", "초과", "결근", "비고"]);
-    ws2.getRow(1).font = { bold: true };
-
-    (memberRows || []).forEach((m) => {
-      ws2.addRow([
-        m.name || "",
-        m.position || "",
-        m.employ_dispatch ?? "",
-        m.over_work ?? "",
-        m.non_work ?? "",
-        m.note ?? "",
-      ]);
-    });
-
-    ws2.columns = [
-      { width: 14 },
-      { width: 10 },
-      { width: 10 },
-      { width: 10 },
-      { width: 10 },
-      { width: 30 },
-    ];
-
-    ws2.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-    });
-
-    const ws3 = wb.addWorksheet("파출정보");
-    ws3.addRow(["이름", "주민등록번호", "계좌정보", "금액", "삭제여부(del_yn)"]);
-    ws3.getRow(1).font = { bold: true };
-
-    (dispatchRows || []).forEach((d) => {
-      ws3.addRow([
-        d.name || "",
-        d.rrn || "",
-        d.account_number || "",
-        d.total ?? "",
-        d.del_yn ?? "N",
-      ]);
-    });
-
-    ws3.columns = [{ width: 14 }, { width: 18 }, { width: 26 }, { width: 12 }, { width: 16 }];
-
-    ws3.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-    });
-
-    const buffer = await wb.xlsx.writeBuffer();
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-    saveAs(blob, filename);
-  };
-
   if (loading) return <LoadingScreen />;
 
-  // ✅ 렌더 부분은 네 원본 그대로 (handleSave만 위 수정본 사용)
   return (
     <DashboardLayout>
       <MDBox
@@ -1145,7 +1462,6 @@ function RecordSheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-        {/* <HeaderWithLogout showMenuButton title="🚌 출근부" /> */}
         <DashboardNavbar title="🚌 출근부" />
         <MDBox
           pt={1}
@@ -1168,7 +1484,6 @@ function RecordSheet() {
               gap: 1,
             }}
           >
-            {/* ✅ 거래처 select → 검색 가능한 Autocomplete로 변경 (다른 부분은 그대로) */}
             <Autocomplete
               size="small"
               options={accountList || []}
@@ -1198,9 +1513,7 @@ function RecordSheet() {
               size="small"
               sx={{
                 minWidth: isMobile ? 90 : 110,
-                "& .MuiSelect-select": {
-                  fontSize: isMobile ? "0.75rem" : "0.875rem",
-                },
+                "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
               }}
             >
               {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -1216,9 +1529,7 @@ function RecordSheet() {
               size="small"
               sx={{
                 minWidth: isMobile ? 80 : 100,
-                "& .MuiSelect-select": {
-                  fontSize: isMobile ? "0.75rem" : "0.875rem",
-                },
+                "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
               }}
             >
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -1240,17 +1551,20 @@ function RecordSheet() {
             >
               출퇴근 일괄 적용
             </MDButton>
+
             <MDButton
               variant="gradient"
               color="dark"
-              onClick={handleExcelDownload}
+              onClick={handleExcelDownloadAllAccounts}
+              disabled={excelDownloading}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 90 : 110,
+                minWidth: isMobile ? 90 : 140,
                 px: isMobile ? 1 : 2,
+                opacity: excelDownloading ? 0.6 : 1,
               }}
             >
-              엑셀 다운로드
+              전체 거래처 엑셀
             </MDButton>
 
             <MDButton
@@ -1303,6 +1617,7 @@ function RecordSheet() {
                 출근 현황
               </MDTypography>
             </MDBox>
+
             <MDBox pt={0} sx={tableSx}>
               <table className="recordsheet-table">
                 <thead>
@@ -1316,6 +1631,7 @@ function RecordSheet() {
                     </tr>
                   ))}
                 </thead>
+
                 <tbody>
                   {attendanceTable.getRowModel().rows.map((row) => (
                     <tr key={row.id}>
@@ -1339,23 +1655,22 @@ function RecordSheet() {
                       })}
                     </tr>
                   ))}
-                  {/* ✅ (NEW) 일자별 출근자 수 요약 행 */}
+
+                  {/* ✅ 일자별 출근자 수 요약 행 */}
                   <tr>
-                    {/* 첫 컬럼(직원명 자리) */}
                     <td
                       style={{
                         position: "sticky",
                         left: 0,
-                        bottom: 0, // ✅ 하단 고정
+                        bottom: 0,
                         background: "#f0f0f0",
-                        zIndex: 6, // ✅ 헤더/첫컬럼과 겹침 우선순위
+                        zIndex: 6,
                         fontWeight: "bold",
                       }}
                     >
                       출근자 수
                     </td>
 
-                    {/* day_1 ~ day_N */}
                     {Array.from({ length: daysInMonth }, (_, i) => {
                       const key = `day_${i + 1}`;
                       const cnt = dayWorkCounts[key] || 0;
@@ -1364,11 +1679,11 @@ function RecordSheet() {
                           key={key}
                           style={{
                             position: "sticky",
-                            bottom: 0, // ✅ 하단 고정
+                            bottom: 0,
                             backgroundColor: "#fafafa",
                             fontWeight: "bold",
                             textAlign: "center",
-                            zIndex: 5, // ✅ 일반 셀보다 위
+                            zIndex: 5,
                           }}
                         >
                           {cnt}
@@ -1448,14 +1763,12 @@ function RecordSheet() {
                 파출 정보
               </MDTypography>
 
-              {/* ✅ (NEW) del_yn 필터 Select + +버튼 */}
               <MDBox display="flex" alignItems="center" gap={1}>
                 <Select
                   value={dispatchDelFilter}
                   onChange={async (e) => {
                     const v = e.target.value;
                     setDispatchDelFilter(v);
-                    // ✅ select 바뀔 때 파출만 재조회
                     await fetchDispatchOnly(v);
                   }}
                   size="small"

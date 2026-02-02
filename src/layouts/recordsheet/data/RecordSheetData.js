@@ -65,6 +65,7 @@ export default function useRecordsheetData(account_id, year, month) {
           account_number: item.account_number,
           phone: item.phone,
           total: item.total,
+          salary: item.salary,
           del_yn: item.del_yn,
         }))
       );

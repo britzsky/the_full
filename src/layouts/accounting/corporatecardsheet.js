@@ -298,10 +298,16 @@ function CorporateCardSheet() {
     fetchAccountList();
   }, [fetchAccountList]);
 
-  // accountList 로딩 후 기본 선택값
+  // ✅ 추가: 기본 거래처 자동세팅은 딱 1번만
+  const didSetDefaultAccountRef = useRef(false);
+
+  // accountList 로딩 후 기본 선택값 (초기 1회만)
   useEffect(() => {
+    if (didSetDefaultAccountRef.current) return;
+
     if ((accountList || []).length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountId(String(accountList[0].account_id));
+      didSetDefaultAccountRef.current = true;
     }
   }, [accountList, selectedAccountId]);
 
@@ -738,10 +744,10 @@ function CorporateCardSheet() {
 
         return changed
           ? {
-            ...cleanDetailRow(r),
-            account_id: topAccountId,
-            payment_dt: topPaymentDt,
-          }
+              ...cleanDetailRow(r),
+              account_id: topAccountId,
+              payment_dt: topPaymentDt,
+            }
           : null;
       })
       .filter(Boolean);
@@ -1186,8 +1192,8 @@ function CorporateCardSheet() {
                   style={{
                     background:
                       selectedMaster?.sale_id &&
-                        selectedMaster?.sale_id === row.sale_id &&
-                        row.sale_id
+                      selectedMaster?.sale_id === row.sale_id &&
+                      row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1216,8 +1222,8 @@ function CorporateCardSheet() {
                     const changed = row.isNew
                       ? true
                       : MASTER_NUMBER_KEYS.includes(key)
-                        ? parseNumber(origRaw) !== parseNumber(rawVal)
-                        : isChangedValue(origRaw, rawVal);
+                      ? parseNumber(origRaw) !== parseNumber(rawVal)
+                      : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
                       const acctName =
@@ -1513,8 +1519,8 @@ function CorporateCardSheet() {
                       const changed = row?.isNew
                         ? true
                         : isForcedRedRow(row)
-                          ? true
-                          : isDetailFieldChanged(key, orig, rawVal);
+                        ? true
+                        : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");

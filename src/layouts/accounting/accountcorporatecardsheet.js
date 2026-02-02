@@ -303,12 +303,25 @@ function AccountCorporateCardSheet() {
     fetchAccountList();
   }, [fetchAccountList]);
 
-  // accountList 로딩 후 기본 선택값
+  // ✅ 추가: 기본 거래처 자동세팅은 딱 1번만
+  const didSetDefaultAccountRef = useRef(false);
+
+  // accountList 로딩 후 기본 선택값 (초기 1회만)
   useEffect(() => {
+    if (didSetDefaultAccountRef.current) return;
+
     if ((accountList || []).length > 0 && !selectedAccountId) {
       setSelectedAccountId(String(accountList[0].account_id));
+      didSetDefaultAccountRef.current = true;
     }
   }, [accountList, selectedAccountId]);
+
+  // // accountList 로딩 후 기본 선택값
+  // useEffect(() => {
+  //   if ((accountList || []).length > 0 && !selectedAccountId) {
+  //     setSelectedAccountId(String(accountList[0].account_id));
+  //   }
+  // }, [accountList, selectedAccountId]);
 
   // ✅ 거래처 Autocomplete 옵션(안정화)
   const accountOptions = useMemo(() => {
@@ -1218,8 +1231,8 @@ function AccountCorporateCardSheet() {
                   style={{
                     background:
                       selectedMaster?.sale_id &&
-                        selectedMaster?.sale_id === row.sale_id &&
-                        row.sale_id
+                      selectedMaster?.sale_id === row.sale_id &&
+                      row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1248,8 +1261,8 @@ function AccountCorporateCardSheet() {
                     const changed = row.isNew
                       ? true
                       : MASTER_NUMBER_KEYS.includes(key)
-                        ? parseNumber(origRaw) !== parseNumber(rawVal)
-                        : isChangedValue(origRaw, rawVal);
+                      ? parseNumber(origRaw) !== parseNumber(rawVal)
+                      : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
                       const acctName =
@@ -1311,8 +1324,8 @@ function AccountCorporateCardSheet() {
                                 {!acctKey
                                   ? "거래처 선택"
                                   : options.length === 0
-                                    ? "등록된 카드 없음"
-                                    : "카드 선택"}
+                                  ? "등록된 카드 없음"
+                                  : "카드 선택"}
                               </em>
                             </MenuItem>
 
@@ -1549,8 +1562,8 @@ function AccountCorporateCardSheet() {
                       const changed = row?.isNew
                         ? true
                         : isForcedRedRow(row)
-                          ? true
-                          : isDetailFieldChanged(key, orig, rawVal);
+                        ? true
+                        : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");

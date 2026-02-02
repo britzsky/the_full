@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useMemo, useEffect, useState, useCallback } from "react";
+import React, { useMemo, useEffect, useState, useCallback, useRef } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { useLocation, useParams } from "react-router-dom";
 import Grid from "@mui/material/Grid";
@@ -40,9 +40,7 @@ const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
 // ✅ 셀 비교용 헬퍼: 조회 당시 vs 현재 값이 같은지 판단
 const normalizeCell = (cell) => {
-  if (!cell) {
-    return { type: "", start: "", end: "", salary: 0, memo: "" };
-  }
+  if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "" };
 
   const toNum = (v) => {
     if (v == null || v === "") return 0;
@@ -103,7 +101,6 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
   const handleChange = (field, newVal) => {
     const dayKey = column.id;
 
-    // ✅ baseValue(셀의 원본) / row.original(행 기본값) / 현재 val 순서로 상속
     const baseValue = row.original?.[dayKey] || {};
     const baseGubun = String(
       baseValue.gubun ??
@@ -126,11 +123,8 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
     const updatedValue = {
       ...baseValue,
       ...val,
-
-      // ✅ 핵심: gubun / position_type “항상 유지”
       gubun: baseGubun,
       position_type: basePosType,
-
       [field]: newVal,
     };
 
@@ -270,10 +264,14 @@ function ReadonlyCell({ getValue }) {
 ReadonlyCell.propTypes = { getValue: PropTypes.func.isRequired };
 
 // =======================================================
-// ✅ 파출 테이블: AccountMemberRecSheet 방식 적용 (스냅샷/originalMap)
+// ✅ 파출 테이블: AccountMemberRecSheet 방식 적용
+//   - _rid로 매칭
+//   - originalMap으로 변경감지(빨간/검정)
+//   - 변경분만 저장
+//   - year/month/filter 바뀌면 자동 재조회
+//   - 레이스 컨디션 방지(마지막 응답만 반영)
 // =======================================================
 
-// ✅ dispatch row 고정키 보장
 const ensureDispatchRid = (row) => {
   if (!row) return row;
   if (row._rid) return row;
@@ -284,7 +282,6 @@ const ensureDispatchRid = (row) => {
   return { ...row, _rid: `DIS_${Date.now()}_${Math.random().toString(16).slice(2)}` };
 };
 
-// ✅ 파출 비교용 normalize
 const normalizeDispatchValue = (field, v) => {
   const s = String(v ?? "");
   if (field === "phone" || field === "rrn") return s.replace(/[^0-9]/g, "");
@@ -293,7 +290,6 @@ const normalizeDispatchValue = (field, v) => {
   return s.trim();
 };
 
-// ✅ 파출 인라인 수정 셀 (빨간/검정)
 function DispatchEditableCell({ getValue, row, table, field }) {
   const value = getValue() ?? "";
   const rid = String(row?.original?._rid ?? "");
@@ -333,7 +329,6 @@ DispatchEditableCell.propTypes = {
   field: PropTypes.string.isRequired,
 };
 
-// ✅ 파출 삭제/복원 버튼 셀
 function DispatchActionCell({ row, onToggle }) {
   const delYn = row.original?.del_yn ?? "N";
   const isDeleted = String(delYn).toUpperCase() === "Y";
@@ -360,7 +355,6 @@ function DispatchActionCell({ row, onToggle }) {
 }
 
 function RecordSheet() {
-  // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
   const [originalSelectedAccountId, setOriginalSelectedAccountId] = useState(
@@ -370,23 +364,23 @@ function RecordSheet() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
+
   const [attendanceRows, setAttendanceRows] = useState([]);
   const [originalAttendanceRows, setOriginalAttendanceRows] = useState([]);
   const [defaultTimes, setDefaultTimes] = useState({});
 
-  // ✅ 파출 스냅샷/관리: activeRows(originalMap 방식)
+  // ✅ 파출 state / snapshot
   const [dispatchRows, setDispatchRows] = useState([]);
   const [originalDispatchRows, setOriginalDispatchRows] = useState([]);
-
-  // ✅ 파출 조회 필터 (유지:N / 삭제:Y)
   const [dispatchDelFilter, setDispatchDelFilter] = useState("N");
+  const [dispatchLoading, setDispatchLoading] = useState(false);
 
-  // ✅ 스냅샷 갱신 트리거 (파출 재조회/저장 성공 시 올려줌)
-  const [dispatchSnapshotTick, setDispatchSnapshotTick] = useState(0);
+  // ✅ 레이스 컨디션 방지용 seq
+  const dispatchReqSeqRef = useRef(0);
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
-  const account_name = queryParams.get("name");
+  const account_name = queryParams.get("name"); // (미사용이어도 유지)
   const { account_id } = useParams();
 
   const daysInMonth = dayjs(`${year}-${month}`).daysInMonth();
@@ -397,16 +391,14 @@ function RecordSheet() {
   const [open, setOpen] = useState(false);
   const handleModalOpen = () => setOpen(true);
 
-  // ✅ "출근한 사람"으로 카운트할 타입들(원하는대로 조정)
-  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]); // 영양사/상용/초과/파출/직원파출/유틸/대체근무
-
+  // ✅ "출근한 사람"으로 카운트할 타입들
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
     if (!t || t === "0") return false;
     return COUNT_TYPES.has(t);
   };
 
-  // ✅ day_1~day_N 별 출근자 수 계산
   const dayWorkCounts = useMemo(() => {
     const counts = {};
     for (let d = 1; d <= daysInMonth; d++) counts[`day_${d}`] = 0;
@@ -462,7 +454,6 @@ function RecordSheet() {
     const payload = {
       ...formData,
       del_yn: "N",
-      // ✅ 추가
       record_year: year,
       record_month: month,
     };
@@ -483,7 +474,9 @@ function RecordSheet() {
             if (result.isConfirmed) {
               handleModalClose();
               setOpen(false);
-              await fetchDispatchOnly(dispatchDelFilter);
+              // ✅ 등록 성공 후 파출 자동 재조회
+              // (useEffect 자동 재조회가 있으니, 즉시 반영 원하면 여기서도 호출)
+              // fetchDispatchOnly(dispatchDelFilter);
             }
           });
         }
@@ -502,13 +495,11 @@ function RecordSheet() {
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
     useRecordsheetData(selectedAccountId, year, month);
 
-  // ✅ localStorage account_id 기준으로 accountList 필터링
   const filteredAccountList = useMemo(() => {
     if (!localAccountId) return accountList || [];
     return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
   }, [accountList, localAccountId]);
 
-  // ✅ Autocomplete value
   const selectedAccountOption = useMemo(() => {
     if (!selectedAccountId) return null;
     return (
@@ -517,28 +508,40 @@ function RecordSheet() {
     );
   }, [filteredAccountList, selectedAccountId]);
 
-  // ✅ 백엔드 응답에서 배열 안전 추출
+  // ✅ 백엔드 응답에서 배열 안전 추출 (중첩까지)
   const extractList = (payload) => {
-    const list =
+    let x =
       payload?.data ??
       payload?.result ??
       payload?.list ??
       payload?.rows ??
       payload?.items ??
       payload;
-    return Array.isArray(list) ? list : [];
+
+    if (Array.isArray(x)) return x;
+
+    if (x && typeof x === "object") {
+      const y = x.data ?? x.result ?? x.list ?? x.rows ?? x.items;
+      if (Array.isArray(y)) return y;
+    }
+    return [];
   };
 
-  // ✅ 파출만 재조회 함수 (del_yn 조건 포함)
+  // ✅ 파출만 조회 (레이스 방지 포함)
   const fetchDispatchOnly = useCallback(
-    async (overrideDelYn) => {
+    async (del_yn) => {
       if (!selectedAccountId) return;
-      const del_yn = overrideDelYn ?? dispatchDelFilter;
+
+      const mySeq = ++dispatchReqSeqRef.current;
+      setDispatchLoading(true);
 
       try {
         const res = await api.get("/Account/AccountRecordDispatchList", {
           params: { account_id: selectedAccountId, year, month, del_yn },
         });
+
+        // ✅ 마지막 요청만 반영
+        if (mySeq !== dispatchReqSeqRef.current) return;
 
         const list = extractList(res?.data);
         const listMapped = (list || []).map((item) => {
@@ -552,29 +555,35 @@ function RecordSheet() {
             account_number: item.account_number ?? "",
             total: item.total,
             del_yn: item.del_yn ?? "N",
-            dispatch_id: item.dispatch_id ?? item.id, // ✅ rowId 기반
+            dispatch_id: item.dispatch_id ?? item.id,
           };
           return ensureDispatchRid(row);
         });
 
         setDispatchRows(listMapped);
-
-        // ✅ 스냅샷
         setOriginalDispatchRows(listMapped.map((r) => ({ ...r })));
-        setDispatchSnapshotTick((t) => t + 1);
       } catch (err) {
+        if (mySeq !== dispatchReqSeqRef.current) return;
         console.error("파출 재조회 실패:", err);
         Swal.fire({
           title: "오류",
           text: "파출직원 조회 중 오류가 발생했습니다.",
           icon: "error",
         });
+      } finally {
+        if (mySeq === dispatchReqSeqRef.current) setDispatchLoading(false);
       }
     },
-    [selectedAccountId, year, month, dispatchDelFilter]
+    [selectedAccountId, year, month]
   );
 
-  // ✅ 파출 삭제/복원 버튼 핸들러 (기존처럼 즉시 저장 방식 유지)
+  // ✅ 핵심: year/month/selectedAccountId/filter 바뀌면 자동으로 파출 재조회
+  useEffect(() => {
+    if (!selectedAccountId) return;
+    fetchDispatchOnly(dispatchDelFilter);
+  }, [selectedAccountId, year, month, dispatchDelFilter, fetchDispatchOnly]);
+
+  // ✅ 파출 삭제/복원 (즉시 저장 방식 유지)
   const handleToggleDispatch = useCallback(
     async (row) => {
       const cur = row?.del_yn ?? "N";
@@ -635,7 +644,9 @@ function RecordSheet() {
             confirmButtonColor: "#d33",
             confirmButtonText: "확인",
           });
-          await fetchDispatchOnly(dispatchDelFilter);
+
+          // ✅ 삭제/복원 후 즉시 재조회(현재 필터 기준)
+          fetchDispatchOnly(dispatchDelFilter);
         } else {
           Swal.fire({
             title: "실패",
@@ -658,12 +669,12 @@ function RecordSheet() {
     [dispatchDelFilter, fetchDispatchOnly, year, month, selectedAccountId]
   );
 
-  // ✅ 파출 원본을 _rid로 매칭 (AccountMemberRecSheet 방식)
+  // ✅ 파출 originalMap (_rid 매칭)
   const originalDispatchMap = useMemo(() => {
     const m = new Map();
     (originalDispatchRows || []).forEach((r) => m.set(String(r._rid), r));
     return m;
-  }, [originalDispatchRows, dispatchSnapshotTick]);
+  }, [originalDispatchRows]);
 
   const updateDispatchByRid = useCallback((rid, patch) => {
     setDispatchRows((prev) =>
@@ -671,11 +682,11 @@ function RecordSheet() {
     );
   }, []);
 
-  // ✅ 파출 저장: 변경된 row만 전송 (AccountMemberRecSheet 방식)
+  // ✅ 파출 저장: 변경된 row만 전송
   const handleDispatchSave = useCallback(async () => {
     if (!selectedAccountId) return;
 
-    const editableFields = ["phone", "rrn", "account_number"]; // 필요하면 추가 가능(예: "del_yn")
+    const editableFields = ["phone", "rrn", "account_number"];
 
     const changedRows = (dispatchRows || []).filter((row) => {
       const rid = String(row?._rid ?? "");
@@ -695,7 +706,6 @@ function RecordSheet() {
     }
 
     try {
-      // ✅ 변경분만 저장
       for (const r of changedRows) {
         const fd = new FormData();
         fd.append("account_id", r.account_id || selectedAccountId);
@@ -715,8 +725,7 @@ function RecordSheet() {
       }
 
       Swal.fire({ title: "저장", text: "저장 완료", icon: "success" });
-      // ✅ 저장 성공 후 재조회 + 스냅샷 갱신
-      await fetchDispatchOnly(dispatchDelFilter);
+      fetchDispatchOnly(dispatchDelFilter);
     } catch (e) {
       Swal.fire({ title: "오류", text: e.message || "저장 중 오류", icon: "error" });
     }
@@ -757,14 +766,13 @@ function RecordSheet() {
     setFormData((prev) => ({ ...prev, account_id: selectedAccountId }));
   }, [selectedAccountId]);
 
-  // ✅ sheetRows → attendanceRows 구성 (gubun/position_type 포함)
+  // ✅ sheetRows → attendanceRows 구성
   useEffect(() => {
     if (!sheetRows || !sheetRows.length) return;
 
     const newAttendance = sheetRows.map((item) => {
       const member = memberRows.find((m) => m.member_id === item.member_id);
 
-      // ✅ baseGubun: day_default가 있으면 그걸 최우선
       const baseGubun = String(item.day_default?.gubun ?? item.gubun ?? "nor")
         .trim()
         .toLowerCase();
@@ -778,11 +786,8 @@ function RecordSheet() {
         account_id: item.account_id,
         member_id: item.member_id,
         position: item.position || member?.position || "",
-
-        // ✅ 행 기본값으로도 들고 있게
         gubun: baseGubun,
         position_type: basePosType,
-
         day_default: item.day_default || null,
       };
 
@@ -794,13 +799,10 @@ function RecordSheet() {
         dayEntries[key] = source
           ? {
               ...source,
-
-              // ✅ 핵심: source에 없으면 base로 상속
               gubun: String(source.gubun ?? baseGubun)
                 .trim()
                 .toLowerCase(),
               position_type: String(source.position_type ?? basePosType).trim(),
-
               start: source.start_time || source.start || "",
               end: source.end_time || source.end || "",
               start_time: source.start_time || "",
@@ -811,11 +813,8 @@ function RecordSheet() {
           : {
               account_id: item.account_id,
               member_id: item.member_id,
-
-              // ✅ 빈 날도 gubun/position_type 유지 (이게 저장 때 중요)
               gubun: baseGubun,
               position_type: basePosType,
-
               type: "",
               start: "",
               end: "",
@@ -832,7 +831,6 @@ function RecordSheet() {
     setAttendanceRows(newAttendance);
     setOriginalAttendanceRows(JSON.parse(JSON.stringify(newAttendance)));
 
-    // ✅ defaultTimes 맵
     const map = {};
     sheetRows.forEach((item) => {
       map[item.member_id] = {
@@ -945,7 +943,6 @@ function RecordSheet() {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  // ✅ 파출 컬럼 (빨간 변경표시 적용)
   const dispatchColumns = useMemo(
     () => [
       { header: "이름", accessorKey: "name", size: "3%", cell: ReadonlyCell },
@@ -978,7 +975,6 @@ function RecordSheet() {
     [handleToggleDispatch]
   );
 
-  // ✅ 파출 테이블 (AccountMemberRecSheet 방식 meta 적용)
   const dispatchTable = useReactTable({
     data: dispatchRows,
     columns: dispatchColumns,
@@ -1026,7 +1022,6 @@ function RecordSheet() {
     "& button": { height: "20px !important", padding: "2px" },
   };
 
-  // ✅ 출퇴근 일괄 적용
   const handleApplyDefaultTime = () => {
     setAttendanceRows((prevRows) =>
       prevRows.map((row) => {
@@ -1053,7 +1048,6 @@ function RecordSheet() {
     );
   };
 
-  // ✅ 저장 (출근현황) 기존 로직 유지
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
 
@@ -1079,7 +1073,6 @@ function RecordSheet() {
 
           const originalVal = useDiffMode && originalRow ? originalRow[key] : null;
 
-          // ✅ 1) 변경감지: 원본과 같으면 스킵
           if (useDiffMode) {
             if (isCellEqual(val, originalVal)) return;
           }
@@ -1087,7 +1080,6 @@ function RecordSheet() {
           const curType = safeTrim(val?.type, "");
           const orgType = safeTrim(originalVal?.type, "");
 
-          // ✅ 2) "0(-)" 또는 ""(빈값)으로 바꾼 경우도 저장해야 함
           const cleared =
             (curType === "0" || curType === "") && !(orgType === "" || orgType === "0");
 
@@ -1118,7 +1110,6 @@ function RecordSheet() {
             if (g === "dis") disRecords.push(recordObj);
             else if (g === "rec") recRecords.push(recordObj);
             else normalRecords.push(recordObj);
-
             return;
           }
 
@@ -1194,7 +1185,6 @@ function RecordSheet() {
           gap: isMobile ? 1 : 2,
         }}
       >
-        {/* ✅ 거래처 */}
         <Autocomplete
           size="small"
           sx={{ minWidth: 200 }}
@@ -1266,7 +1256,9 @@ function RecordSheet() {
           color="warning"
           onClick={async () => {
             await fetchAllData?.();
-            await fetchDispatchOnly(dispatchDelFilter);
+            // ✅ 파출은 useEffect로 자동 재조회되지만,
+            // "조회 버튼 누르면 즉시" 체감 원하면 아래도 유지 가능
+            // fetchDispatchOnly(dispatchDelFilter);
           }}
           sx={{
             fontSize: isMobile ? "0.7rem" : "0.8rem",
@@ -1343,7 +1335,6 @@ function RecordSheet() {
                     </tr>
                   ))}
 
-                  {/* ✅ 일자별 출근자 수 요약 행 */}
                   <tr>
                     <td
                       style={{
@@ -1447,16 +1438,15 @@ function RecordSheet() {
               justifyContent="space-between"
             >
               <MDTypography variant="h6" color="white">
-                파출 정보
+                파출 정보 {dispatchLoading ? "(조회중...)" : ""}
               </MDTypography>
 
               <MDBox display="flex" alignItems="center" gap={1}>
                 <Select
                   value={dispatchDelFilter}
-                  onChange={async (e) => {
-                    const v = e.target.value;
-                    setDispatchDelFilter(v);
-                    await fetchDispatchOnly(v);
+                  onChange={(e) => {
+                    // ✅ 필터만 바꾸면 useEffect가 자동으로 fetchDispatchOnly 호출
+                    setDispatchDelFilter(e.target.value);
                   }}
                   size="small"
                   sx={{
@@ -1473,7 +1463,6 @@ function RecordSheet() {
                   <MenuItem value="Y">삭제</MenuItem>
                 </Select>
 
-                {/* ✅ 파출정보 저장 버튼 (변경분만 저장) */}
                 <MDButton
                   variant="gradient"
                   color="warning"
@@ -1484,7 +1473,6 @@ function RecordSheet() {
                   저장
                 </MDButton>
 
-                {/* ✅ 파출등록 */}
                 <MDButton
                   variant="gradient"
                   color="success"

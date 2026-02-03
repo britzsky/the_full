@@ -18,7 +18,7 @@ import {
   TextField,
 } from "@mui/material";
 
-import Autocomplete from "@mui/material/Autocomplete"; // ✅ 추가
+import Autocomplete from "@mui/material/Autocomplete";
 
 import Paper from "@mui/material/Paper";
 import Draggable from "react-draggable";
@@ -60,7 +60,6 @@ const CARD_BRANDS = [
 
 // ✅ 영수증 타입(상단 테이블용)
 const RECEIPT_TYPES = [
-  // { value: "CARD_SLIP_GENERIC", label: "카드전표" },
   { value: "coupang", label: "쿠팡" },
   { value: "gmarket", label: "G마켓" },
   { value: "11post", label: "11번가" },
@@ -110,8 +109,18 @@ const isChangedValue = (orig, cur) => {
 
 const makeTempId = () => `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
+// ✅ 저장 전 정리(상단)
 const cleanMasterRow = (r) => {
-  const { isNew, client_id, ...rest } = r;
+  const {
+    isNew,
+    client_id,
+    __dirty,
+    __imgTouchedAt,
+    __pendingFile,
+    __pendingPreviewUrl,
+    __pendingAt,
+    ...rest
+  } = r;
   return rest;
 };
 const cleanCardRow = (r) => {
@@ -136,7 +145,6 @@ const defaultPaymentDtForYM = (year, month) => {
   const t = new Date();
   const y = Number(year);
   const m = Number(month);
-
   if (t.getFullYear() === y && t.getMonth() + 1 === m) return todayStr();
   return `${y}-${pad2(m)}-01`;
 };
@@ -149,6 +157,15 @@ const DETAIL_NUMBER_KEYS = ["qty", "amount", "unitPrice"];
 
 // ✅ 상세 Select 컬럼(숫자 enum)
 const DETAIL_SELECT_KEYS = ["taxType", "itemType"];
+
+// ✅ (추가) URL 캐시무력화 유틸
+const appendQuery = (url, q) => `${url}${url.includes("?") ? "&" : "?"}${q}`;
+const buildReceiptUrl = (path, v) => {
+  if (!path) return "";
+  const base = `${API_BASE_URL}${path}`;
+  const vv = v || 0;
+  return appendQuery(appendQuery(base, `v=${vv}`), `cb=${Date.now()}`);
+};
 
 const parseNumMaybe = (v) => {
   if (v === null || v === undefined) return null;
@@ -209,6 +226,9 @@ const selectAllContent = (el) => {
   sel.addRange(range);
 };
 
+// ✅ (추가) pending 판단 유틸(여기서 통일)
+const isPendingRow = (r) => !!r?.__pendingFile || !!r?.__pendingPreviewUrl || !!r?.__pendingAt;
+
 function CorporateCardSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -236,6 +256,13 @@ function CorporateCardSheet() {
   const [origDetailRows, setOrigDetailRows] = useState([]);
 
   const [selectedMaster, setSelectedMaster] = useState(null);
+
+  const fileInputRefs = useRef({});
+
+  const masterRowsRef = useRef([]);
+  useEffect(() => {
+    masterRowsRef.current = masterRows;
+  }, [masterRows]);
 
   // ✅ 거래처 검색조건
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -265,16 +292,15 @@ function CorporateCardSheet() {
     });
   }, []);
 
-  const fileIconSx = { color: "#1e88e5" };
+  // 아이콘 기본색(정상)
+  const normalIconColor = "#1e88e5";
   const [cardNoEditingIndex, setCardNoEditingIndex] = useState(null);
 
-  const handleDownload = useCallback((path) => {
-    if (!path || typeof path !== "string") return;
-    const url = `${API_BASE_URL}${path}`;
-    const filename = path.split("/").pop() || "download";
-
+  // ✅ 다운로드 (server path or blob url)
+  const downloadBySrc = useCallback((src, filename = "download") => {
+    if (!src) return;
     const a = document.createElement("a");
-    a.href = url;
+    a.href = src;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     a.download = filename;
@@ -282,6 +308,16 @@ function CorporateCardSheet() {
     a.click();
     document.body.removeChild(a);
   }, []);
+
+  const handleDownloadServerPath = useCallback(
+    (path, v) => {
+      if (!path || typeof path !== "string") return;
+      const url = buildReceiptUrl(path, v);
+      const filename = path.split("/").pop() || "download";
+      downloadBySrc(url, filename);
+    },
+    [downloadBySrc]
+  );
 
   // ============================================================
   // ✅ 잔상(행추가) 제거 + contentEditable DOM 잔상 제거
@@ -380,9 +416,28 @@ function CorporateCardSheet() {
       const keepNew = !skipPendingNewMergeRef.current;
       const pendingNew = keepNew ? (prev || []).filter((r) => r?.isNew) : [];
       skipPendingNewMergeRef.current = false;
-      return [...serverRows, ...pendingNew];
+
+      // ✅ dirty OR pending(재업로드 대기) 행은 무조건 유지
+      const prevLocalMap = new Map();
+      (prev || []).forEach((r) => {
+        const sid = String(r?.sale_id || "").trim();
+        if (!sid) return;
+
+        const hasPending = isPendingRow(r);
+        if (r?.__dirty || hasPending) prevLocalMap.set(sid, r);
+      });
+
+      // ✅ 서버 rows를 기본으로 하되 local(=dirty/pending)이 있으면 로컬 우선
+      const merged = serverRows.map((sr) => {
+        const sid = String(sr?.sale_id || "").trim();
+        const local = sid ? prevLocalMap.get(sid) : null;
+        return local ? { ...sr, ...local } : sr;
+      });
+
+      return [...merged, ...pendingNew];
     });
 
+    // ✅ orig는 서버 기준(비교 기준)으로 유지
     setOrigMasterRows(serverRows);
 
     setSelectedMaster(null);
@@ -405,9 +460,19 @@ function CorporateCardSheet() {
     setDetailRenderKey((k) => k + 1);
   }, [paymentDetailRows]);
 
+  const getRowCardNoDigits = (row) => onlyDigits(row?.cardNo ?? row?.card_no ?? row?.cardno ?? "");
+
+  const getRowCardBrand = (row) =>
+    row?.cardBrand ?? row?.card_brand ?? row?.cardbrand ?? DEFAULT_CARD_BRAND;
+
+  const getRowReceiptType = (row) =>
+    String(row?.receipt_type ?? row?.receiptType ?? row?.type ?? "coupang");
+
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
-    setMasterRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r)));
+    setMasterRows((prev) =>
+      prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value, __dirty: true } : r))
+    );
   }, []);
 
   const handleDetailCellChange = useCallback((rowIndex, key, value) => {
@@ -443,6 +508,7 @@ function CorporateCardSheet() {
             ...r,
             cardNo: picked?.card_no || digits,
             cardBrand: picked?.card_brand || r.cardBrand || DEFAULT_CARD_BRAND,
+            __dirty: true,
           };
         });
       });
@@ -477,7 +543,6 @@ function CorporateCardSheet() {
       cardNo: auto?.card_no || "",
       cardBrand: auto?.card_brand || DEFAULT_CARD_BRAND,
 
-      // ✅ 영수증 타입(추가)
       receipt_type: "coupang",
 
       receipt_image: "",
@@ -485,21 +550,26 @@ function CorporateCardSheet() {
       reg_dt: "",
       user_id: localStorage.getItem("user_id") || "",
 
+      // ✅ 재업로드 대기값(초기엔 없음)
+      __pendingFile: null,
+      __pendingPreviewUrl: "",
+      __pendingAt: 0,
+
       isNew: true,
+      __dirty: true,
     };
 
     setMasterRows((prev) => [...prev, newRow]);
     requestAnimationFrame(() => scrollMasterToBottom(true));
   }, [year, month, scrollMasterToBottom, selectedAccountId, cardsAll]);
 
-  // ✅ (추가) 행추가(하단) - 선택된 상단 sale_id로 상세행 추가
+  // ✅ (추가) 행추가(하단)
   const addDetailRow = useCallback(() => {
     if (!selectedMaster) {
       return Swal.fire("안내", "상단 결제내역에서 행을 먼저 선택해주세요.", "info");
     }
     const sid = String(selectedMaster.sale_id || "").trim();
     if (!sid) {
-      // 저장 전 임시행이면 sale_id가 없을 가능성이 큼
       return Swal.fire(
         "안내",
         "선택한 상단 행이 아직 저장되지 않아 상세를 추가할 수 없습니다.\n상단을 먼저 저장한 후 다시 추가해주세요.",
@@ -520,33 +590,57 @@ function CorporateCardSheet() {
     };
 
     setDetailRows((prev) => [...(prev || []), newDetail]);
-    // index 정렬을 위해 orig에도 placeholder 추가
     setOrigDetailRows((prev) => [...(prev || []), {}]);
     setDetailRenderKey((k) => k + 1);
 
     requestAnimationFrame(() => scrollDetailToBottom(true));
   }, [selectedMaster, scrollDetailToBottom]);
 
-  // ========================= 영수증 업로드/스캔 =========================
   const handleImageUpload = useCallback(
     async (file, rowIndex) => {
       if (!file) return;
 
-      const row = masterRows[rowIndex] || {};
-      const acctOk = !!String(row.account_id || "");
-      const cardOk = !!onlyDigits(row.cardNo);
-      const typeOk = !!String(row.receipt_type || ""); // ✅ 타입 필수
+      // ✅ 업로드 순간의 "진짜 최신 row" (stale 방지)
+      const row = masterRowsRef.current?.[rowIndex] || {};
 
-      if (!acctOk || !cardOk) {
+      // ✅ 최신값으로 안전하게 추출
+      const accountId = String(row.account_id || "");
+      const cardNoDigits = getRowCardNoDigits(row);
+      const cardBrand = getRowCardBrand(row);
+      const receiptType = getRowReceiptType(row);
+
+      console.log("SCAN payload", {
+        accountId,
+        cardNoDigits,
+        cardBrand,
+        receiptType,
+        sale_id: row.sale_id,
+      });
+
+      // ✅ 업로드 시작 표시(dirty/pending 초기화)
+      setMasterRows((prev) =>
+        prev.map((r, i) =>
+          i === rowIndex
+            ? {
+                ...r,
+                __dirty: true,
+                __imgTouchedAt: Date.now(),
+                __pendingFile: null,
+                __pendingPreviewUrl: "",
+                __pendingAt: 0,
+              }
+            : r
+        )
+      );
+
+      if (!accountId || !cardNoDigits) {
         return Swal.fire(
           "경고",
           "영수증 업로드 전에 거래처와 카드번호를 먼저 선택해주세요.",
           "warning"
         );
       }
-
-      // ✅ 타입 선택 강제
-      if (!typeOk) {
+      if (!receiptType) {
         return Swal.fire("경고", "영수증타입을 선택해주세요.", "warning");
       }
 
@@ -560,16 +654,21 @@ function CorporateCardSheet() {
         });
 
         const formData = new FormData();
+
         formData.append("file", file);
         formData.append("user_id", localStorage.getItem("user_id") || "");
-        // ✅ 여기로 전달
-        formData.append("type", row.receipt_type);
-        formData.append("objectValue", row.account_id);
+
+        // ✅ 여기부터가 핵심: 무조건 /Corporate/receipt-scan에 필요한 값으로 태움
+        formData.append("type", receiptType);
+        formData.append("receiptType", receiptType);
+        formData.append("objectValue", accountId);
         formData.append("folderValue", "acnCorporate");
-        formData.append("cardNo", row.cardNo);
-        formData.append("cardBrand", row.cardBrand);
+        formData.append("cardNo", cardNoDigits);
+        formData.append("cardBrand", cardBrand);
         formData.append("saveType", "headoffice");
-        formData.append("receiptType", row.receipt_type);
+
+        // ✅ sale_id 있으면 같이 (재업로드/재스캔 구분용)
+        formData.append("sale_id", row.sale_id || "");
 
         const res = await api.post("/Corporate/receipt-scan", formData, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
@@ -613,11 +712,13 @@ function CorporateCardSheet() {
               ...r,
               ...patch,
               account_id: patch.account_id !== undefined ? patch.account_id : r.account_id ?? "",
+              __dirty: true,
+              __imgTouchedAt: Date.now(),
             };
           })
         );
 
-        // ✅ 하단 반영(스캔된 항목은 무조건 빨간 글씨)
+        // ✅ 하단 반영
         if (Array.isArray(items)) {
           const saleIdForDetail = main.sale_id || row.sale_id || "";
           const normalized = items.map((it) => ({
@@ -668,7 +769,7 @@ function CorporateCardSheet() {
     [masterRows, handleFetchMaster, fetchHeadOfficeCorporateCardPaymentDetailList]
   );
 
-  // ========================= 저장: main + item 한 번에 =========================
+  // ========================= 저장: main + item + (재업로드 pending files) =========================
   const origMasterBySaleId = useMemo(() => {
     const m = new Map();
     for (const r of origMasterRows || []) {
@@ -680,7 +781,7 @@ function CorporateCardSheet() {
   const normalizeMasterForSave = useCallback((r) => {
     const row = cleanMasterRow(r);
 
-    // ✅ receipt_type 항상 포함(없으면 기본값)
+    // ✅ receipt_type 항상 포함
     row.receipt_type = String(row.receipt_type ?? r.receipt_type ?? "coupang");
 
     MASTER_NUMBER_KEYS.forEach((k) => {
@@ -706,6 +807,9 @@ function CorporateCardSheet() {
       .map((r) => {
         if (r.isNew) return normalizeMasterForSave(r);
 
+        // ✅ dirty면 무조건 저장대상
+        if (r.__dirty) return normalizeMasterForSave(r);
+
         const sid = String(r.sale_id || "");
         const o = sid ? origMasterBySaleId.get(sid) : null;
         if (!o) return normalizeMasterForSave(r);
@@ -721,7 +825,6 @@ function CorporateCardSheet() {
 
     const item = detailRows
       .map((r, i) => {
-        // ✅ 신규 상세행은 무조건 저장 대상
         if (r?.isNew) {
           return {
             ...cleanDetailRow(r),
@@ -730,7 +833,6 @@ function CorporateCardSheet() {
           };
         }
 
-        // ✅ 스캔(강제 빨강)은 무조건 저장 대상
         if (isForcedRedRow(r)) {
           return {
             ...cleanDetailRow(r),
@@ -752,11 +854,15 @@ function CorporateCardSheet() {
       })
       .filter(Boolean);
 
-    if (main.length === 0 && item.length === 0) {
+    // ✅ pendings
+    const pendings = (masterRows || [])
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => isPendingRow(r));
+
+    if (main.length === 0 && item.length === 0 && pendings.length === 0) {
       return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
     }
 
-    // ✅ 선택된 상단행이 없으면 item 저장은 막는 게 안전
     if (item.length > 0 && (!topAccountId || !topPaymentDt)) {
       return Swal.fire(
         "안내",
@@ -774,20 +880,103 @@ function CorporateCardSheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      const res = await api.post(
-        "/Account/HeadOfficeCorporateCardPaymentAllSave",
-        { main, item },
-        { headers: { "Content-Type": "application/json" } }
-      );
+      // ✅ 파일이 있으면 multipart로 전송
+      if (pendings.length > 0) {
+        const form = new FormData();
 
-      if (!(res.data?.code === 200 || res.status === 200)) {
-        Swal.close();
-        return Swal.fire("실패", res.data?.message || "저장 실패", "error");
+        // main/item JSON
+        form.append(
+          "payload",
+          new Blob([JSON.stringify({ main, item })], { type: "application/json" })
+        );
+
+        // 파일들 + 매칭키 + 메타
+        pendings.forEach(({ r, idx }) => {
+          const rowKey = String(r.sale_id || r.client_id || idx);
+
+          // 파일이 없으면 스킵(미리보기만 있는 경우)
+          if (!r.__pendingFile) return;
+
+          form.append("files", r.__pendingFile);
+          form.append("fileRowKeys", rowKey);
+
+          form.append(
+            "fileMetas",
+            new Blob(
+              [
+                JSON.stringify({
+                  rowKey,
+                  sale_id: r.sale_id || "",
+                  account_id: r.account_id || "",
+                  payment_dt: r.payment_dt || "",
+                  receipt_type: r.receipt_type || "",
+                  cardNo: r.cardNo || "",
+                  cardBrand: r.cardBrand || "",
+                  user_id: localStorage.getItem("user_id") || "",
+                }),
+              ],
+              { type: "application/json" }
+            )
+          );
+        });
+
+        const res = await api.post(
+          "/Account/HeadOfficeCorporateCardPaymentAllSaveWithFiles",
+          form,
+          { headers: { "Content-Type": "multipart/form-data" } }
+        );
+
+        if (!(res.data?.code === 200 || res.status === 200)) {
+          Swal.close();
+          return Swal.fire("실패", res.data?.message || "저장 실패", "error");
+        }
+      } else {
+        // ✅ 파일이 없으면 기존 JSON 저장
+        const res = await api.post(
+          "/Account/HeadOfficeCorporateCardPaymentAllSave",
+          { main, item },
+          { headers: { "Content-Type": "application/json" } }
+        );
+
+        if (!(res.data?.code === 200 || res.status === 200)) {
+          Swal.close();
+          return Swal.fire("실패", res.data?.message || "저장 실패", "error");
+        }
       }
 
       Swal.close();
       Swal.fire("성공", "저장되었습니다.", "success");
 
+      // ==========================================================
+      // ✅ (핵심) 저장 성공 후 로컬 dirty/pending을 전부 정리해야
+      // 다음 조회 merge에서 “로컬 우선” 때문에 잔상이 남지 않음
+      // ==========================================================
+      setMasterRows((prev) =>
+        prev.map((r) => {
+          // pending preview revoke (단, 이 row의 preview는 여기서만 정리)
+          if (r.__pendingPreviewUrl) {
+            try {
+              URL.revokeObjectURL(r.__pendingPreviewUrl);
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          const { __pendingFile, __pendingPreviewUrl, __pendingAt, ...rest } = r;
+          return {
+            ...rest,
+            __dirty: false,
+            isNew: false,
+          };
+        })
+      );
+
+      // 상세도 저장 성공이면 강제빨강/신규 해제
+      setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
+      setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
+      setDetailRenderKey((k) => k + 1);
+
+      // ✅ 이제 서버값 그대로 다시 받도록
       skipPendingNewMergeRef.current = true;
       await handleFetchMaster();
 
@@ -797,10 +986,6 @@ function CorporateCardSheet() {
           account_id: selectedMaster.account_id,
           payment_dt: selectedMaster.payment_dt,
         });
-      } else {
-        setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
-        setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
-        setDetailRenderKey((k) => k + 1);
       }
     } catch (e) {
       Swal.close();
@@ -819,55 +1004,180 @@ function CorporateCardSheet() {
 
   // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerIndex, setViewerIndex] = useState(0);
-
-  // ✅ (추가) Draggable nodeRef
+  const [viewerId, setViewerId] = useState(null); // ✅ 인덱스 대신 id
   const viewerNodeRef = useRef(null);
 
-  // ✅ 테이블에 있는 영수증 이미지 목록(순서대로)
-  const imageItems = useMemo(() => {
-    return (masterRows || [])
-      .filter((r) => !!r?.receipt_image)
-      .map((r) => ({
-        path: r.receipt_image,
-        src: `${API_BASE_URL}${r.receipt_image}`,
-        title: `${r.use_name || ""} ${toDateInputValue(r.payment_dt) || ""}`.trim(),
-      }));
+  // ✅ blob 미리보기 (서버이미지용)
+  const [viewerBlobUrl, setViewerBlobUrl] = useState("");
+  const viewerFetchSeqRef = useRef(0);
+
+  // ✅ pending preview URL은 다른 곳에서도 쓰므로 revoke하면 안됨 → set으로 보관
+  const pendingPreviewUrlSet = useMemo(() => {
+    return new Set((masterRows || []).map((r) => r?.__pendingPreviewUrl).filter(Boolean));
   }, [masterRows]);
 
-  const handleViewImage = useCallback(
-    (path) => {
-      if (!path) return;
-      const idx = imageItems.findIndex((x) => x.path === path);
-      setViewerIndex(idx >= 0 ? idx : 0);
-      setViewerOpen(true);
+  // ✅ viewerBlobUrl 정리 (fetch로 만든 blob만 revoke)
+  const revokeViewerBlob = useCallback(() => {
+    setViewerBlobUrl((prev) => {
+      try {
+        if (prev && prev.startsWith("blob:") && !pendingPreviewUrlSet.has(prev)) {
+          URL.revokeObjectURL(prev);
+        }
+      } catch (e) {
+        // ignore
+      }
+      return "";
+    });
+  }, [pendingPreviewUrlSet]);
+
+  // ✅ imageItems: pending(로컬) 우선, 없으면 서버 receipt_image
+  const imageItems = useMemo(() => {
+    return (masterRows || [])
+      .map((r, idx) => {
+        const id = String(r.sale_id || r.client_id || idx); // ✅ 안정키
+
+        // ✅ 재업로드 대기중이면 로컬 미리보기 우선
+        if (r.__pendingPreviewUrl) {
+          return {
+            id,
+            rowIndex: idx,
+            sale_id: r.sale_id || "",
+            path: r.receipt_image || "",
+            src: r.__pendingPreviewUrl,
+            isLocal: true,
+            title: `${r.use_name || ""} ${toDateInputValue(r.payment_dt) || ""}`.trim(),
+            v: r.__pendingAt || 0,
+          };
+        }
+
+        // ✅ 서버 이미지
+        if (!r?.receipt_image) return null;
+        const v = r.__imgTouchedAt || 0;
+        return {
+          id,
+          rowIndex: idx,
+          sale_id: r.sale_id || "",
+          path: r.receipt_image,
+          src: buildReceiptUrl(r.receipt_image, v),
+          isLocal: false,
+          title: `${r.use_name || ""} ${toDateInputValue(r.payment_dt) || ""}`.trim(),
+          v,
+        };
+      })
+      .filter(Boolean);
+  }, [masterRows]);
+
+  // ✅ viewerIndex는 "딱 1번만" 선언
+  const viewerIndex = useMemo(() => {
+    if (!imageItems.length) return 0;
+    if (!viewerId) return 0;
+    const i = imageItems.findIndex((x) => x.id === viewerId);
+    return i >= 0 ? i : 0;
+  }, [viewerId, imageItems]);
+
+  const currentImg = imageItems[viewerIndex];
+
+  // ✅ 서버 이미지를 blob로 fetch해서 캐시 완전 무력화
+  const fetchViewerBlob = useCallback(
+    async (url) => {
+      if (!url) {
+        revokeViewerBlob();
+        return;
+      }
+
+      const mySeq = ++viewerFetchSeqRef.current;
+
+      try {
+        revokeViewerBlob();
+        const res = await fetch(url, { cache: "no-store" });
+        const blob = await res.blob();
+
+        if (viewerFetchSeqRef.current !== mySeq) return;
+
+        const objUrl = URL.createObjectURL(blob);
+        setViewerBlobUrl(objUrl);
+      } catch (e) {
+        revokeViewerBlob();
+      }
     },
-    [imageItems]
+    [revokeViewerBlob]
   );
 
-  const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
+  // ✅ rowIndex 기반으로 열기(로컬/서버 분기)
+  const handleViewImage = useCallback(
+    async (row, rowIndex) => {
+      const id = String(row.sale_id || row.client_id || rowIndex);
+
+      setViewerId(id);
+      setViewerOpen(true);
+
+      const item = imageItems.find((x) => x.id === id) || imageItems[0];
+      if (!item?.src) {
+        revokeViewerBlob();
+        return;
+      }
+
+      if (item.isLocal) {
+        // 로컬은 objectURL 그대로 사용 (revoke 금지)
+        revokeViewerBlob();
+        setViewerBlobUrl(item.src);
+      } else {
+        await fetchViewerBlob(item.src);
+      }
+    },
+    [imageItems, fetchViewerBlob, revokeViewerBlob]
+  );
+
+  const handleCloseViewer = useCallback(() => {
+    setViewerOpen(false);
+    revokeViewerBlob();
+  }, [revokeViewerBlob]);
 
   const goPrev = useCallback(() => {
-    setViewerIndex((i) =>
-      imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0
-    );
-  }, [imageItems.length]);
+    if (!imageItems.length) return;
+    const next = (viewerIndex - 1 + imageItems.length) % imageItems.length;
+    setViewerId(imageItems[next].id);
+  }, [imageItems, viewerIndex]);
 
   const goNext = useCallback(() => {
-    setViewerIndex((i) => (imageItems.length ? (i + 1) % imageItems.length : 0));
-  }, [imageItems.length]);
+    if (!imageItems.length) return;
+    const next = (viewerIndex + 1) % imageItems.length;
+    setViewerId(imageItems[next].id);
+  }, [imageItems, viewerIndex]);
 
-  // ✅ 이미지 목록이 바뀌면 index 보정
+  // ✅ viewerOpen 시 viewerId 보정
   useEffect(() => {
     if (!viewerOpen) return;
+
     if (!imageItems.length) {
-      setViewerIndex(0);
+      setViewerId(null);
+      revokeViewerBlob();
       return;
     }
-    if (viewerIndex > imageItems.length - 1) setViewerIndex(imageItems.length - 1);
-  }, [viewerOpen, imageItems.length, viewerIndex]);
 
-  // ✅ 키보드로 이동(좌/우/ESC) - 입력 중에는 방해 안되게
+    const exists = viewerId && imageItems.some((x) => x.id === viewerId);
+    if (!exists) setViewerId(imageItems[0].id);
+  }, [viewerOpen, imageItems, viewerId, revokeViewerBlob]);
+
+  // ✅ viewerId 바뀌면 이미지 로드
+  useEffect(() => {
+    if (!viewerOpen) return;
+
+    const item = currentImg;
+    if (!item?.src) {
+      revokeViewerBlob();
+      return;
+    }
+
+    if (item.isLocal) {
+      revokeViewerBlob();
+      setViewerBlobUrl(item.src);
+    } else {
+      fetchViewerBlob(item.src);
+    }
+  }, [viewerOpen, currentImg?.src, currentImg?.isLocal, fetchViewerBlob, revokeViewerBlob]);
+
+  // ✅ 키보드 네비
   useEffect(() => {
     if (!viewerOpen) return;
 
@@ -885,7 +1195,18 @@ function CorporateCardSheet() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
 
-  const currentImg = imageItems[viewerIndex];
+  // ✅ 컴포넌트 unmount 시 pending preview revoke(메모리 누수 방지)
+  useEffect(() => {
+    return () => {
+      try {
+        (masterRows || []).forEach((r) => {
+          if (r?.__pendingPreviewUrl) URL.revokeObjectURL(r.__pendingPreviewUrl);
+        });
+      } catch (e) {
+        // ignore
+      }
+    };
+  }, [masterRows]);
 
   // ========================= 법인카드관리 모달 =========================
   const [cardModalOpen, setCardModalOpen] = useState(false);
@@ -976,7 +1297,6 @@ function CorporateCardSheet() {
       { header: "합계금액", key: "total", editable: true, size: 110 },
       { header: "카드번호", key: "cardNo", editable: false, size: 200 },
       { header: "카드사", key: "cardBrand", editable: false, size: 130 },
-      // ✅ 영수증타입(영수증사진 왼쪽)
       {
         header: "영수증타입",
         key: "receipt_type",
@@ -985,7 +1305,7 @@ function CorporateCardSheet() {
         type: "select",
         options: RECEIPT_TYPES,
       },
-      { header: "영수증사진", key: "receipt_image", editable: false, size: 110 },
+      { header: "영수증사진", key: "receipt_image", editable: false, size: 140 },
       { header: "비고", key: "note", editable: true, size: 160 },
       { header: "등록일자", key: "reg_dt", editable: false, size: 110 },
     ],
@@ -1219,7 +1539,15 @@ function CorporateCardSheet() {
                     const val = MASTER_NUMBER_KEYS.includes(key) ? formatNumber(rawVal) : rawVal;
 
                     const origRaw = origMasterRows[rowIndex]?.[key];
+
+                    const pending = isPendingRow(row);
+
+                    // ✅ 변경여부
                     const changed = row.isNew
+                      ? true
+                      : pending
+                      ? true
+                      : row.__dirty
                       ? true
                       : MASTER_NUMBER_KEYS.includes(key)
                       ? parseNumber(origRaw) !== parseNumber(rawVal)
@@ -1335,7 +1663,11 @@ function CorporateCardSheet() {
 
                     if (key === "receipt_image") {
                       const has = !!rawVal;
-                      const inputId = `receipt-${row.client_id || row.sale_id || rowIndex}`;
+                      const stableKey = String(row.sale_id || row.client_id || rowIndex);
+                      const inputId = `receipt-${stableKey}`;
+                      const hasPending = pending;
+
+                      const iconColor = changed ? "red" : normalIconColor;
 
                       return (
                         <td key={key} style={{ width: c.size }}>
@@ -1352,53 +1684,97 @@ function CorporateCardSheet() {
                               accept="image/*"
                               id={inputId}
                               style={{ display: "none" }}
+                              ref={(el) => {
+                                if (el) fileInputRefs.current[inputId] = el;
+                              }}
+                              onClick={(e) => {
+                                e.currentTarget.value = ""; // ✅ 파일창 뜨기 직전에 초기화 (같은 파일도 change 뜸)
+                              }}
                               onChange={(e) => {
                                 const f = e.target.files?.[0];
+                                console.log("file picked:", f);
+                                e.currentTarget.value = ""; // ✅ 이것도 빈 문자열로
+                                if (!f) return;
                                 handleImageUpload(f, rowIndex);
-                                e.target.value = "";
                               }}
                             />
 
                             {has ? (
                               <>
-                                <Tooltip title="다운로드">
-                                  <IconButton
-                                    size="small"
-                                    sx={fileIconSx}
-                                    onClick={(ev) => {
-                                      ev.stopPropagation();
-                                      handleDownload(rawVal);
-                                    }}
-                                  >
-                                    <DownloadIcon fontSize="small" />
-                                  </IconButton>
+                                <Tooltip title={hasPending ? "대기파일 다운로드" : "다운로드"}>
+                                  <span>
+                                    <IconButton
+                                      size="small"
+                                      sx={{ color: iconColor }}
+                                      onClick={(ev) => {
+                                        ev.stopPropagation();
+
+                                        if (row.__pendingPreviewUrl) {
+                                          downloadBySrc(
+                                            row.__pendingPreviewUrl,
+                                            `receipt_pending_${row.sale_id || rowIndex}.jpg`
+                                          );
+                                          return;
+                                        }
+
+                                        handleDownloadServerPath(rawVal, row.__imgTouchedAt);
+                                      }}
+                                    >
+                                      <DownloadIcon fontSize="small" />
+                                    </IconButton>
+                                  </span>
                                 </Tooltip>
 
-                                <Tooltip title="미리보기(창)">
+                                <Tooltip title={hasPending ? "미리보기(대기파일)" : "미리보기(창)"}>
                                   <IconButton
                                     size="small"
-                                    sx={fileIconSx}
+                                    sx={{ color: iconColor }}
                                     onClick={(ev) => {
                                       ev.stopPropagation();
-                                      handleViewImage(rawVal);
+                                      handleViewImage(row, rowIndex);
                                     }}
                                   >
                                     <ImageSearchIcon fontSize="small" />
                                   </IconButton>
                                 </Tooltip>
 
-                                <label htmlFor={inputId} onClick={(ev) => ev.stopPropagation()}>
-                                  <MDButton component="span" size="small" color="info">
-                                    재업로드
-                                  </MDButton>
-                                </label>
+                                {/* ✅ label 제거하고 ref로 click */}
+                                <MDButton
+                                  size="small"
+                                  color="info"
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    const el = fileInputRefs.current[inputId];
+                                    if (el) {
+                                      el.value = ""; // ✅ 반드시 빈 문자열로
+                                      el.click();
+                                    }
+                                  }}
+                                >
+                                  재업로드
+                                </MDButton>
+
+                                {hasPending && (
+                                  <Typography variant="caption" sx={{ color: "red" }}>
+                                    대기중
+                                  </Typography>
+                                )}
                               </>
                             ) : (
-                              <label htmlFor={inputId} onClick={(ev) => ev.stopPropagation()}>
-                                <MDButton component="span" size="small" color="info">
-                                  업로드
-                                </MDButton>
-                              </label>
+                              <MDButton
+                                size="small"
+                                color="info"
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  const el = fileInputRefs.current[inputId];
+                                  if (el) {
+                                    el.value = ""; // ✅ 반드시 빈 문자열로
+                                    el.click();
+                                  }
+                                }}
+                              >
+                                업로드
+                              </MDButton>
                             )}
                           </Box>
                         </td>
@@ -1634,6 +2010,7 @@ function CorporateCardSheet() {
             inset: 0,
             zIndex: 2000,
             pointerEvents: "none",
+            _toggle: "noop",
           }}
         >
           <Draggable
@@ -1688,6 +2065,7 @@ function CorporateCardSheet() {
                 >
                   {currentImg?.title || "영수증 미리보기"}
                   {imageItems.length ? `  (${viewerIndex + 1}/${imageItems.length})` : ""}
+                  {currentImg?.isLocal ? "  [대기파일]" : ""}
                 </Typography>
 
                 <Tooltip title="이전(←)">
@@ -1729,10 +2107,10 @@ function CorporateCardSheet() {
                       sx={{ color: "#fff" }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const src = currentImg?.src;
+                        const src = viewerBlobUrl || currentImg?.src;
                         if (src) window.open(src, "_blank", "noopener,noreferrer");
                       }}
-                      disabled={!currentImg?.src}
+                      disabled={!(viewerBlobUrl || currentImg?.src)}
                     >
                       <OpenInNewIcon fontSize="small" />
                     </IconButton>
@@ -1746,10 +2124,18 @@ function CorporateCardSheet() {
                       sx={{ color: "#fff" }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const path = currentImg?.path;
-                        if (path) handleDownload(path);
+                        const src = viewerBlobUrl || currentImg?.src;
+                        if (!src) return;
+
+                        if (src.startsWith("blob:")) {
+                          downloadBySrc(src, `receipt_${currentImg?.rowIndex ?? 0}.jpg`);
+                        } else if (currentImg?.path) {
+                          handleDownloadServerPath(currentImg.path, currentImg?.v);
+                        } else {
+                          downloadBySrc(src, "receipt.jpg");
+                        }
                       }}
-                      disabled={!currentImg?.path}
+                      disabled={!(viewerBlobUrl || currentImg?.src)}
                     >
                       <DownloadIcon fontSize="small" />
                     </IconButton>
@@ -1836,13 +2222,10 @@ function CorporateCardSheet() {
                             }}
                           >
                             <img
-                              src={currentImg.src}
+                              key={viewerBlobUrl || currentImg.src}
+                              src={viewerBlobUrl || currentImg.src}
                               alt="미리보기"
-                              style={{
-                                maxWidth: "95%",
-                                maxHeight: "95%",
-                                userSelect: "none",
-                              }}
+                              style={{ maxWidth: "95%", maxHeight: "95%", userSelect: "none" }}
                             />
                           </Box>
                         </TransformComponent>

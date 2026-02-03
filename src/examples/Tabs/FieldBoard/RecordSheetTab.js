@@ -1097,6 +1097,8 @@ function RecordSheet() {
               record_year: year,
               record_month: month,
               type: 0,
+              // ✅ 추가: type 0(삭제/비출근 처리)면 출근여부 N
+              is_present: "N",
               start_time: "",
               end_time: "",
               salary: 0,

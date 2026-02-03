@@ -21,7 +21,7 @@ function NavLink({ to, color, text }) {
   );
 }
 
-export default function useTableData(accountType) {
+export default function useTableData(accountType, refreshKey = 0) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,6 +39,8 @@ export default function useTableData(accountType) {
         const mapped = res.data.map((item) => ({
           account_id: item.account_id,
           meal_type: item.meal_type,
+          del_yn: item.del_yn, // ✅ 여기서는 원본값 그대로(테이블에서 Select로 바꿔서 쓰면 됨)
+
           account_name: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
               {item.account_name}
@@ -137,7 +139,8 @@ export default function useTableData(accountType) {
     };
 
     fetchData();
-  }, [accountType]);
+    // ✅ refreshKey가 변하면 재조회
+  }, [accountType, refreshKey]);
 
   const columns = [
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },
@@ -145,6 +148,7 @@ export default function useTableData(accountType) {
     { Header: "구분", accessor: "account_type", size: "3%", align: "left" },
     { Header: "필요조리인력", accessor: "account_rqd_member", size: "3%", align: "center" },
     { Header: "현재인력", accessor: "account_headcount", size: "3%", align: "center" },
+    { Header: "삭제여부", accessor: "del_yn", size: "3%", align: "center" },
     { Header: "집계표", accessor: "tally", size: "3%", align: "center" },
     // { Header: "인사기록카드", accessor: "members", size: "3%", align: "center" },
     // { Header: "출근부", accessor: "record", size: "3%", align: "center" },

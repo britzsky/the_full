@@ -31,6 +31,7 @@ export default function Tables() {
 
   const [open, setOpen] = useState(false);
   const [addrOpen, setAddrOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [formData, setFormData] = useState({
     account_name: "",
@@ -41,10 +42,11 @@ export default function Tables() {
     account_headcount: "",
     account_type: "",
     meal_type: "",
+    del_yn: "",
   });
 
   // ✅ 데이터 조회 Hook
-  const { columns, rows, loading } = useTableData(selectedType);
+  const { columns, rows, loading } = useTableData(selectedType, refreshKey);
 
   // =========================
   // ✅ 값 정리 유틸 (rows에 ReactElement가 섞여있을 수 있어서)
@@ -125,6 +127,7 @@ export default function Tables() {
         _rowKey: rowKey,
         account_rqd_member: toNumberString(toPlainText(r?.account_rqd_member)),
         account_headcount: toNumberString(toPlainText(r?.account_headcount)),
+        del_yn: (toPlainText(r?.del_yn) || "N").toUpperCase(), // ✅ 추가
       };
     });
 
@@ -137,6 +140,7 @@ export default function Tables() {
       om[r._rowKey] = {
         account_rqd_member: String(r.account_rqd_member ?? ""),
         account_headcount: String(r.account_headcount ?? ""),
+        del_yn: String(r.del_yn ?? "N").toUpperCase(), // ✅ 추가
       };
     });
     setOriginalMap(om);
@@ -171,6 +175,7 @@ export default function Tables() {
       account_headcount: "",
       account_type: "",
       meal_type: "",
+      del_yn: "N", // ✅ 추가
     });
     setOpen(false);
   };
@@ -229,9 +234,9 @@ export default function Tables() {
   // =========================
   const updateEditableField = useCallback(
     (rowKey, account_id, field, value) => {
-      const clean = toNumberString(value);
+      const clean = field === "del_yn" ? String(value || "N").toUpperCase() : toNumberString(value);
 
-      // 1) localRows 갱신 (✅ 이때 data가 바뀌어도 페이징은 유지되게 아래 useReactTable 옵션으로 막음)
+      // 1) localRows 갱신
       setLocalRows((prev) =>
         prev.map((r) => (r._rowKey === rowKey ? { ...r, [field]: clean } : r))
       );
@@ -244,13 +249,20 @@ export default function Tables() {
           [field]: clean,
         };
 
-        const org = originalMap[rowKey] || { account_rqd_member: "", account_headcount: "" };
+        const org = originalMap[rowKey] || {
+          account_rqd_member: "",
+          account_headcount: "",
+          del_yn: "N",
+        };
+
         const mergedRqd = String(nextRow.account_rqd_member ?? org.account_rqd_member ?? "");
         const mergedHead = String(nextRow.account_headcount ?? org.account_headcount ?? "");
+        const mergedDel = String(nextRow.del_yn ?? org.del_yn ?? "N").toUpperCase();
 
         const dirty =
           mergedRqd !== String(org.account_rqd_member ?? "") ||
-          mergedHead !== String(org.account_headcount ?? "");
+          mergedHead !== String(org.account_headcount ?? "") ||
+          mergedDel !== String(org.del_yn ?? "N").toUpperCase();
 
         if (!dirty) {
           const copy = { ...prev };
@@ -275,13 +287,24 @@ export default function Tables() {
 
       const nowRqd = String(row?.account_rqd_member ?? "");
       const nowHead = String(row?.account_headcount ?? "");
+      const nowDel = String(row?.del_yn ?? "N").toUpperCase();
 
       return (
         nowRqd !== String(org.account_rqd_member ?? "") ||
-        nowHead !== String(org.account_headcount ?? "")
+        nowHead !== String(org.account_headcount ?? "") ||
+        nowDel !== String(org.del_yn ?? "N").toUpperCase()
       );
     },
     [originalMap]
+  );
+
+  const normalizeDelYn = useCallback(
+    (v) => {
+      const s = toPlainText(v).trim().toUpperCase();
+      if (s === "Y" || s === "N") return s;
+      return "N";
+    },
+    [toPlainText]
   );
 
   // ✅ 저장(행 단위)
@@ -298,17 +321,19 @@ export default function Tables() {
       const account_rqd_member = edited.account_rqd_member ?? row.account_rqd_member ?? "";
       const account_headcount = edited.account_headcount ?? row.account_headcount ?? "";
 
-      // ✅ 저장용 account_type / meal_type
       const account_type = normalizeAccountType(row.account_type_value ?? row.account_type);
       const meal_type = normalizeMealType(row.meal_type_value ?? row.meal_type);
+
+      // ✅ 여기서 edited 우선
+      const del_yn = normalizeDelYn(edited.del_yn ?? row.del_yn_value ?? row.del_yn ?? "N");
 
       const fd = new FormData();
       fd.append("account_id", String(account_id));
       fd.append("account_rqd_member", String(account_rqd_member));
       fd.append("account_headcount", String(account_headcount));
-
-      fd.append("account_type", String(account_type)); // 1~5
-      fd.append("meal_type", String(meal_type)); // 1~5
+      fd.append("account_type", String(account_type));
+      fd.append("meal_type", String(meal_type));
+      fd.append("del_yn", String(del_yn)); // ✅ 추가
 
       try {
         const res = await api.post("/Account/AccountSave", fd, {
@@ -323,6 +348,7 @@ export default function Tables() {
             [rowKey]: {
               account_rqd_member: String(account_rqd_member ?? ""),
               account_headcount: String(account_headcount ?? ""),
+              del_yn: String(del_yn ?? "N").toUpperCase(),
             },
           }));
 
@@ -331,6 +357,8 @@ export default function Tables() {
             delete next[rowKey];
             return next;
           });
+
+          setRefreshKey((k) => k + 1); // ✅ 화면(데이터) 새로고침
         } else {
           Swal.fire({ title: "실패", text: "저장 실패", icon: "error" });
         }
@@ -339,7 +367,7 @@ export default function Tables() {
         Swal.fire({ title: "실패", text: "저장 실패", icon: "error" });
       }
     },
-    [editedMap, normalizeAccountType, normalizeMealType]
+    [editedMap, normalizeAccountType, normalizeMealType, normalizeDelYn]
   );
 
   // ✅ 전체 저장
@@ -364,9 +392,9 @@ export default function Tables() {
     if (!confirm.isConfirmed) return;
 
     for (const r of dirtyRows) {
-      // eslint-disable-next-line no-await-in-loop
       await handleSaveRow(r);
     }
+    setRefreshKey((k) => k + 1); // ✅ 전체 저장 완료 후 1번만 재조회
   }, [localRows, isRowDirty, handleSaveRow]);
 
   // =========================
@@ -407,6 +435,54 @@ export default function Tables() {
     );
   };
 
+  const EditableSelectCell = ({ info, field }) => {
+    const row = info.row.original;
+    const rowKey = row?._rowKey;
+    const accountId = row?.account_id;
+
+    const base = (toPlainText(info.getValue()) || "N").toUpperCase();
+    const value = (editedMap?.[rowKey]?.[field] ?? base).toUpperCase();
+
+    const org = (originalMap?.[rowKey]?.[field] ?? "N").toUpperCase();
+    const isDirtyCell = String(value) !== String(org);
+
+    return (
+      <Select
+        size="small"
+        value={value}
+        onChange={(e) => updateEditableField(rowKey, accountId, field, e.target.value)}
+        sx={{
+          width: 80,
+          height: 28,
+          fontSize: "0.75rem",
+          "& .MuiSelect-select": {
+            py: 0.25,
+            px: 1,
+            textAlign: "center",
+            color: isDirtyCell ? "#d32f2f" : "inherit",
+            fontWeight: isDirtyCell ? 800 : 400,
+          },
+        }}
+      >
+        <MenuItem value="N">N</MenuItem>
+        <MenuItem value="Y">Y</MenuItem>
+      </Select>
+    );
+  };
+
+  EditableSelectCell.propTypes = {
+    info: PropTypes.shape({
+      getValue: PropTypes.func.isRequired,
+      row: PropTypes.shape({
+        original: PropTypes.shape({
+          _rowKey: PropTypes.string,
+          account_id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+        }).isRequired,
+      }).isRequired,
+    }).isRequired,
+    field: PropTypes.oneOf(["del_yn"]).isRequired,
+  };
+
   EditableCell.propTypes = {
     info: PropTypes.shape({
       getValue: PropTypes.func.isRequired,
@@ -440,6 +516,14 @@ export default function Tables() {
           header: col.Header,
           accessorKey,
           cell: (info) => <EditableCell info={info} field="account_headcount" />,
+        };
+      }
+
+      if (accessorKey === "del_yn") {
+        return {
+          header: col.Header,
+          accessorKey,
+          cell: (info) => <EditableSelectCell info={info} field="del_yn" />,
         };
       }
 

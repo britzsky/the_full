@@ -573,11 +573,15 @@ function AccountMemberSheet() {
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
+    const defaultPositionType = 1; // 신규 기본 직책
+
     const newRow = {
       name: "",
       rrn: "",
-      account_id: defaultAccountId,
-      position_type: 1,
+      // ✅ 유틸(6)이면 null, 아니면 기본 거래처
+      account_id: defaultPositionType === 6 ? 2 : defaultAccountId,
+
+      position_type: defaultPositionType,
       account_number: "",
       phone: "",
       address: "",
@@ -606,7 +610,6 @@ function AccountMemberSheet() {
       subsidy: "",
       total: 0,
 
-      // ✅ 이미지 필드 초기값
       employment_contract: "",
       id: "",
       bankbook: "",
@@ -786,6 +789,17 @@ function AccountMemberSheet() {
                   const handleCellChange = (newValue) => {
                     const updatedRows = rows.map((r, idx) => {
                       if (idx !== rowIndex) return r;
+
+                      // ✅ position_type 변경 시: 유틸(6)면 account_id = null 처리
+                      if (colKey === "position_type") {
+                        const nextPos = String(newValue);
+                        return {
+                          ...r,
+                          position_type: newValue,
+                          account_id: nextPos === "6" ? 2 : r.account_id ?? selectedAccountId ?? "",
+                          total: calculateTotal({ ...r, position_type: newValue }),
+                        };
+                      }
 
                       // ✅ work_system 변경 시 start/end 자동 세팅
                       if (colKey === "idx") {

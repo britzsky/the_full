@@ -311,6 +311,27 @@ function AccountPurchaseDeadlineTab() {
     return `${base}${p}`;
   }, []);
 
+  const getExt = (p = "") => {
+    const clean = String(p).split("?")[0].split("#")[0];
+    return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
+  };
+
+  const isPdfFile = (p) => getExt(p) === "pdf";
+
+  const fileItems = useMemo(() => {
+    return (rows || [])
+      .filter((r) => !!r?.receipt_image)
+      .map((r) => {
+        const path = r.receipt_image;
+        return {
+          path,
+          src: buildFileUrl(path),
+          title: `${r.name || ""} ${r.saleDate || ""}`.trim(),
+          isPdf: isPdfFile(path),
+        };
+      });
+  }, [rows, buildFileUrl]);
+
   const handleNoImageAlert = () => {
     Swal.fire("이미지 없음", "등록된 증빙자료가 없습니다.", "warning");
   };
@@ -336,50 +357,46 @@ function AccountPurchaseDeadlineTab() {
   // =========================
   // ✅ 이미지 뷰어
   // =========================
+  // =========================
+  // ✅ 파일 뷰어
+  // =========================
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const viewerNodeRef = useRef(null);
+  const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
 
-  const imageItems = useMemo(() => {
-    return (rows || [])
-      .filter((r) => !!r?.receipt_image)
-      .map((r) => ({
-        path: r.receipt_image,
-        src: buildFileUrl(r.receipt_image),
-        title: `${r.name || ""} ${r.saleDate || ""}`.trim(),
-      }));
-  }, [rows, buildFileUrl]);
+  // ✅ 여기서 계산 (viewerIndex 선언 이후!)
+  const currentFile = useMemo(
+    () => (fileItems.length ? fileItems[viewerIndex] : null),
+    [fileItems, viewerIndex]
+  );
 
   const handleViewImage = useCallback(
     (path) => {
       if (!path) return;
-      const idx = imageItems.findIndex((x) => x.path === path);
+      const idx = fileItems.findIndex((x) => x.path === path);
       setViewerIndex(idx >= 0 ? idx : 0);
       setViewerOpen(true);
     },
-    [imageItems]
+    [fileItems]
   );
 
-  const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
-
   const goPrev = useCallback(() => {
-    setViewerIndex((i) =>
-      imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0
-    );
-  }, [imageItems.length]);
+    setViewerIndex((i) => (fileItems.length ? (i - 1 + fileItems.length) % fileItems.length : 0));
+  }, [fileItems.length]);
 
   const goNext = useCallback(() => {
-    setViewerIndex((i) => (imageItems.length ? (i + 1) % imageItems.length : 0));
-  }, [imageItems.length]);
+    setViewerIndex((i) => (fileItems.length ? (i + 1) % fileItems.length : 0));
+  }, [fileItems.length]);
 
   useEffect(() => {
     if (!viewerOpen) return;
-    if (!imageItems.length) {
+    if (!fileItems.length) {
       setViewerIndex(0);
       return;
     }
-    if (viewerIndex > imageItems.length - 1) setViewerIndex(imageItems.length - 1);
-  }, [viewerOpen, imageItems.length, viewerIndex]);
+    if (viewerIndex > fileItems.length - 1) setViewerIndex(fileItems.length - 1);
+  }, [viewerOpen, fileItems.length, viewerIndex]);
 
   useEffect(() => {
     if (!viewerOpen) return;
@@ -397,8 +414,6 @@ function AccountPurchaseDeadlineTab() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
-
-  const currentImg = imageItems[viewerIndex];
 
   // =========================
   // ✅ 저장 관련 (상단)
@@ -1721,8 +1736,8 @@ function AccountPurchaseDeadlineTab() {
                           pr: 1,
                         }}
                       >
-                        {currentImg?.title || "영수증 미리보기"}
-                        {imageItems.length ? `  (${viewerIndex + 1}/${imageItems.length})` : ""}
+                        {currentFile?.title || "영수증 미리보기"}
+                        {fileItems.length ? `  (${viewerIndex + 1}/${fileItems.length})` : ""}
                       </Typography>
 
                       <Tooltip title="이전(←)">
@@ -1734,7 +1749,7 @@ function AccountPurchaseDeadlineTab() {
                               e.stopPropagation();
                               goPrev();
                             }}
-                            disabled={imageItems.length <= 1}
+                            disabled={fileItems.length <= 1}
                           >
                             <ChevronLeftIcon fontSize="small" />
                           </IconButton>
@@ -1750,7 +1765,7 @@ function AccountPurchaseDeadlineTab() {
                               e.stopPropagation();
                               goNext();
                             }}
-                            disabled={imageItems.length <= 1}
+                            disabled={fileItems.length <= 1}
                           >
                             <ChevronRightIcon fontSize="small" />
                           </IconButton>
@@ -1764,10 +1779,10 @@ function AccountPurchaseDeadlineTab() {
                             sx={{ color: "#fff" }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const src = currentImg?.src;
+                              const src = currentFile?.src;
                               if (src) window.open(src, "_blank", "noopener,noreferrer");
                             }}
-                            disabled={!currentImg?.src}
+                            disabled={!currentFile?.src}
                           >
                             <OpenInNewIcon fontSize="small" />
                           </IconButton>
@@ -1781,10 +1796,10 @@ function AccountPurchaseDeadlineTab() {
                             sx={{ color: "#fff" }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              const path = currentImg?.path;
+                              const path = currentFile?.path;
                               if (path) handleDownload(path);
                             }}
-                            disabled={!currentImg?.path}
+                            disabled={!currentFile?.path}
                           >
                             <DownloadIcon fontSize="small" />
                           </IconButton>
@@ -1808,93 +1823,64 @@ function AccountPurchaseDeadlineTab() {
                     <Box
                       sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}
                     >
-                      {currentImg?.src ? (
-                        <TransformWrapper
-                          initialScale={1}
-                          minScale={0.5}
-                          maxScale={6}
-                          centerOnInit
-                          wheel={{ step: 0.12 }}
-                          doubleClick={{ mode: "zoomIn" }}
-                        >
-                          {({ zoomIn, zoomOut, resetTransform }) => (
-                            <>
-                              <Box
-                                sx={{
-                                  position: "absolute",
-                                  right: 10,
-                                  top: 10,
-                                  zIndex: 1900,
-                                  display: "flex",
-                                  flexDirection: "column",
-                                  gap: 1,
-                                }}
-                              >
-                                <Tooltip title="확대">
-                                  <IconButton
-                                    size="small"
-                                    onClick={zoomIn}
-                                    sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                                  >
-                                    <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="축소">
-                                  <IconButton
-                                    size="small"
-                                    onClick={zoomOut}
-                                    sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                                  >
-                                    <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                                <Tooltip title="리셋">
-                                  <IconButton
-                                    size="small"
-                                    onClick={resetTransform}
-                                    sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                                  >
-                                    <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              </Box>
-
-                              <TransformComponent
-                                wrapperStyle={{ width: "100%", height: "100%" }}
-                                contentStyle={{ width: "100%", height: "100%" }}
-                              >
-                                <Box
-                                  sx={{
-                                    width: "100%",
-                                    height: "100%",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
+                      {currentFile?.src ? (
+                        currentFile.isPdf ? (
+                          <Box sx={{ width: "100%", height: "100%", bgcolor: "#111" }}>
+                            <iframe
+                              title="pdf-preview"
+                              src={currentFile.src}
+                              style={{ width: "100%", height: "100%", border: 0 }}
+                            />
+                          </Box>
+                        ) : (
+                          <TransformWrapper
+                            initialScale={1}
+                            minScale={0.5}
+                            maxScale={6}
+                            centerOnInit
+                            wheel={{ step: 0.12 }}
+                            doubleClick={{ mode: "zoomIn" }}
+                          >
+                            {({ zoomIn, zoomOut, resetTransform }) => (
+                              <>
+                                {/* 기존 줌 버튼들 그대로 */}
+                                <TransformComponent
+                                  wrapperStyle={{ width: "100%", height: "100%" }}
+                                  contentStyle={{ width: "100%", height: "100%" }}
                                 >
-                                  <img
-                                    src={currentImg.src}
-                                    alt="미리보기"
-                                    onError={() =>
-                                      Swal.fire(
-                                        "미리보기 실패",
-                                        "이미지 경로 또는 서버 응답을 확인해주세요.",
-                                        "error"
-                                      )
-                                    }
-                                    style={{
-                                      maxWidth: "95%",
-                                      maxHeight: "95%",
-                                      userSelect: "none",
+                                  <Box
+                                    sx={{
+                                      width: "100%",
+                                      height: "100%",
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
                                     }}
-                                  />
-                                </Box>
-                              </TransformComponent>
-                            </>
-                          )}
-                        </TransformWrapper>
+                                  >
+                                    <img
+                                      src={currentFile.src}
+                                      alt="미리보기"
+                                      onError={() =>
+                                        Swal.fire(
+                                          "미리보기 실패",
+                                          "이미지 경로 또는 서버 응답을 확인해주세요.",
+                                          "error"
+                                        )
+                                      }
+                                      style={{
+                                        maxWidth: "95%",
+                                        maxHeight: "95%",
+                                        userSelect: "none",
+                                      }}
+                                    />
+                                  </Box>
+                                </TransformComponent>
+                              </>
+                            )}
+                          </TransformWrapper>
+                        )
                       ) : (
-                        <Typography sx={{ color: "#fff", p: 2 }}>이미지가 없습니다.</Typography>
+                        <Typography sx={{ color: "#fff", p: 2 }}>파일이 없습니다.</Typography>
                       )}
                     </Box>
                   </Paper>

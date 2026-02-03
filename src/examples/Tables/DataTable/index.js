@@ -164,19 +164,19 @@ function DataTable({
                 renderInput={(params) => <MDInput {...params} />}
               />
               <MDTypography variant="caption" color="secondary">
-                &nbsp;&nbsp;entries per page
+                &nbsp;&nbsp;페이지당 표시 개수
               </MDTypography>
             </MDBox>
           )}
           {canSearch && (
             <MDBox width="12rem" ml="auto">
               <MDInput
-                placeholder="Search..."
+                placeholder="검색하기"
                 value={search}
                 size="small"
                 fullWidth
                 onChange={({ currentTarget }) => {
-                  setSearch(search);
+                  setSearch(currentTarget.value);
                   onSearchChange(currentTarget.value);
                 }}
               />
@@ -230,41 +230,41 @@ function DataTable({
         alignItems={{ xs: "flex-start", sm: "center" }}
         p={!showTotalEntries && pageOptions.length === 1 ? 0 : 3}
       >
-        {showTotalEntries && (
-          <MDBox mb={{ xs: 3, sm: 0 }}>
+        <MDBox display="flex" alignItems="center" gap={1} flexWrap="wrap">
+          {pageOptions.length > 1 && (
+            <MDPagination
+              variant={pagination.variant ? pagination.variant : "gradient"}
+              color={pagination.color ? pagination.color : "info"}
+            >
+              {canPreviousPage && (
+                <MDPagination item onClick={() => previousPage()}>
+                  <Icon sx={{ fontWeight: "bold" }}>chevron_left</Icon>
+                </MDPagination>
+              )}
+              {renderPagination.length > 6 ? (
+                <MDBox width="5rem" mx={1}>
+                  <MDInput
+                    inputProps={{ type: "number", min: 1, max: customizedPageOptions.length }}
+                    value={customizedPageOptions[pageIndex]}
+                    onChange={(handleInputPagination, handleInputPaginationValue)}
+                  />
+                </MDBox>
+              ) : (
+                renderPagination
+              )}
+              {canNextPage && (
+                <MDPagination item onClick={() => nextPage()}>
+                  <Icon sx={{ fontWeight: "bold" }}>chevron_right</Icon>
+                </MDPagination>
+              )}
+            </MDPagination>
+          )}
+          {showTotalEntries && (
             <MDTypography variant="button" color="secondary" fontWeight="regular">
-              Showing {entriesStart} to {entriesEnd} of {rows.length} entries
+              {entriesStart} - {entriesEnd} / {rows.length}건
             </MDTypography>
-          </MDBox>
-        )}
-        {pageOptions.length > 1 && (
-          <MDPagination
-            variant={pagination.variant ? pagination.variant : "gradient"}
-            color={pagination.color ? pagination.color : "info"}
-          >
-            {canPreviousPage && (
-              <MDPagination item onClick={() => previousPage()}>
-                <Icon sx={{ fontWeight: "bold" }}>chevron_left</Icon>
-              </MDPagination>
-            )}
-            {renderPagination.length > 6 ? (
-              <MDBox width="5rem" mx={1}>
-                <MDInput
-                  inputProps={{ type: "number", min: 1, max: customizedPageOptions.length }}
-                  value={customizedPageOptions[pageIndex]}
-                  onChange={(handleInputPagination, handleInputPaginationValue)}
-                />
-              </MDBox>
-            ) : (
-              renderPagination
-            )}
-            {canNextPage && (
-              <MDPagination item onClick={() => nextPage()}>
-                <Icon sx={{ fontWeight: "bold" }}>chevron_right</Icon>
-              </MDPagination>
-            )}
-          </MDPagination>
-        )}
+          )}
+        </MDBox>
       </MDBox>
     </TableContainer>
   );

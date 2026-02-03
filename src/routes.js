@@ -67,6 +67,8 @@ import PurchaseDeadLineManager from "examples/Tabs/Accounting/AccountPurchaseDea
 
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
+// 사용자 관리
+import UserManagement from "layouts/humanresource/usermanagement";
 // 현장
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
@@ -149,6 +151,17 @@ const routes = [
         allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
         accessMode: "AND",
+      },
+      {
+        type: "collapse",
+        name: "👥 사용자 관리",
+        key: "user_management",
+        // icon: <Icon fontSize="small">*</Icon>,
+        route: "/headoffice/user-management",
+        component: <UserManagement />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한 (0~6팀 + 개발팀)
+        allowedPositions: [0, 1], // 🔹 직책권한 (대표/팀장)
+        accessMode: "OR",
       },
       // {
       //   type: "collapse",

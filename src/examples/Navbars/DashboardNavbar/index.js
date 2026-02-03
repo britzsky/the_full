@@ -44,6 +44,8 @@ import { useMaterialUIController, setTransparentNavbar, setMiniSidenav } from "c
 
 function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMini }) {
   const NAVBAR_H = 48;
+  // ✅ 승인대기/알림 뱃지 자동 갱신 주기 (화면 전체 새로고침 없이 알림만 업데이트)
+  const NOTIF_POLL_MS = 30000;
 
   // ✅ 화면이 너무 작아지면 오른쪽(유저명/프로필/알림) 숨김
   const theme = useTheme();
@@ -312,6 +314,17 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     fetchNotifications();
     if (isAdmin) fetchApprovePendingList(false); // ✅ 관리자면 초기부터 승인대기 카운트 확보
   }, []);
+
+  useEffect(() => {
+    // ✅ 주기적 폴링: 탭이 보일 때만 승인대기/알림 리스트 갱신
+    const intervalId = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      fetchNotifications();
+      if (isAdmin) fetchApprovePendingList(false);
+    }, NOTIF_POLL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [isAdmin]);
 
   const fetchNotifications = async () => {
     if (!userId) {

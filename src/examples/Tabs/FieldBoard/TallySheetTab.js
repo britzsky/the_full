@@ -431,6 +431,7 @@ function TallySheetTab() {
   const localUserId = useMemo(() => localStorage.getItem("user_id") || "", []);
   const isAccountLocked = useMemo(() => !!localAccountId, [localAccountId]);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+  const [accountInput, setAccountInput] = useState("");
 
   const [originalRows, setOriginalRows] = useState([]);
   const [original2Rows, setOriginal2Rows] = useState([]);
@@ -463,8 +464,8 @@ function TallySheetTab() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => {},
-    fetchBudget2Grant = async () => {},
+    fetchBudgetGrant = async () => { },
+    fetchBudget2Grant = async () => { },
   } = hook || {};
 
   const prevYm = useMemo(() => {
@@ -491,6 +492,25 @@ function TallySheetTab() {
       null
     );
   }, [filteredAccountList, selectedAccountId]);
+
+  // ✅ 검색: 엔터 입력 시 텍스트로 거래처 선택 (정확 일치 우선, 없으면 부분 일치)
+  const selectAccountByInput = () => {
+    if (isAccountLocked) return;
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = filteredAccountList || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find(
+      (a) => String(a?.account_name || "").toLowerCase() === qLower
+    );
+    const partial =
+      exact ||
+      list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.account_id);
+      setAccountInput(partial.account_name || q);
+    }
+  };
 
   useEffect(() => {
     setDataRows?.([]);
@@ -1610,7 +1630,6 @@ function TallySheetTab() {
     selectOtherRowForInlineEdit(first, rowKey);
   }, [otherListOpen, otherRows, otherSelectedRow]);
 
-  // ✅ 직접 입력은 type=1만 허용
   // ✅ 직접 입력 허용 타입 (1~4)
   const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
 
@@ -1843,6 +1862,22 @@ function TallySheetTab() {
       }
     } catch (e) {
       Swal.fire("실패", e.message || "저장 중 오류 발생", "error");
+    }
+  };
+
+  // ✅ 새로고침: 선택된 거래처 기준으로 데이터 재조회
+  const handleRefresh = async () => {
+    if (!selectedAccountId) return;
+    try {
+      await fetchDataRows?.(selectedAccountId, year, month);
+      await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
+      await fetchBudgetGrant?.(selectedAccountId, year, month);
+      await fetchBudget2Grant?.(selectedAccountId, year, month);
+      setOriginalRows([]);
+      setOriginal2Rows([]);
+      setImages(Array(31).fill(null));
+    } catch (e) {
+      Swal.fire("실패", e.message || "새로고침 중 오류가 발생했습니다.", "error");
     }
   };
 
@@ -2230,10 +2265,10 @@ function TallySheetTab() {
                       cursor: !isBaseCell
                         ? "default"
                         : canInlineEdit
-                        ? "text"
-                        : shouldBlockModalByType(rowType)
-                        ? "not-allowed"
-                        : "pointer",
+                          ? "text"
+                          : shouldBlockModalByType(rowType)
+                            ? "not-allowed"
+                            : "pointer",
                       background: activeCellBg || activeRowBg || baseBg || "",
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
@@ -2283,6 +2318,12 @@ function TallySheetTab() {
           onChange={(_, newValue) => {
             if (isAccountLocked) return;
             setSelectedAccountId(newValue ? newValue.account_id : "");
+            setAccountInput(newValue?.account_name || "");
+          }}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => {
+            if (isAccountLocked) return;
+            setAccountInput(newValue);
           }}
           getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
           isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
@@ -2293,6 +2334,13 @@ function TallySheetTab() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              // ✅ 검색: 엔터로 바로 선택되도록 처리
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                 "& input": { padding: "0 8px" },
@@ -2360,6 +2408,18 @@ function TallySheetTab() {
         <MDButton
           variant="gradient"
           color="info"
+          onClick={handleRefresh}
+          sx={{
+            fontSize: isMobile ? "11px" : "13px",
+            minWidth: isMobile ? 70 : 90,
+            px: isMobile ? 1 : 2,
+          }}
+        >
+          새로고침
+        </MDButton>
+        <MDButton
+          variant="gradient"
+          color="info"
           onClick={handleSave}
           sx={{
             fontSize: isMobile ? "11px" : "13px",
@@ -2412,6 +2472,8 @@ function TallySheetTab() {
                 indicatorColor="secondary"
                 variant={isMobile ? "scrollable" : "standard"}
                 sx={{
+                  position: "relative",
+                  zIndex: 1,
                   minHeight: 36,
                   "& .MuiTab-root": {
                     minHeight: 36,
@@ -2619,8 +2681,8 @@ function TallySheetTab() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                  ? "기타(직접입력)"
-                  : ""
+                    ? "기타(직접입력)"
+                    : ""
               }
               onChange={handleBankSelect}
               displayEmpty
@@ -2638,18 +2700,18 @@ function TallySheetTab() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-              <TextField
-                fullWidth
-                required
-                margin="normal"
-                label="은행명 직접입력"
-                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                name="bank_name"
-                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                onChange={handleChange2}
-                sx={{ mt: 1 }}
-              />
-            )}
+                <TextField
+                  fullWidth
+                  required
+                  margin="normal"
+                  label="은행명 직접입력"
+                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                  name="bank_name"
+                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                  onChange={handleChange2}
+                  sx={{ mt: 1 }}
+                />
+              )}
           </Box>
 
           <TextField
@@ -2952,11 +3014,11 @@ function TallySheetTab() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                      ...x,
-                                      card_idx: v,
-                                      card_brand: picked?.card_brand || x.card_brand || "",
-                                      card_no: picked?.card_no || x.card_no || "",
-                                    }
+                                    ...x,
+                                    card_idx: v,
+                                    card_brand: picked?.card_brand || x.card_brand || "",
+                                    card_no: picked?.card_no || x.card_no || "",
+                                  }
                                   : x
                               )
                             );
@@ -3093,7 +3155,7 @@ function TallySheetTab() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                        String(orig.receipt_type || "UNKNOWN") ||
+                      String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -3332,14 +3394,14 @@ function TallySheetTab() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                      ...x,
-                                      payType: v,
-                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                      cash_receipt_type:
-                                        v === "1"
-                                          ? String(x.cash_receipt_type ?? "3")
-                                          : String(x.cash_receipt_type ?? "3"),
-                                    }
+                                    ...x,
+                                    payType: v,
+                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                    cash_receipt_type:
+                                      v === "1"
+                                        ? String(x.cash_receipt_type ?? "3")
+                                        : String(x.cash_receipt_type ?? "3"),
+                                  }
                                   : x
                               )
                             );
@@ -3490,9 +3552,9 @@ function TallySheetTab() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                        String(orig.cash_receipt_type ?? "3") ||
+                      String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                        String(orig.receipt_type ?? "UNKNOWN");
+                      String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -3806,7 +3868,7 @@ function TallySheetTab() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                        String(orig.receipt_type ?? "UNKNOWN");
+                      String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 

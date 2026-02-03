@@ -4,6 +4,7 @@ import Card from "@mui/material/Card";
 import Grid from "@mui/material/Grid";
 import Select from "@mui/material/Select";
 import MenuItem from "@mui/material/MenuItem";
+import { useTheme, useMediaQuery } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
@@ -40,6 +41,8 @@ const DEPT_LABELS = {
 
 function UserManagement() {
   const STICKY_TOP_OFFSET = "calc(48px + 12px)";
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   // 화면 데이터/상태
   const [rows, setRows] = useState([]);
@@ -306,12 +309,14 @@ function UserManagement() {
                   position: "sticky",
                   top: STICKY_TOP_OFFSET,
                   zIndex: theme.zIndex.appBar - 1,
+                  flexWrap: "wrap",
+                  gap: 1,
                 })}
               >
                 <MDTypography variant="h6" color="white">
                   사용자 목록
                 </MDTypography>
-                <MDBox display="flex" gap={1}>
+                <MDBox display="flex" gap={1} flexWrap="wrap">
                   <MDButton
                     size="small"
                     variant="contained"
@@ -339,15 +344,57 @@ function UserManagement() {
                     불러오는 중...
                   </MDTypography>
                 ) : (
-                  // 목록 테이블
-                  <DataTable
-                    table={{ columns, rows }}
-                    canSearch
-                    entriesPerPage={{ defaultValue: 20, entries: [10, 20, 30, 40, 50] }}
-                    showTotalEntries
-                    isSorted
-                    noEndBorder
-                  />
+                  <>
+                    {isMobile ? (
+                      // ✅ 모바일: 카드형 리스트
+                      <MDBox display="flex" flexDirection="column" gap={1}>
+                        {rows.map((row) => (
+                          <Card key={row.user_id} sx={{ p: 1.5 }}>
+                            <MDBox display="flex" justifyContent="space-between" gap={1}>
+                              <MDBox>
+                                <MDTypography variant="caption" color="#111" fontWeight="medium">
+                                  {row.user_name} ({row.user_id})
+                                </MDTypography>
+                                <MDTypography variant="caption" color="text">
+                                  {row.dept_or_account} · {row.position_label}
+                                </MDTypography>
+                                <MDTypography variant="caption" color="text">
+                                  {row.phone || "-"}
+                                </MDTypography>
+                                <MDTypography variant="caption" color="text">
+                                  {row.join_dt || "-"}
+                                </MDTypography>
+                              </MDBox>
+                              <Select
+                                size="small"
+                                value={pendingDelYn[row.user_id] ?? row.del_yn}
+                                onChange={(e) =>
+                                  handleDelYnChange(row.user_id, e.target.value, row.orig_del_yn)
+                                }
+                                sx={{ height: 30, minWidth: 90, fontSize: 10, color: "#111" }}
+                              >
+                                <MenuItem value="N">재직</MenuItem>
+                                <MenuItem value="Y">퇴사</MenuItem>
+                              </Select>
+                            </MDBox>
+                            <MDTypography variant="caption" color="text">
+                              {row.address_full}
+                            </MDTypography>
+                          </Card>
+                        ))}
+                      </MDBox>
+                    ) : (
+                      // 데스크톱: 테이블
+                      <DataTable
+                        table={{ columns, rows }}
+                        canSearch
+                        entriesPerPage={{ defaultValue: 20, entries: [10, 20, 30, 40, 50] }}
+                        showTotalEntries
+                        isSorted
+                        noEndBorder
+                      />
+                    )}
+                  </>
                 )}
               </MDBox>
             </Card>

@@ -18,12 +18,17 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
+import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import api from "api/api";
 import dayjs from "dayjs";
 import PropTypes from "prop-types";
-import useRecordsheetData from "./recordSheetData";
+import Icon from "@mui/material/Icon";
+import useRecordsheetData from "./recordSheetData.js";
 import Swal from "sweetalert2";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -33,12 +38,76 @@ const typeColors = {
   4: "#f9d9d9",
   5: "#ffe6cc",
   6: "#cce6ff",
+  16: "#DDAED3",
+};
+
+const TYPE_LABEL = {
+  0: "-",
+  1: "영양사",
+  2: "상용",
+  3: "초과",
+  4: "결근",
+  5: "파출",
+  6: "직원파출",
+  7: "유틸",
+  8: "대체근무",
+  9: "연차",
+  10: "반차",
+  11: "대체휴무",
+  12: "병가",
+  13: "출산휴가",
+  14: "육아휴직",
+  15: "하계휴가",
+  16: "업장휴무",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
 const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
-// ✅ 셀 비교용 헬퍼: 조회 당시 vs 현재 값이 같은지 판단
+// ✅ 은행명 추출
+const extractBankName = (accountNumber) => {
+  const s = safeTrim(accountNumber, "");
+  if (!s) return "";
+
+  const firstToken = s.split(/\s+/)[0] || "";
+  const m = s.match(/^([A-Za-z가-힣]+(?:은행)?)/) || firstToken.match(/^([A-Za-z가-힣]+(?:은행)?)/);
+
+  return safeTrim(m?.[1] ?? firstToken, "");
+};
+
+// ✅ 계좌번호만 추출
+const extractAccountOnly = (accountNumber) => {
+  const s = safeTrim(accountNumber, "");
+  if (!s) return "";
+
+  const bank = extractBankName(s);
+  let rest = s;
+
+  if (bank) {
+    rest = rest.replace(new RegExp(`^\\s*${bank}\\s*`), "");
+  }
+
+  const only = rest.replace(/[^0-9-]/g, "").trim();
+  if (!only) return s.replace(/[^0-9-]/g, "").trim();
+
+  return only;
+};
+
+// ✅ 숫자/문자 모두 보기좋게
+const formatMoneyLike = (v) => {
+  if (v == null) return "";
+  const s = String(v).trim();
+  if (!s) return "";
+
+  if (/[가-힣]/.test(s) || /회/.test(s) || /원/.test(s)) return s;
+
+  const n = Number(s.replace(/,/g, ""));
+  if (!Number.isNaN(n)) return n.toLocaleString();
+
+  return s;
+};
+
+// ✅ 셀 비교용 헬퍼
 const normalizeCell = (cell) => {
   if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "" };
 
@@ -69,17 +138,15 @@ const isCellEqual = (a, b) => {
   );
 };
 
-// ✅ 출근현황 셀 (gubun/position_type 유지 포함)
-function AttendanceCell({ getValue, row, column, table, typeOptions }) {
-  const val = getValue() || {
-    type: "",
-    start: "",
-    end: "",
-    salary: "",
-    memo: "",
-    gubun: "",
-    position_type: "",
-  };
+// ✅ 출근현황 셀
+const AttendanceCell = React.memo(function AttendanceCell({
+  getValue,
+  row,
+  column,
+  table,
+  typeOptions,
+}) {
+  const val = getValue() || { type: "", start: "", end: "", salary: "", memo: "" };
 
   const times = [];
   for (let h = 5; h <= 20; h++) {
@@ -101,34 +168,23 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
   const handleChange = (field, newVal) => {
     const dayKey = column.id;
 
-    const baseValue = row.original?.[dayKey] || {};
-    const baseGubun = String(
-      baseValue.gubun ??
-        val.gubun ??
-        row.original?.gubun ??
-        row.original?.day_default?.gubun ??
-        "nor"
-    )
-      .trim()
-      .toLowerCase();
+    const rowGubun = safeTrim(row.original?.gubun, "nor");
+    const rowPt = safeTrim(row.original?.position_type, "");
 
-    const basePosType = String(
-      baseValue.position_type ??
-        val.position_type ??
-        row.original?.position_type ??
-        row.original?.day_default?.position_type ??
-        ""
-    ).trim();
+    const baseValue = row.original?.[dayKey] || {};
 
     const updatedValue = {
       ...baseValue,
       ...val,
-      gubun: baseGubun,
-      position_type: basePosType,
+
+      // ✅ gubun/position_type 유지
+      gubun: safeTrim(baseValue.gubun ?? val.gubun ?? rowGubun, "nor"),
+      position_type: safeTrim(baseValue.position_type ?? val.position_type ?? rowPt, ""),
+
       [field]: newVal,
     };
 
-    // ✅ type을 0으로 내리면 나머지 값도 초기화
+    // ✅ type을 0/-로 내리면 나머지 초기화
     if (field === "type" && (newVal === "0" || newVal === "")) {
       updatedValue.start = "";
       updatedValue.end = "";
@@ -154,6 +210,7 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
 
       if (start && end && baseStart && baseEnd) {
         const diffMinutes = end.diff(start, "minute") - baseEnd.diff(baseStart, "minute");
+
         updatedValue.memo =
           diffMinutes > 0
             ? (Math.floor(diffMinutes / 60) + (diffMinutes % 60 >= 30 ? 0.5 : 0)).toString()
@@ -248,7 +305,7 @@ function AttendanceCell({ getValue, row, column, table, typeOptions }) {
       )}
     </div>
   );
-}
+});
 
 AttendanceCell.propTypes = {
   getValue: PropTypes.func.isRequired,
@@ -264,20 +321,23 @@ function ReadonlyCell({ getValue }) {
 ReadonlyCell.propTypes = { getValue: PropTypes.func.isRequired };
 
 // =======================================================
-// ✅ 파출 테이블: AccountMemberRecSheet 방식 적용
-//   - _rid로 매칭
-//   - originalMap으로 변경감지(빨간/검정)
-//   - 변경분만 저장
-//   - year/month/filter 바뀌면 자동 재조회
-//   - 레이스 컨디션 방지(마지막 응답만 반영)
+// ✅ 파출 테이블 기능(원본스냅샷/변경감지/변경분만 저장/자동 재조회/레이스 방지)
 // =======================================================
 
+// ✅ _rid 안정적으로 부여 (조회 시에만 부여되므로, 편집 중 _rid가 바뀌지 않음)
 const ensureDispatchRid = (row) => {
   if (!row) return row;
   if (row._rid) return row;
 
-  const base = row.dispatch_id ?? row.member_id ?? row.id ?? "";
+  const base = row.dispatch_id ?? row.dispatchId ?? row.id ?? row.member_id ?? row.memberId ?? "";
   if (base) return { ...row, _rid: String(base) };
+
+  // base가 없으면 그래도 최대한 안정적으로(조회 기준) 구성
+  const fallback = [row.account_id ?? "", row.name ?? "", row.rrn ?? "", row.account_number ?? ""]
+    .filter(Boolean)
+    .join("_");
+
+  if (fallback) return { ...row, _rid: `DIS_${fallback}` };
 
   return { ...row, _rid: `DIS_${Date.now()}_${Math.random().toString(16).slice(2)}` };
 };
@@ -329,6 +389,7 @@ DispatchEditableCell.propTypes = {
   field: PropTypes.string.isRequired,
 };
 
+// ✅ 파출 삭제/복원 버튼 셀
 function DispatchActionCell({ row, onToggle }) {
   const delYn = row.original?.del_yn ?? "N";
   const isDeleted = String(delYn).toUpperCase() === "Y";
@@ -355,34 +416,26 @@ function DispatchActionCell({ row, onToggle }) {
 }
 
 function RecordSheet() {
-  const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
-  const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
-  const [originalSelectedAccountId, setOriginalSelectedAccountId] = useState(
-    () => localAccountId || ""
-  );
-
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
 
+  // ✅ localStorage에 account_id가 있으면 거래처 선택 잠금
+  const [lockedAccountId] = useState(() => String(localStorage.getItem("account_id") || ""));
+  const isAccountLocked = !!lockedAccountId;
+
   const [attendanceRows, setAttendanceRows] = useState([]);
   const [originalAttendanceRows, setOriginalAttendanceRows] = useState([]);
   const [defaultTimes, setDefaultTimes] = useState({});
+  const [selectedAccountId, setSelectedAccountId] = useState("");
 
-  // ✅ 파출 state / snapshot
-  const [dispatchRows, setDispatchRows] = useState([]);
-  const [originalDispatchRows, setOriginalDispatchRows] = useState([]);
   const [dispatchDelFilter, setDispatchDelFilter] = useState("N");
-  const [dispatchLoading, setDispatchLoading] = useState(false);
-
-  // ✅ 레이스 컨디션 방지용 seq
-  const dispatchReqSeqRef = useRef(0);
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
-  const account_name = queryParams.get("name"); // (미사용이어도 유지)
-  const { account_id } = useParams();
+  const account_name = queryParams.get("name"); // 유지
 
+  const { account_id } = useParams();
   const daysInMonth = dayjs(`${year}-${month}`).daysInMonth();
 
   const theme = useTheme();
@@ -391,7 +444,493 @@ function RecordSheet() {
   const [open, setOpen] = useState(false);
   const handleModalOpen = () => setOpen(true);
 
-  // ✅ "출근한 사람"으로 카운트할 타입들
+  const [excelDownloading, setExcelDownloading] = useState(false);
+
+  // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
+  const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
+    useRecordsheetData(selectedAccountId, year, month);
+
+  // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
+  const [employeeRowsView, setEmployeeRowsView] = useState([]);
+  useEffect(() => {
+    setEmployeeRowsView(Array.isArray(memberRows) ? memberRows : []);
+  }, [memberRows]);
+
+  // =========================
+  // ✅ 1) payload 안전 처리 (문자열 JSON 파싱까지)
+  // =========================
+  const parseMaybeJson = (payload) => {
+    if (typeof payload !== "string") return payload;
+    const s = payload.trim();
+    if (!s) return payload;
+    if (!(s.startsWith("{") || s.startsWith("["))) return payload;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return payload;
+    }
+  };
+
+  const extractArray = (payload) => {
+    payload = parseMaybeJson(payload);
+
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== "object") return [];
+
+    if (Array.isArray(payload.resultList)) return payload.resultList;
+    if (Array.isArray(payload.result)) return payload.result;
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.list)) return payload.list;
+    if (Array.isArray(payload.rows)) return payload.rows;
+
+    if (payload.data && typeof payload.data === "object") {
+      if (Array.isArray(payload.data.resultList)) return payload.data.resultList;
+      if (Array.isArray(payload.data.list)) return payload.data.list;
+      if (Array.isArray(payload.data.rows)) return payload.data.rows;
+      if (Array.isArray(payload.data.data)) return payload.data.data;
+    }
+
+    const v1 = Object.values(payload).find(Array.isArray);
+    if (v1) return v1;
+
+    if (payload.data && typeof payload.data === "object") {
+      const v2 = Object.values(payload.data).find(Array.isArray);
+      if (v2) return v2;
+    }
+
+    return [];
+  };
+
+  // ✅ type 키가 record_type/work_type 등으로 올 수 있어서 통일
+  const pickType = (src) =>
+    safeTrim(
+      src?.type ??
+        src?.record_type ??
+        src?.work_type ??
+        src?.recordType ??
+        src?.workType ??
+        src?.work_kind ??
+        src?.work_cd ??
+        "",
+      ""
+    );
+
+  // =========================
+  // ✅ 2) day 소스 찾기 (pivot/obj/arr)
+  // =========================
+  const getDaySource = (item, d) => {
+    if (!item) return null;
+    const key = `day_${d}`;
+
+    if (item[key]) return item[key];
+
+    if (item.days && typeof item.days === "object" && !Array.isArray(item.days)) {
+      if (item.days[key]) return item.days[key];
+      if (item.days[d]) return item.days[d];
+    }
+
+    if (Array.isArray(item.days)) {
+      const found =
+        item.days.find((x) => Number(x?.record_date) === d) ||
+        item.days.find((x) => Number(x?.record_day) === d) ||
+        item.days.find((x) => Number(x?.day) === d) ||
+        item.days.find((x) => Number(x?.date) === d);
+      if (found) return found;
+    }
+
+    const key2 = `day_${String(d).padStart(2, "0")}`;
+    if (item[key2]) return item[key2];
+    if (item.days && typeof item.days === "object" && item.days[key2]) return item.days[key2];
+
+    return null;
+  };
+
+  // =========================
+  // ✅ 3) long 형태를 pivot 형태로 변환
+  // =========================
+  const normalizeSheetRows = (rows, daysInMonthArg) => {
+    const arr = Array.isArray(rows) ? rows : [];
+    if (arr.length === 0) return [];
+
+    const sample = arr[0] || {};
+    const keys = Object.keys(sample);
+
+    const hasPivotDayKey = keys.some((k) => /^day_\d+$/.test(k));
+    const hasDaysField = sample.days && typeof sample.days === "object";
+    if (hasPivotDayKey || hasDaysField) return arr;
+
+    const hasLongDay =
+      sample.record_date != null ||
+      sample.record_day != null ||
+      sample.day != null ||
+      sample.date != null;
+
+    if (!hasLongDay) return arr;
+
+    const map = new Map();
+
+    for (const r of arr) {
+      const mid = r.member_id;
+      if (!mid) continue;
+
+      if (!map.has(mid)) {
+        map.set(mid, {
+          name: r.name,
+          account_id: r.account_id,
+          member_id: r.member_id,
+          position: r.position || "",
+          gubun: r.gubun ?? "nor",
+          position_type: r.position_type ?? "",
+          day_default: r.day_default || null,
+        });
+      }
+
+      const g = map.get(mid);
+      const dayNum = Number(r.record_date ?? r.record_day ?? r.day ?? r.date);
+
+      if (dayNum >= 1 && dayNum <= daysInMonthArg) {
+        g[`day_${dayNum}`] = { ...r };
+      }
+    }
+
+    return Array.from(map.values());
+  };
+
+  // =========================
+  // ✅ 4) sheetRows -> attendanceRows
+  // =========================
+  const buildAttendanceRowsFromSheet = (
+    sheetRowsArg,
+    memberRowsArg,
+    timesRowsArg,
+    daysInMonthArg
+  ) => {
+    const normalizedSheetRows = normalizeSheetRows(sheetRowsArg, daysInMonthArg);
+
+    const newAttendance = (normalizedSheetRows || []).map((item) => {
+      const member = (memberRowsArg || []).find((m) => m.member_id === item.member_id);
+
+      const baseGubun = safeTrim(item.gubun ?? item.day_default?.gubun, "nor");
+      const basePt = safeTrim(item.position_type ?? item.day_default?.position_type, "");
+
+      const base = {
+        name: item.name,
+        account_id: item.account_id,
+        member_id: item.member_id,
+        position: item.position || member?.position || "",
+        gubun: baseGubun,
+        position_type: basePt,
+        day_default: item.day_default || null,
+      };
+
+      const dayEntries = {};
+      for (let d = 1; d <= daysInMonthArg; d++) {
+        const key = `day_${d}`;
+        const source = getDaySource(item, d) || item[key] || null;
+
+        const t = pickType(source);
+
+        dayEntries[key] = source
+          ? {
+              ...source,
+              type: t,
+              gubun: safeTrim(source.gubun, baseGubun),
+              position_type: safeTrim(source.position_type, basePt),
+              start: source.start_time || source.start || "",
+              end: source.end_time || source.end || "",
+              start_time: source.start_time || "",
+              end_time: source.end_time || "",
+              salary: source.salary || "",
+              memo: source.memo ?? source.note ?? "",
+            }
+          : {
+              account_id: item.account_id,
+              member_id: item.member_id,
+              gubun: baseGubun,
+              position_type: basePt,
+              type: "",
+              start: "",
+              end: "",
+              start_time: "",
+              end_time: "",
+              salary: "",
+              memo: "",
+            };
+      }
+
+      return { ...base, ...dayEntries };
+    });
+
+    const defaultTimesMap = {};
+    (normalizedSheetRows || []).forEach((item) => {
+      defaultTimesMap[item.member_id] = {
+        start:
+          item.day_default?.start_time ||
+          (timesRowsArg || []).find((t) => t.member_id === item.member_id)?.start_time ||
+          "",
+        end:
+          item.day_default?.end_time ||
+          (timesRowsArg || []).find((t) => t.member_id === item.member_id)?.end_time ||
+          "",
+      };
+    });
+
+    return { attendanceRowsBuilt: newAttendance, defaultTimesMap };
+  };
+
+  // ✅ 거래처 1개에 대한 모든 데이터 조회 (엑셀 전체다운용)
+  const fetchBundleForAccount = async (accountId) => {
+    const sheetRes = await api.get("/Account/AccountRecordSheetList", {
+      params: { account_id: accountId, year, month },
+    });
+    const sheetRowsArg = extractArray(sheetRes.data);
+
+    const memberRes = await api.get("/Account/AccountRecordMemberList", {
+      params: { account_id: accountId, year, month },
+    });
+    const memberRowsArg = extractArray(memberRes.data);
+
+    const timeRes = await api.get("/Account/AccountMemberRecordTime", {
+      params: { account_id: accountId, year, month },
+    });
+    const timesRowsArg = extractArray(timeRes.data);
+
+    const [disN, disY] = await Promise.all([
+      api.get("/Account/AccountRecordDispatchList", {
+        params: { account_id: accountId, year, month, del_yn: "N" },
+      }),
+      api.get("/Account/AccountRecordDispatchList", {
+        params: { account_id: accountId, year, month, del_yn: "Y" },
+      }),
+    ]);
+
+    const dispatchN = extractArray(disN.data);
+    const dispatchY = extractArray(disY.data);
+    const dispatchRowsArg = [
+      ...(Array.isArray(dispatchN) ? dispatchN : []),
+      ...(Array.isArray(dispatchY) ? dispatchY : []),
+    ];
+
+    return { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg };
+  };
+
+  // ✅ 엑셀 셀 출력 문자열
+  function formatDayCell(cell) {
+    const t = safeTrim(cell?.type, "");
+    if (!cell || !t || t === "0") return "";
+
+    const typeLabel = TYPE_LABEL[String(t)] ?? String(t);
+
+    const start = cell.start || cell.start_time || "";
+    const end = cell.end || cell.end_time || "";
+    const salary =
+      cell.salary != null && String(cell.salary).trim() !== ""
+        ? Number(String(cell.salary).replace(/,/g, "")).toLocaleString()
+        : "";
+    const memo = cell.memo ?? cell.note ?? "";
+
+    const lines = [
+      typeLabel,
+      start || end ? `${start}~${end}` : "",
+      salary ? `급여: ${salary}` : "",
+      memo ? `메모: ${memo}` : "",
+    ].filter(Boolean);
+
+    return lines.join("\n");
+  }
+
+  // ✅ 거래처 전체 엑셀 다운로드
+  const handleExcelDownloadAllAccounts = async () => {
+    if (excelDownloading) return;
+    if (!accountList || accountList.length === 0) return;
+
+    setExcelDownloading(true);
+
+    try {
+      Swal.fire({
+        title: "엑셀 생성 중...",
+        text: "거래처별 데이터를 조회하고 있습니다.",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "RecordSheet";
+
+      const filename = `출근부_전체거래처_${year}-${String(month).padStart(2, "0")}.xlsx`;
+
+      const wsAttend = wb.addWorksheet("출근현황(전체)");
+      const wsDispatch = wb.addWorksheet("파출정보(전체)");
+
+      const addSectionTitle = (ws, title, colCount) => {
+        ws.addRow([title]);
+        const r = ws.lastRow.number;
+        ws.mergeCells(r, 1, r, colCount);
+        const cell = ws.getCell(r, 1);
+        cell.font = { bold: true, size: 12 };
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+        ws.getRow(r).height = 20;
+      };
+
+      const styleHeaderRow = (ws, rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.font = { bold: true };
+        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF0F0F0" },
+          };
+        });
+      };
+
+      const styleDataRow = (ws, rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+      };
+
+      const attendColCount = 1 + daysInMonth;
+      wsAttend.columns = [
+        { width: 14 },
+        ...Array.from({ length: daysInMonth }, () => ({ width: 14 })),
+      ];
+
+      const dispatchHeader = [
+        "거래처",
+        "이름",
+        "연락처",
+        "주민등록번호",
+        "은행",
+        "계좌정보",
+        "급여",
+        "삭제여부(del_yn)",
+      ];
+
+      wsDispatch.columns = [
+        { width: 18 },
+        { width: 12 },
+        { width: 14 },
+        { width: 18 },
+        { width: 12 },
+        { width: 28 },
+        { width: 14 },
+        { width: 14 },
+      ];
+
+      addSectionTitle(
+        wsDispatch,
+        `■ 파출정보 / ${year}-${String(month).padStart(2, "0")}`,
+        dispatchHeader.length
+      );
+      wsDispatch.addRow(dispatchHeader);
+      styleHeaderRow(wsDispatch, wsDispatch.lastRow.number);
+
+      const allDispatchRows = [];
+
+      for (let i = 0; i < accountList.length; i++) {
+        const acc = accountList[i];
+        const accId = acc.account_id;
+        const accName = acc.account_name || accId;
+
+        const { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg } =
+          await fetchBundleForAccount(accId);
+
+        const { attendanceRowsBuilt } = buildAttendanceRowsFromSheet(
+          sheetRowsArg,
+          memberRowsArg,
+          timesRowsArg,
+          daysInMonth
+        );
+
+        addSectionTitle(
+          wsAttend,
+          `■ ${accName} (${accId})  /  ${year}-${String(month).padStart(2, "0")}`,
+          attendColCount
+        );
+
+        const header = ["직원명", ...Array.from({ length: daysInMonth }, (_, d) => `${d + 1}일`)];
+        wsAttend.addRow(header);
+        styleHeaderRow(wsAttend, wsAttend.lastRow.number);
+
+        (attendanceRowsBuilt || []).forEach((row) => {
+          const r = [row.name || ""];
+          for (let d = 1; d <= daysInMonth; d++) {
+            const key = `day_${d}`;
+            r.push(formatDayCell(row[key]));
+          }
+          wsAttend.addRow(r);
+          styleDataRow(wsAttend, wsAttend.lastRow.number);
+        });
+
+        wsAttend.addRow([]);
+        wsAttend.addRow([]);
+
+        (dispatchRowsArg || []).forEach((d) => {
+          allDispatchRows.push({
+            accName,
+            name: d.name || "",
+            phone: d.phone || "",
+            rrn: d.rrn || "",
+            account_number: d.account_number || "",
+            salary: d.salary ?? "",
+            total: d.total ?? "",
+            del_yn: d.del_yn ?? "N",
+          });
+        });
+      }
+
+      allDispatchRows.forEach((d) => {
+        const bank = extractBankName(d.account_number);
+        const accountOnly = extractAccountOnly(d.account_number);
+        const pay = d.salary !== "" && d.salary != null ? d.salary : d.total;
+
+        wsDispatch.addRow([
+          d.accName,
+          d.name,
+          d.phone,
+          d.rrn,
+          bank,
+          accountOnly,
+          formatMoneyLike(pay),
+          d.del_yn,
+        ]);
+        styleDataRow(wsDispatch, wsDispatch.lastRow.number);
+      });
+
+      wsAttend.views = [{ state: "frozen", xSplit: 0, ySplit: 0 }];
+      wsDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      saveAs(blob, filename);
+
+      Swal.fire({ title: "완료", text: "엑셀 다운로드가 완료되었습니다.", icon: "success" });
+    } catch (e) {
+      console.error(e);
+      Swal.fire({ title: "실패", text: "엑셀 생성 중 오류가 발생했습니다.", icon: "error" });
+    } finally {
+      setExcelDownloading(false);
+    }
+  };
+
+  // ✅ "출근한 사람" 카운트 타입
   const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
@@ -439,6 +978,89 @@ function RecordSheet() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // ✅ 직원정보만 조용히 갱신
+  const fetchMemberOnlySilently = useCallback(async () => {
+    if (!selectedAccountId) return;
+    try {
+      const memberRes = await api.get("/Account/AccountRecordMemberList", {
+        params: { account_id: selectedAccountId, year, month },
+      });
+      const list = extractArray(memberRes.data);
+      setEmployeeRowsView(Array.isArray(list) ? list : []);
+    } catch (e) {
+      console.error("직원정보 새로고침 실패:", e);
+    }
+  }, [selectedAccountId, year, month]);
+
+  // ============================================================
+  // ✅ 파출 state / snapshot / 레이스방지 / 로딩표시
+  // ============================================================
+  const [dispatchRows, setDispatchRows] = useState([]);
+  const [originalDispatchRows, setOriginalDispatchRows] = useState([]);
+  const [dispatchLoading, setDispatchLoading] = useState(false);
+  const dispatchReqSeqRef = useRef(0);
+
+  // ✅ 파출만 조회 (조회 직후 original 스냅샷도 같이 갱신 => 빨간글씨 초기화)
+  const fetchDispatchOnly = useCallback(
+    async (overrideDelYn) => {
+      if (!selectedAccountId) return;
+
+      const del_yn = overrideDelYn ?? dispatchDelFilter;
+      const mySeq = ++dispatchReqSeqRef.current;
+
+      setDispatchLoading(true);
+      try {
+        const res = await api.get("/Account/AccountRecordDispatchList", {
+          params: { account_id: selectedAccountId, year, month, del_yn },
+        });
+
+        if (mySeq !== dispatchReqSeqRef.current) return;
+
+        const list = extractArray(res.data);
+
+        const mapped = (Array.isArray(list) ? list : []).map((item) =>
+          ensureDispatchRid({
+            ...item,
+            account_id: item.account_id ?? selectedAccountId,
+            member_id: item.member_id,
+            name: item.name,
+            rrn: item.rrn ?? "",
+            account_number: item.account_number ?? "",
+            total: item.total,
+            salary: item.salary,
+            phone: item.phone ?? "",
+            del_yn: item.del_yn ?? del_yn ?? "N",
+            dispatch_id: item.dispatch_id ?? item.id,
+          })
+        );
+
+        setDispatchRows(mapped);
+
+        // ✅ 중요: 조회 직후 snapshot도 동일하게 세팅해야 빨간글씨가 남지 않음
+        setOriginalDispatchRows(mapped.map((r) => ({ ...r })));
+      } catch (err) {
+        if (mySeq !== dispatchReqSeqRef.current) return;
+
+        console.error("파출 재조회 실패:", err);
+        Swal.fire({
+          title: "오류",
+          text: "파출직원 조회 중 오류가 발생했습니다.",
+          icon: "error",
+        });
+      } finally {
+        if (mySeq === dispatchReqSeqRef.current) setDispatchLoading(false);
+      }
+    },
+    [selectedAccountId, year, month, dispatchDelFilter]
+  );
+
+  // ✅ 핵심: year/month/selectedAccountId/filter 바뀌면 자동 재조회
+  useEffect(() => {
+    if (!selectedAccountId) return;
+    fetchDispatchOnly(dispatchDelFilter);
+  }, [selectedAccountId, year, month, dispatchDelFilter, fetchDispatchOnly]);
+
+  // ✅ 파출 등록
   const handleSubmit = () => {
     if (!formData.name || !formData.rrn || !formData.account_number) {
       Swal.fire({
@@ -453,6 +1075,7 @@ function RecordSheet() {
 
     const payload = {
       ...formData,
+      account_id: selectedAccountId,
       del_yn: "N",
       record_year: year,
       record_month: month,
@@ -474,9 +1097,7 @@ function RecordSheet() {
             if (result.isConfirmed) {
               handleModalClose();
               setOpen(false);
-              // ✅ 등록 성공 후 파출 자동 재조회
-              // (useEffect 자동 재조회가 있으니, 즉시 반영 원하면 여기서도 호출)
-              // fetchDispatchOnly(dispatchDelFilter);
+              await fetchDispatchOnly(dispatchDelFilter); // ✅ 등록 후 즉시 재조회 + snapshot 갱신
             }
           });
         }
@@ -492,98 +1113,7 @@ function RecordSheet() {
       });
   };
 
-  const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
-    useRecordsheetData(selectedAccountId, year, month);
-
-  const filteredAccountList = useMemo(() => {
-    if (!localAccountId) return accountList || [];
-    return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
-  }, [accountList, localAccountId]);
-
-  const selectedAccountOption = useMemo(() => {
-    if (!selectedAccountId) return null;
-    return (
-      (filteredAccountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) ||
-      null
-    );
-  }, [filteredAccountList, selectedAccountId]);
-
-  // ✅ 백엔드 응답에서 배열 안전 추출 (중첩까지)
-  const extractList = (payload) => {
-    let x =
-      payload?.data ??
-      payload?.result ??
-      payload?.list ??
-      payload?.rows ??
-      payload?.items ??
-      payload;
-
-    if (Array.isArray(x)) return x;
-
-    if (x && typeof x === "object") {
-      const y = x.data ?? x.result ?? x.list ?? x.rows ?? x.items;
-      if (Array.isArray(y)) return y;
-    }
-    return [];
-  };
-
-  // ✅ 파출만 조회 (레이스 방지 포함)
-  const fetchDispatchOnly = useCallback(
-    async (del_yn) => {
-      if (!selectedAccountId) return;
-
-      const mySeq = ++dispatchReqSeqRef.current;
-      setDispatchLoading(true);
-
-      try {
-        const res = await api.get("/Account/AccountRecordDispatchList", {
-          params: { account_id: selectedAccountId, year, month, del_yn },
-        });
-
-        // ✅ 마지막 요청만 반영
-        if (mySeq !== dispatchReqSeqRef.current) return;
-
-        const list = extractList(res?.data);
-        const listMapped = (list || []).map((item) => {
-          const row = {
-            ...item,
-            account_id: item.account_id,
-            member_id: item.member_id,
-            name: item.name,
-            phone: item.phone ?? "",
-            rrn: item.rrn ?? "",
-            account_number: item.account_number ?? "",
-            total: item.total,
-            del_yn: item.del_yn ?? "N",
-            dispatch_id: item.dispatch_id ?? item.id,
-          };
-          return ensureDispatchRid(row);
-        });
-
-        setDispatchRows(listMapped);
-        setOriginalDispatchRows(listMapped.map((r) => ({ ...r })));
-      } catch (err) {
-        if (mySeq !== dispatchReqSeqRef.current) return;
-        console.error("파출 재조회 실패:", err);
-        Swal.fire({
-          title: "오류",
-          text: "파출직원 조회 중 오류가 발생했습니다.",
-          icon: "error",
-        });
-      } finally {
-        if (mySeq === dispatchReqSeqRef.current) setDispatchLoading(false);
-      }
-    },
-    [selectedAccountId, year, month]
-  );
-
-  // ✅ 핵심: year/month/selectedAccountId/filter 바뀌면 자동으로 파출 재조회
-  useEffect(() => {
-    if (!selectedAccountId) return;
-    fetchDispatchOnly(dispatchDelFilter);
-  }, [selectedAccountId, year, month, dispatchDelFilter, fetchDispatchOnly]);
-
-  // ✅ 파출 삭제/복원 (즉시 저장 방식 유지)
+  // ✅ 파출 삭제/복원 (즉시 저장)
   const handleToggleDispatch = useCallback(
     async (row) => {
       const cur = row?.del_yn ?? "N";
@@ -606,7 +1136,6 @@ function RecordSheet() {
       if (!confirm.isConfirmed) return;
 
       const member_id = row.member_id;
-      const account_id_row = row.account_id;
 
       if (!member_id) {
         Swal.fire({
@@ -621,13 +1150,14 @@ function RecordSheet() {
 
       try {
         const fd = new FormData();
-        fd.append("account_id", account_id_row ?? selectedAccountId ?? "");
+        fd.append("account_id", row.account_id ?? selectedAccountId ?? "");
         fd.append("member_id", member_id ?? "");
         fd.append("del_yn", next);
         fd.append("name", row.name ?? "");
         fd.append("rrn", row.rrn ?? "");
         fd.append("account_number", row.account_number ?? "");
         fd.append("total", row.total ?? "");
+        fd.append("salary", row.salary ?? "");
         fd.append("phone", row.phone ?? "");
         fd.append("record_year", String(year));
         fd.append("record_month", String(month));
@@ -645,8 +1175,7 @@ function RecordSheet() {
             confirmButtonText: "확인",
           });
 
-          // ✅ 삭제/복원 후 즉시 재조회(현재 필터 기준)
-          fetchDispatchOnly(dispatchDelFilter);
+          await fetchDispatchOnly(dispatchDelFilter); // ✅ 즉시 재조회 + snapshot 갱신
         } else {
           Swal.fire({
             title: "실패",
@@ -666,10 +1195,10 @@ function RecordSheet() {
         });
       }
     },
-    [dispatchDelFilter, fetchDispatchOnly, year, month, selectedAccountId]
+    [dispatchDelFilter, fetchDispatchOnly, selectedAccountId, year, month]
   );
 
-  // ✅ 파출 originalMap (_rid 매칭)
+  // ✅ originalMap (_rid 매칭)
   const originalDispatchMap = useMemo(() => {
     const m = new Map();
     (originalDispatchRows || []).forEach((r) => m.set(String(r._rid), r));
@@ -715,6 +1244,7 @@ function RecordSheet() {
         fd.append("phone", r.phone || "");
         fd.append("account_number", r.account_number || "");
         fd.append("total", r.total || "");
+        fd.append("salary", r.salary ?? "");
         fd.append("del_yn", r.del_yn ?? "N");
         fd.append("record_year", String(year));
         fd.append("record_month", String(month));
@@ -725,7 +1255,7 @@ function RecordSheet() {
       }
 
       Swal.fire({ title: "저장", text: "저장 완료", icon: "success" });
-      fetchDispatchOnly(dispatchDelFilter);
+      await fetchDispatchOnly(dispatchDelFilter); // ✅ 저장 후 재조회 + snapshot 갱신 (빨간글씨 초기화)
     } catch (e) {
       Swal.fire({ title: "오류", text: e.message || "저장 중 오류", icon: "error" });
     }
@@ -733,119 +1263,56 @@ function RecordSheet() {
     dispatchRows,
     originalDispatchMap,
     selectedAccountId,
-    year,
-    month,
     dispatchDelFilter,
     fetchDispatchOnly,
+    year,
+    month,
   ]);
 
-  // ✅ accountList 로딩 후 selectedAccountId 결정
+  // ✅ accountList 로딩 후 account_id 1회 적용
   useEffect(() => {
     if (!accountList || accountList.length === 0) return;
-
-    if (localAccountId) {
-      setSelectedAccountId(localAccountId);
-      setOriginalSelectedAccountId(localAccountId);
-      return;
-    }
 
     setSelectedAccountId((prev) => {
       if (prev) return prev;
 
-      if (account_id && accountList.some((row) => String(row.account_id) === String(account_id))) {
-        setOriginalSelectedAccountId(String(account_id));
+      if (account_id && accountList.some((row) => row.account_id === account_id)) {
         return account_id;
       }
-      setOriginalSelectedAccountId(String(accountList[0].account_id));
       return accountList[0].account_id;
     });
-  }, [accountList, account_id, localAccountId]);
+  }, [accountList, account_id]);
 
-  // ✅ 선택된 거래처가 바뀌면 formData.account_id 맞추기
   useEffect(() => {
     setFormData((prev) => ({ ...prev, account_id: selectedAccountId }));
   }, [selectedAccountId]);
 
-  // ✅ sheetRows → attendanceRows 구성
+  // ✅ 화면도 buildAttendanceRowsFromSheet 로 통일
   useEffect(() => {
-    if (!sheetRows || !sheetRows.length) return;
+    if (!sheetRows || !sheetRows.length) {
+      setAttendanceRows([]);
+      setOriginalAttendanceRows([]);
+      setDefaultTimes({});
+      return;
+    }
 
-    const newAttendance = sheetRows.map((item) => {
-      const member = memberRows.find((m) => m.member_id === item.member_id);
+    const { attendanceRowsBuilt, defaultTimesMap } = buildAttendanceRowsFromSheet(
+      sheetRows,
+      memberRows,
+      timesRows,
+      daysInMonth
+    );
 
-      const baseGubun = String(item.day_default?.gubun ?? item.gubun ?? "nor")
-        .trim()
-        .toLowerCase();
+    setAttendanceRows(attendanceRowsBuilt);
+    setOriginalAttendanceRows(JSON.parse(JSON.stringify(attendanceRowsBuilt)));
+    setDefaultTimes(defaultTimesMap);
+  }, [sheetRows, memberRows, timesRows, daysInMonth]);
 
-      const basePosType = String(
-        item.day_default?.position_type ?? item.position_type ?? ""
-      ).trim();
-
-      const base = {
-        name: item.name,
-        account_id: item.account_id,
-        member_id: item.member_id,
-        position: item.position || member?.position || "",
-        gubun: baseGubun,
-        position_type: basePosType,
-        day_default: item.day_default || null,
-      };
-
-      const dayEntries = {};
-      for (let d = 1; d <= daysInMonth; d++) {
-        const key = `day_${d}`;
-        const source = item[key] || (item.days && item.days[key]) || null;
-
-        dayEntries[key] = source
-          ? {
-              ...source,
-              gubun: String(source.gubun ?? baseGubun)
-                .trim()
-                .toLowerCase(),
-              position_type: String(source.position_type ?? basePosType).trim(),
-              start: source.start_time || source.start || "",
-              end: source.end_time || source.end || "",
-              start_time: source.start_time || "",
-              end_time: source.end_time || "",
-              salary: source.salary || "",
-              memo: source.memo ?? source.note ?? "",
-            }
-          : {
-              account_id: item.account_id,
-              member_id: item.member_id,
-              gubun: baseGubun,
-              position_type: basePosType,
-              type: "",
-              start: "",
-              end: "",
-              start_time: "",
-              end_time: "",
-              salary: "",
-              memo: "",
-            };
-      }
-
-      return { ...base, ...dayEntries };
-    });
-
-    setAttendanceRows(newAttendance);
-    setOriginalAttendanceRows(JSON.parse(JSON.stringify(newAttendance)));
-
-    const map = {};
-    sheetRows.forEach((item) => {
-      map[item.member_id] = {
-        start:
-          item.day_default?.start_time ||
-          timesRows.find((t) => t.member_id === item.member_id)?.start_time ||
-          "",
-        end:
-          item.day_default?.end_time ||
-          timesRows.find((t) => t.member_id === item.member_id)?.end_time ||
-          "",
-      };
-    });
-    setDefaultTimes(map);
-  }, [sheetRows, timesRows, daysInMonth, memberRows]);
+  const getOrgTimes = (row, defaultTimesObj) => {
+    const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
+    const orgEnd = row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
+    return { org_start_time: orgStart, org_end_time: orgEnd };
+  };
 
   const dayColumns = useMemo(
     () =>
@@ -860,7 +1327,7 @@ function RecordSheet() {
             const typeOptions = (() => {
               const isType5Member = Object.keys(props.row.original)
                 .filter((k) => k.startsWith("day_"))
-                .some((k) => props.row.original[k]?.type === "5");
+                .some((k) => safeTrim(props.row.original[k]?.type, "") === "5");
 
               if (isType5Member) {
                 return [
@@ -868,12 +1335,14 @@ function RecordSheet() {
                   { value: "5", label: "파출" },
                 ];
               }
+
               return [
                 { value: "0", label: "-" },
                 { value: "1", label: "영양사" },
                 { value: "2", label: "상용" },
                 { value: "3", label: "초과" },
                 { value: "4", label: "결근" },
+                { value: "5", label: "파출" },
                 { value: "6", label: "직원파출" },
                 { value: "7", label: "유틸" },
                 { value: "8", label: "대체근무" },
@@ -884,6 +1353,7 @@ function RecordSheet() {
                 { value: "13", label: "출산휴가" },
                 { value: "14", label: "육아휴직" },
                 { value: "15", label: "하계휴가" },
+                { value: "16", label: "업장휴무" },
               ];
             })();
 
@@ -908,12 +1378,6 @@ function RecordSheet() {
     [dayColumns]
   );
 
-  const getOrgTimes = (row, defaultTimesObj) => {
-    const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
-    const orgEnd = row.day_default?.end_time || defaultTimesObj[row.member_id]?.end || "";
-    return { org_start_time: orgStart, org_end_time: orgEnd };
-  };
-
   const attendanceTable = useReactTable({
     data: attendanceRows,
     columns: attendanceColumns,
@@ -931,7 +1395,7 @@ function RecordSheet() {
   });
 
   const employeeTable = useReactTable({
-    data: memberRows,
+    data: employeeRowsView,
     columns: [
       { header: "직원명", accessorKey: "name", size: "3%", cell: ReadonlyCell },
       { header: "직책", accessorKey: "position", size: "3%", cell: ReadonlyCell },
@@ -939,10 +1403,12 @@ function RecordSheet() {
       { header: "직원파출", accessorKey: "employ_dispatch", size: "3%", cell: ReadonlyCell },
       { header: "초과", accessorKey: "over_work", size: "3%", cell: ReadonlyCell },
       { header: "결근", accessorKey: "non_work", size: "3%", cell: ReadonlyCell },
+      { header: "비고", accessorKey: "note", size: "20%", cell: ReadonlyCell },
     ],
     getCoreRowModel: getCoreRowModel(),
   });
 
+  // ✅ 파출 columns: 편집/변경감지/삭제복원 유지
   const dispatchColumns = useMemo(
     () => [
       { header: "이름", accessorKey: "name", size: "3%", cell: ReadonlyCell },
@@ -990,7 +1456,7 @@ function RecordSheet() {
   });
 
   const tableSx = {
-    maxHeight: "440px",
+    maxHeight: "430px",
     overflow: "auto",
     "& table": {
       width: "max-content",
@@ -1027,11 +1493,13 @@ function RecordSheet() {
       prevRows.map((row) => {
         const updated = { ...row };
         const { org_start_time, org_end_time } = getOrgTimes(row, defaultTimes);
+
         Object.keys(updated)
           .filter((k) => k.startsWith("day_"))
           .forEach((dayKey) => {
             const cell = updated[dayKey];
             if (!cell) return;
+
             const typeNum = Number(cell.type);
             if (typeNum === 1 || typeNum === 2) {
               updated[dayKey] = {
@@ -1043,11 +1511,14 @@ function RecordSheet() {
               };
             }
           });
+
         return updated;
       })
     );
   };
 
+  // ✅ 저장(출근현황)
+  // 저장 성공 시 직원정보/파출정보를 로딩 없이 "쓱" 갱신
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
 
@@ -1108,9 +1579,9 @@ function RecordSheet() {
               org_end_time,
             };
 
-            const g = safeTrim(recordObj.gubun, "nor").toLowerCase();
-            if (g === "dis") disRecords.push(recordObj);
-            else if (g === "rec") recRecords.push(recordObj);
+            const gg = safeTrim(recordObj.gubun, "nor").toLowerCase();
+            if (gg === "dis") disRecords.push(recordObj);
+            else if (gg === "rec") recRecords.push(recordObj);
             else normalRecords.push(recordObj);
             return;
           }
@@ -1136,9 +1607,9 @@ function RecordSheet() {
             org_end_time,
           };
 
-          const g = safeTrim(recordObj.gubun, "nor").toLowerCase();
-          if (g === "dis") disRecords.push(recordObj);
-          else if (g === "rec") recRecords.push(recordObj);
+          const gg = safeTrim(recordObj.gubun, "nor").toLowerCase();
+          if (gg === "dis") disRecords.push(recordObj);
+          else if (gg === "rec") recRecords.push(recordObj);
           else normalRecords.push(recordObj);
         });
     });
@@ -1157,7 +1628,12 @@ function RecordSheet() {
 
       if (res.data?.code === 200) {
         Swal.fire({ title: "저장", text: "저장 완료", icon: "success" });
+
+        // ✅ diff snapshot 갱신
         setOriginalAttendanceRows(JSON.parse(JSON.stringify(attendanceRows)));
+
+        // ✅ 저장 후 우측 2개 테이블을 로딩 없이 "쓱" 갱신
+        await Promise.all([fetchMemberOnlySilently(), fetchDispatchOnly(dispatchDelFilter)]);
       } else {
         Swal.fire({ title: "실패", text: "저장 실패", icon: "error" });
       }
@@ -1172,117 +1648,142 @@ function RecordSheet() {
   return (
     <>
       <MDBox
-        pt={1}
-        pb={1}
-        gap={1}
         sx={{
-          display: "flex",
-          flexWrap: isMobile ? "wrap" : "nowrap",
-          justifyContent: isMobile ? "flex-start" : "flex-end",
           position: "sticky",
+          top: 0,
           zIndex: 10,
-          top: 75,
           backgroundColor: "#ffffff",
-          alignItems: "center",
-          gap: isMobile ? 1 : 2,
+          borderBottom: "1px solid #eee",
         }}
       >
-        <Autocomplete
-          size="small"
-          sx={{ minWidth: 200 }}
-          options={filteredAccountList || []}
-          value={selectedAccountOption}
-          onChange={(_, newValue) => setSelectedAccountId(newValue ? newValue.account_id : "")}
-          getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
-          isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
-          disableClearable={!!localAccountId}
-          disabled={!!localAccountId}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="거래처 검색"
-              placeholder="거래처명을 입력"
-              sx={{
-                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
+        <MDBox
+          pt={1}
+          pb={3}
+          sx={{
+            display: "flex",
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            justifyContent: isMobile ? "flex-start" : "flex-end",
+            alignItems: "center",
+            gap: isMobile ? 1 : 2,
+          }}
+        >
+          <Box
+            sx={{
+              flexWrap: isMobile ? "wrap" : "nowrap",
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "right",
+              gap: 1,
+            }}
+          >
+            <Autocomplete
+              size="small"
+              options={accountList || []}
+              value={
+                (accountList || []).find(
+                  (a) => String(a.account_id) === String(selectedAccountId)
+                ) || null
+              }
+              onChange={(_, newVal) => {
+                if (isAccountLocked) return; // ✅ 잠금이면 변경 불가
+                setSelectedAccountId(newVal?.account_id || "");
               }}
+              getOptionLabel={(opt) => opt?.account_name || ""}
+              isOptionEqualToValue={(opt, val) =>
+                String(opt?.account_id) === String(val?.account_id)
+              }
+              disabled={isAccountLocked} // ✅ 잠금
+              sx={{ minWidth: 200 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={isAccountLocked ? "거래처(고정)" : "거래처 검색"}
+                  placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
+                  sx={{
+                    "& .MuiInputBase-root": { height: 40, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
             />
-          )}
-        />
 
-        <TextField
-          select
-          size="small"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-            <option key={y} value={y}>
-              {y}년
-            </option>
-          ))}
-        </TextField>
+            <Select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              size="small"
+              sx={{
+                minWidth: isMobile ? 90 : 110,
+                "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
+              }}
+            >
+              {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+                <MenuItem key={y} value={y}>
+                  {y}년
+                </MenuItem>
+              ))}
+            </Select>
 
-        <TextField
-          select
-          size="small"
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>
-              {m}월
-            </option>
-          ))}
-        </TextField>
+            <Select
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              size="small"
+              sx={{
+                minWidth: isMobile ? 80 : 100,
+                "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
+              }}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <MenuItem key={m} value={m}>
+                  {m}월
+                </MenuItem>
+              ))}
+            </Select>
 
-        <MDButton
-          variant="gradient"
-          color="success"
-          onClick={handleApplyDefaultTime}
-          sx={{
-            fontSize: isMobile ? "0.7rem" : "0.8rem",
-            minWidth: isMobile ? 110 : 130,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          출퇴근 일괄 적용
-        </MDButton>
+            <MDButton
+              variant="gradient"
+              color="success"
+              onClick={handleApplyDefaultTime}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 110 : 130,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              출퇴근 일괄 적용
+            </MDButton>
 
-        <MDButton
-          variant="gradient"
-          color="warning"
-          onClick={async () => {
-            await fetchAllData?.();
-            // ✅ 파출은 useEffect로 자동 재조회되지만,
-            // "조회 버튼 누르면 즉시" 체감 원하면 아래도 유지 가능
-            // fetchDispatchOnly(dispatchDelFilter);
-          }}
-          sx={{
-            fontSize: isMobile ? "0.7rem" : "0.8rem",
-            minWidth: isMobile ? 70 : 90,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          조회
-        </MDButton>
+            <MDButton
+              variant="gradient"
+              color="warning"
+              onClick={async () => {
+                await fetchAllData?.();
+                // ✅ 조회 버튼 눌렀을 때 파출도 즉시 재조회 + snapshot 갱신(빨간글씨 초기화)
+                await fetchDispatchOnly(dispatchDelFilter);
+              }}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 70 : 90,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              조회
+            </MDButton>
 
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleSave}
-          sx={{
-            fontSize: isMobile ? "0.7rem" : "0.8rem",
-            minWidth: isMobile ? 70 : 90,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          저장
-        </MDButton>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleSave}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 70 : 90,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              저장
+            </MDButton>
+          </Box>
+        </MDBox>
       </MDBox>
 
       <Grid container spacing={5}>
@@ -1303,6 +1804,7 @@ function RecordSheet() {
                 출근 현황
               </MDTypography>
             </MDBox>
+
             <MDBox pt={0} sx={tableSx}>
               <table className="recordsheet-table">
                 <thead>
@@ -1316,6 +1818,7 @@ function RecordSheet() {
                     </tr>
                   ))}
                 </thead>
+
                 <tbody>
                   {attendanceTable.getRowModel().rows.map((row) => (
                     <tr key={row.id}>
@@ -1328,7 +1831,10 @@ function RecordSheet() {
                         return (
                           <td
                             key={cell.id}
-                            style={{ width: cell.column.columnDef.size, backgroundColor: bg }}
+                            style={{
+                              width: cell.column.columnDef.size,
+                              backgroundColor: bg,
+                            }}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}
                           </td>
@@ -1337,6 +1843,7 @@ function RecordSheet() {
                     </tr>
                   ))}
 
+                  {/* ✅ 일자별 출근자 수 요약 행 */}
                   <tr>
                     <td
                       style={{
@@ -1447,7 +1954,7 @@ function RecordSheet() {
                 <Select
                   value={dispatchDelFilter}
                   onChange={(e) => {
-                    // ✅ 필터만 바꾸면 useEffect가 자동으로 fetchDispatchOnly 호출
+                    // ✅ 필터만 바꾸면 useEffect가 자동 재조회 + snapshot 갱신
                     setDispatchDelFilter(e.target.value);
                   }}
                   size="small"

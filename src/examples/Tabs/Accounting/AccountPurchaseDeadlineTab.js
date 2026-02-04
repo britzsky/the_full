@@ -611,17 +611,31 @@ function AccountPurchaseDeadlineTab() {
     setOriginalDetailRows,
   ]);
 
+  // ✅ 원본을 sale_id로 매핑 (index 의존 제거)
+  const originalMasterMap = useMemo(() => {
+    const m = new Map();
+    (originalRows || []).forEach((r) => {
+      const key = String(r?.sale_id ?? "");
+      if (key) m.set(key, r);
+    });
+    return m;
+  }, [originalRows]);
+
   // ✅ 저장(상단 + 하단 같이)
   const handleSave = useCallback(async () => {
     try {
+      // ✅ 상단: 변경된 행만, 하지만 "행 전체"를 전송
       const modifiedMaster = (rows || [])
-        .map((r, idx) => {
-          const o = originalRows?.[idx];
-          if (!o) return null;
-          return isRowChanged(o, r) ? buildRowForSave(r) : null;
+        .filter((r) => {
+          const key = String(r?.sale_id ?? "");
+          const o = originalMasterMap.get(key);
+          // 원본이 없으면 신규/비정상 -> 전체 전송 대상으로 처리하고 싶으면 true
+          if (!o) return true;
+          return isRowChanged(o, r);
         })
-        .filter(Boolean);
+        .map((r) => buildRowForSave(r)); // ✅ buildRowForSave가 { ...r } 이므로 행 전체가 감
 
+      // ✅ 하단은 기존 로직 유지
       const modifiedDetail = (detailRows || [])
         .map((r, idx) => {
           const o = originalDetailRows?.[idx];
@@ -654,8 +668,7 @@ function AccountPurchaseDeadlineTab() {
         }
       }
 
-      const hasDetailData = Array.isArray(detailRows) && detailRows.length > 0;
-      if (hasDetailData && modifiedDetail.length > 0) {
+      if (Array.isArray(detailRows) && detailRows.length > 0 && modifiedDetail.length > 0) {
         const res2 = await api.post("/Account/AccountPurchaseDetailSave", modifiedDetail, {
           headers: { "Content-Type": "application/json" },
           validateStatus: () => true,
@@ -684,7 +697,7 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [
     rows,
-    originalRows,
+    originalMasterMap,
     isRowChanged,
     buildRowForSave,
     fetchPurchaseList,

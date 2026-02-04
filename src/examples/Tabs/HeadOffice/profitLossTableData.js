@@ -40,7 +40,7 @@ export default function useProfitLossTableData(year, account_id) {
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
     api
-      .get("/Account/AccountList", {
+      .get("/Account/AccountListV2", {
         params: { account_type: "0" },
       })
       .then((res) => {
@@ -53,5 +53,11 @@ export default function useProfitLossTableData(year, account_id) {
       .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
   }, []);
 
-  return { profitLossTableRows, setProfitLossTableRows, accountList, loading, fetchProfitLossTableList };
+  return {
+    profitLossTableRows,
+    setProfitLossTableRows,
+    accountList,
+    loading,
+    fetchProfitLossTableList,
+  };
 }

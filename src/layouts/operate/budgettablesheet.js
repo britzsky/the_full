@@ -1,15 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useState } from "react";
-import {
-  Box,
-  Grid,
-  Select,
-  MenuItem,
-  Card,
-  TextField,
-  useTheme,
-  useMediaQuery,
-} from "@mui/material";
+import { Box, Grid, Select, MenuItem, Card, TextField, useTheme, useMediaQuery } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -31,8 +22,13 @@ export default function BudgetTableTab() {
   const [editRows, setEditRows] = useState([]);
 
   // ✅ 예산 테이블 데이터 훅 (연/월 기준 전체 조회)
-  const { budgetTableRows, loading, fetchBudgetTableList, budgetStandardList, mealsNumberList } =
-    useBudgetTableData(year, month);
+  const {
+    budgetTableRows,
+    loading,
+    fetchBudgetTableList,
+    budgetStandardList,
+    mealsNumberList,
+  } = useBudgetTableData(year, month);
 
   // ✅ 데이터 조회 트리거 (연/월 변경 시마다)
   useEffect(() => {
@@ -88,9 +84,10 @@ export default function BudgetTableTab() {
     { key: "day_budget", label: "현기준 적정예산", width: 90 },
     { key: "day_use_amount", label: "현기준 사용금액", width: 90 },
     { key: "day_use_ratio", label: "현기준 적정금액 비율(%)", width: 115 },
+    // { key: "existing_budget",   label: "기존예산",        width: 90 },
+    { key: "diff_amount", label: "차액", width: 90 },
     { key: "use_ratio", label: "총 예산대비 사용비율(%)", width: 115 },
     { key: "budget_grant", label: "예산부여", width: 90 }, // editable
-    { key: "diff_amount", label: "차액", width: 90 },
     { key: "note", label: "비고", width: 200 }, // editable
   ];
 
@@ -108,8 +105,12 @@ export default function BudgetTableTab() {
           const original = row._original[field];
           const current = row[field];
 
-          const originalNorm = isNumeric ? Number(original ?? 0) : original ?? "";
-          const currentNorm = isNumeric ? Number(current ?? 0) : current ?? "";
+          const originalNorm = isNumeric
+            ? Number(original ?? 0)
+            : (original ?? "");
+          const currentNorm = isNumeric
+            ? Number(current ?? 0)
+            : (current ?? "");
 
           if (originalNorm !== currentNorm) {
             changedFields[field] = row[field];
@@ -151,7 +152,9 @@ export default function BudgetTableTab() {
 
     if (field === "budget_grant") {
       const numericValue =
-        value === "" || value === null ? null : Number(String(value).replace(/,/g, ""));
+        value === "" || value === null
+          ? null
+          : Number(String(value).replace(/,/g, ""));
       newRows[rowIdx][field] = numericValue;
     } else {
       // note 등 문자열
@@ -184,10 +187,10 @@ export default function BudgetTableTab() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                flexWrap: "nowrap", // 🔹 한 줄 유지
+                flexWrap: "nowrap",     // 🔹 한 줄 유지
                 gap: 2,
-                overflowX: "auto", // 🔹 내용 많으면 가로 스크롤
-                whiteSpace: "nowrap", // 🔹 텍스트 줄바꿈 방지
+                overflowX: "auto",      // 🔹 내용 많으면 가로 스크롤
+                whiteSpace: "nowrap",   // 🔹 텍스트 줄바꿈 방지
               }}
             >
               {/* 🔹 왼쪽: 예산기준 / 식수기준 정보 (한 줄로) */}
@@ -236,7 +239,9 @@ export default function BudgetTableTab() {
                       </Box>
                     ))
                   ) : (
-                    <Box sx={{ fontSize: 11, color: "#999" }}>예산 기준 정보가 없습니다.</Box>
+                    <Box sx={{ fontSize: 11, color: "#999" }}>
+                      예산 기준 정보가 없습니다.
+                    </Box>
                   )}
                 </Box>
 
@@ -278,7 +283,9 @@ export default function BudgetTableTab() {
                       </Box>
                     ))
                   ) : (
-                    <Box sx={{ fontSize: 11, color: "#999" }}>식수 기준 정보가 없습니다.</Box>
+                    <Box sx={{ fontSize: 11, color: "#999" }}>
+                      식수 기준 정보가 없습니다.
+                    </Box>
                   )}
                 </Box>
               </Box>
@@ -290,7 +297,7 @@ export default function BudgetTableTab() {
                   size="small"
                   value={year}
                   onChange={handleYearChange}
-                  sx={{ minWidth: isMobile ? 140 : 150 }} // ← 거래처와 동일
+                  sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
                   SelectProps={{ native: true }}
                 >
                   {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -304,7 +311,7 @@ export default function BudgetTableTab() {
                   size="small"
                   value={month}
                   onChange={handleMonthChange}
-                  sx={{ minWidth: isMobile ? 140 : 150 }} // ← 거래처와 동일
+                  sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
                   SelectProps={{ native: true }}
                 >
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -314,7 +321,12 @@ export default function BudgetTableTab() {
                   ))}
                 </TextField>
 
-                <MDButton variant="contained" color="info" size="small" onClick={handleSave}>
+                <MDButton
+                  variant="contained"
+                  color="info"
+                  size="small"
+                  onClick={handleSave}
+                >
                   저장
                 </MDButton>
               </Box>
@@ -396,20 +408,29 @@ export default function BudgetTableTab() {
                             const isNumeric = numericFields.includes(field);
                             const isPercent = percentFields.includes(field);
 
-                            const original = row._original ? row._original[field] : undefined;
+                            const original = row._original
+                              ? row._original[field]
+                              : undefined;
                             const current = row[field];
 
-                            const originalNorm = isNumeric ? Number(original ?? 0) : original ?? "";
-                            const currentNorm = isNumeric ? Number(current ?? 0) : current ?? "";
+                            const originalNorm = isNumeric
+                              ? Number(original ?? 0)
+                              : (original ?? "");
+                            const currentNorm = isNumeric
+                              ? Number(current ?? 0)
+                              : (current ?? "");
 
-                            const isChanged = isEditable && originalNorm !== currentNorm;
+                            const isChanged =
+                              isEditable && originalNorm !== currentNorm;
 
                             // 표시값
                             let displayValue = "";
                             if (current !== null && current !== undefined) {
                               if (isNumeric) {
                                 const n = Number(current);
-                                displayValue = Number.isNaN(n) ? "" : formatNumber(n);
+                                displayValue = Number.isNaN(n)
+                                  ? ""
+                                  : formatNumber(n);
                               } else {
                                 displayValue = String(current);
                               }
@@ -427,8 +448,8 @@ export default function BudgetTableTab() {
                                     {current == null
                                       ? ""
                                       : isPercent
-                                      ? `${formatNumber(current)}%`
-                                      : formatNumber(current)}
+                                        ? `${formatNumber(current)}%`
+                                        : formatNumber(current)}
                                   </td>
                                 );
                               }
@@ -469,7 +490,11 @@ export default function BudgetTableTab() {
                                       color: isChanged ? "red" : "black",
                                     }}
                                     onChange={(e) =>
-                                      handleInputChange(rowIdx, field, e.target.value)
+                                      handleInputChange(
+                                        rowIdx,
+                                        field,
+                                        e.target.value
+                                      )
                                     }
                                   />
                                 </td>
@@ -496,7 +521,13 @@ export default function BudgetTableTab() {
                                     background: "transparent",
                                     color: isChanged ? "red" : "black",
                                   }}
-                                  onChange={(e) => handleInputChange(rowIdx, field, e.target.value)}
+                                  onChange={(e) =>
+                                    handleInputChange(
+                                      rowIdx,
+                                      field,
+                                      e.target.value
+                                    )
+                                  }
                                 />
                               </td>
                             );

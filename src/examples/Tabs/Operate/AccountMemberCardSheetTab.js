@@ -197,7 +197,7 @@ function AccountMemberSheet() {
     }
     return arr;
   };
-  const startTimes = generateTimeOptions("6:00", "16:00", 30);
+  const startTimes = generateTimeOptions("5:30", "16:00", 30);
   const endTimes = generateTimeOptions("10:00", "20:00", 30);
 
   const positionOptions = [
@@ -409,7 +409,7 @@ function AccountMemberSheet() {
     const newRow = {
       idx: null,
       work_system: "",
-      start_time: startTimes?.[0] ?? "6:00",
+      start_time: startTimes?.[0] ?? "5:30",
       end_time: endTimes?.[0] ?? "10:00",
     };
     setWsRows((prev) => [newRow, ...prev]);
@@ -630,7 +630,7 @@ function AccountMemberSheet() {
       idx: defaultWorkSystemIdx,
       start_time: workSystemList?.[0]?.start_time
         ? normalizeTime(workSystemList[0].start_time)
-        : startTimes?.[0] ?? "6:00",
+        : startTimes?.[0] ?? "5:30",
       end_time: workSystemList?.[0]?.end_time
         ? normalizeTime(workSystemList[0].end_time)
         : endTimes?.[0] ?? "10:00",

@@ -296,6 +296,25 @@ export default function ElectronicPaymentSheetTab() {
       return;
     }
 
+    const clean = (v) => String(v ?? "").trim();
+
+    const filteredItems = (items || [])
+      .map((r) => ({
+        no: r.no,
+        item_name: clean(r.item_name),
+        qty: clean(r.qty),
+        price: clean(r.price),
+        use_note: clean(r.use_note),
+        link: clean(r.link),
+        note: clean(r.note),
+      }))
+      // ✅ 여기! (map 다음, payload 넣기 전)
+      .filter((r) => r.item_name !== "");
+    // ✅ 한 칸이라도 입력됐으면 통과
+    // .filter((r) =>
+    //   [r.item_name, r.qty, r.price, r.use_note, r.link, r.note].some((v) => v !== "")
+    // );
+
     const payload = {
       main: {
         doc_type: docType,
@@ -319,15 +338,7 @@ export default function ElectronicPaymentSheetTab() {
 
         reg_user_id: localStorage.getItem("user_id") || "",
       },
-      item: items.map((r) => ({
-        no: r.no,
-        item_name: r.item_name,
-        qty: r.qty,
-        price: r.price,
-        use_note: r.use_note,
-        link: r.link,
-        note: r.note,
-      })),
+      item: filteredItems,
     };
 
     try {

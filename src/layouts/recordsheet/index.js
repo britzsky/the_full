@@ -38,6 +38,7 @@ const typeColors = {
   4: "#f9d9d9",
   5: "#ffe6cc",
   6: "#cce6ff",
+  16: "#DDAED3",
 };
 
 const TYPE_LABEL = {
@@ -57,6 +58,7 @@ const TYPE_LABEL = {
   13: "출산휴가",
   14: "육아휴직",
   15: "하계휴가",
+  16: "업장휴무",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
@@ -1347,6 +1349,7 @@ function RecordSheet() {
                 { value: "13", label: "출산휴가" },
                 { value: "14", label: "육아휴직" },
                 { value: "15", label: "하계휴가" },
+                { value: "16", label: "업장휴무" },
               ];
             })();
 

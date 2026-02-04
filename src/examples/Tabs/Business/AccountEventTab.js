@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Grid,
   Box,
@@ -45,6 +45,7 @@ export default function AccountEventTab() {
 
   // ✅ 거래처: ""(미선택) / "ALL"(전체) / 그 외 account_id
   const [selectedAccountId, setSelectedAccountId] = useState("ALL");
+  const [accountInput, setAccountInput] = useState("");
 
   // ✅ 캘린더 날짜 클릭 시 해당 날짜 행 강조/필터에 활용하고 싶으면 사용
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
@@ -497,6 +498,20 @@ export default function AccountEventTab() {
     return [{ account_id: "ALL", account_name: "전체" }, ...base];
   }, [accountList]);
 
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.account_id);
+      setAccountInput(partial.account_name || q);
+    }
+  }, [accountInput, accountOptions]);
+
   const selectedAccountValue =
     accountOptions.find((a) => String(a.account_id) === String(selectedAccountId)) || null;
 
@@ -538,6 +553,8 @@ export default function AccountEventTab() {
               onChange={(_, newValue) => {
                 setSelectedAccountId(newValue ? newValue.account_id : "");
               }}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => setAccountInput(newValue)}
               getOptionLabel={(option) => option?.account_name ?? ""}
               isOptionEqualToValue={(option, value) =>
                 String(option?.account_id) === String(value?.account_id)
@@ -547,6 +564,12 @@ export default function AccountEventTab() {
                   {...params}
                   label="거래처 검색"
                   placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
                   sx={{
                     "& .MuiInputBase-root": { height: 43, fontSize: 12 },
                     "& input": { padding: "0 8px" },

@@ -244,6 +244,7 @@ function AccountCorporateCardSheet() {
 
   // ✅ 거래처 검색조건 (string id 유지)
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   // ✅ 스캔된 상세 item 은 무조건 빨간 글씨
   const isForcedRedRow = (row) => !!row?.isForcedRed;
@@ -335,6 +336,20 @@ function AccountCorporateCardSheet() {
     const id = String(selectedAccountId || "");
     return accountOptions.find((o) => o.account_id === id) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.account_name || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.account_id);
+      setAccountInput(partial.account_name || q);
+    }
+  }, [accountInput, accountOptions]);
 
   // ========================= 조회 =========================
   const handleFetchMaster = useCallback(async () => {
@@ -915,11 +930,26 @@ function AccountCorporateCardSheet() {
   const [cardRows, setCardRows] = useState([]);
   const [origCardRows, setOrigCardRows] = useState([]);
   const [modalAccountId, setModalAccountId] = useState("");
+  const [modalAccountInput, setModalAccountInput] = useState("");
 
   const modalAccountOption = useMemo(() => {
     const id = String(modalAccountId || "");
     return accountOptions.find((o) => o.account_id === id) || null;
   }, [accountOptions, modalAccountId]);
+
+  const selectModalAccountByInput = useCallback(() => {
+    const q = String(modalAccountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.account_name || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setModalAccountId(partial.account_id);
+      setModalAccountInput(partial.account_name || q);
+    }
+  }, [modalAccountInput, accountOptions]);
 
   const openCardModal = useCallback(async () => {
     setCardModalOpen(true);
@@ -1106,6 +1136,8 @@ function AccountCorporateCardSheet() {
               options={accountOptions}
               value={selectedAccountOption}
               onChange={(_, newValue) => setSelectedAccountId(newValue?.account_id || "")}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => setAccountInput(newValue)}
               getOptionLabel={(opt) => opt?.account_name || ""}
               isOptionEqualToValue={(opt, val) => String(opt.account_id) === String(val.account_id)}
               disablePortal
@@ -1116,6 +1148,12 @@ function AccountCorporateCardSheet() {
                   {...params}
                   label="거래처 검색"
                   placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
                   sx={{
                     "& .MuiInputBase-root": { height: 45, fontSize: 12 },
                     "& input": { padding: "0 8px" },
@@ -1928,6 +1966,8 @@ function AccountCorporateCardSheet() {
                 options={accountOptions}
                 value={modalAccountOption}
                 onChange={(_, newValue) => setModalAccountId(newValue?.account_id || "")}
+                inputValue={modalAccountInput}
+                onInputChange={(_, newValue) => setModalAccountInput(newValue)}
                 getOptionLabel={(opt) => opt?.account_name || ""}
                 isOptionEqualToValue={(opt, val) =>
                   String(opt.account_id) === String(val.account_id)
@@ -1936,7 +1976,18 @@ function AccountCorporateCardSheet() {
                 autoHighlight
                 openOnFocus
                 renderInput={(params) => (
-                  <TextField {...params} size="small" label="거래처" placeholder="검색..." />
+                  <TextField
+                    {...params}
+                    size="small"
+                    label="거래처"
+                    placeholder="검색..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        selectModalAccountByInput();
+                      }
+                    }}
+                  />
                 )}
                 sx={{ minWidth: 260 }}
               />

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
@@ -100,6 +100,7 @@ function AccountDispatchMemberSheet() {
 
   // ✅ 거래처: 최초 진입 시 첫 번째 거래처로 자동 선택
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   const tableContainerRef = useRef(null);
   const theme = useTheme();
@@ -147,6 +148,20 @@ function AccountDispatchMemberSheet() {
       })),
     [accountList]
   );
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   // ✅ 조회
   useEffect(() => {
@@ -656,9 +671,12 @@ function AccountDispatchMemberSheet() {
             return accountOptions.find((o) => o.value === v) || null;
           })()}
           onChange={(_, opt) => {
+            if (!opt) return;
             setLocalLoading(true);
-            setSelectedAccountId(opt ? opt.value : "");
+            setSelectedAccountId(opt.value);
           }}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           renderInput={(params) => (
@@ -666,6 +684,12 @@ function AccountDispatchMemberSheet() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                 "& input": { padding: "0 8px" },

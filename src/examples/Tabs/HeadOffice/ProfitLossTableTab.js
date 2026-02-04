@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { Box, Grid, Select, MenuItem, TextField, Autocomplete } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
@@ -13,6 +13,7 @@ export default function ProfitLossTableTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
@@ -52,6 +53,20 @@ export default function ProfitLossTableTab() {
       (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null
     );
   }, [accountList, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountList || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.account_id);
+      setAccountInput(partial.account_name || q);
+    }
+  }, [accountInput, accountList]);
 
   // ✅ 숫자 입력 가능한 항목
   const editableNumberFields = [
@@ -226,13 +241,25 @@ export default function ProfitLossTableTab() {
             onChange={(_, newValue) => {
               setSelectedAccountId(newValue ? newValue.account_id : "");
             }}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
             // ✅ 입력 텍스트로 검색: account_name 기준
             getOptionLabel={(option) => option?.account_name ?? ""}
             isOptionEqualToValue={(option, value) =>
               String(option.account_id) === String(value.account_id)
             }
             renderInput={(params) => (
-              <TextField {...params} label="거래처 검색" placeholder="거래처명을 입력" />
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
+              />
             )}
           />
         )}

@@ -156,6 +156,8 @@ function AccountInfoSheet() {
 
   const { account_id: paramAccountId } = useParams();
   const [selectedAccountId, setSelectedAccountId] = useState(paramAccountId || "");
+  const [accountInput, setAccountInput] = useState("");
+  const [accountOpen, setAccountOpen] = useState(false);
 
   const {
     basicInfo,
@@ -169,6 +171,20 @@ function AccountInfoSheet() {
     saveData,
     fetchAllData,
   } = useAccountInfosheetData(selectedAccountId);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountList || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.account_id);
+      setAccountInput(partial.account_name || q);
+    }
+  }, [accountInput, accountList]);
 
   const didInitAccountRef = useRef(false);
 
@@ -1376,6 +1392,11 @@ function AccountInfoSheet() {
               onChange={(_, newValue) => {
                 setSelectedAccountId(newValue ? newValue.account_id : "");
               }}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => setAccountInput(newValue)}
+              open={accountOpen}
+              onOpen={() => setAccountOpen(true)}
+              onClose={() => setAccountOpen(false)}
               getOptionLabel={(option) => option?.account_name ?? ""}
               isOptionEqualToValue={(option, value) =>
                 String(option?.account_id) === String(value?.account_id)
@@ -1385,6 +1406,13 @@ function AccountInfoSheet() {
                   {...params}
                   label="거래처 검색"
                   placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                      setAccountOpen(false);
+                    }
+                  }}
                   sx={{
                     "& .MuiInputBase-root": { height: 32, fontSize: 12 },
                     "& input": { padding: "0 8px" },

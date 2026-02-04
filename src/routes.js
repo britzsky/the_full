@@ -112,7 +112,7 @@ const routes = [
         allowedPositions: [0, 1], // 🔹 직책권한
 
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["mh3", "mh3", "ww1"],
+        allowUserIds: ["mh3", "mh3", "ww1", "sy7", "dh2"],
 
         // (옵션) ✅ 특정 아이디는 무조건 차단
         //denyUserIds: ["baduser"],
@@ -159,8 +159,8 @@ const routes = [
         // icon: <Icon fontSize="small">*</Icon>,
         route: "/headoffice/user-management",
         component: <UserManagement />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한 (0~6팀 + 개발팀)
-        allowedPositions: [0, 1], // 🔹 직책권한 (대표/팀장)
+        allowedDepartments: [6], // 🔹 부서권한 (개발팀)
+        allowedPositions: [0, 1], // 🔹 직책권한 (대표님 / 팀장님)
         accessMode: "OR",
       },
       // {

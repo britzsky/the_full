@@ -1269,19 +1269,38 @@ function RecordSheet() {
     month,
   ]);
 
-  // ✅ accountList 로딩 후 account_id 1회 적용
   useEffect(() => {
     if (!accountList || accountList.length === 0) return;
 
-    setSelectedAccountId((prev) => {
-      if (prev) return prev;
+    // ✅ 1순위: localStorage account_id (잠금)
+    if (lockedAccountId) {
+      const exists = (accountList || []).some(
+        (a) => String(a.account_id) === String(lockedAccountId)
+      );
 
-      if (account_id && accountList.some((row) => row.account_id === account_id)) {
-        return account_id;
+      // 목록에 있으면 그걸로 강제 고정
+      if (exists) {
+        setSelectedAccountId(String(lockedAccountId));
+        return;
       }
-      return accountList[0].account_id;
-    });
-  }, [accountList, account_id]);
+
+      // 목록에 없으면: 일단 lockedAccountId로 고정은 하되, 조회가 안될 수 있음(서버에서 권한/목록 문제)
+      setSelectedAccountId(String(lockedAccountId));
+      return;
+    }
+
+    // ✅ 2순위: URL param account_id
+    if (
+      account_id &&
+      (accountList || []).some((a) => String(a.account_id) === String(account_id))
+    ) {
+      setSelectedAccountId(String(account_id));
+      return;
+    }
+
+    // ✅ 3순위: 첫 거래처
+    setSelectedAccountId(String(accountList[0].account_id));
+  }, [accountList, account_id, lockedAccountId]);
 
   useEffect(() => {
     setFormData((prev) => ({ ...prev, account_id: selectedAccountId }));

@@ -54,7 +54,7 @@ export default function DeadlineBalanceTab() {
   // =========================================================
   // ✅ 권한(특정 user_id만 편집/저장/입금 가능)
   // =========================================================
-  const allowedEditors = useMemo(() => new Set(["yh2", "sy9", "britzsky", "ww1", "dh2"]), []);
+  const allowedEditors = useMemo(() => new Set(["yh2", "sy9", "britzsky", "ww1", "dh2", "hh2"]), []);
   const userId = useMemo(() => {
     const v = localStorage.getItem("user_id");
     return (v ?? "").trim();
@@ -713,8 +713,8 @@ export default function DeadlineBalanceTab() {
                               backgroundColor: isSelected
                                 ? "#ffe4e1"
                                 : key === "before_price2"
-                                ? "#FDE7B3"
-                                : "transparent",
+                                  ? "#FDE7B3"
+                                  : "transparent",
                               fontWeight: "bold",
                             }}
                           >

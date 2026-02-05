@@ -62,18 +62,27 @@ function AccountMemberSheet() {
   // ✅ 이미지 업로드/뷰어 기능 (추가)
   // =========================
   const imageFields = ["employment_contract", "id", "bankbook"];
-  const [viewImageSrc, setViewImageSrc] = useState(null);
+  const [viewFile, setViewFile] = useState({ src: null, isPdf: false });
   const fileIconSx = { color: "#1e88e5" };
+
+  const getExt = (p = "") => {
+    const clean = String(p).split("?")[0].split("#")[0];
+    return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
+  };
+  const isPdfFile = (p) => getExt(p) === "pdf";
 
   const handleViewImage = (value) => {
     if (!value) return;
     if (typeof value === "object") {
-      setViewImageSrc(URL.createObjectURL(value));
+      const url = URL.createObjectURL(value);
+      const isPdf = String(value.type || "").toLowerCase().includes("pdf");
+      setViewFile({ src: url, isPdf });
     } else {
-      setViewImageSrc(`${API_BASE_URL}${value}`);
+      const src = `${API_BASE_URL}${value}`;
+      setViewFile({ src, isPdf: isPdfFile(value) });
     }
   };
-  const handleCloseViewer = () => setViewImageSrc(null);
+  const handleCloseViewer = () => setViewFile({ src: null, isPdf: false });
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
@@ -2034,14 +2043,14 @@ function AccountMemberSheet() {
       {/* =========================
           ✅ 이미지 뷰어 (추가)
          ========================= */}
-      {viewImageSrc && (
+      {viewFile?.src && (
         <div
           style={{
             position: "fixed",
             top: 0,
             left: 0,
-            width: "50vw",
-            height: "90vh",
+            width: "75vw",
+            height: "85vh",
             backgroundColor: "rgba(0,0,0,0.7)",
             display: "flex",
             justifyContent: "center",
@@ -2054,76 +2063,86 @@ function AccountMemberSheet() {
             onClick={(e) => e.stopPropagation()}
             style={{
               position: "relative",
-              maxWidth: isMobile ? "95%" : "80%",
-              maxHeight: isMobile ? "90%" : "80%",
+              maxWidth: isMobile ? "95%" : "92%",
+              maxHeight: isMobile ? "90%" : "90%",
             }}
           >
-            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-              {({ zoomIn, zoomOut, resetTransform }) => (
-                <>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      zIndex: 1000,
-                    }}
-                  >
-                    <button
-                      onClick={zoomIn}
+            {viewFile.isPdf ? (
+              <Box sx={{ width: "100%", height: "100%", bgcolor: "#111" }}>
+                <iframe
+                  title="pdf-preview"
+                  src={viewFile.src}
+                  style={{ width: "100%", height: "100%", border: 0 }}
+                />
+              </Box>
+            ) : (
+              <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
+                {({ zoomIn, zoomOut, resetTransform }) => (
+                  <>
+                    <div
                       style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
+                        position: "absolute",
+                        top: 8,
+                        right: 8,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        zIndex: 1000,
                       }}
                     >
-                      +
-                    </button>
-                    <button
-                      onClick={zoomOut}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      -
-                    </button>
-                    <button
-                      onClick={resetTransform}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ⟳
-                    </button>
-                    <button
-                      onClick={handleCloseViewer}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      X
-                    </button>
-                  </div>
+                      <button
+                        onClick={zoomIn}
+                        style={{
+                          border: "none",
+                          padding: isMobile ? "2px 6px" : "4px 8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        +
+                      </button>
+                      <button
+                        onClick={zoomOut}
+                        style={{
+                          border: "none",
+                          padding: isMobile ? "2px 6px" : "4px 8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        -
+                      </button>
+                      <button
+                        onClick={resetTransform}
+                        style={{
+                          border: "none",
+                          padding: isMobile ? "2px 6px" : "4px 8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ⟳
+                      </button>
+                      <button
+                        onClick={handleCloseViewer}
+                        style={{
+                          border: "none",
+                          padding: isMobile ? "2px 6px" : "4px 8px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        X
+                      </button>
+                    </div>
 
-                  <TransformComponent>
-                    <img
-                      src={encodeURI(viewImageSrc)}
-                      alt="미리보기"
-                      style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }}
-                    />
-                  </TransformComponent>
-                </>
-              )}
-            </TransformWrapper>
+                    <TransformComponent>
+                      <img
+                        src={encodeURI(viewFile.src)}
+                        alt="미리보기"
+                        style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }}
+                      />
+                    </TransformComponent>
+                  </>
+                )}
+              </TransformWrapper>
+            )}
           </div>
         </div>
       )}

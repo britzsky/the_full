@@ -9,7 +9,6 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import Swal from "sweetalert2";
 import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import useAccountIssueData, { formatNumber } from "./data/AccountIssueData";
 
 export default function AccountIssueSheet() {
@@ -28,16 +27,39 @@ export default function AccountIssueSheet() {
     fetchAccountIssueList();
   }, [year]);
 
+  /**
+   * ✅ month 필드 정규화
+   * 서버에서 month_1이 문자열(note)로 오든, 객체({note,solution,event_note})로 오든
+   * 화면에서는 항상 객체 형태로 맞춤
+   */
+  const normalizeMonthValue = (v) => {
+    if (!v) return { note: "", solution: "", event_note: "" };
+    if (typeof v === "string") return { note: v, solution: "", event_note: "" };
+    // 객체로 오는 경우(혹은 JSON 문자열로 오는 경우)도 대비
+    if (typeof v === "object") {
+      return {
+        note: v.note || "",
+        solution: v.solution || "",
+        event_note: v.event_note || "",
+      };
+    }
+    return { note: "", solution: "", event_note: "" };
+  };
+
   // ✅ 원본/편집본 초기화 (깊은 복사 적용)
   useEffect(() => {
-    const mapped = accountIssueRows.map((r) => ({
-      ...r,
-      ...Object.fromEntries(
-        Array.from({ length: 12 }, (_, i) => [`month_${i + 1}`, r[`month_${i + 1}`] || ""])
-      ),
-    }));
+    const mapped = accountIssueRows.map((r) => {
+      const monthObj = Object.fromEntries(
+        Array.from({ length: 12 }, (_, i) => {
+          const key = `month_${i + 1}`;
+          return [key, normalizeMonthValue(r[key])];
+        })
+      );
+      return { ...r, ...monthObj };
+    });
+
     setEditableRows(mapped);
-    setOriginalRows(JSON.parse(JSON.stringify(mapped))); // ✅ 깊은 복사
+    setOriginalRows(JSON.parse(JSON.stringify(mapped)));
   }, [accountIssueRows]);
 
   // ✅ 컬럼 구조
@@ -50,12 +72,23 @@ export default function AccountIssueSheet() {
     return [...base, ...months];
   }, []);
 
-  // ✅ 입력 변경
-  const handleChange = (account_id, key, value) => {
+  /**
+   * ✅ 입력 변경
+   * month_# 안의 note/solution/event_note 중 어떤 필드를 바꿨는지 field로 전달
+   */
+  const handleMonthFieldChange = (account_id, monthKey, field, value) => {
     setEditableRows((prev) =>
-      prev.map((row) =>
-        row.account_id === account_id ? { ...row, [key]: value } : row
-      )
+      prev.map((row) => {
+        if (row.account_id !== account_id) return row;
+        const prevMonth = row[monthKey] || { note: "", solution: "", event_note: "" };
+        return {
+          ...row,
+          [monthKey]: {
+            ...prevMonth,
+            [field]: value,
+          },
+        };
+      })
     );
   };
 
@@ -65,15 +98,26 @@ export default function AccountIssueSheet() {
 
     editableRows.forEach((row, i) => {
       const orig = originalRows[i];
+
       for (let m = 1; m <= 12; m++) {
         const key = `month_${m}`;
-        if (row[key] !== orig[key]) {
+        const cur = row[key] || { note: "", solution: "", event_note: "" };
+        const org = orig?.[key] || { note: "", solution: "", event_note: "" };
+
+        // ✅ 3필드 중 하나라도 바뀌면 저장 대상으로
+        if (
+          (cur.note || "") !== (org.note || "") ||
+          (cur.solution || "") !== (org.solution || "") ||
+          (cur.event_note || "") !== (org.event_note || "")
+        ) {
           results.push({
             account_id: row.account_id,
-            month: m, // ✅ 월 추가
-            note: row[key] || "", // ✅ note 필드명으로 명확히 전달
-            year: year,
-            type: 2
+            year,
+            month: m,
+            type: 2,
+            note: cur.note || "",
+            solution: cur.solution || "",
+            event_note: cur.event_note || "",
           });
         }
       }
@@ -89,9 +133,10 @@ export default function AccountIssueSheet() {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
       return;
     }
+
     try {
       const res = await api.post("/Account/AccountIssueSave", {
-        data:modified,
+        data: modified,
       });
 
       if (res.data.code === 200) {
@@ -105,17 +150,16 @@ export default function AccountIssueSheet() {
     }
   };
 
-
   // ✅ 페이징
   const totalPages = Math.ceil(editableRows.length / rowsPerPage);
   const paginatedRows = editableRows.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
+  // ✅ 셀 크게 + 내부 3필드 보기 좋게
   const tableSx = {
     flex: 1,
     maxHeight: "75vh",
     overflow: "auto",
     "& table": {
-      borderCollapse: "collapse",
       width: "max-content",
       minWidth: "100%",
       borderSpacing: 0,
@@ -124,47 +168,65 @@ export default function AccountIssueSheet() {
     "& th, & td": {
       border: "1px solid #686D76",
       textAlign: "center",
-      padding: "6px",
+      padding: "8px",
       whiteSpace: "pre-wrap",
       fontSize: "12px",
-      verticalAlign: "middle",
-      background: "#fff", // ✅ 스크롤 시 깜빡임 방지
+      verticalAlign: "top",
+      background: "#fff",
     },
-
-    // ✅ 헤더 행 고정
     "& thead th": {
       position: "sticky",
       top: 0,
       background: "#f0f0f0",
       zIndex: 3,
     },
-
-    // ✅ 거래처 열 고정
     "& td:first-of-type, & th:first-of-type": {
       position: "sticky",
       left: 0,
       background: "#f0f0f0",
       zIndex: 2,
+      minWidth: 160,
+      maxWidth: 220,
     },
-
-    // ✅ 교차 셀(맨 왼쪽 상단 헤더)은 최상단
     "& thead th:first-of-type": {
       zIndex: 4,
     },
+
+    // ✅ 월 컬럼 폭/높이 크게
+    "& th:not(:first-of-type), & td:not(:first-of-type)": {
+      minWidth: 280, // 월 셀 가로 크게
+    },
   };
+
+  const labelSx = (changed) => ({
+    fontSize: "11px",
+    fontWeight: 700,
+    textAlign: "left",
+    mb: 0.5,
+    color: changed ? "red" : "#555",
+  });
+
+  const inputSx = (changed) => ({
+    width: "100%",
+    "& .MuiInputBase-root": {
+      fontSize: "12px",
+    },
+    "& textarea": {
+      fontSize: "12px",
+      padding: "6px",
+      lineHeight: "1.25",
+      color: changed ? "red" : "black",
+    },
+  });
 
   if (loading) return <LoadingScreen />;
 
   return (
     <DashboardLayout>
-      {/* 🔹 공통 헤더 사용 */}
-      {/* <HeaderWithLogout showMenuButton title="📋 고객사 이슈 현황" /> */}
       <DashboardNavbar title="📋 고객사 이슈 현황" />
       <Grid container spacing={6}>
-        {/* 거래처 테이블 */}
         <Grid item xs={12}>
           <Card>
-            {/* 상단 필터 */}
             <MDBox pt={1} pb={1} sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
               <Box sx={{ display: "flex", gap: 1 }}>
                 <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small">
@@ -174,36 +236,14 @@ export default function AccountIssueSheet() {
                     </MenuItem>
                   ))}
                 </Select>
-                {/* <MDButton variant="gradient" color="info" onClick={fetchAccountIssueList}>
-                  새로고침
-                </MDButton> */}
               </Box>
               <MDButton variant="gradient" color="info" onClick={handleSave}>
                 저장
               </MDButton>
             </MDBox>
 
-            {/* 메인 테이블 */}
             <Grid container spacing={2}>
               <Grid item xs={12}>
-                {/* <MDBox
-                  py={1}
-                  px={2}
-                  variant="gradient"
-                  bgColor="info"
-                  borderRadius="lg"
-                  display="flex"
-                  justifyContent="space-between"
-                  alignItems="center"
-                  position="sticky"
-                  top={0}
-                  zIndex={3}
-                >
-                  <MDTypography variant="h6" color="white">
-                    거래처별 이슈 현황
-                  </MDTypography>
-                </MDBox> */}
-
                 <Box sx={tableSx}>
                   <table>
                     <thead>
@@ -213,60 +253,110 @@ export default function AccountIssueSheet() {
                         ))}
                       </tr>
                     </thead>
+
                     <tbody>
                       {paginatedRows.map((row, i) => {
-                        // ✅ 현재 페이지에 맞는 원본 행 계산
                         const origRow = originalRows[(page - 1) * rowsPerPage + i];
 
                         return (
-                          <tr key={i}>
+                          <tr key={row.account_id || i}>
                             {columns.map((col) => {
                               const key = col.accessorKey;
-                              const value = row[key];
-                              const orig = origRow?.[key];
 
                               if (key === "account_name") {
                                 return (
-                                  <td
-                                    key={key}
-                                    onClick={() => setSelectedCustomer(row)}
-                                  >
-                                    {value}
+                                  <td key={key} onClick={() => setSelectedCustomer(row)}>
+                                    {row[key]}
                                   </td>
                                 );
                               }
 
                               if (key.startsWith("month_")) {
-                                const color = value !== orig ? "red" : "black";
+                                const cur = row[key] || { note: "", solution: "", event_note: "" };
+                                const org = origRow?.[key] || {
+                                  note: "",
+                                  solution: "",
+                                  event_note: "",
+                                };
+
+                                const changedNote = (cur.note || "") !== (org.note || "");
+                                const changedSolution =
+                                  (cur.solution || "") !== (org.solution || "");
+                                const changedEvent =
+                                  (cur.event_note || "") !== (org.event_note || "");
+
                                 return (
                                   <td key={key}>
-                                    <TextField
-                                      variant="outlined"
-                                      multiline
-                                      minRows={4}
-                                      maxRows={5}
-                                      value={value || ""}
-                                      onChange={(e) =>
-                                        handleChange(row.account_id, key, e.target.value)
-                                      }
-                                      sx={{
-                                        width: "100%",
-                                        height: "100%",
-                                        "& textarea": {
-                                          fontSize: "12px",
-                                          color: value !== orig ? "red" : "black", // ✅ 여기서 색상 적용
-                                          padding: "2px",
-                                          lineHeight: "1.2",
-                                        },
-                                      }}
-                                    />
+                                    {/* ✅ 이슈내용(note) */}
+                                    <Box sx={{ mb: 1 }}>
+                                      <Box sx={labelSx(changedNote)}>이슈내용</Box>
+                                      <TextField
+                                        variant="outlined"
+                                        multiline
+                                        minRows={5}
+                                        maxRows={15}
+                                        value={cur.note || ""}
+                                        onChange={(e) =>
+                                          handleMonthFieldChange(
+                                            row.account_id,
+                                            key,
+                                            "note",
+                                            e.target.value
+                                          )
+                                        }
+                                        sx={inputSx(changedNote)}
+                                      />
+                                    </Box>
+
+                                    {/* ✅ 해결방안(solution) */}
+                                    <Box sx={{ mb: 1 }}>
+                                      <Box sx={labelSx(changedSolution)}>해결방안</Box>
+                                      <TextField
+                                        variant="outlined"
+                                        multiline
+                                        minRows={5}
+                                        maxRows={15}
+                                        value={cur.solution || ""}
+                                        onChange={(e) =>
+                                          handleMonthFieldChange(
+                                            row.account_id,
+                                            key,
+                                            "solution",
+                                            e.target.value
+                                          )
+                                        }
+                                        sx={inputSx(changedSolution)}
+                                      />
+                                    </Box>
+
+                                    {/* ✅ 특이사항(event_note) */}
+                                    <Box>
+                                      <Box sx={labelSx(changedEvent)}>특이사항</Box>
+                                      <TextField
+                                        variant="outlined"
+                                        multiline
+                                        minRows={5}
+                                        maxRows={15}
+                                        value={cur.event_note || ""}
+                                        onChange={(e) =>
+                                          handleMonthFieldChange(
+                                            row.account_id,
+                                            key,
+                                            "event_note",
+                                            e.target.value
+                                          )
+                                        }
+                                        sx={inputSx(changedEvent)}
+                                      />
+                                    </Box>
                                   </td>
                                 );
                               }
 
+                              // 그 외 숫자 등
                               return (
                                 <td key={key} align="right">
-                                  {formatNumber(value)}
+                                  {formatNumber(row[key])}
                                 </td>
                               );
                             })}
@@ -277,7 +367,6 @@ export default function AccountIssueSheet() {
                   </table>
                 </Box>
 
-                {/* ✅ 페이징 */}
                 <Box display="flex" justifyContent="center" mt={2}>
                   <Pagination
                     count={totalPages}

@@ -64,6 +64,8 @@ export default function ProfitLossTableTab() {
     "duty_secure",
     "person_cost",
     "event_cost",
+    "not_budget_cost",
+    "etc_indirect_cost",
     // "utility_bills_note" ❌ 숫자에서 제외
   ];
 
@@ -96,11 +98,12 @@ export default function ProfitLossTableTab() {
         "정수기",
         "기타경비",
         "이벤트",
+        "예산미발행",
         "매입소계",
       ],
     },
     { group: "인건", cols: ["인건비정보", "파출비", "인건소계"] },
-    { group: "간접", cols: ["수도광열비", "비고", "세금정보", "간접소계"] },
+    { group: "간접", cols: ["수도광열비", "비고", "세금정보", "기타간접비", "간접소계"] },
   ];
 
   // ✅ 컬럼 → DB 필드 매핑
@@ -125,6 +128,7 @@ export default function ProfitLossTableTab() {
     정수기: { value: "water_puri", ratio: "water_ratio" },
     기타경비: { value: "etc_cost", ratio: "etc_ratio" },
     이벤트: { value: "event_cost", ratio: "event_ratio" },
+    예산미발행: { value: "not_budget_cost" },
     매입소계: { value: "purchase_total", ratio: "purchase_total_ratio" },
     // 인건
     인건비정보: { value: "person_cost", ratio: "person_ratio" },
@@ -134,6 +138,7 @@ export default function ProfitLossTableTab() {
     수도광열비: { value: "utility_bills", ratio: "utility_ratio" },
     비고: { value: "utility_bills_note" },
     세금정보: { value: "duty_secure", ratio: "duty_secure_ratio" },
+    기타간접비: { value: "etc_indirect_cost" },
     간접소계: { value: "indirect_total", ratio: "indirect_total_ratio" },
     // 영업이익
     영업이익: { value: "business_profit", ratio: "business_profit_ratio" },
@@ -282,6 +287,9 @@ export default function ProfitLossTableTab() {
                 background: "#e8f0ff",
                 zIndex: 2,
                 borderRight: "1px solid #686D76",
+                width: "50px",
+                minWidth: "50px",
+                maxWidth: "50px",
               },
               ".sticky-header": {
                 zIndex: 3,
@@ -348,7 +356,7 @@ export default function ProfitLossTableTab() {
                                   type="text"
                                   value={r[field] ?? ""}
                                   style={{
-                                    width: "120px", // ✅ 텍스트는 좀 넓게
+                                    width: "100px", // ✅ 텍스트는 좀 넓게
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",
@@ -380,8 +388,23 @@ export default function ProfitLossTableTab() {
                                   onChange={(e) => handleInputChange(i, field, e.target.value)}
                                 />
                               ) : (
+                                <input
+                                  type="text"
+                                  value={formatNumber(r[field] ?? 0)}
+                                  disabled
+                                  style={{
+                                    width: "60px", // ✅ 텍스트는 좀 넓게
+                                    height: "20px",
+                                    fontSize: "12px",
+                                    fontWeight: "bold",
+                                    textAlign: "right", // ✅ 텍스트는 좌측 정렬 추천
+                                    border: "none",
+                                    background: "transparent",
+                                    WebkitTextFillColor: "inherit", // 크롬에서 disabled 회색 처리 방지
+                                    opacity: 1, // disabled 기본 흐림 방지
+                                  }}
+                                ></input>
                                 // ✅ 수정 불가 컬럼
-                                formatNumber(r[field] ?? 0)
                               )}
                             </td>
                           );

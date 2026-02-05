@@ -39,6 +39,7 @@ const typeColors = {
   5: "#ffe6cc",
   6: "#cce6ff",
   16: "#DDAED3",
+  17: "#9F8383",
 };
 
 const TYPE_LABEL = {
@@ -46,6 +47,7 @@ const TYPE_LABEL = {
   1: "영양사",
   2: "상용",
   3: "초과",
+  17: "조기퇴근",
   4: "결근",
   5: "파출",
   6: "직원파출",
@@ -289,10 +291,10 @@ const AttendanceCell = React.memo(function AttendanceCell({
         />
       )}
 
-      {["3", "11"].includes(val.type) && (
+      {["3", "11", "17"].includes(val.type) && (
         <input
           type="text"
-          placeholder={val.type === "3" ? "초과" : "대체휴무"}
+          placeholder={val.type === "3" ? "초과" : val.type === "17" ? "조기퇴근" : "대체휴무"}
           value={val.memo ?? ""}
           onChange={(e) => handleChange("memo", e.target.value)}
           style={{
@@ -1337,6 +1339,7 @@ function RecordSheet() {
                 { value: "1", label: "영양사" },
                 { value: "2", label: "상용" },
                 { value: "3", label: "초과" },
+                { value: "17", label: "조기퇴근" },
                 { value: "4", label: "결근" },
                 { value: "5", label: "파출" },
                 { value: "6", label: "직원파출" },

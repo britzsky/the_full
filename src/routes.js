@@ -351,7 +351,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/headofficecorporatecard",
         component: <HeadOfficeCorporateCardManager />,
-        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 5, 6], // 🔹 부서권한
         accessMode: "OR",
       },
       {

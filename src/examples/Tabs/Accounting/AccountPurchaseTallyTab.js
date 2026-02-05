@@ -55,6 +55,7 @@ function AccountPurchaseTallyTab() {
 
   // 🔹 상단 거래처(사업장) select용 리스트
   const [accountList, setAccountList] = useState([]);
+  const [accountInput, setAccountInput] = useState("");
 
   // ✅ 데이터 훅 사용
   const { rows, setRows, originalRows, loading, fetchPurchaseList } = useAccountPurchaseTallyData();
@@ -457,6 +458,20 @@ function AccountPurchaseTallyTab() {
     [fetchPurchaseList]
   );
 
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      handleAccountChange(null, partial);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions, handleAccountChange]);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -536,6 +551,8 @@ function AccountPurchaseTallyTab() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={handleAccountChange}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
           filterOptions={(options, state) => {
@@ -548,6 +565,12 @@ function AccountPurchaseTallyTab() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                 "& input": { padding: "0 8px" },

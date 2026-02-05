@@ -255,6 +255,12 @@ export default function PeopleCountingTab() {
                 placeholder="거래처 검색"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    setSearch((prev) => prev.trim());
+                  }
+                }}
               />
 
               <Select size="small" value={sortKey} onChange={(e) => setSortKey(e.target.value)}>

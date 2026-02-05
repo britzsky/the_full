@@ -676,6 +676,7 @@ function DinersNumberSheet() {
   const { account_id } = useParams();
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
   const [originalRows, setOriginalRows] = useState([]);
 
   // ✅ 근무일수 상태 (테이블과 완전 분리)
@@ -695,6 +696,20 @@ function DinersNumberSheet() {
       label: acc.account_name,
     }));
   }, [accountList]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   // ✅ extraDietCols 레퍼런스 변동으로 originalRows가 덮이는 문제 방지
   const extraDietSignature = useMemo(() => {
@@ -1076,6 +1091,8 @@ function DinersNumberSheet() {
               return accountOptions.find((o) => o.value === v) || null;
             })()}
             onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt.value === val.value}
             renderInput={(params) => (
@@ -1083,6 +1100,12 @@ function DinersNumberSheet() {
                 {...params}
                 label="거래처 검색"
                 placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                   "& input": { padding: "0 8px" },

@@ -25,6 +25,7 @@ function PropertySheetTab() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
   const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -54,6 +55,21 @@ function PropertySheetTab() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    if (isAccountLocked) return;
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions, isAccountLocked]);
 
   useEffect(() => {
     if (selectedAccountId) {
@@ -523,6 +539,8 @@ function PropertySheetTab() {
               if (isAccountLocked) return; // ✅ 혹시 몰라 방어
               setSelectedAccountId(opt ? opt.value : "");
             }}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt.value === val.value}
             filterOptions={(options, state) => {
@@ -535,6 +553,12 @@ function PropertySheetTab() {
                 {...params}
                 label={isAccountLocked ? "거래처(고정)" : "거래처 검색"}
                 placeholder={isAccountLocked ? "" : "거래처명을 입력"}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                   "& input": { padding: "0 8px" },

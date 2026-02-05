@@ -18,6 +18,7 @@ function AccountMembersFilesTab() {
     useMembersFilesData();
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
@@ -39,6 +40,20 @@ function AccountMembersFilesTab() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   // ✅ 계정 변경 시 조회
   useEffect(() => {
@@ -388,6 +403,8 @@ function AccountMembersFilesTab() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           filterOptions={(options, state) => {
@@ -400,6 +417,12 @@ function AccountMembersFilesTab() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                 "& input": { padding: "0 8px" },

@@ -426,6 +426,7 @@ function RecordSheet() {
   const [originalAttendanceRows, setOriginalAttendanceRows] = useState([]);
   const [defaultTimes, setDefaultTimes] = useState({});
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   const [dispatchDelFilter, setDispatchDelFilter] = useState("N");
 
@@ -447,6 +448,20 @@ function RecordSheet() {
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
     useRecordsheetData(selectedAccountId, year, month);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountList || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.account_id);
+      setAccountInput(partial.account_name || q);
+    }
+  }, [accountInput, accountList]);
 
   // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
   const [employeeRowsView, setEmployeeRowsView] = useState([]);
@@ -1684,6 +1699,8 @@ function RecordSheet() {
               onChange={(_, newVal) => {
                 setSelectedAccountId(newVal?.account_id || "");
               }}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => setAccountInput(newValue)}
               getOptionLabel={(opt) => opt?.account_name || ""}
               isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
               sx={{ minWidth: 200 }}
@@ -1692,6 +1709,12 @@ function RecordSheet() {
                   {...params}
                   label="거래처 검색"
                   placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
                   sx={{
                     "& .MuiInputBase-root": { height: 40, fontSize: 12 },
                     "& input": { padding: "0 8px" },

@@ -651,6 +651,7 @@ function DinersNumberSheet() {
   const { account_id } = useParams();
 
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+  const [accountInput, setAccountInput] = useState("");
   const [originalRows, setOriginalRows] = useState([]);
 
   // ✅ 근무일수 상태 (테이블과 완전 분리)
@@ -676,6 +677,21 @@ function DinersNumberSheet() {
       label: acc.account_name,
     }));
   }, [filteredAccountList]);
+
+  const selectAccountByInput = useCallback(() => {
+    if (localAccountId) return;
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions, localAccountId]);
 
   // ✅ extraDietCols 레퍼런스 변동으로 originalRows가 덮이는 문제 방지
   const extraDietSignature = useMemo(() => {
@@ -1071,10 +1087,23 @@ function DinersNumberSheet() {
               if (localAccountId) return; // ✅ localStorage로 고정이면 변경 불가
               setSelectedAccountId(opt ? opt.value : "");
             }}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt.value === val.value}
             renderInput={(params) => (
-              <TextField {...params} label="거래처" placeholder="거래처 검색" size="small" />
+              <TextField
+                {...params}
+                label="거래처"
+                placeholder="거래처 검색"
+                size="small"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
+              />
             )}
             sx={{ minWidth: isMobile ? 220 : 260 }}
             disabled={!!localAccountId} // ✅ localStorage 고정이면 Autocomplete 자체 비활성

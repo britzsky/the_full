@@ -266,6 +266,7 @@ function CorporateCardSheet() {
 
   // ✅ 거래처 검색조건
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   // ✅ 스캔된 상세 item 은 무조건 빨간 글씨
   const isForcedRedRow = (row) => !!row?.isForcedRed;
@@ -407,6 +408,20 @@ function CorporateCardSheet() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   // ✅ 서버 paymentRows 갱신 시
   useEffect(() => {
@@ -1385,6 +1400,8 @@ function CorporateCardSheet() {
               options={accountOptions}
               value={selectedAccountOption}
               onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => setAccountInput(newValue)}
               getOptionLabel={(opt) => opt?.label ?? ""}
               isOptionEqualToValue={(opt, val) => opt.value === val.value}
               filterOptions={(options, state) => {
@@ -1397,6 +1414,12 @@ function CorporateCardSheet() {
                   {...params}
                   label="거래처 검색"
                   placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
                   sx={{
                     "& .MuiInputBase-root": { height: 45, fontSize: 12 },
                     "& input": { padding: "0 8px" },

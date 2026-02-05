@@ -6,6 +6,9 @@ import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
+import dayjs from "dayjs";
 import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
@@ -22,10 +25,12 @@ import { API_BASE_URL } from "config";
 
 function AccountMemberSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [excelDownloading, setExcelDownloading] = useState(false);
 
   const {
     activeRows,
@@ -195,6 +200,20 @@ function AccountMemberSheet() {
     { value: "2", label: "더채움" },
   ];
 
+  const workSystemLabelMap = useMemo(() => {
+    const m = new Map();
+    (workSystemList || []).forEach((w) => {
+      const key = String(w.idx ?? w.work_system ?? "");
+      if (key) m.set(key, w.work_system ?? "");
+    });
+    return m;
+  }, [workSystemList]);
+
+  const mapLabel = (options, v) => {
+    const key = String(v ?? "");
+    return options.find((o) => String(o.value) === key)?.label ?? key;
+  };
+
   const formatDateForInput = (val) => {
     if (!val && val !== 0) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -217,10 +236,205 @@ function AccountMemberSheet() {
     [accountList]
   );
 
+  const buildExcelRows = (rows) =>
+    (rows || []).map((r) => ({
+      ...r,
+      salary: formatNumber(parseNumber(r.salary)),
+      cor_type: mapLabel(corOptions, r.cor_type),
+      contract_type: mapLabel(contractOptions, r.contract_type),
+      position_type: mapLabel(positionOptions, r.position_type),
+      idx: workSystemLabelMap.get(String(r.idx ?? "")) ?? String(r.idx ?? ""),
+    }));
+
+  const handleExcelDownloadAllAccounts = async () => {
+    if (excelDownloading) return;
+    setExcelDownloading(true);
+
+    try {
+      Swal.fire({
+        title: "엑셀 생성 중...",
+        text: "현장 직원관리 데이터를 조회하고 있습니다.",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const res = await api.get("/Operate/AccountMemberAllList", {
+        params: { del_yn: activeStatus },
+      });
+      const rows = buildExcelRows(
+        (res.data || []).map((item) => ({
+          account_id: item.account_id,
+          member_id: item.member_id,
+          name: item.name,
+          rrn: item.rrn,
+          position_type: item.position_type,
+          account_number: item.account_number,
+          phone: item.phone,
+          address: item.address,
+          contract_type: item.contract_type,
+          join_dt: item.join_dt,
+          act_join_dt: item.act_join_dt,
+          ret_set_dt: item.ret_set_dt,
+          loss_major_insurances: item.loss_major_insurances,
+          del_yn: item.del_yn,
+          del_dt: item.del_dt,
+          del_note: item.del_note,
+          salary: parseNumber(item.salary),
+          idx: item.idx,
+          start_time: normalizeTime(item.start_time),
+          end_time: normalizeTime(item.end_time),
+          national_pension: item.national_pension,
+          health_insurance: item.health_insurance,
+          industrial_insurance: item.industrial_insurance,
+          employment_insurance: item.employment_insurance,
+          employment_contract: item.employment_contract,
+          headoffice_note: item.headoffice_note,
+          subsidy: item.subsidy,
+          note: item.note,
+          id: item.id,
+          bankbook: item.bankbook,
+          cor_type: item.cor_type,
+        }))
+      );
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "AccountMemberSheet";
+
+      const ws = wb.addWorksheet("현장 직원관리");
+      const cols = columns
+        .filter((c) => c.accessorKey)
+        .map((c) => ({ header: c.header, key: c.accessorKey, width: 14 }));
+
+      const now = dayjs();
+      const y = now.year();
+      const m = String(now.month() + 1).padStart(2, "0");
+      const accNameMap = new Map();
+      (accountList || []).forEach((a) => {
+        accNameMap.set(String(a.account_id), a.account_name);
+      });
+
+      const addSectionTitle = (title, colCount) => {
+        ws.addRow([title]);
+        const r = ws.lastRow.number;
+        ws.mergeCells(r, 1, r, colCount);
+        const cell = ws.getCell(r, 1);
+        cell.font = { bold: true, size: 12 };
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+        ws.getRow(r).height = 26;
+      };
+
+      const styleHeaderRow = (rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.font = { bold: true };
+        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFF0F0F0" },
+          };
+        });
+      };
+
+      const styleDataRow = (rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+      };
+
+      // ✅ 컬럼명 중복 방지: columns에는 header를 쓰지 않고, 아래에서 헤더 row를 직접 추가
+      const baseCols = cols.map((c) => ({ key: c.key, width: c.width }));
+      ws.columns = baseCols;
+
+      const grouped = new Map();
+      rows.forEach((r) => {
+        const k = String(r.account_id ?? "");
+        if (!grouped.has(k)) grouped.set(k, []);
+        grouped.get(k).push(r);
+      });
+
+      const header = cols.map((c) => c.header);
+      const autoWidthValues = baseCols.map(() => []);
+
+      grouped.forEach((list, accId) => {
+        const name = accNameMap.get(accId) || "거래처";
+        addSectionTitle(`■ ${name} (${accId})  /  ${y}-${m}`, cols.length);
+
+        ws.addRow(header);
+        ws.getRow(ws.lastRow.number).height = 23;
+        styleHeaderRow(ws.lastRow.number);
+        header.forEach((h, i) => autoWidthValues[i].push(h));
+
+        list.forEach((r) => {
+          const row = {};
+          cols.forEach((c) => {
+            row[c.key] = r[c.key] ?? "";
+          });
+          ws.addRow(row);
+          ws.getRow(ws.lastRow.number).height = 23;
+          styleDataRow(ws.lastRow.number);
+          cols.forEach((c, i) => autoWidthValues[i].push(row[c.key]));
+        });
+
+        ws.addRow([]);
+      });
+
+      const calcWidth = (values, min = 15, max = 80) => {
+        const longest = Math.max(...values.map((v) => String(v ?? "").length), 0);
+        return Math.min(Math.max(longest + 2, min), max);
+      };
+      autoWidthValues.forEach((vals, i) => {
+        ws.getColumn(i + 1).width = calcWidth(vals);
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const d = String(now.date()).padStart(2, "0");
+      const filename = `현장직원관리_전체_${y}-${m}-${d}.xlsx`;
+      saveAs(blob, filename);
+
+      Swal.fire({ title: "완료", text: "엑셀 다운로드가 완료되었습니다.", icon: "success" });
+    } catch (e) {
+      console.error(e);
+      Swal.fire({ title: "실패", text: "엑셀 생성 중 오류가 발생했습니다.", icon: "error" });
+    } finally {
+      setExcelDownloading(false);
+    }
+  };
+
   const selectedAccountOption = useMemo(() => {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   const columns = useMemo(
     () => [
@@ -771,14 +985,14 @@ function AccountMemberSheet() {
                       ? "__FILE__"
                       : String(currentValue ?? "")
                     : isNumeric
-                    ? Number(currentValue ?? 0)
-                    : String(currentValue ?? "");
+                      ? Number(currentValue ?? 0)
+                      : String(currentValue ?? "");
 
                   const normOriginal = isImage
                     ? String(originalValue ?? "")
                     : isNumeric
-                    ? Number(originalValue ?? 0)
-                    : String(originalValue ?? "");
+                      ? Number(originalValue ?? 0)
+                      : String(originalValue ?? "");
 
                   const isChanged = normCurrent !== normOriginal;
 
@@ -973,8 +1187,8 @@ function AccountMemberSheet() {
                         ].includes(colKey)
                           ? "center"
                           : colKey === "salary"
-                          ? "right"
-                          : "left",
+                            ? "right"
+                            : "left",
                       }}
                       contentEditable={isEditable && !isSelect && !isDate}
                       suppressContentEditableWarning
@@ -982,14 +1196,14 @@ function AccountMemberSheet() {
                       onBlur={
                         isEditable && !isSelect && !isDate
                           ? (e) => {
-                              let newValue = e.target.innerText.trim();
-                              if (isNumeric) newValue = parseNumber(newValue);
-                              handleCellChange(newValue);
+                            let newValue = e.target.innerText.trim();
+                            if (isNumeric) newValue = parseNumber(newValue);
+                            handleCellChange(newValue);
 
-                              if (isNumeric) {
-                                e.currentTarget.innerText = formatNumber(newValue);
-                              }
+                            if (isNumeric) {
+                              e.currentTarget.innerText = formatNumber(newValue);
                             }
+                          }
                           : undefined
                       }
                     >
@@ -1267,9 +1481,12 @@ function AccountMemberSheet() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => {
+            if (!opt) return;
             setLoading(true);
-            setSelectedAccountId(opt ? opt.value : "");
+            setSelectedAccountId(opt.value);
           }}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           filterOptions={(options, state) => {
@@ -1282,6 +1499,12 @@ function AccountMemberSheet() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                 "& input": { padding: "0 8px" },
@@ -1297,6 +1520,15 @@ function AccountMemberSheet() {
         {/* ✅ 유틸관리 버튼 추가 */}
         <MDButton variant="gradient" color="warning" onClick={openUtilModal}>
           유틸관리
+        </MDButton>
+
+        <MDButton
+          variant="gradient"
+          color="dark"
+          onClick={handleExcelDownloadAllAccounts}
+          disabled={excelDownloading}
+        >
+          전체 거래처 엑셀 다운로드
         </MDButton>
 
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>

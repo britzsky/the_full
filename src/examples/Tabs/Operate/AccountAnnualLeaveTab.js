@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
@@ -39,6 +39,7 @@ function AccountAnnualLeaveTab() {
 
   // 검색조건: 거래처
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   // 왼쪽 테이블에서 선택된 직원의 member_id
   const [selectedMemberId, setSelectedMemberId] = useState("");
@@ -259,6 +260,20 @@ function AccountAnnualLeaveTab() {
       })),
     [accountList]
   );
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   const getTypeLabel = (type) => {
     const opt = itemOptions.find((o) => String(o.value) === String(type));
@@ -774,7 +789,12 @@ function AccountAnnualLeaveTab() {
             const v = String(selectedAccountId ?? "");
             return accountOptions.find((o) => o.value === v) || null;
           })()}
-          onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+          onChange={(_, opt) => {
+            if (!opt) return;
+            setSelectedAccountId(opt.value);
+          }}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           renderInput={(params) => (
@@ -782,6 +802,12 @@ function AccountAnnualLeaveTab() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 40, fontSize: 12 },
                 "& input": { padding: "0 8px" },

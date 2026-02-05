@@ -949,7 +949,7 @@ function TallySheetTab() {
     }
   };
 
-  const handleCorpCardCellClick = (rowOriginal, rIdx, colKey, isSecond = false) => {
+  const handleCorpCardCellClick = async (rowOriginal, rIdx, colKey, isSecond = false) => {
     if (!rowOriginal || rowOriginal.name === "총합") return;
     if (colKey === "name" || colKey === "total") return;
     if (String(rowOriginal.type) !== "1000") return;
@@ -972,27 +972,49 @@ function TallySheetTab() {
       dateStr,
       cellValue: cellVal,
     });
+    try {
+      Swal.fire({
+        title: "확인 중",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
 
-    if (!cellVal || cellVal === 0) {
-      setCardForm((p) => ({
-        ...p,
-        id: null,
-        use_name: "",
-        total: "",
-        receipt_image: null,
-        card_idx: "",
-        receipt_type: "UNKNOWN",
-        card_brand: "",
-        card_no: "",
-        sale_id: "",
-        account_id: String(selectedAccountId || ""),
-      }));
-      setCardReceiptPreview(null);
-      setCardCreateOpen(true);
-      return;
+      const list = await fetchCorpCardList(selectedAccountId, dateStr);
+      Swal.close();
+
+      const safe = Array.isArray(list) ? list : [];
+      if (safe.length > 0) {
+        // 이미 등록됨 -> 목록(수정)으로 이동
+        setCardRows(safe);
+        const deep = safe.map((r) => ({ ...r }));
+        setCardEditRows(deep);
+        setCardOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
+        setCardRowFiles({});
+        setCardListOpen(true);
+        return;
+      }
+    } catch (e) {
+      Swal.close();
+      Swal.fire("오류", e.message || "목록 조회 중 오류", "error");
     }
 
-    setCardChoiceOpen(true);
+    // 목록이 없으면 신규 등록
+    setCardForm((p) => ({
+      ...p,
+      id: null,
+      use_name: "",
+      total: "",
+      receipt_image: null,
+      card_idx: "",
+      receipt_type: "UNKNOWN",
+      card_brand: "",
+      card_no: "",
+      sale_id: "",
+      account_id: String(selectedAccountId || ""),
+    }));
+    setCardReceiptPreview(null);
+    setCardCreateOpen(true);
   };
 
   const openCreateFromChoice = () => {
@@ -1229,7 +1251,7 @@ function TallySheetTab() {
     }
   };
 
-  const handleCashCellClick = (rowOriginal, rIdx, colKey, isSecond = false) => {
+  const handleCashCellClick = async (rowOriginal, rIdx, colKey, isSecond = false) => {
     if (!rowOriginal || rowOriginal.name === "총합") return;
     if (colKey === "name" || colKey === "total") return;
     if (String(rowOriginal.type) !== "1008") return;
@@ -1252,25 +1274,47 @@ function TallySheetTab() {
       dateStr,
       cellValue: cellVal,
     });
-
-    if (!cellVal || cellVal === 0) {
-      setCashForm({
-        id: null,
-        use_name: "",
-        total: "",
-        payType: "1",
-        cash_receipt_type: "3",
-        receipt_image: null,
-        receipt_type: "UNKNOWN",
-        sale_id: "",
-        account_id: String(selectedAccountId || ""),
+    try {
+      Swal.fire({
+        title: "확인 중",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
       });
-      setCashReceiptPreview(null);
-      setCashCreateOpen(true);
-      return;
+
+      const list = await fetchCashPaymentList(selectedAccountId, dateStr);
+      Swal.close();
+
+      const safe = Array.isArray(list) ? list : [];
+      if (safe.length > 0) {
+        // 이미 등록됨 -> 목록(수정)으로 이동
+        setCashRows(safe);
+        const deep = safe.map((r) => ({ ...r }));
+        setCashEditRows(deep);
+        setCashOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
+        setCashRowFiles({});
+        setCashListOpen(true);
+        return;
+      }
+    } catch (e) {
+      Swal.close();
+      Swal.fire("오류", e.message || "목록 조회 중 오류", "error");
     }
 
-    setCashChoiceOpen(true);
+    // 목록이 없으면 신규 등록
+    setCashForm({
+      id: null,
+      use_name: "",
+      total: "",
+      payType: "1",
+      cash_receipt_type: "3",
+      receipt_image: null,
+      receipt_type: "UNKNOWN",
+      sale_id: "",
+      account_id: String(selectedAccountId || ""),
+    });
+    setCashReceiptPreview(null);
+    setCashCreateOpen(true);
   };
 
   const openCashCreateFromChoice = () => {
@@ -1506,7 +1550,7 @@ function TallySheetTab() {
     }
   };
 
-  const handleOtherCellClick = (rowOriginal, rIdx, colKey, isSecond = false) => {
+  const handleOtherCellClick = async (rowOriginal, rIdx, colKey, isSecond = false) => {
     if (!rowOriginal || rowOriginal.name === "총합") return;
     if (colKey === "name" || colKey === "total") return;
 
@@ -1533,24 +1577,46 @@ function TallySheetTab() {
       type: t,
       rowName: String(rowOriginal?.name ?? ""),
     });
-
-    if (!cellVal || cellVal === 0) {
-      setOtherForm({
-        id: null,
-        use_name: "",
-        total: "",
-        receipt_image: null,
-        receipt_type: "UNKNOWN",
-        sale_id: "",
-        account_id: String(selectedAccountId || ""),
-        type: t,
+    try {
+      Swal.fire({
+        title: "확인 중",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
       });
-      setOtherReceiptPreview(null);
-      setOtherCreateOpen(true);
-      return;
+
+      const list = await fetchOtherPurchaseList(selectedAccountId, dateStr, t);
+      Swal.close();
+
+      const safe = Array.isArray(list) ? list : [];
+      if (safe.length > 0) {
+        // 이미 등록됨 -> 목록(수정)으로 이동
+        setOtherRows(safe);
+        const deep = safe.map((r) => ({ ...r }));
+        setOtherEditRows(deep);
+        setOtherOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
+        setOtherRowFiles({});
+        setOtherListOpen(true);
+        return;
+      }
+    } catch (e) {
+      Swal.close();
+      Swal.fire("오류", e.message || "목록 조회 중 오류", "error");
     }
 
-    setOtherChoiceOpen(true);
+    // 목록이 없으면 신규 등록
+    setOtherForm({
+      id: null,
+      use_name: "",
+      total: "",
+      receipt_image: null,
+      receipt_type: "UNKNOWN",
+      sale_id: "",
+      account_id: String(selectedAccountId || ""),
+      type: t,
+    });
+    setOtherReceiptPreview(null);
+    setOtherCreateOpen(true);
   };
 
   const openOtherCreateFromChoice = () => {

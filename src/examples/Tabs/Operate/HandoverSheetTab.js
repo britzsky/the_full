@@ -1,5 +1,5 @@
 // src/layouts/handover/HandoverSheetTab.js
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import MDBox from "components/MDBox";
@@ -15,6 +15,7 @@ export default function HandoverSheetTab() {
   const [form, setForm] = useState({});
   const [originalForm, setOriginalForm] = useState({});
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [accountInput, setAccountInput] = useState("");
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -36,6 +37,20 @@ export default function HandoverSheetTab() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions]);
 
   // (기존 select 핸들러는 Autocomplete로 교체)
   // const onSearchList = (e) => setSelectedAccountId(e.target.value);
@@ -390,6 +405,8 @@ export default function HandoverSheetTab() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           filterOptions={(options, state) => {
@@ -402,6 +419,12 @@ export default function HandoverSheetTab() {
               {...params}
               label="거래처 검색"
               placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                 "& input": { padding: "0 8px" },

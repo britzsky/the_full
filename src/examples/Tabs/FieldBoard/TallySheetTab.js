@@ -1179,9 +1179,7 @@ function TallySheetTab() {
     fd.append("type", 1008);
 
     fd.append("payType", String(cashForm.payType || "1"));
-    if (String(cashForm.payType) === "1") {
-      fd.append("cash_receipt_type", String(cashForm.cash_receipt_type || "3"));
-    }
+    fd.append("cash_receipt_type", String(cashForm.cash_receipt_type || "3"));
     fd.append("receipt_type", cashForm.receipt_type || "UNKNOWN");
     fd.append("use_name", cashForm.use_name || "");
     fd.append("total", parseNumber(cashForm.total));
@@ -1212,6 +1210,59 @@ function TallySheetTab() {
       Swal.close();
 
       if (res.status === 200) {
+        const desiredPayType = String(cashForm.payType || "1");
+        const desiredCashReceiptType = String(cashForm.cash_receipt_type || "3");
+        const savedPayType = String(res.data?.payType ?? res.data?.pay_type ?? "");
+        const savedCashReceiptType = String(
+          res.data?.cashReceiptType ?? res.data?.cash_receipt_type ?? ""
+        );
+
+        // ✅ OCR이 payType을 카드로 덮어쓴 경우, 사용자 선택(현금)을 다시 반영
+        if (
+          desiredPayType === "1" &&
+          (savedPayType === "2" || savedCashReceiptType !== desiredCashReceiptType)
+        ) {
+          const purchase = res.data || {};
+          const saleId = String(purchase.sale_id || cashForm.sale_id || "");
+          const fixAccountId = String(purchase.account_id || submitAccountId || "");
+          const fixSaleDate = String(purchase.saleDate || cashContext.dateStr || "");
+
+          if (saleId && fixAccountId) {
+            const fdFix = new FormData();
+            fdFix.append("user_id", localUserId);
+            fdFix.append("account_id", fixAccountId);
+            fdFix.append("row_account_id", fixAccountId);
+            fdFix.append("saleDate", fixSaleDate);
+            fdFix.append("type", 1008);
+            fdFix.append("payType", "1");
+            fdFix.append("cash_receipt_type", desiredCashReceiptType);
+            fdFix.append("use_name", purchase.use_name || cashForm.use_name || "");
+            fdFix.append("receipt_type", purchase.receipt_type || cashForm.receipt_type || "UNKNOWN");
+            fdFix.append("total", parseNumber(purchase.total ?? cashForm.total ?? 0));
+            fdFix.append("vat", parseNumber(purchase.vat ?? 0));
+            fdFix.append("taxFree", parseNumber(purchase.taxFree ?? 0));
+            fdFix.append("tax", parseNumber(purchase.tax ?? 0));
+            fdFix.append("totalCash", parseNumber(purchase.total ?? cashForm.total ?? 0));
+            fdFix.append("totalCard", 0);
+            fdFix.append("cardNo", "");
+            fdFix.append("cardBrand", "");
+            if (purchase.bizNo) fdFix.append("bizNo", purchase.bizNo);
+            if (purchase.note) fdFix.append("note", purchase.note);
+            if (purchase.receipt_image) fdFix.append("receipt_image", purchase.receipt_image);
+            fdFix.append("sale_id", saleId);
+            if (purchase.id != null) fdFix.append("id", purchase.id);
+
+            const resFix = await api.post("/Account/AccountTallyToPurchaseSave", fdFix, {
+              headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+              validateStatus: () => true,
+            });
+
+            if (resFix.status !== 200) {
+              throw new Error(resFix.data?.message || `결제수단 보정 실패(code: ${resFix.status})`);
+            }
+          }
+        }
+
         Swal.fire("완료", mode === "edit" ? "수정되었습니다." : "등록되었습니다.", "success");
 
         await fetchDataRows?.(selectedAccountId, year, month);
@@ -1339,9 +1390,13 @@ function TallySheetTab() {
       Swal.close();
 
       const safe = Array.isArray(list) ? list : [];
-      setCashRows(safe);
+      const normalized = safe.map((r) => ({
+        ...r,
+        cash_receipt_type: String(r.cash_receipt_type ?? r.cashReceiptType ?? "3"),
+      }));
+      setCashRows(normalized);
 
-      const deep = safe.map((r) => ({ ...r }));
+      const deep = normalized.map((r) => ({ ...r }));
       setCashEditRows(deep);
       setCashOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
       setCashRowFiles({});
@@ -1362,7 +1417,7 @@ function TallySheetTab() {
       use_name: rowObj.use_name || "",
       total: String(rowObj.total ?? ""),
       payType: String(rowObj.payType ?? "1"),
-      cash_receipt_type: String(rowObj.cash_receipt_type ?? "3"),
+      cash_receipt_type: String(rowObj.cash_receipt_type ?? rowObj.cashReceiptType ?? "3"),
       receipt_image: null,
       receipt_type: rowObj.receipt_type || "UNKNOWN",
       sale_id: String(rowObj.sale_id ?? ""),
@@ -3242,60 +3297,97 @@ function TallySheetTab() {
                   });
 
                   for (let i = 0; i < changed.length; i++) {
-                    const { r, rowKey } = changed[i];
+                    const { r, rowKey, idx } = changed[i];
+                    const orig = cardOrigRowsForDiff?.[idx] || {};
 
                     // ✅ 컨텍스트 날짜(클릭 셀 기준) 유지
                     const y = cardContext.isSecond ? prevYear : year;
                     const m = cardContext.isSecond ? prevMonth : month;
                     const fixedCellDate = buildCellDate(y, m, cardContext.dayIndex ?? 0);
 
-                    const fd = new FormData();
-                    fd.append("user_id", localUserId);
-
-                    const submitAccountId = String(r.account_id ?? selectedAccountId ?? "");
-                    fd.append("account_id", submitAccountId);
-                    fd.append("row_account_id", submitAccountId);
-
-                    fd.append("cell_day", String((cardContext.dayIndex ?? 0) + 1));
-                    fd.append("cell_date", fixedCellDate);
-
-                    fd.append("type", 1000);
-                    fd.append("saveType", "cor");
-
-                    if (r.id != null) fd.append("id", r.id);
-                    if (r.sale_id) fd.append("sale_id", String(r.sale_id));
-
-                    const cardIdx = String(r.card_idx ?? r.corp_card_idx ?? r.idx ?? "");
-                    if (cardIdx) fd.append("card_idx", cardIdx);
-
+                    const submitAccountId = String(r.account_id ?? orig.account_id ?? selectedAccountId ?? "");
+                    const cardIdx = String(
+                      r.card_idx ?? r.corp_card_idx ?? r.idx ?? orig.card_idx ?? orig.corp_card_idx ?? orig.idx ?? ""
+                    );
                     const picked = getCorpCardByIdx(cardIdx);
-                    fd.append("card_brand", r.card_brand || picked?.card_brand || "");
-                    fd.append("card_no", r.card_no || picked?.card_no || "");
+                    const cardBrand =
+                      r.card_brand || r.cardBrand || orig.card_brand || orig.cardBrand || picked?.card_brand || "";
+                    const cardNo =
+                      r.card_no || r.cardNo || orig.card_no || orig.cardNo || picked?.card_no || "";
+                    const paymentDt = r.payment_dt || orig.payment_dt || fixedCellDate;
 
-                    fd.append("use_name", r.use_name || "");
-                    fd.append("receipt_type", r.receipt_type || "UNKNOWN");
-                    fd.append("total", parseNumber(r.total));
+                    const receiptImage = r.receipt_image || orig.receipt_image || "";
+                    const bizNo = r.bizNo || orig.bizNo || "";
+                    const note = r.note || orig.note || "";
+                    const vat = parseNumber((r.vat === "" || r.vat == null) ? orig.vat : r.vat);
+                    const taxFree = parseNumber((r.taxFree === "" || r.taxFree == null) ? orig.taxFree : r.taxFree);
+                    const tax = parseNumber((r.tax === "" || r.tax == null) ? orig.tax : r.tax);
+                    const totalCard = parseNumber((r.totalCard === "" || r.totalCard == null) ? orig.totalCard : r.totalCard);
 
                     const file = cardRowFiles?.[rowKey]?.file;
-                    if (file) fd.append("file", file);
 
-                    const finalFd = new FormData();
-                    finalFd.append("main", fd);
+                    if (file) {
+                      // ✅ 파일 변경 시: OCR 저장 endpoint 사용 (receipt_image 갱신)
+                      const fd = new FormData();
+                      fd.append("user_id", localUserId);
+                      fd.append("account_id", submitAccountId);
+                      fd.append("row_account_id", submitAccountId);
+                      fd.append("cell_day", String((cardContext.dayIndex ?? 0) + 1));
+                      fd.append("cell_date", fixedCellDate);
+                      fd.append("type", 1000);
+                      fd.append("saveType", "cor");
 
-                    const res = await api.post(
-                      "/Account/AccountCorporateCardPaymentAllSave",
-                      finalFd,
-                      {
-                        headers: {
-                          "Content-Type": "multipart/form-data",
-                          Accept: "application/json",
-                        },
+                      if (r.id != null) fd.append("id", r.id);
+                      if (r.sale_id) fd.append("sale_id", String(r.sale_id));
+                      if (cardIdx) fd.append("card_idx", cardIdx);
+
+                      fd.append("card_brand", cardBrand);
+                      fd.append("card_no", cardNo);
+                      fd.append("use_name", r.use_name || "");
+                      fd.append("receipt_type", r.receipt_type || "UNKNOWN");
+                      fd.append("total", parseNumber(r.total));
+                      fd.append("file", file);
+
+                      const res = await api.post("/receipt-scanV3", fd, {
+                        headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
                         validateStatus: () => true,
-                      }
-                    );
+                      });
 
-                    if (res.status !== 200) {
-                      throw new Error(res.data?.message || `저장 실패(code: ${res.status})`);
+                      if (res.status !== 200) {
+                        throw new Error(res.data?.message || `저장 실패(code: ${res.status})`);
+                      }
+                    } else {
+                      // ✅ 파일 변경 없음: 기존 receipt_image 유지 + JSON 저장
+                      const main = {
+                        sale_id: r.sale_id || orig.sale_id || "",
+                        account_id: submitAccountId,
+                        payment_dt: paymentDt,
+                        type: 1000,
+                        use_name: r.use_name || orig.use_name || "",
+                        bizNo,
+                        total: parseNumber((r.total === "" || r.total == null) ? orig.total : r.total),
+                        vat,
+                        taxFree,
+                        tax,
+                        totalCard,
+                        cardNo,
+                        cardBrand,
+                        receipt_image: receiptImage,
+                        note,
+                        user_id: localUserId,
+                        receipt_type: r.receipt_type || orig.receipt_type || "UNKNOWN",
+                        idx: cardIdx || r.idx || orig.idx || "",
+                      };
+
+                      const res = await api.post(
+                        "/Account/AccountCorporateCardPaymentAllSave",
+                        { main: [main], item: [] },
+                        { headers: { "Content-Type": "application/json" }, validateStatus: () => true }
+                      );
+
+                      if (!(res.data?.code === 200 || res.status === 200)) {
+                        throw new Error(res.data?.message || `저장 실패(code: ${res.status})`);
+                      }
                     }
 
                     Swal.update?.({ text: `${i + 1} / ${changed.length}` });
@@ -3463,7 +3555,7 @@ function TallySheetTab() {
                                     cash_receipt_type:
                                       v === "1"
                                         ? String(x.cash_receipt_type ?? "3")
-                                        : String(x.cash_receipt_type ?? "3"),
+                                        : "3",
                                   }
                                   : x
                               )
@@ -3639,7 +3731,8 @@ function TallySheetTab() {
                   });
 
                   for (let i = 0; i < changed.length; i++) {
-                    const { r, rowKey } = changed[i];
+                    const { r, rowKey, idx } = changed[i];
+                    const orig = cashOrigRowsForDiff?.[idx] || {};
 
                     const y = cashContext.isSecond ? prevYear : year;
                     const m = cashContext.isSecond ? prevMonth : month;
@@ -3648,7 +3741,7 @@ function TallySheetTab() {
                     const fd = new FormData();
                     fd.append("user_id", localUserId);
 
-                    const submitAccountId = String(r.account_id ?? selectedAccountId ?? "");
+                    const submitAccountId = String(r.account_id ?? orig.account_id ?? selectedAccountId ?? "");
                     fd.append("account_id", submitAccountId);
                     fd.append("row_account_id", submitAccountId);
 
@@ -3658,19 +3751,19 @@ function TallySheetTab() {
                     fd.append("type", 1008);
 
                     fd.append("payType", String(r.payType ?? "1"));
-                    if (String(r.payType ?? "1") === "1") {
-                      fd.append("cash_receipt_type", String(r.cash_receipt_type ?? "3"));
-                    }
+                    fd.append("cash_receipt_type", String(r.cash_receipt_type ?? "3"));
 
                     fd.append("use_name", r.use_name || "");
                     fd.append("receipt_type", r.receipt_type || "UNKNOWN");
                     fd.append("total", parseNumber(r.total));
 
                     if (r.id != null) fd.append("id", r.id);
-                    if (r.sale_id) fd.append("sale_id", String(r.sale_id));
+                    if (r.sale_id || orig.sale_id) fd.append("sale_id", String(r.sale_id || orig.sale_id));
 
                     const file = cashRowFiles?.[rowKey]?.file;
                     if (file) fd.append("file", file);
+                    const receiptImage = r.receipt_image || orig.receipt_image || "";
+                    if (receiptImage) fd.append("receipt_image", receiptImage);
 
                     const res = await api.post("/Account/AccountTallyToPurchaseSave", fd, {
                       headers: {
@@ -3954,7 +4047,8 @@ function TallySheetTab() {
                   });
 
                   for (let i = 0; i < changed.length; i++) {
-                    const { r, rowKey } = changed[i];
+                    const { r, rowKey, idx } = changed[i];
+                    const orig = otherOrigRowsForDiff?.[idx] || {};
 
                     const y = otherContext.isSecond ? prevYear : year;
                     const m = otherContext.isSecond ? prevMonth : month;
@@ -3963,7 +4057,7 @@ function TallySheetTab() {
                     const fd = new FormData();
                     fd.append("user_id", localUserId);
 
-                    const submitAccountId = String(r.account_id ?? selectedAccountId ?? "");
+                    const submitAccountId = String(r.account_id ?? orig.account_id ?? selectedAccountId ?? "");
                     fd.append("account_id", submitAccountId);
                     fd.append("row_account_id", submitAccountId);
 
@@ -3976,10 +4070,12 @@ function TallySheetTab() {
                     fd.append("total", parseNumber(r.total));
 
                     if (r.id != null) fd.append("id", r.id);
-                    if (r.sale_id) fd.append("sale_id", String(r.sale_id));
+                    if (r.sale_id || orig.sale_id) fd.append("sale_id", String(r.sale_id || orig.sale_id));
 
                     const file = otherRowFiles?.[rowKey]?.file;
                     if (file) fd.append("file", file);
+                    const receiptImage = r.receipt_image || orig.receipt_image || "";
+                    if (receiptImage) fd.append("receipt_image", receiptImage);
 
                     const res = await api.post("/Account/AccountTallyToPurchaseSave", fd, {
                       headers: {
@@ -4272,6 +4368,10 @@ function TallySheetTab() {
                   setCashForm((p) => ({
                     ...p,
                     payType: String(e.target.value),
+                    cash_receipt_type:
+                      String(e.target.value) === "1"
+                        ? String(p.cash_receipt_type ?? "3")
+                        : "3",
                   }))
                 }
                 fullWidth

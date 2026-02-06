@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import MDBox from "components/MDBox";
@@ -251,6 +251,8 @@ function AccountCorporateCardSheet() {
 
   // ✅ 스크롤 ref
   const masterWrapRef = useRef(null);
+  const masterScrollPosRef = useRef(0);
+  const detailScrollPosRef = useRef(0);
   const scrollMasterToBottom = useCallback((smooth = true) => {
     const el = masterWrapRef.current;
     if (!el) return;
@@ -269,6 +271,16 @@ function AccountCorporateCardSheet() {
       top: el.scrollHeight,
       behavior: smooth ? "smooth" : "auto",
     });
+  }, []);
+
+  const saveMasterScroll = useCallback(() => {
+    const el = masterWrapRef.current;
+    if (el) masterScrollPosRef.current = el.scrollTop;
+  }, []);
+
+  const saveDetailScroll = useCallback(() => {
+    const el = detailWrapRef.current;
+    if (el) detailScrollPosRef.current = el.scrollTop;
   }, []);
 
   const fileIconSx = { color: "#1e88e5" };
@@ -414,9 +426,20 @@ function AccountCorporateCardSheet() {
   // - card_idx(=idx) 기반으로 카드 select가 조회값에 맞춰 "선택"되도록 보정
   //   (서버가 card_idx를 주면 그대로 / 없으면 cardNo로 역매핑)
   useEffect(() => {
-    const serverRows = (paymentRows || []).map((r) => {
-      const acctKey = String(r.account_id ?? selectedAccountId ?? "");
-      const options = cardsByAccount[acctKey] || [];
+    saveMasterScroll();
+    const serverRows = (paymentRows || [])
+      .slice()
+      .sort((a, b) => {
+        const da = String(a?.payment_dt ?? "");
+        const db = String(b?.payment_dt ?? "");
+        if (da !== db) return da.localeCompare(db);
+        const sa = String(a?.sale_id ?? "");
+        const sb = String(b?.sale_id ?? "");
+        return sa.localeCompare(sb);
+      })
+      .map((r) => {
+        const acctKey = String(r.account_id ?? selectedAccountId ?? "");
+        const options = cardsByAccount[acctKey] || [];
 
       const cardNoDigits = onlyDigits(r.cardNo ?? r.card_no ?? "");
       const serverCardIdx = r.card_idx ?? r.cardIdx ?? r.idx ?? ""; // 안전하게 후보들
@@ -431,7 +454,7 @@ function AccountCorporateCardSheet() {
         card_idx: mappedIdx, // ✅ select value (idx)
         receipt_type: normalizeReceiptTypeVal(r.receipt_type),
       };
-    });
+      });
 
     setMasterRows((prev) => {
       const keepNew = !skipPendingNewMergeRef.current;
@@ -447,10 +470,11 @@ function AccountCorporateCardSheet() {
     setOrigDetailRows([]);
 
     setMasterRenderKey((k) => k + 1);
-  }, [paymentRows, cardsByAccount, selectedAccountId]);
+  }, [paymentRows, cardsByAccount, selectedAccountId, saveMasterScroll]);
 
   // ✅ 상세 rows 갱신 시
   useEffect(() => {
+    saveDetailScroll();
     const copy = (paymentDetailRows || []).map((r) => ({
       ...r,
       isForcedRed: false,
@@ -460,7 +484,26 @@ function AccountCorporateCardSheet() {
     setOrigDetailRows(copy);
 
     setDetailRenderKey((k) => k + 1);
-  }, [paymentDetailRows]);
+  }, [paymentDetailRows, saveDetailScroll]);
+
+  useLayoutEffect(() => {
+    const el = masterWrapRef.current;
+    if (el) el.scrollTop = masterScrollPosRef.current;
+  }, [masterRenderKey]);
+
+  useLayoutEffect(() => {
+    const el = detailWrapRef.current;
+    if (el) el.scrollTop = detailScrollPosRef.current;
+  }, [detailRenderKey, selectedMaster?.sale_id]);
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    const masterEl = masterWrapRef.current;
+    if (masterEl) masterEl.scrollTop = masterScrollPosRef.current;
+    const detailEl = detailWrapRef.current;
+    if (detailEl) detailEl.scrollTop = detailScrollPosRef.current;
+  }, [loading]);
+
 
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
@@ -775,6 +818,8 @@ function AccountCorporateCardSheet() {
   }, []);
 
   const saveAll = useCallback(async () => {
+    const userId = localStorage.getItem("user_id") || "";
+
     const main = masterRows
       .map((r) => {
         if (r.isNew) return normalizeMasterForSave(r);
@@ -790,7 +835,8 @@ function AccountCorporateCardSheet() {
 
         return changed ? normalizeMasterForSave(r) : null;
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((r) => ({ ...r, user_id: userId }));
 
     const item = detailRows
       .map((r, i) => {
@@ -801,7 +847,8 @@ function AccountCorporateCardSheet() {
         const changed = Object.keys(r).some((k) => isDetailFieldChanged(k, o[k], r[k]));
         return changed ? cleanDetailRow(r) : null;
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((r) => ({ ...r, user_id: userId }));
 
     if (main.length === 0 && item.length === 0) {
       return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
@@ -1276,6 +1323,7 @@ function AccountCorporateCardSheet() {
                     cursor: "pointer",
                   }}
                   onClick={async () => {
+                    saveMasterScroll();
                     if (!row.sale_id) {
                       setSelectedMaster(row);
                       return;

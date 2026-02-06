@@ -14,6 +14,7 @@ import {
   MenuItem,
   Button,
   TextField,
+  Checkbox,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -111,7 +112,7 @@ const formatMoneyLike = (v) => {
 
 // ✅ 셀 비교용 헬퍼
 const normalizeCell = (cell) => {
-  if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "" };
+  if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "", pay_yn: "N" };
 
   const toNum = (v) => {
     if (v == null || v === "") return 0;
@@ -119,12 +120,15 @@ const normalizeCell = (cell) => {
     return Number.isNaN(n) ? 0 : n;
   };
 
+  const payYn = safeTrim(cell.pay_yn ?? cell.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N";
+
   return {
     type: cell.type ?? "",
     start: cell.start || cell.start_time || "",
     end: cell.end || cell.end_time || "",
     salary: toNum(cell.salary),
     memo: cell.memo ?? cell.note ?? "",
+    pay_yn: payYn,
   };
 };
 
@@ -136,7 +140,8 @@ const isCellEqual = (a, b) => {
     na.start === nb.start &&
     na.end === nb.end &&
     na.salary === nb.salary &&
-    na.memo === nb.memo
+    na.memo === nb.memo &&
+    na.pay_yn === nb.pay_yn
   );
 };
 
@@ -148,7 +153,17 @@ const AttendanceCell = React.memo(function AttendanceCell({
   table,
   typeOptions,
 }) {
-  const val = getValue() || { type: "", start: "", end: "", salary: "", memo: "" };
+  const rawVal = getValue() || {};
+  const val = {
+    type: "",
+    start: "",
+    end: "",
+    salary: "",
+    memo: "",
+    pay_yn: "N",
+    ...rawVal,
+  };
+  const isDispatchType = ["5", "6"].includes(String(val.type));
 
   const times = [];
   for (let h = 5; h <= 20; h++) {
@@ -194,6 +209,13 @@ const AttendanceCell = React.memo(function AttendanceCell({
       updatedValue.end_time = "";
       updatedValue.salary = "";
       updatedValue.memo = "";
+      updatedValue.pay_yn = "N";
+    }
+
+    if (field === "type") {
+      const nextType = String(newVal ?? "");
+      const nextIsDispatch = ["5", "6"].includes(nextType);
+      if (!nextIsDispatch) updatedValue.pay_yn = "N";
     }
 
     // 🔹 초과근무 자동 계산
@@ -276,7 +298,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
         </>
       )}
 
-      {["5", "6"].includes(val.type) && (
+      {isDispatchType && (
         <input
           type="text"
           placeholder="급여"
@@ -289,6 +311,25 @@ const AttendanceCell = React.memo(function AttendanceCell({
             width: "100%",
           }}
         />
+      )}
+
+      {isDispatchType && (
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "4px",
+            fontSize: "0.7rem",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={String(val.pay_yn ?? "N").toUpperCase() === "Y"}
+            onChange={(e) => handleChange("pay_yn", e.target.checked ? "Y" : "N")}
+          />
+          지급
+        </label>
       )}
 
       {["3", "11", "17"].includes(val.type) && (
@@ -417,6 +458,33 @@ function DispatchActionCell({ row, onToggle }) {
   );
 }
 
+function DispatchPayCell({ row, status, onToggle }) {
+  const total = status?.total ?? 0;
+  const paid = status?.paid ?? 0;
+  const checked = total > 0 && paid === total;
+  const indeterminate = total > 0 && paid > 0 && paid < total;
+  const label = total === 0 ? "-" : checked ? "지급" : indeterminate ? "부분" : "미지급";
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+      <Checkbox
+        size="small"
+        checked={checked}
+        indeterminate={indeterminate}
+        disabled={total === 0}
+        onChange={(e) => onToggle(row.original?.member_id, e.target.checked)}
+      />
+      <span style={{ fontSize: "0.7rem" }}>{label}</span>
+    </div>
+  );
+}
+
+DispatchPayCell.propTypes = {
+  row: PropTypes.object.isRequired,
+  status: PropTypes.object,
+  onToggle: PropTypes.func.isRequired,
+};
+
 function RecordSheet() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
@@ -444,6 +512,15 @@ function RecordSheet() {
   const handleModalOpen = () => setOpen(true);
 
   const [excelDownloading, setExcelDownloading] = useState(false);
+  const [excelRangeOpen, setExcelRangeOpen] = useState(false);
+  const [excelRange, setExcelRange] = useState({ start: "", end: "" });
+
+  const [payRangeOpen, setPayRangeOpen] = useState(false);
+  const [payRange, setPayRange] = useState({ start: "", end: "" });
+  const [payRangeLoading, setPayRangeLoading] = useState(false);
+  const [payRangeRows, setPayRangeRows] = useState([]);
+  const [payRangeSelected, setPayRangeSelected] = useState({});
+  const payRangeRecordMapRef = useRef(new Map());
 
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
@@ -514,19 +591,283 @@ function RecordSheet() {
     return [];
   };
 
+  const openExcelRangeModal = () => {
+    const start = dayjs(`${year}-${String(month).padStart(2, "0")}-01`).format("YYYY-MM-DD");
+    const end = dayjs(`${year}-${String(month).padStart(2, "0")}-${daysInMonth}`).format(
+      "YYYY-MM-DD"
+    );
+    setExcelRange({ start, end });
+    setExcelRangeOpen(true);
+  };
+
+  const handleExcelRangeConfirm = async () => {
+    const start = dayjs(excelRange.start);
+    const end = dayjs(excelRange.end);
+
+    if (!start.isValid() || !end.isValid()) {
+      Swal.fire("기간 오류", "시작일/종료일을 올바르게 선택하세요.", "warning");
+      return;
+    }
+
+    setExcelRangeOpen(false);
+    await handleExcelDownloadAllAccounts();
+  };
+
+  const openPayRangeModal = () => {
+    const start = dayjs(`${year}-${String(month).padStart(2, "0")}-01`).format("YYYY-MM-DD");
+    const end = dayjs(`${year}-${String(month).padStart(2, "0")}-${daysInMonth}`).format(
+      "YYYY-MM-DD"
+    );
+    setPayRange({ start, end });
+    setPayRangeRows([]);
+    setPayRangeSelected({});
+    payRangeRecordMapRef.current = new Map();
+    setPayRangeOpen(true);
+  };
+
+  const handlePayRangeCompute = async () => {
+    if (!selectedAccountId) {
+      Swal.fire("거래처 선택", "먼저 거래처를 선택해주세요.", "warning");
+      return;
+    }
+
+    const start = dayjs(payRange.start);
+    const end = dayjs(payRange.end);
+
+    if (!start.isValid() || !end.isValid()) {
+      Swal.fire("기간 오류", "시작일/종료일을 올바르게 선택하세요.", "warning");
+      return;
+    }
+
+    setPayRangeLoading(true);
+    try {
+      const realStart = start.isBefore(end) ? start.startOf("day") : end.startOf("day");
+      const realEnd = start.isBefore(end) ? end.startOf("day") : start.startOf("day");
+
+      const monthsInRange = [];
+      let cursor = realStart.startOf("month");
+      const endCursor = realEnd.startOf("month");
+      while (cursor.isBefore(endCursor) || cursor.isSame(endCursor)) {
+        monthsInRange.push({ y: cursor.year(), m: cursor.month() + 1 });
+        cursor = cursor.add(1, "month");
+      }
+
+      const sumMap = new Map();
+      const infoMap = new Map();
+      const recordMap = new Map();
+      const seenKeys = new Set();
+
+      for (let mi = 0; mi < monthsInRange.length; mi++) {
+        const { y, m } = monthsInRange[mi];
+        const daysInThisMonth = dayjs(`${y}-${String(m).padStart(2, "0")}-01`).daysInMonth();
+
+        const { sheetRowsArg, dispatchRowsArg } = await fetchBundleForAccount(
+          selectedAccountId,
+          y,
+          m
+        );
+
+        (dispatchRowsArg || []).forEach((d) => {
+          const mid = d.member_id;
+          if (!mid) return;
+          if (!infoMap.has(mid)) {
+            infoMap.set(mid, {
+              member_id: mid,
+              name: d.name || "",
+              phone: d.phone || "",
+              rrn: d.rrn || "",
+              account_number: d.account_number || "",
+            });
+          }
+        });
+
+        const monthStart = dayjs(`${y}-${String(m).padStart(2, "0")}-01`);
+        const monthEnd = monthStart.endOf("month");
+        const startInMonth =
+          (realStart.isAfter(monthStart) || realStart.isSame(monthStart, "day")) &&
+          (realStart.isBefore(monthEnd) || realStart.isSame(monthEnd, "day"));
+        const endInMonth =
+          (realEnd.isAfter(monthStart) || realEnd.isSame(monthStart, "day")) &&
+          (realEnd.isBefore(monthEnd) || realEnd.isSame(monthEnd, "day"));
+
+        const fromDay = startInMonth ? realStart.date() : realStart.isAfter(monthEnd) ? null : 1;
+        const toDay = endInMonth ? realEnd.date() : realEnd.isBefore(monthStart) ? null : daysInThisMonth;
+
+        if (fromDay == null || toDay == null) continue;
+
+        (sheetRowsArg || []).forEach((r) => {
+          const dayNum = toDayNumber(r?.record_date ?? r?.record_day ?? r?.day ?? r?.date);
+          if (!(dayNum >= fromDay && dayNum <= toDay)) return;
+          const g = safeTrim(r?.gubun ?? "", "").toLowerCase();
+          if (g !== "dis") return;
+
+          const mid = r?.member_id;
+          if (!mid) return;
+
+          const t = String(r?.type ?? "");
+          const isDispatch = t === "5" || t === "6";
+          if (!isDispatch) return;
+
+          const dedupeKey = `${mid}_${y}_${m}_${dayNum}_${t}`;
+          if (seenKeys.has(dedupeKey)) return;
+          seenKeys.add(dedupeKey);
+
+          const sal = Number(String(r?.salary ?? 0).replace(/,/g, "")) || 0;
+          const payYn = String(r?.pay_yn ?? "").toUpperCase() === "Y";
+
+          const cur = sumMap.get(mid) || {
+            member_id: mid,
+            name: r?.name || infoMap.get(mid)?.name || "",
+            total_pay: 0,
+            paid_cnt: 0,
+            total_cnt: 0,
+          };
+          cur.total_pay += sal;
+          cur.total_cnt += 1;
+          if (payYn) cur.paid_cnt += 1;
+          sumMap.set(mid, cur);
+
+          const recordObj = {
+            gubun: "dis",
+            account_id: r?.account_id || selectedAccountId,
+            member_id: mid,
+            position_type: safeTrim(r?.position_type ?? "", ""),
+            positionType: safeTrim(r?.position_type ?? "", ""),
+            record_date: dayNum,
+            record_year: r?.record_year ?? y,
+            record_month: r?.record_month ?? m,
+            type: Number(safeTrim(t, "0")) || 0,
+            start_time: r?.start_time || "",
+            end_time: r?.end_time || "",
+            salary: sal,
+            note: r?.note ?? "",
+            pay_yn: "Y",
+            position: r?.position || "",
+          };
+
+          if (!recordMap.has(mid)) recordMap.set(mid, []);
+          recordMap.get(mid).push(recordObj);
+        });
+      }
+
+      const rows = Array.from(sumMap.values())
+        .map((r) => {
+          const info = infoMap.get(r.member_id) || {};
+          const totalCnt = Number(r.total_cnt || 0);
+          const paidCnt = Number(r.paid_cnt || 0);
+          const payStatus =
+            totalCnt > 0
+              ? paidCnt === totalCnt
+                ? "지급"
+                : paidCnt === 0
+                  ? "미지급"
+                  : "부분"
+              : "-";
+
+          return {
+            ...info,
+            ...r,
+            pay_status: payStatus,
+          };
+        })
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+
+      setPayRangeRows(rows);
+      setPayRangeSelected(
+        rows.reduce((acc, r) => {
+          acc[r.member_id] = false;
+          return acc;
+        }, {})
+      );
+      payRangeRecordMapRef.current = recordMap;
+    } catch (e) {
+      console.error(e);
+      Swal.fire("오류", e?.message || "기간 합계 계산 중 오류", "error");
+    } finally {
+      setPayRangeLoading(false);
+    }
+  };
+
+  const handlePayRangeApply = async () => {
+    const selectedIds = Object.keys(payRangeSelected || {}).filter(
+      (k) => payRangeSelected[k]
+    );
+    if (!selectedIds.length) {
+      Swal.fire("선택 필요", "지급 처리할 인원을 선택하세요.", "warning");
+      return;
+    }
+
+    const disRecords = [];
+    selectedIds.forEach((mid) => {
+      const list = payRangeRecordMapRef.current.get(mid) || [];
+      list.forEach((r) => disRecords.push({ ...r, pay_yn: "Y" }));
+    });
+
+    if (!disRecords.length) {
+      Swal.fire("안내", "지급 처리할 데이터가 없습니다.", "info");
+      return;
+    }
+
+    try {
+      const res = await api.post("/Account/AccountRecordSave", {
+        normalRecords: [],
+        disRecords,
+        recRecords: [],
+      });
+
+      if (res?.data?.code && res.data.code !== 200) {
+        throw new Error(res.data?.message || "지급 처리 실패");
+      }
+
+      // ✅ 현재 화면 월 데이터만 갱신
+      await Promise.all([fetchAllData?.(), fetchDispatchOnly(dispatchDelFilter)]);
+
+      await Swal.fire({ title: "지급 처리", text: "선택 인원 지급 처리 완료", icon: "success" });
+
+      // ✅ 확인 후 모달 닫고 출근부로 복귀
+      setPayRangeOpen(false);
+      setPayRangeRows([]);
+      setPayRangeSelected({});
+      payRangeRecordMapRef.current = new Map();
+    } catch (e) {
+      console.error(e);
+      Swal.fire("오류", e?.message || "지급 처리 중 오류", "error");
+    }
+  };
+
   // ✅ type 키가 record_type/work_type 등으로 올 수 있어서 통일
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-        src?.record_type ??
-        src?.work_type ??
-        src?.recordType ??
-        src?.workType ??
-        src?.work_kind ??
-        src?.work_cd ??
-        "",
+      src?.record_type ??
+      src?.work_type ??
+      src?.recordType ??
+      src?.workType ??
+      src?.work_kind ??
+      src?.work_cd ??
+      "",
       ""
     );
+
+  const toDayNumber = (v) => {
+    if (v == null) return NaN;
+    if (typeof v === "number") return v;
+    const s = String(v).trim();
+    if (!s) return NaN;
+    // YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD / with time
+    const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})([T\s].*)?$/);
+    if (m) return Number(m[3]);
+    // YYYYMMDD
+    if (/^\d{8}$/.test(s)) return Number(s.slice(6, 8));
+    // Any string containing a Y-M-D pattern
+    const m2 = s.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (m2) return Number(m2[3]);
+    // Last number chunk (e.g., "2026-02-24 00:00:00.0")
+    const m3 = s.match(/(\d{1,2})(?!.*\d)/);
+    if (m3) return Number(m3[1]);
+    const n = Number(s);
+    return Number.isNaN(n) ? NaN : n;
+  };
 
   // =========================
   // ✅ 2) day 소스 찾기 (pivot/obj/arr)
@@ -544,10 +885,10 @@ function RecordSheet() {
 
     if (Array.isArray(item.days)) {
       const found =
-        item.days.find((x) => Number(x?.record_date) === d) ||
-        item.days.find((x) => Number(x?.record_day) === d) ||
-        item.days.find((x) => Number(x?.day) === d) ||
-        item.days.find((x) => Number(x?.date) === d);
+        item.days.find((x) => toDayNumber(x?.record_date) === d) ||
+        item.days.find((x) => toDayNumber(x?.record_day) === d) ||
+        item.days.find((x) => toDayNumber(x?.day) === d) ||
+        item.days.find((x) => toDayNumber(x?.date) === d);
       if (found) return found;
     }
 
@@ -569,14 +910,18 @@ function RecordSheet() {
     const keys = Object.keys(sample);
 
     const hasPivotDayKey = keys.some((k) => /^day_\d+$/.test(k));
-    const hasDaysField = sample.days && typeof sample.days === "object";
+    const hasDaysField = arr.some(
+      (r) => r?.days && typeof r.days === "object" && !Array.isArray(r.days)
+    );
     if (hasPivotDayKey || hasDaysField) return arr;
 
-    const hasLongDay =
-      sample.record_date != null ||
-      sample.record_day != null ||
-      sample.day != null ||
-      sample.date != null;
+    const hasLongDay = arr.some(
+      (r) =>
+        r?.record_date != null ||
+        r?.record_day != null ||
+        r?.day != null ||
+        r?.date != null
+    );
 
     if (!hasLongDay) return arr;
 
@@ -599,7 +944,7 @@ function RecordSheet() {
       }
 
       const g = map.get(mid);
-      const dayNum = Number(r.record_date ?? r.record_day ?? r.day ?? r.date);
+      const dayNum = toDayNumber(r.record_date ?? r.record_day ?? r.day ?? r.date);
 
       if (dayNum >= 1 && dayNum <= daysInMonthArg) {
         g[`day_${dayNum}`] = { ...r };
@@ -620,7 +965,53 @@ function RecordSheet() {
   ) => {
     const normalizedSheetRows = normalizeSheetRows(sheetRowsArg, daysInMonthArg);
 
-    const newAttendance = (normalizedSheetRows || []).map((item) => {
+    // ✅ member_id 기준 중복 제거 (동명이인/중복 row 병합)
+    const isEmptyDay = (v) => {
+      if (!v) return true;
+      const t = safeTrim(v.type ?? "", "");
+      const s = safeTrim(v.start_time ?? v.start ?? "", "");
+      const e = safeTrim(v.end_time ?? v.end ?? "", "");
+      const sal = safeTrim(v.salary ?? "", "");
+      const memo = safeTrim(v.memo ?? v.note ?? "", "");
+      return !t && !s && !e && !sal && !memo;
+    };
+
+    const dedupedRows = (() => {
+      const map = new Map();
+      const passthrough = [];
+
+      (normalizedSheetRows || []).forEach((item) => {
+        const mid = item?.member_id;
+        if (!mid) {
+          passthrough.push(item);
+          return;
+        }
+
+        if (!map.has(mid)) {
+          map.set(mid, { ...item });
+          return;
+        }
+
+        const target = map.get(mid);
+        for (let d = 1; d <= daysInMonthArg; d++) {
+          const key = `day_${d}`;
+          const curr = target[key];
+          const next = item[key];
+          if (isEmptyDay(curr) && !isEmptyDay(next)) {
+            target[key] = next;
+          }
+        }
+
+        if (!target.day_default && item.day_default) target.day_default = item.day_default;
+        if (!target.position && item.position) target.position = item.position;
+        if (!target.position_type && item.position_type) target.position_type = item.position_type;
+        if (!target.gubun && item.gubun) target.gubun = item.gubun;
+      });
+
+      return [...map.values(), ...passthrough];
+    })();
+
+    const newAttendance = (dedupedRows || []).map((item) => {
       const member = (memberRowsArg || []).find((m) => m.member_id === item.member_id);
 
       const baseGubun = safeTrim(item.gubun ?? item.day_default?.gubun, "nor");
@@ -645,30 +1036,35 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-              ...source,
-              type: t,
-              gubun: safeTrim(source.gubun, baseGubun),
-              position_type: safeTrim(source.position_type, basePt),
-              start: source.start_time || source.start || "",
-              end: source.end_time || source.end || "",
-              start_time: source.start_time || "",
-              end_time: source.end_time || "",
-              salary: source.salary || "",
-              memo: source.memo ?? source.note ?? "",
-            }
+            ...source,
+            type: t,
+            gubun: safeTrim(source.gubun, baseGubun),
+            position_type: safeTrim(source.position_type, basePt),
+            start: source.start_time || source.start || "",
+            end: source.end_time || source.end || "",
+            start_time: source.start_time || "",
+            end_time: source.end_time || "",
+            salary: source.salary || "",
+            memo: source.memo ?? source.note ?? "",
+            pay_yn:
+              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y"
+                ? "Y"
+                : "N",
+          }
           : {
-              account_id: item.account_id,
-              member_id: item.member_id,
-              gubun: baseGubun,
-              position_type: basePt,
-              type: "",
-              start: "",
-              end: "",
-              start_time: "",
-              end_time: "",
-              salary: "",
-              memo: "",
-            };
+            account_id: item.account_id,
+            member_id: item.member_id,
+            gubun: baseGubun,
+            position_type: basePt,
+            type: "",
+            start: "",
+            end: "",
+            start_time: "",
+            end_time: "",
+            salary: "",
+            memo: "",
+            pay_yn: "N",
+          };
       }
 
       return { ...base, ...dayEntries };
@@ -692,28 +1088,28 @@ function RecordSheet() {
   };
 
   // ✅ 거래처 1개에 대한 모든 데이터 조회 (엑셀 전체다운용)
-  const fetchBundleForAccount = async (accountId) => {
+  const fetchBundleForAccount = async (accountId, y, m) => {
     const sheetRes = await api.get("/Account/AccountRecordSheetList", {
-      params: { account_id: accountId, year, month },
+      params: { account_id: accountId, year: y, month: m },
     });
     const sheetRowsArg = extractArray(sheetRes.data);
 
     const memberRes = await api.get("/Account/AccountRecordMemberList", {
-      params: { account_id: accountId, year, month },
+      params: { account_id: accountId, year: y, month: m },
     });
     const memberRowsArg = extractArray(memberRes.data);
 
     const timeRes = await api.get("/Account/AccountMemberRecordTime", {
-      params: { account_id: accountId, year, month },
+      params: { account_id: accountId, year: y, month: m },
     });
     const timesRowsArg = extractArray(timeRes.data);
 
     const [disN, disY] = await Promise.all([
       api.get("/Account/AccountRecordDispatchList", {
-        params: { account_id: accountId, year, month, del_yn: "N" },
+        params: { account_id: accountId, year: y, month: m, del_yn: "N" },
       }),
       api.get("/Account/AccountRecordDispatchList", {
-        params: { account_id: accountId, year, month, del_yn: "Y" },
+        params: { account_id: accountId, year: y, month: m, del_yn: "Y" },
       }),
     ]);
 
@@ -727,29 +1123,75 @@ function RecordSheet() {
     return { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg };
   };
 
-  // ✅ 엑셀 셀 출력 문자열
-  function formatDayCell(cell) {
+  // ✅ 엑셀 셀 출력 (4행 분리용)
+  function splitDayCell(cell) {
+    if (!cell) return ["", "", "", ""];
+
+    // 문자열로 내려오는 경우 (이미 포맷된 셀) 처리
+    if (typeof cell === "string") {
+      const s = cell.trim();
+      if (!s) return ["", "", "", ""];
+
+      const lines = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      let typeLabel = lines[0] || "";
+      let start = "";
+      let end = "";
+      let salary = "";
+
+      // 2번째 줄에 시간 (예: 6:00~18:00 / 6:00-18:00)
+      const timeLine = lines.find((l) => /~|-/.test(l)) || "";
+      if (timeLine) {
+        const m = timeLine.match(/(\d{1,2}:\d{2})\s*[-~]\s*(\d{1,2}:\d{2})/);
+        if (m) {
+          start = m[1];
+          end = m[2];
+        }
+      }
+
+      // 급여 라인
+      const salaryLine = lines.find((l) => l.includes("급여")) || "";
+      if (salaryLine) {
+        const m = salaryLine.match(/급여[:\s]*([0-9,]+)/);
+        if (m) salary = m[1];
+      }
+
+      return [typeLabel, start, end, salary];
+    }
+
     const t = safeTrim(cell?.type, "");
-    if (!cell || !t || t === "0") return "";
+    if (!t || t === "0") return ["", "", "", ""];
 
     const typeLabel = TYPE_LABEL[String(t)] ?? String(t);
-
     const start = cell.start || cell.start_time || "";
     const end = cell.end || cell.end_time || "";
-    const salary =
-      cell.salary != null && String(cell.salary).trim() !== ""
-        ? Number(String(cell.salary).replace(/,/g, "")).toLocaleString()
-        : "";
-    const memo = cell.memo ?? cell.note ?? "";
 
-    const lines = [
-      typeLabel,
-      start || end ? `${start}~${end}` : "",
-      salary ? `급여: ${salary}` : "",
-      memo ? `메모: ${memo}` : "",
-    ].filter(Boolean);
+    const salaryRaw =
+      cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
+    const isDispatchType = String(t) === "5" || String(t) === "6";
+    const payYn = String(cell?.pay_yn ?? "").toUpperCase() === "Y";
+    const salary = isDispatchType ? formatMoneyLike(salaryRaw) : "";
+    const salaryOut = salary && payYn ? `${salary} (지급)` : salary;
 
-    return lines.join("\n");
+    return [typeLabel, start || "", end || "", salaryOut || ""];
+  }
+
+  // ✅ 출근현황(전체)용: 지급 표기 없이 급여 숫자만
+  function splitDayCellAttend(cell) {
+    if (!cell) return ["", "", "", ""];
+
+    const t = safeTrim(cell?.type, "");
+    if (!t || t === "0") return ["", "", "", ""];
+
+    const typeLabel = TYPE_LABEL[String(t)] ?? String(t);
+    const start = cell.start || cell.start_time || "";
+    const end = cell.end || cell.end_time || "";
+
+    const salaryRaw =
+      cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
+    const isDispatchType = String(t) === "5" || String(t) === "6";
+    const salary = isDispatchType ? formatMoneyLike(salaryRaw) : "";
+
+    return [typeLabel, start || "", end || "", salary || ""];
   }
 
   // ✅ 거래처 전체 엑셀 다운로드
@@ -770,7 +1212,22 @@ function RecordSheet() {
       const wb = new ExcelJS.Workbook();
       wb.creator = "RecordSheet";
 
-      const filename = `출근부_전체거래처_${year}-${String(month).padStart(2, "0")}.xlsx`;
+      const rangeStart = excelRange?.start ? dayjs(excelRange.start) : null;
+      const rangeEnd = excelRange?.end ? dayjs(excelRange.end) : null;
+      const validStart = rangeStart && rangeStart.isValid();
+      const validEnd = rangeEnd && rangeEnd.isValid();
+      if (!validStart || !validEnd) {
+        Swal.fire("기간 오류", "시작일/종료일을 올바르게 선택하세요.", "warning");
+        return;
+      }
+
+      const startDate = rangeStart.startOf("day");
+      const endDate = rangeEnd.startOf("day");
+      const realStart = startDate.isBefore(endDate) ? startDate : endDate;
+      const realEnd = startDate.isBefore(endDate) ? endDate : startDate;
+      const rangeLabel = `${realStart.format("YYYY-MM-DD")} ~ ${realEnd.format("YYYY-MM-DD")}`;
+
+      const filename = `출근부_전체거래처_${rangeLabel}.xlsx`;
 
       const wsAttend = wb.addWorksheet("출근현황(전체)");
       const wsDispatch = wb.addWorksheet("파출정보(전체)");
@@ -817,11 +1274,20 @@ function RecordSheet() {
         });
       };
 
-      const attendColCount = 1 + daysInMonth;
-      wsAttend.columns = [
-        { width: 14 },
-        ...Array.from({ length: daysInMonth }, () => ({ width: 14 })),
-      ];
+      const monthsInRange = [];
+      let cursor = realStart.startOf("month");
+      const endCursor = realEnd.startOf("month");
+      while (cursor.isBefore(endCursor) || cursor.isSame(endCursor)) {
+        monthsInRange.push({ y: cursor.year(), m: cursor.month() + 1 });
+        cursor = cursor.add(1, "month");
+      }
+
+      const dateList = [];
+      let dcur = realStart.clone();
+      while (dcur.isBefore(realEnd) || dcur.isSame(realEnd, "day")) {
+        dateList.push(dcur.clone());
+        dcur = dcur.add(1, "day");
+      }
 
       const dispatchHeader = [
         "거래처",
@@ -831,6 +1297,7 @@ function RecordSheet() {
         "은행",
         "계좌정보",
         "급여",
+        "지급여부",
         "삭제여부(del_yn)",
       ];
 
@@ -842,84 +1309,222 @@ function RecordSheet() {
         { width: 12 },
         { width: 28 },
         { width: 14 },
+        { width: 12 },
         { width: 14 },
       ];
 
-      addSectionTitle(
-        wsDispatch,
-        `■ 파출정보 / ${year}-${String(month).padStart(2, "0")}`,
-        dispatchHeader.length
-      );
+      addSectionTitle(wsDispatch, `■ 파출정보 / ${rangeLabel}`, dispatchHeader.length);
       wsDispatch.addRow(dispatchHeader);
       styleHeaderRow(wsDispatch, wsDispatch.lastRow.number);
 
-      const allDispatchRows = [];
+      const allDispatchRows = new Map();
 
       for (let i = 0; i < accountList.length; i++) {
         const acc = accountList[i];
         const accId = acc.account_id;
         const accName = acc.account_name || accId;
 
-        const { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg } =
-          await fetchBundleForAccount(accId);
-
-        const { attendanceRowsBuilt } = buildAttendanceRowsFromSheet(
-          sheetRowsArg,
-          memberRowsArg,
-          timesRowsArg,
-          daysInMonth
-        );
+        const attendColCount = 1 + dateList.length;
+        wsAttend.columns = [
+          { width: 14 },
+          ...Array.from({ length: dateList.length }, () => ({ width: 14 })),
+        ];
 
         addSectionTitle(
           wsAttend,
-          `■ ${accName} (${accId})  /  ${year}-${String(month).padStart(2, "0")}`,
+          `■ ${accName} (${accId})  /  ${rangeLabel}`,
           attendColCount
         );
 
-        const header = ["직원명", ...Array.from({ length: daysInMonth }, (_, d) => `${d + 1}일`)];
+        const header = [
+          "직원명",
+          ...dateList.map((d) => `${d.format("M/D")}`),
+        ];
         wsAttend.addRow(header);
         styleHeaderRow(wsAttend, wsAttend.lastRow.number);
 
-        (attendanceRowsBuilt || []).forEach((row) => {
-          const r = [row.name || ""];
-          for (let d = 1; d <= daysInMonth; d++) {
-            const key = `day_${d}`;
-            r.push(formatDayCell(row[key]));
+        const memberMap = new Map(); // member_id -> { name, cells: { [dateKey]: cell } }
+
+        for (let mi = 0; mi < monthsInRange.length; mi++) {
+          const { y, m } = monthsInRange[mi];
+          const daysInThisMonth = dayjs(`${y}-${String(m).padStart(2, "0")}-01`).daysInMonth();
+
+          const { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg } =
+            await fetchBundleForAccount(accId, y, m);
+
+          const monthStart = dayjs(`${y}-${String(m).padStart(2, "0")}-01`);
+          const monthEnd = monthStart.endOf("month");
+          const startInMonth =
+            (realStart.isAfter(monthStart) || realStart.isSame(monthStart, "day")) &&
+            (realStart.isBefore(monthEnd) || realStart.isSame(monthEnd, "day"));
+          const endInMonth =
+            (realEnd.isAfter(monthStart) || realEnd.isSame(monthStart, "day")) &&
+            (realEnd.isBefore(monthEnd) || realEnd.isSame(monthEnd, "day"));
+
+          const fromDay = startInMonth ? realStart.date() : realStart.isAfter(monthEnd) ? null : 1;
+          const toDay = endInMonth ? realEnd.date() : realEnd.isBefore(monthStart) ? null : daysInThisMonth;
+
+          if (fromDay == null || toDay == null) {
+            continue;
           }
-          wsAttend.addRow(r);
-          styleDataRow(wsAttend, wsAttend.lastRow.number);
-        });
 
-        wsAttend.addRow([]);
-        wsAttend.addRow([]);
+          const { attendanceRowsBuilt } = buildAttendanceRowsFromSheet(
+            sheetRowsArg,
+            memberRowsArg,
+            timesRowsArg,
+            daysInThisMonth
+          );
 
-        (dispatchRowsArg || []).forEach((d) => {
-          allDispatchRows.push({
-            accName,
-            name: d.name || "",
-            phone: d.phone || "",
-            rrn: d.rrn || "",
-            account_number: d.account_number || "",
-            salary: d.salary ?? "",
-            total: d.total ?? "",
-            del_yn: d.del_yn ?? "N",
+          (attendanceRowsBuilt || []).forEach((row) => {
+            const mid = row.member_id || row.id || row.name;
+            if (!mid) return;
+            if (!memberMap.has(mid)) {
+              memberMap.set(mid, { name: row.name || "", cells: {} });
+            }
+            const entry = memberMap.get(mid);
+            for (let d = 1; d <= daysInThisMonth; d++) {
+              const key = `day_${d}`;
+              const dateKey = dayjs(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`)
+                .format("YYYY-MM-DD");
+              entry.cells[dateKey] = row[key];
+            }
           });
+
+          const monthPayMap = new Map();
+          const monthPayStatusMap = new Map();
+          const seenKeys = new Set();
+
+          (sheetRowsArg || []).forEach((r) => {
+            const dayNum = toDayNumber(r?.record_date ?? r?.record_day ?? r?.day ?? r?.date);
+            if (!(dayNum >= fromDay && dayNum <= toDay)) return;
+            const g = safeTrim(r?.gubun ?? "", "").toLowerCase();
+            if (g !== "dis") return;
+            const t = String(r?.type ?? "");
+            if (!(t === "5" || t === "6")) return;
+            const mid = r?.member_id;
+            if (!mid) return;
+            const dedupeKey = `${mid}_${y}_${m}_${dayNum}_${t}`;
+            if (seenKeys.has(dedupeKey)) return;
+            seenKeys.add(dedupeKey);
+            const sal = Number(String(r?.salary ?? 0).replace(/,/g, "")) || 0;
+            monthPayMap.set(mid, (monthPayMap.get(mid) || 0) + sal);
+
+            const payYn = String(r?.pay_yn ?? "").toUpperCase() === "Y";
+            const stat = monthPayStatusMap.get(mid) || { paid: 0, total: 0 };
+            stat.total += 1;
+            if (payYn) stat.paid += 1;
+            monthPayStatusMap.set(mid, stat);
+          });
+
+          (dispatchRowsArg || []).forEach((d) => {
+            const mid = d.member_id;
+            if (!mid) return;
+            const paySum = monthPayMap.get(mid) || 0;
+            if (!paySum || Number(paySum) <= 0) return;
+            const key = String(mid);
+            const prev = allDispatchRows.get(key) || {
+              accNames: new Set(),
+              member_id: mid,
+              name: d.name || "",
+              phone: d.phone || "",
+              rrn: d.rrn || "",
+              account_number: d.account_number || "",
+              salary: d.salary ?? "",
+              total: d.total ?? "",
+              del_yn: d.del_yn ?? "N",
+              period_pay: 0,
+              paid_cnt: 0,
+              total_cnt: 0,
+            };
+            prev.accNames.add(accName);
+            // del_yn은 하나라도 N이면 N 유지
+            if (String(prev.del_yn).toUpperCase() !== "N") {
+              prev.del_yn = d.del_yn ?? prev.del_yn;
+            }
+            prev.period_pay += paySum;
+            const stat = monthPayStatusMap.get(mid);
+            if (stat) {
+              prev.paid_cnt += stat.paid;
+              prev.total_cnt += stat.total;
+            }
+            allDispatchRows.set(key, prev);
+          });
+        }
+
+        Array.from(memberMap.values()).forEach((row) => {
+          const startRow = wsAttend.lastRow.number + 1;
+
+          const r1 = [row.name || ""];
+          const r2 = [""];
+          const r3 = [""];
+          const r4 = [""];
+
+          dateList.forEach((d) => {
+            const key = d.format("YYYY-MM-DD");
+            const [v1, v2, v3, v4] = splitDayCellAttend(row.cells[key]);
+            r1.push(v1);
+            r2.push(v2);
+            r3.push(v3);
+            r4.push(v4);
+          });
+
+          wsAttend.addRow(r1);
+          styleDataRow(wsAttend, wsAttend.lastRow.number);
+          wsAttend.addRow(r2);
+          styleDataRow(wsAttend, wsAttend.lastRow.number);
+          wsAttend.addRow(r3);
+          styleDataRow(wsAttend, wsAttend.lastRow.number);
+          wsAttend.addRow(r4);
+          styleDataRow(wsAttend, wsAttend.lastRow.number);
+
+          for (let r = startRow; r <= startRow + 3; r++) {
+            for (let c = 2; c <= attendColCount; c++) {
+              const cell = wsAttend.getCell(r, c);
+              cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+            }
+          }
+
+          wsAttend.mergeCells(startRow, 1, startRow + 3, 1);
+          const nameCell = wsAttend.getCell(startRow, 1);
+          nameCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
         });
+
+        wsAttend.addRow([]);
+        wsAttend.addRow([]);
       }
 
-      allDispatchRows.forEach((d) => {
+      Array.from(allDispatchRows.values()).forEach((d) => {
+        if (!d.period_pay || Number(d.period_pay) <= 0) return;
         const bank = extractBankName(d.account_number);
         const accountOnly = extractAccountOnly(d.account_number);
-        const pay = d.salary !== "" && d.salary != null ? d.salary : d.total;
+        const accName =
+          d.accNames && d.accNames.size > 0 ? Array.from(d.accNames).join(", ") : d.accName || "";
+        const pay =
+          d.period_pay && Number(d.period_pay) > 0
+            ? d.period_pay
+            : d.salary !== "" && d.salary != null
+              ? d.salary
+              : d.total;
+        const totalCnt = Number(d.total_cnt || 0);
+        const paidCnt = Number(d.paid_cnt || 0);
+        const payStatus =
+          totalCnt > 0
+            ? paidCnt === totalCnt
+              ? "지급"
+              : paidCnt === 0
+                ? "미지급"
+                : "부분"
+            : "";
 
         wsDispatch.addRow([
-          d.accName,
+          accName,
           d.name,
           d.phone,
           d.rrn,
           bank,
           accountOnly,
           formatMoneyLike(pay),
+          payStatus,
           d.del_yn,
         ]);
         styleDataRow(wsDispatch, wsDispatch.lastRow.number);
@@ -1408,6 +2013,131 @@ function RecordSheet() {
     },
   });
 
+  const dispatchPayStatusMap = useMemo(() => {
+    const map = new Map();
+    (attendanceRows || []).forEach((row) => {
+      const mid = row?.member_id;
+      if (!mid) return;
+      let total = 0;
+      let paid = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = row?.[`day_${d}`];
+        if (!cell) continue;
+        const t = safeTrim(cell?.type ?? "", "");
+        if (!(t === "5" || t === "6")) continue;
+        if (t === "0" || t === "") continue;
+        total += 1;
+        if (String(cell?.pay_yn ?? "").toUpperCase() === "Y") paid += 1;
+      }
+      if (total > 0) {
+        map.set(String(mid), { total, paid });
+      }
+    });
+    return map;
+  }, [attendanceRows, daysInMonth]);
+
+  const payRangeSummary = useMemo(() => {
+    const totalSum = (payRangeRows || []).reduce(
+      (acc, r) => acc + (Number(r.total_pay || 0) || 0),
+      0
+    );
+    const selectedRows = (payRangeRows || []).filter(
+      (r) => payRangeSelected?.[r.member_id]
+    );
+    const selectedSum = selectedRows.reduce(
+      (acc, r) => acc + (Number(r.total_pay || 0) || 0),
+      0
+    );
+    return {
+      totalCount: payRangeRows?.length || 0,
+      selectedCount: selectedRows.length,
+      totalSum,
+      selectedSum,
+    };
+  }, [payRangeRows, payRangeSelected]);
+
+  const payRangeAllSelected =
+    (payRangeRows || []).length > 0 &&
+    (payRangeRows || []).every((r) => payRangeSelected?.[r.member_id]);
+  const payRangeSomeSelected =
+    (payRangeRows || []).some((r) => payRangeSelected?.[r.member_id]) &&
+    !payRangeAllSelected;
+
+  const excelModalBtn = {
+    outline: {
+      color: "#111",
+      borderColor: "#111",
+      "&:hover": { bgcolor: "rgba(0,0,0,0.06)", borderColor: "#000", color: "#000" },
+    },
+    solid: {
+      bgcolor: "#111",
+      color: "#fff",
+      "&:hover": { bgcolor: "#000", color: "#fff" },
+    },
+  };
+
+  const payModalBtn = {
+    outline: (theme) => ({
+      color: theme.palette.primary.main,
+      borderColor: theme.palette.primary.main,
+      "&:hover": {
+        bgcolor: theme.palette.primary.main,
+        borderColor: theme.palette.primary.main,
+        color: "#fff",
+      },
+    }),
+    solid: (theme) => ({
+      bgcolor: theme.palette.primary.main,
+      color: "#fff",
+      "&:hover": { bgcolor: theme.palette.primary.dark, color: "#fff" },
+    }),
+  };
+
+  const payCheckboxSx = (theme) => ({
+    color: theme.palette.primary.main,
+    "&.Mui-checked": { color: theme.palette.primary.main },
+    "&.MuiCheckbox-indeterminate": { color: theme.palette.primary.main },
+  });
+
+  const handlePayRangeToggleAll = useCallback(
+    (checked) => {
+      setPayRangeSelected(
+        (payRangeRows || []).reduce((acc, r) => {
+          acc[r.member_id] = checked;
+          return acc;
+        }, {})
+      );
+    },
+    [payRangeRows]
+  );
+
+  const handlePayRangeToggleOne = useCallback((memberId, checked) => {
+    setPayRangeSelected((prev) => ({ ...(prev || {}), [memberId]: checked }));
+  }, []);
+
+  const handleToggleDispatchPay = useCallback(
+    (memberId, nextChecked) => {
+      if (!memberId) return;
+      const payVal = nextChecked ? "Y" : "N";
+      setAttendanceRows((prev) =>
+        (prev || []).map((row) => {
+          if (String(row.member_id) !== String(memberId)) return row;
+          const updated = { ...row };
+          for (let d = 1; d <= daysInMonth; d++) {
+            const key = `day_${d}`;
+            const cell = updated[key];
+            if (!cell) continue;
+            const t = safeTrim(cell?.type ?? "", "");
+            if (!(t === "5" || t === "6")) continue;
+            updated[key] = { ...cell, pay_yn: payVal };
+          }
+          return updated;
+        })
+      );
+    },
+    [daysInMonth]
+  );
+
   const employeeTable = useReactTable({
     data: employeeRowsView,
     columns: [
@@ -1446,13 +2176,25 @@ function RecordSheet() {
       },
       { header: "금액", accessorKey: "total", size: "15%", cell: ReadonlyCell },
       {
+        header: "지급",
+        id: "pay_yn",
+        size: "3%",
+        cell: ({ row }) => (
+          <DispatchPayCell
+            row={row}
+            status={dispatchPayStatusMap.get(String(row.original?.member_id ?? ""))}
+            onToggle={handleToggleDispatchPay}
+          />
+        ),
+      },
+      {
         header: "관리",
         id: "actions",
         size: "1%",
         cell: ({ row }) => <DispatchActionCell row={row} onToggle={handleToggleDispatch} />,
       },
     ],
-    [handleToggleDispatch]
+    [dispatchPayStatusMap, handleToggleDispatchPay, handleToggleDispatch]
   );
 
   const dispatchTable = useReactTable({
@@ -1588,6 +2330,7 @@ function RecordSheet() {
               end_time: "",
               salary: 0,
               note: "",
+              pay_yn: "N",
               position: row.position || "",
               org_start_time,
               org_end_time,
@@ -1616,6 +2359,7 @@ function RecordSheet() {
             end_time: val.end || "",
             salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
             note: val.memo || "",
+            pay_yn: String(val?.pay_yn ?? "N").toUpperCase() === "Y" ? "Y" : "N",
             position: row.position || "",
             org_start_time,
             org_end_time,
@@ -1771,7 +2515,7 @@ function RecordSheet() {
             <MDButton
               variant="gradient"
               color="dark"
-              onClick={handleExcelDownloadAllAccounts}
+              onClick={openExcelRangeModal}
               disabled={excelDownloading}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
@@ -1780,7 +2524,20 @@ function RecordSheet() {
                 opacity: excelDownloading ? 0.6 : 1,
               }}
             >
-              전체 거래처 엑셀
+              {excelDownloading ? "엑셀 생성 중..." : "전체 거래처 엑셀"}
+            </MDButton>
+
+            <MDButton
+              variant="gradient"
+              color="primary"
+              onClick={openPayRangeModal}
+              sx={{
+                fontSize: isMobile ? "0.7rem" : "0.8rem",
+                minWidth: isMobile ? 90 : 130,
+                px: isMobile ? 1 : 2,
+              }}
+            >
+              지급 일괄
             </MDButton>
 
             <MDButton
@@ -2135,6 +2892,212 @@ function RecordSheet() {
               저장
             </Button>
           </Box>
+        </Box>
+      </Modal>
+      <Modal open={excelRangeOpen} onClose={() => setExcelRangeOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile ? "92vw" : 420,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 2,
+          }}
+        >
+          <MDTypography variant="h6" sx={{ mb: 1 }}>
+            엑셀 기간 선택
+          </MDTypography>
+          <MDTypography variant="caption" sx={{ color: "#666" }}>
+            월을 넘어도 선택 가능합니다. (예: 2026-02-19 ~ 2026-03-04)
+          </MDTypography>
+
+          <Box mt={2} display="flex" gap={1}>
+            <TextField
+              type="date"
+              fullWidth
+              label="시작일"
+              InputLabelProps={{ shrink: true }}
+              value={excelRange.start}
+              onChange={(e) => setExcelRange((prev) => ({ ...prev, start: e.target.value }))}
+            />
+            <TextField
+              type="date"
+              fullWidth
+              label="종료일"
+              InputLabelProps={{ shrink: true }}
+              value={excelRange.end}
+              onChange={(e) => setExcelRange((prev) => ({ ...prev, end: e.target.value }))}
+            />
+          </Box>
+
+          <Box mt={2} display="flex" justifyContent="flex-end" gap={1}>
+            <Button
+              variant="outlined"
+              onClick={() => setExcelRangeOpen(false)}
+              sx={excelModalBtn.outline}
+            >
+              취소
+            </Button>
+            <Button variant="contained" onClick={handleExcelRangeConfirm} sx={excelModalBtn.solid}>
+              다운로드
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+
+      <Modal open={payRangeOpen} onClose={() => setPayRangeOpen(false)}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile ? "94vw" : 620,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 2,
+          }}
+        >
+          <MDTypography variant="h6" sx={{ mb: 0.5 }}>
+            지급 일괄 처리
+          </MDTypography>
+          <MDTypography variant="caption" sx={{ color: "#666" }}>
+            기간을 선택하고 계산을 누르면 파출 급여 합계가 계산됩니다.
+          </MDTypography>
+
+          <Box mt={2} display="flex" gap={1}>
+            <TextField
+              type="date"
+              fullWidth
+              label="시작일"
+              InputLabelProps={{ shrink: true }}
+              value={payRange.start}
+              onChange={(e) => setPayRange((prev) => ({ ...prev, start: e.target.value }))}
+            />
+            <TextField
+              type="date"
+              fullWidth
+              label="종료일"
+              InputLabelProps={{ shrink: true }}
+              value={payRange.end}
+              onChange={(e) => setPayRange((prev) => ({ ...prev, end: e.target.value }))}
+            />
+          </Box>
+
+          <Box mt={1.5} display="flex" justifyContent="flex-end" gap={1}>
+            <Button
+              variant="outlined"
+              onClick={() => setPayRangeOpen(false)}
+              sx={payModalBtn.outline}
+            >
+              닫기
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handlePayRangeCompute}
+              disabled={payRangeLoading}
+              sx={payModalBtn.solid}
+            >
+              {payRangeLoading ? "계산 중..." : "계산"}
+            </Button>
+          </Box>
+
+          {payRangeRows.length > 0 && (
+            <>
+              <Box
+                mt={2}
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
+                sx={{ fontSize: "0.8rem" }}
+              >
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Checkbox
+                    size="small"
+                    sx={payCheckboxSx}
+                    checked={payRangeAllSelected}
+                    indeterminate={payRangeSomeSelected}
+                    onChange={(e) => handlePayRangeToggleAll(e.target.checked)}
+                  />
+                  <span>전체선택</span>
+                </Box>
+                <Box>
+                  총 {payRangeSummary.totalCount}명 / 합계{" "}
+                  {formatMoneyLike(payRangeSummary.totalSum)}
+                  {payRangeSummary.selectedCount > 0 && (
+                    <>
+                      {" "}
+                      | 선택 {payRangeSummary.selectedCount}명 / 선택합계{" "}
+                      {formatMoneyLike(payRangeSummary.selectedSum)}
+                    </>
+                  )}
+                </Box>
+              </Box>
+
+              <Box
+                mt={1}
+                sx={{
+                  maxHeight: 260,
+                  overflow: "auto",
+                  border: "1px solid #ddd",
+                  borderRadius: 1,
+                }}
+              >
+                <table className="recordsheet-table" style={{ width: "100%" }}>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 60 }}>선택</th>
+                      <th>이름</th>
+                      <th>연락처</th>
+                      <th>합계</th>
+                      <th>지급상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payRangeRows.map((r) => (
+                      <tr key={r.member_id}>
+                        <td>
+                          <Checkbox
+                            size="small"
+                            sx={payCheckboxSx}
+                            checked={!!payRangeSelected?.[r.member_id]}
+                            onChange={(e) =>
+                              handlePayRangeToggleOne(r.member_id, e.target.checked)
+                            }
+                          />
+                        </td>
+                        <td>{r.name || ""}</td>
+                        <td>{r.phone || ""}</td>
+                        <td>{formatMoneyLike(r.total_pay || 0)}</td>
+                        <td>
+                          {r.pay_status}{" "}
+                          {r.total_cnt > 0 ? `(${r.paid_cnt}/${r.total_cnt})` : ""}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Box>
+
+              <Box mt={2} display="flex" justifyContent="flex-end" gap={1}>
+                <Button
+                  variant="outlined"
+                  onClick={() => handlePayRangeToggleAll(false)}
+                  sx={payModalBtn.outline}
+                >
+                  선택 해제
+                </Button>
+                <Button variant="contained" onClick={handlePayRangeApply} sx={payModalBtn.solid}>
+                  선택 지급
+                </Button>
+              </Box>
+            </>
+          )}
         </Box>
       </Modal>
     </DashboardLayout>

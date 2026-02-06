@@ -1,5 +1,5 @@
 // src/layouts/property/PropertySheetTab.js
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import {
@@ -26,6 +26,7 @@ function PropertySheetTab() {
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
+  const didSetDefaultAccountRef = useRef(false);
   const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -110,8 +111,16 @@ function PropertySheetTab() {
   }, [activeRows]);
 
   useEffect(() => {
+    if (selectedAccountId) {
+      didSetDefaultAccountRef.current = true;
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (didSetDefaultAccountRef.current) return;
     if (accountList.length > 0 && !selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
+      didSetDefaultAccountRef.current = true;
     }
   }, [accountList, selectedAccountId]);
 

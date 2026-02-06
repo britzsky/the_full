@@ -108,6 +108,7 @@ export default function useRecordsheetData(account_id, year, month) {
           type: item.type != null ? String(item.type) : "",
           salary: item.salary || "",
           note: item.note || "",
+          pay_yn: item.pay_yn || "",
           member_id: mid,
           account_id: item.account_id || "",
           // ✅ 반드시 문자열로

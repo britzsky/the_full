@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { Box, Grid, Select, MenuItem, TextField, Autocomplete } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
@@ -14,6 +14,7 @@ export default function ProfitLossTableTab() {
   const [year, setYear] = useState(today.year());
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
+  const didSetDefaultAccountRef = useRef(false);
 
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
@@ -41,8 +42,16 @@ export default function ProfitLossTableTab() {
 
   // ✅ 계정 자동 선택
   useEffect(() => {
+    if (selectedAccountId) {
+      didSetDefaultAccountRef.current = true;
+    }
+  }, [selectedAccountId]);
+
+  useEffect(() => {
+    if (didSetDefaultAccountRef.current) return;
     if (accountList.length > 0 && !selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
+      didSetDefaultAccountRef.current = true;
     }
   }, [accountList, selectedAccountId]);
 

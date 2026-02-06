@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import MDBox from "components/MDBox";
@@ -273,6 +273,8 @@ function CorporateCardSheet() {
 
   // ✅ 스크롤 ref
   const masterWrapRef = useRef(null);
+  const masterScrollPosRef = useRef(0);
+  const detailScrollPosRef = useRef(0);
   const scrollMasterToBottom = useCallback((smooth = true) => {
     const el = masterWrapRef.current;
     if (!el) return;
@@ -291,6 +293,16 @@ function CorporateCardSheet() {
       top: el.scrollHeight,
       behavior: smooth ? "smooth" : "auto",
     });
+  }, []);
+
+  const saveMasterScroll = useCallback(() => {
+    const el = masterWrapRef.current;
+    if (el) masterScrollPosRef.current = el.scrollTop;
+  }, []);
+
+  const saveDetailScroll = useCallback(() => {
+    const el = detailWrapRef.current;
+    if (el) detailScrollPosRef.current = el.scrollTop;
   }, []);
 
   // 아이콘 기본색(정상)
@@ -425,7 +437,18 @@ function CorporateCardSheet() {
 
   // ✅ 서버 paymentRows 갱신 시
   useEffect(() => {
-    const serverRows = (paymentRows || []).map((r) => ({ ...r }));
+    saveMasterScroll();
+    const serverRows = (paymentRows || [])
+      .slice()
+      .sort((a, b) => {
+        const da = String(a?.payment_dt ?? "");
+        const db = String(b?.payment_dt ?? "");
+        if (da !== db) return da.localeCompare(db);
+        const sa = String(a?.sale_id ?? "");
+        const sb = String(b?.sale_id ?? "");
+        return sa.localeCompare(sb);
+      })
+      .map((r) => ({ ...r }));
 
     setMasterRows((prev) => {
       const keepNew = !skipPendingNewMergeRef.current;
@@ -460,10 +483,11 @@ function CorporateCardSheet() {
     setOrigDetailRows([]);
 
     setMasterRenderKey((k) => k + 1);
-  }, [paymentRows]);
+  }, [paymentRows, saveMasterScroll]);
 
   // ✅ 상세 rows 갱신 시
   useEffect(() => {
+    saveDetailScroll();
     const copy = (paymentDetailRows || []).map((r) => ({
       ...r,
       isForcedRed: false,
@@ -473,7 +497,26 @@ function CorporateCardSheet() {
     setOrigDetailRows(copy);
 
     setDetailRenderKey((k) => k + 1);
-  }, [paymentDetailRows]);
+  }, [paymentDetailRows, saveDetailScroll]);
+
+  useLayoutEffect(() => {
+    const el = masterWrapRef.current;
+    if (el) el.scrollTop = masterScrollPosRef.current;
+  }, [masterRenderKey]);
+
+  useLayoutEffect(() => {
+    const el = detailWrapRef.current;
+    if (el) el.scrollTop = detailScrollPosRef.current;
+  }, [detailRenderKey, selectedMaster?.sale_id]);
+
+  useLayoutEffect(() => {
+    if (loading) return;
+    const masterEl = masterWrapRef.current;
+    if (masterEl) masterEl.scrollTop = masterScrollPosRef.current;
+    const detailEl = detailWrapRef.current;
+    if (detailEl) detailEl.scrollTop = detailScrollPosRef.current;
+  }, [loading]);
+
 
   const getRowCardNoDigits = (row) => onlyDigits(row?.cardNo ?? row?.card_no ?? row?.cardno ?? "");
 
@@ -807,6 +850,7 @@ function CorporateCardSheet() {
   }, []);
 
   const saveAll = useCallback(async () => {
+    const userId = localStorage.getItem("user_id") || "";
     // ✅ 선택된 상단행의 account_id / payment_dt 확보(최신 masterRows 기준으로 보정)
     const selectedSaleId = String(selectedMaster?.sale_id || "").trim();
 
@@ -836,7 +880,8 @@ function CorporateCardSheet() {
 
         return changed ? normalizeMasterForSave(r) : null;
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((r) => ({ ...r, user_id: userId }));
 
     const item = detailRows
       .map((r, i) => {
@@ -867,7 +912,8 @@ function CorporateCardSheet() {
             }
           : null;
       })
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((r) => ({ ...r, user_id: userId }));
 
     // ✅ pendings
     const pendings = (masterRows || [])
@@ -1542,6 +1588,7 @@ function CorporateCardSheet() {
                     cursor: "pointer",
                   }}
                   onClick={async () => {
+                    saveMasterScroll();
                     if (!row.sale_id) {
                       setSelectedMaster(row);
                       return;

@@ -21,7 +21,7 @@ function AccountMembersFilesTab() {
   const [accountInput, setAccountInput] = useState("");
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
-  const [viewImageSrc, setViewImageSrc] = useState(null);
+  const [viewFile, setViewFile] = useState({ src: null, isPdf: false });
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -241,18 +241,50 @@ function AccountMembersFilesTab() {
     document.body.removeChild(a);
   }, []);
 
+  const getExt = (p = "") => {
+    const clean = String(p).split("?")[0].split("#")[0];
+    return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
+  };
+
+  const toAbsoluteUrl = (p) => {
+    if (!p) return "";
+    if (/^https?:\/\//i.test(p)) return p;
+    const base = String(API_BASE_URL || "").replace(/\/$/, "");
+    let path = String(p);
+    if (!path.startsWith("/")) path = `/${path}`;
+    if (base.endsWith("/api") && path.startsWith("/api/")) {
+      path = path.replace(/^\/api/, "");
+    }
+    return `${base}${path}`;
+  };
+
   // ✅ 미리보기
-  const handlePreview = useCallback((value) => {
+  const handlePreview = useCallback(async (value) => {
     if (!value) return;
 
     if (typeof value === "object") {
-      const blobUrl = URL.createObjectURL(value);
-      setViewImageSrc(blobUrl);
+      const url = URL.createObjectURL(value);
+      const isPdf = String(value.type || "").toLowerCase().includes("pdf");
+      setViewFile({ src: url, isPdf });
       return;
     }
 
-    if (typeof value === "string") {
-      setViewImageSrc(`${API_BASE_URL}${value}`);
+    try {
+      const absUrl = toAbsoluteUrl(value);
+      const res = await api.get(absUrl, { responseType: "blob" });
+      const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
+      const isPdf = contentType.includes("pdf") || getExt(value) === "pdf";
+      const blobUrl = URL.createObjectURL(res.data);
+      setViewFile({ src: blobUrl, isPdf });
+    } catch (err) {
+      console.error("미리보기 로드 실패:", err);
+      const fallbackUrl = toAbsoluteUrl(value);
+      if (fallbackUrl) {
+        const isPdf = getExt(value) === "pdf";
+        setViewFile({ src: fallbackUrl, isPdf });
+        return;
+      }
+      Swal.fire("미리보기 실패", "파일을 불러오지 못했습니다.", "error");
     }
   }, []);
 
@@ -597,7 +629,7 @@ function AccountMembersFilesTab() {
       </MDBox>
 
       {/* ✅ 확대 미리보기 */}
-      {viewImageSrc && (
+      {viewFile?.src && (
         <div
           style={{
             position: "fixed",
@@ -611,15 +643,26 @@ function AccountMembersFilesTab() {
             alignItems: "center",
             zIndex: 9999,
           }}
-          onClick={() => setViewImageSrc(null)}
+          onClick={() => {
+            if (viewFile?.src?.startsWith("blob:")) URL.revokeObjectURL(viewFile.src);
+            setViewFile({ src: null, isPdf: false });
+          }}
         >
           <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
             <TransformComponent>
-              <img
-                src={viewImageSrc}
-                alt="미리보기"
-                style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8 }}
-              />
+              {viewFile.isPdf ? (
+                <iframe
+                  title="pdf-preview"
+                  src={`${viewFile.src}#view=FitH`}
+                  style={{ width: "90vw", height: "90vh", border: 0, borderRadius: 8 }}
+                />
+              ) : (
+                <img
+                  src={viewFile.src}
+                  alt="미리보기"
+                  style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8 }}
+                />
+              )}
             </TransformComponent>
           </TransformWrapper>
         </div>

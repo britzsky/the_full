@@ -35,7 +35,9 @@ export default function useSubRestaurantData() {
           sub_restaurant2: item.sub_restaurant2,
           sub_restaurant2_tel: item.sub_restaurant2_tel,
           sub_restaurant3: item.sub_restaurant3,
-          sub_restaurant3_tel: item.sub_restaurant3_tel
+          sub_restaurant3_tel: item.sub_restaurant3_tel,
+          sub_restaurant4: item.sub_restaurant4,
+          sub_restaurant4_tel: item.sub_restaurant4_tel
         }));
         setActiveRows(rows.map((row) => ({ ...row })));
       } catch (err) {

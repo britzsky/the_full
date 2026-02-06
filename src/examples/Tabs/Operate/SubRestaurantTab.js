@@ -121,6 +121,8 @@ function SubRestaurantTab() {
       { header: "연락처2", accessorKey: "sub_restaurant2_tel", size: 110 },
       { header: "식당3", accessorKey: "sub_restaurant3", size: 110 },
       { header: "연락처3", accessorKey: "sub_restaurant3_tel", size: 110 },
+      { header: "식당4", accessorKey: "sub_restaurant4", size: 110 },
+      { header: "연락처4", accessorKey: "sub_restaurant4_tel", size: 110 },
     ],
     []
   );

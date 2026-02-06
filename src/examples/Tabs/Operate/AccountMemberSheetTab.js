@@ -73,6 +73,18 @@ function AccountMemberSheet() {
     const clean = String(p).split("?")[0].split("#")[0];
     return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
   };
+
+  const toAbsoluteUrl = (p) => {
+    if (!p) return "";
+    if (/^https?:\/\//i.test(p)) return p;
+    const base = String(API_BASE_URL || "").replace(/\/$/, "");
+    let path = String(p);
+    if (!path.startsWith("/")) path = `/${path}`;
+    if (base.endsWith("/api") && path.startsWith("/api/")) {
+      path = path.replace(/^\/api/, "");
+    }
+    return `${base}${path}`;
+  };
   const isPdfFile = (p) => getExt(p) === "pdf";
 
   const handleViewImage = async (value) => {
@@ -89,13 +101,20 @@ function AccountMemberSheet() {
 
     // 서버 경로는 blob으로 받아서 다운로드 대신 미리보기
     try {
-      const res = await api.get(value, { responseType: "blob" });
+      const absUrl = toAbsoluteUrl(value);
+      const res = await api.get(absUrl, { responseType: "blob" });
       const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
       const isPdf = contentType.includes("pdf") || isPdfFile(value);
-      const url = URL.createObjectURL(res.data);
-      setViewFile({ src: url, isPdf });
+      const blobUrl = URL.createObjectURL(res.data);
+      setViewFile({ src: blobUrl, isPdf });
     } catch (err) {
       console.error("미리보기 로드 실패:", err);
+      const fallbackUrl = toAbsoluteUrl(value);
+      if (fallbackUrl) {
+        const isPdf = isPdfFile(value);
+        setViewFile({ src: fallbackUrl, isPdf });
+        return;
+      }
       Swal.fire("미리보기 실패", "파일을 불러오지 못했습니다.", "error");
     }
   };

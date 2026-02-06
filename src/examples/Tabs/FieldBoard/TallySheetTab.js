@@ -985,13 +985,8 @@ function TallySheetTab() {
 
       const safe = Array.isArray(list) ? list : [];
       if (safe.length > 0) {
-        // 이미 등록됨 -> 목록(수정)으로 이동
-        setCardRows(safe);
-        const deep = safe.map((r) => ({ ...r }));
-        setCardEditRows(deep);
-        setCardOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
-        setCardRowFiles({});
-        setCardListOpen(true);
+        // 이미 등록됨 -> 선택 모달(등록/수정)
+        setCardChoiceOpen(true);
         return;
       }
     } catch (e) {
@@ -1287,13 +1282,8 @@ function TallySheetTab() {
 
       const safe = Array.isArray(list) ? list : [];
       if (safe.length > 0) {
-        // 이미 등록됨 -> 목록(수정)으로 이동
-        setCashRows(safe);
-        const deep = safe.map((r) => ({ ...r }));
-        setCashEditRows(deep);
-        setCashOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
-        setCashRowFiles({});
-        setCashListOpen(true);
+        // 이미 등록됨 -> 선택 모달(등록/수정)
+        setCashChoiceOpen(true);
         return;
       }
     } catch (e) {
@@ -1590,13 +1580,8 @@ function TallySheetTab() {
 
       const safe = Array.isArray(list) ? list : [];
       if (safe.length > 0) {
-        // 이미 등록됨 -> 목록(수정)으로 이동
-        setOtherRows(safe);
-        const deep = safe.map((r) => ({ ...r }));
-        setOtherEditRows(deep);
-        setOtherOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
-        setOtherRowFiles({});
-        setOtherListOpen(true);
+        // 이미 등록됨 -> 선택 모달(등록/수정)
+        setOtherChoiceOpen(true);
         return;
       }
     } catch (e) {
@@ -1699,7 +1684,7 @@ function TallySheetTab() {
   // ✅ 직접 입력 허용 타입 (1~4)
   const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
 
-  // ======================== ✅ "type != 1 직접입력 불가" + "1002/1003 모달 제외" 라우팅 ========================
+  // ✅ 1002/1003 은 클릭 무시
   const shouldBlockModalByType = useCallback((typeValue) => {
     const t = String(typeValue ?? "");
     return t === "1002" || t === "1003";
@@ -2339,7 +2324,19 @@ function TallySheetTab() {
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
                     }}
-                    onClick={() => handleSpecialCellClick(row.original, rIdx, colKey, isSecond)}
+                    onMouseDown={
+                      isEditable
+                        ? undefined
+                        : (e) => {
+                            e.preventDefault();
+                            handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
+                          }
+                    }
+                    onClick={
+                      isEditable
+                        ? () => handleSpecialCellClick(row.original, rIdx, colKey, isSecond)
+                        : undefined
+                    }
                     onBlur={
                       isEditable
                         ? (e) => handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond)

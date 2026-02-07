@@ -467,16 +467,26 @@ function TallySheet() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => { },
-    fetchBudget2Grant = async () => { },
+    fetchBudgetGrant = async () => {},
+    fetchBudget2Grant = async () => {},
   } = hook || {};
 
   const prevYm = useMemo(() => {
     const base = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
     return base.subtract(1, "month");
   }, [year, month]);
+
   const prevYear = useMemo(() => hookPrevYear ?? prevYm.year(), [hookPrevYear, prevYm]);
   const prevMonth = useMemo(() => hookPrevMonth ?? prevYm.month() + 1, [hookPrevMonth, prevYm]);
+
+  // ✅ 해당 월의 실제 일수
+  const daysInMonthNow = useMemo(() => {
+    return dayjs(`${year}-${String(month).padStart(2, "0")}-01`).daysInMonth();
+  }, [year, month]);
+
+  const daysInMonthPrev = useMemo(() => {
+    return dayjs(`${prevYear}-${String(prevMonth).padStart(2, "0")}-01`).daysInMonth();
+  }, [prevYear, prevMonth]);
 
   useEffect(() => {
     if (!localAccountId) return;
@@ -503,12 +513,14 @@ function TallySheet() {
     if (!q) return;
     const list = filteredAccountList || [];
     const qLower = q.toLowerCase();
-    const exact = list.find(
-      (a) => String(a?.account_name || "").toLowerCase() === qLower
-    );
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
     const partial =
       exact ||
-      list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+      list.find((a) =>
+        String(a?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
@@ -520,8 +532,11 @@ function TallySheet() {
     setData2Rows?.([]);
     setOriginalRows([]);
     setOriginal2Rows([]);
-    setImages(Array(31).fill(null));
-  }, [selectedAccountId, year, month, setDataRows, setData2Rows]);
+
+    // ✅ 현재 선택 월 기준으로 길이 맞춤
+    setImages(Array(daysInMonthNow).fill(null));
+    setReceiptType(Array(daysInMonthNow).fill("")); // 타입도 같이 맞추는게 안전
+  }, [selectedAccountId, year, month, setDataRows, setData2Rows, daysInMonthNow]);
 
   useEffect(() => {
     if ((dataRows || []).length > 0 && originalRows.length === 0) {
@@ -1240,7 +1255,10 @@ function TallySheet() {
             fdFix.append("payType", "1");
             fdFix.append("cash_receipt_type", desiredCashReceiptType);
             fdFix.append("use_name", purchase.use_name || cashForm.use_name || "");
-            fdFix.append("receipt_type", purchase.receipt_type || cashForm.receipt_type || "UNKNOWN");
+            fdFix.append(
+              "receipt_type",
+              purchase.receipt_type || cashForm.receipt_type || "UNKNOWN"
+            );
             fdFix.append("total", parseNumber(purchase.total ?? cashForm.total ?? 0));
             fdFix.append("vat", parseNumber(purchase.vat ?? 0));
             fdFix.append("taxFree", parseNumber(purchase.taxFree ?? 0));
@@ -1786,12 +1804,13 @@ function TallySheet() {
   );
 
   // ======================== 컬럼 구성 ========================
-  const columns = useMemo(() => {
-    const dayColumns = Array.from({ length: 31 }, (_, i) => ({
+  const buildColumns = useCallback((daysCount) => {
+    const dayColumns = Array.from({ length: daysCount }, (_, i) => ({
       header: `${i + 1}일`,
       accessorKey: `day_${i + 1}`,
       size: 100,
     }));
+
     return [
       { header: "구분", accessorKey: "name", size: 100 },
       ...dayColumns,
@@ -1799,31 +1818,49 @@ function TallySheet() {
     ];
   }, []);
 
-  const makeTableData = (rows) => {
+  const columnsNow = useMemo(() => buildColumns(daysInMonthNow), [buildColumns, daysInMonthNow]);
+  const columnsPrev = useMemo(() => buildColumns(daysInMonthPrev), [buildColumns, daysInMonthPrev]);
+
+  const makeTableData = (rows, daysCount) => {
     if (!rows || rows.length === 0) return [];
 
     const calculatedRows = rows.map((r) => {
-      const total = Array.from({ length: 31 }, (_, i) => parseNumber(r[`day_${i + 1}`])).reduce(
-        (sum, val) => sum + val,
-        0
-      );
+      const total = Array.from({ length: daysCount }, (_, i) =>
+        parseNumber(r[`day_${i + 1}`])
+      ).reduce((sum, val) => sum + val, 0);
+
       return { ...r, total };
     });
 
     const totals = {};
-    for (let i = 1; i <= 31; i++) {
+    for (let i = 1; i <= daysCount; i++) {
       totals[`day_${i}`] = calculatedRows.reduce((sum, r) => sum + parseNumber(r[`day_${i}`]), 0);
     }
+
     const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
 
     return [...calculatedRows, { name: "총합", ...totals, total: grandTotal }];
   };
 
-  const tableData = useMemo(() => makeTableData(dataRows), [dataRows]);
-  const table2Data = useMemo(() => makeTableData(data2Rows), [data2Rows]);
+  const tableData = useMemo(
+    () => makeTableData(dataRows, daysInMonthNow),
+    [dataRows, daysInMonthNow]
+  );
+  const table2Data = useMemo(
+    () => makeTableData(data2Rows, daysInMonthPrev),
+    [data2Rows, daysInMonthPrev]
+  );
 
-  const table = useReactTable({ data: tableData, columns, getCoreRowModel: getCoreRowModel() });
-  const table2 = useReactTable({ data: table2Data, columns, getCoreRowModel: getCoreRowModel() });
+  const table = useReactTable({
+    data: tableData,
+    columns: columnsNow,
+    getCoreRowModel: getCoreRowModel(),
+  });
+  const table2 = useReactTable({
+    data: table2Data,
+    columns: columnsPrev,
+    getCoreRowModel: getCoreRowModel(),
+  });
 
   const usedTotalNow = useMemo(() => {
     const last = (tableData || []).find((r) => r?.name === "총합");
@@ -1852,6 +1889,10 @@ function TallySheet() {
   };
 
   const handleImageUpload = async (e, dayIndex) => {
+    if (dayIndex >= daysInMonthNow) {
+      return Swal.fire("경고", "해당 월의 날짜 범위를 초과했습니다.", "info");
+    }
+
     const typeForDay = receiptType[dayIndex];
     if (!typeForDay) return Swal.fire("경고", "영수증 유형을 선택하세요.", "info");
 
@@ -1985,16 +2026,26 @@ function TallySheet() {
       await fetchBudget2Grant?.(selectedAccountId, year, month);
       setOriginalRows([]);
       setOriginal2Rows([]);
-      setImages(Array(31).fill(null));
+      setImages(Array(daysInMonthNow).fill(null));
+      setReceiptType(Array(daysInMonthNow).fill(""));
     } catch (e) {
       Swal.fire("실패", e.message || "새로고침 중 오류가 발생했습니다.", "error");
     }
   };
 
-  const ratioData = useMemo(
-    () => Array.from({ length: 31 }, (_, i) => (((i + 1) / 31) * 100).toFixed(2) + "%"),
-    []
-  );
+  const ratioDataNow = useMemo(() => {
+    return Array.from(
+      { length: daysInMonthNow },
+      (_, i) => (((i + 1) / daysInMonthNow) * 100).toFixed(2) + "%"
+    );
+  }, [daysInMonthNow]);
+
+  const ratioDataPrev = useMemo(() => {
+    return Array.from(
+      { length: daysInMonthPrev },
+      (_, i) => (((i + 1) / daysInMonthPrev) * 100).toFixed(2) + "%"
+    );
+  }, [daysInMonthPrev]);
 
   // ======================== 거래처 연결/등록 ========================
   const [open, setOpen] = useState(false);
@@ -2286,7 +2337,14 @@ function TallySheet() {
 
   if (loading) return <LoadingScreen />;
 
-  const renderTable = (tableInstance, originalData, handleChange, dataState, isSecond = false) => (
+  const renderTable = (
+    tableInstance,
+    originalData,
+    handleChange,
+    dataState,
+    ratioData,
+    isSecond = false
+  ) => (
     <MDBox
       pt={0}
       sx={{
@@ -2375,10 +2433,10 @@ function TallySheet() {
                       cursor: !isBaseCell
                         ? "default"
                         : canInlineEdit
-                          ? "text"
-                          : shouldBlockModalByType(rowType)
-                            ? "not-allowed"
-                            : "pointer",
+                        ? "text"
+                        : shouldBlockModalByType(rowType)
+                        ? "not-allowed"
+                        : "pointer",
                       background: activeCellBg || activeRowBg || baseBg || "",
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
@@ -2629,9 +2687,10 @@ function TallySheet() {
           </MDBox>
 
           <MDBox pt={1}>
-            {tabValue === 0 && renderTable(table, originalRows, handleCellChange, dataRows)}
+            {tabValue === 0 &&
+              renderTable(table, originalRows, handleCellChange, dataRows, ratioDataNow)}
             {tabValue === 1 &&
-              renderTable(table2, original2Rows, handleCellChange, data2Rows, true)}
+              renderTable(table2, original2Rows, handleCellChange, data2Rows, ratioDataPrev, true)}
           </MDBox>
         </Card>
       </MDBox>
@@ -2819,8 +2878,8 @@ function TallySheet() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                    ? "기타(직접입력)"
-                    : ""
+                  ? "기타(직접입력)"
+                  : ""
               }
               onChange={handleBankSelect}
               displayEmpty
@@ -2838,18 +2897,18 @@ function TallySheet() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-                <TextField
-                  fullWidth
-                  required
-                  margin="normal"
-                  label="은행명 직접입력"
-                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                  name="bank_name"
-                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                  onChange={handleChange2}
-                  sx={{ mt: 1 }}
-                />
-              )}
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                label="은행명 직접입력"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="bank_name"
+                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                onChange={handleChange2}
+                sx={{ mt: 1 }}
+              />
+            )}
           </Box>
 
           <TextField
@@ -3152,11 +3211,11 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    card_idx: v,
-                                    card_brand: picked?.card_brand || x.card_brand || "",
-                                    card_no: picked?.card_no || x.card_no || "",
-                                  }
+                                      ...x,
+                                      card_idx: v,
+                                      card_brand: picked?.card_brand || x.card_brand || "",
+                                      card_no: picked?.card_no || x.card_no || "",
+                                    }
                                   : x
                               )
                             );
@@ -3293,7 +3352,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                      String(orig.receipt_type || "UNKNOWN") ||
+                        String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -3325,13 +3384,26 @@ function TallySheet() {
                     const m = cardContext.isSecond ? prevMonth : month;
                     const fixedCellDate = buildCellDate(y, m, cardContext.dayIndex ?? 0);
 
-                    const submitAccountId = String(r.account_id ?? orig.account_id ?? selectedAccountId ?? "");
+                    const submitAccountId = String(
+                      r.account_id ?? orig.account_id ?? selectedAccountId ?? ""
+                    );
                     const cardIdx = String(
-                      r.card_idx ?? r.corp_card_idx ?? r.idx ?? orig.card_idx ?? orig.corp_card_idx ?? orig.idx ?? ""
+                      r.card_idx ??
+                        r.corp_card_idx ??
+                        r.idx ??
+                        orig.card_idx ??
+                        orig.corp_card_idx ??
+                        orig.idx ??
+                        ""
                     );
                     const picked = getCorpCardByIdx(cardIdx);
                     const cardBrand =
-                      r.card_brand || r.cardBrand || orig.card_brand || orig.cardBrand || picked?.card_brand || "";
+                      r.card_brand ||
+                      r.cardBrand ||
+                      orig.card_brand ||
+                      orig.cardBrand ||
+                      picked?.card_brand ||
+                      "";
                     const cardNo =
                       r.card_no || r.cardNo || orig.card_no || orig.cardNo || picked?.card_no || "";
                     const paymentDt = r.payment_dt || orig.payment_dt || fixedCellDate;
@@ -3339,10 +3411,14 @@ function TallySheet() {
                     const receiptImage = r.receipt_image || orig.receipt_image || "";
                     const bizNo = r.bizNo || orig.bizNo || "";
                     const note = r.note || orig.note || "";
-                    const vat = parseNumber((r.vat === "" || r.vat == null) ? orig.vat : r.vat);
-                    const taxFree = parseNumber((r.taxFree === "" || r.taxFree == null) ? orig.taxFree : r.taxFree);
-                    const tax = parseNumber((r.tax === "" || r.tax == null) ? orig.tax : r.tax);
-                    const totalCard = parseNumber((r.totalCard === "" || r.totalCard == null) ? orig.totalCard : r.totalCard);
+                    const vat = parseNumber(r.vat === "" || r.vat == null ? orig.vat : r.vat);
+                    const taxFree = parseNumber(
+                      r.taxFree === "" || r.taxFree == null ? orig.taxFree : r.taxFree
+                    );
+                    const tax = parseNumber(r.tax === "" || r.tax == null ? orig.tax : r.tax);
+                    const totalCard = parseNumber(
+                      r.totalCard === "" || r.totalCard == null ? orig.totalCard : r.totalCard
+                    );
 
                     const file = cardRowFiles?.[rowKey]?.file;
 
@@ -3369,7 +3445,10 @@ function TallySheet() {
                       fd.append("file", file);
 
                       const res = await api.post("/receipt-scanV3", fd, {
-                        headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+                        headers: {
+                          "Content-Type": "multipart/form-data",
+                          Accept: "application/json",
+                        },
                         validateStatus: () => true,
                       });
 
@@ -3385,7 +3464,9 @@ function TallySheet() {
                         type: 1000,
                         use_name: r.use_name || orig.use_name || "",
                         bizNo,
-                        total: parseNumber((r.total === "" || r.total == null) ? orig.total : r.total),
+                        total: parseNumber(
+                          r.total === "" || r.total == null ? orig.total : r.total
+                        ),
                         vat,
                         taxFree,
                         tax,
@@ -3402,7 +3483,10 @@ function TallySheet() {
                       const res = await api.post(
                         "/Account/AccountCorporateCardPaymentAllSave",
                         { main: [main], item: [] },
-                        { headers: { "Content-Type": "application/json" }, validateStatus: () => true }
+                        {
+                          headers: { "Content-Type": "application/json" },
+                          validateStatus: () => true,
+                        }
                       );
 
                       if (!(res.data?.code === 200 || res.status === 200)) {
@@ -3569,14 +3653,12 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    payType: v,
-                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                    cash_receipt_type:
-                                      v === "1"
-                                        ? String(x.cash_receipt_type ?? "3")
-                                        : "3",
-                                  }
+                                      ...x,
+                                      payType: v,
+                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                      cash_receipt_type:
+                                        v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
+                                    }
                                   : x
                               )
                             );
@@ -3727,9 +3809,9 @@ function TallySheet() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                      String(orig.cash_receipt_type ?? "3") ||
+                        String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -3761,7 +3843,9 @@ function TallySheet() {
                     const fd = new FormData();
                     fd.append("user_id", localUserId);
 
-                    const submitAccountId = String(r.account_id ?? orig.account_id ?? selectedAccountId ?? "");
+                    const submitAccountId = String(
+                      r.account_id ?? orig.account_id ?? selectedAccountId ?? ""
+                    );
                     fd.append("account_id", submitAccountId);
                     fd.append("row_account_id", submitAccountId);
 
@@ -3778,7 +3862,8 @@ function TallySheet() {
                     fd.append("total", parseNumber(r.total));
 
                     if (r.id != null) fd.append("id", r.id);
-                    if (r.sale_id || orig.sale_id) fd.append("sale_id", String(r.sale_id || orig.sale_id));
+                    if (r.sale_id || orig.sale_id)
+                      fd.append("sale_id", String(r.sale_id || orig.sale_id));
 
                     const file = cashRowFiles?.[rowKey]?.file;
                     if (file) fd.append("file", file);
@@ -4044,7 +4129,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 
@@ -4077,7 +4162,9 @@ function TallySheet() {
                     const fd = new FormData();
                     fd.append("user_id", localUserId);
 
-                    const submitAccountId = String(r.account_id ?? orig.account_id ?? selectedAccountId ?? "");
+                    const submitAccountId = String(
+                      r.account_id ?? orig.account_id ?? selectedAccountId ?? ""
+                    );
                     fd.append("account_id", submitAccountId);
                     fd.append("row_account_id", submitAccountId);
 
@@ -4090,7 +4177,8 @@ function TallySheet() {
                     fd.append("total", parseNumber(r.total));
 
                     if (r.id != null) fd.append("id", r.id);
-                    if (r.sale_id || orig.sale_id) fd.append("sale_id", String(r.sale_id || orig.sale_id));
+                    if (r.sale_id || orig.sale_id)
+                      fd.append("sale_id", String(r.sale_id || orig.sale_id));
 
                     const file = otherRowFiles?.[rowKey]?.file;
                     if (file) fd.append("file", file);
@@ -4389,9 +4477,7 @@ function TallySheet() {
                     ...p,
                     payType: String(e.target.value),
                     cash_receipt_type:
-                      String(e.target.value) === "1"
-                        ? String(p.cash_receipt_type ?? "3")
-                        : "3",
+                      String(e.target.value) === "1" ? String(p.cash_receipt_type ?? "3") : "3",
                   }))
                 }
                 fullWidth

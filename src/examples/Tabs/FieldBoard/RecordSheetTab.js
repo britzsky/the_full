@@ -18,12 +18,9 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import api from "api/api";
 import dayjs from "dayjs";
 import PropTypes from "prop-types";
-import Icon from "@mui/material/Icon";
 import useRecordsheetData from "./recordSheetData.js";
 import Swal from "sweetalert2";
 import LoadingScreen from "layouts/loading/loadingscreen";
@@ -39,6 +36,7 @@ const typeColors = {
   5: "#ffe6cc",
   6: "#cce6ff",
   16: "#DDAED3",
+  17: "#9F8383",
 };
 
 const TYPE_LABEL = {
@@ -46,6 +44,7 @@ const TYPE_LABEL = {
   1: "영양사",
   2: "상용",
   3: "초과",
+  17: "조기퇴근",
   4: "결근",
   5: "파출",
   6: "직원파출",
@@ -109,7 +108,7 @@ const formatMoneyLike = (v) => {
 
 // ✅ 셀 비교용 헬퍼
 const normalizeCell = (cell) => {
-  if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "" };
+  if (!cell) return { type: "", start: "", end: "", salary: 0, note: "" };
 
   const toNum = (v) => {
     if (v == null || v === "") return 0;
@@ -122,7 +121,7 @@ const normalizeCell = (cell) => {
     start: cell.start || cell.start_time || "",
     end: cell.end || cell.end_time || "",
     salary: toNum(cell.salary),
-    memo: cell.memo ?? cell.note ?? "",
+    note: cell.note ?? cell.note ?? "",
   };
 };
 
@@ -134,19 +133,19 @@ const isCellEqual = (a, b) => {
     na.start === nb.start &&
     na.end === nb.end &&
     na.salary === nb.salary &&
-    na.memo === nb.memo
+    na.note === nb.note
   );
 };
 
 // ✅ 출근현황 셀
-const AttendanceCell = React.memo(function AttendanceCell({
+const AttendanceCell = React.note(function AttendanceCell({
   getValue,
   row,
   column,
   table,
   typeOptions,
 }) {
-  const val = getValue() || { type: "", start: "", end: "", salary: "", memo: "" };
+  const val = getValue() || { type: "", start: "", end: "", salary: "", note: "" };
 
   const times = [];
   for (let h = 5; h <= 20; h++) {
@@ -191,12 +190,12 @@ const AttendanceCell = React.memo(function AttendanceCell({
       updatedValue.start_time = "";
       updatedValue.end_time = "";
       updatedValue.salary = "";
-      updatedValue.memo = "";
+      updatedValue.note = "";
     }
 
-    // 🔹 초과근무 자동 계산
+    // 🔹 초과/조기퇴근 자동 계산 (note에 0.5 단위로 반영)
     if (
-      updatedValue.type === "3" &&
+      (updatedValue.type === "3" || updatedValue.type === "17") &&
       updatedValue.start &&
       updatedValue.end &&
       (field === "start" || field === "end")
@@ -209,12 +208,21 @@ const AttendanceCell = React.memo(function AttendanceCell({
       const baseEnd = parseTime(org.org_end_time);
 
       if (start && end && baseStart && baseEnd) {
-        const diffMinutes = end.diff(start, "minute") - baseEnd.diff(baseStart, "minute");
+        const workedMinutes = end.diff(start, "minute");
+        const baseMinutes = baseEnd.diff(baseStart, "minute");
+        const diffMinutes = workedMinutes - baseMinutes; // 초과면 +, 조기퇴근이면 -
 
-        updatedValue.memo =
-          diffMinutes > 0
-            ? (Math.floor(diffMinutes / 60) + (diffMinutes % 60 >= 30 ? 0.5 : 0)).toString()
-            : "";
+        // 30분 단위로 환산(0.5)
+        const abs = Math.abs(diffMinutes);
+        const units = Math.floor(abs / 60) + (abs % 60 >= 30 ? 0.5 : 0);
+
+        if (updatedValue.type === "3") {
+          // 초과: +일 때만 표시
+          updatedValue.note = diffMinutes > 0 ? String(units) : "";
+        } else if (updatedValue.type === "17") {
+          // 조기퇴근: -일 때만 표시
+          updatedValue.note = diffMinutes < 0 ? String(-units) : "";
+        }
       }
     }
 
@@ -245,7 +253,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
         ))}
       </select>
 
-      {["1", "2", "3", "5", "6", "7", "8"].includes(val.type) && (
+      {["1", "2", "3", "5", "6", "7", "8", "17"].includes(val.type) && (
         <>
           <select
             value={val.start}
@@ -289,12 +297,12 @@ const AttendanceCell = React.memo(function AttendanceCell({
         />
       )}
 
-      {["3", "11"].includes(val.type) && (
+      {["3", "11", "17"].includes(val.type) && (
         <input
           type="text"
-          placeholder={val.type === "3" ? "초과" : "대체휴무"}
-          value={val.memo ?? ""}
-          onChange={(e) => handleChange("memo", e.target.value)}
+          placeholder={val.type === "3" ? "초과" : val.type === "17" ? "조기퇴근" : "대체휴무"}
+          value={val.note ?? ""}
+          onChange={(e) => handleChange("note", e.target.value)}
           style={{
             fontSize: "0.725rem",
             textAlign: "center",
@@ -459,7 +467,12 @@ function RecordSheet() {
     const qLower = q.toLowerCase();
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((a) =>
+        String(a?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
@@ -657,7 +670,7 @@ function RecordSheet() {
               start_time: source.start_time || "",
               end_time: source.end_time || "",
               salary: source.salary || "",
-              memo: source.memo ?? source.note ?? "",
+              note: source.note ?? source.note ?? "",
             }
           : {
               account_id: item.account_id,
@@ -670,7 +683,7 @@ function RecordSheet() {
               start_time: "",
               end_time: "",
               salary: "",
-              memo: "",
+              note: "",
             };
       }
 
@@ -743,13 +756,13 @@ function RecordSheet() {
       cell.salary != null && String(cell.salary).trim() !== ""
         ? Number(String(cell.salary).replace(/,/g, "")).toLocaleString()
         : "";
-    const memo = cell.memo ?? cell.note ?? "";
+    const note = cell.note ?? cell.note ?? "";
 
     const lines = [
       typeLabel,
       start || end ? `${start}~${end}` : "",
       salary ? `급여: ${salary}` : "",
-      memo ? `메모: ${memo}` : "",
+      note ? `메모: ${note}` : "",
     ].filter(Boolean);
 
     return lines.join("\n");
@@ -1376,6 +1389,7 @@ function RecordSheet() {
                 { value: "1", label: "영양사" },
                 { value: "2", label: "상용" },
                 { value: "3", label: "초과" },
+                { value: "17", label: "조기퇴근" },
                 { value: "4", label: "결근" },
                 { value: "5", label: "파출" },
                 { value: "6", label: "직원파출" },
@@ -1636,7 +1650,7 @@ function RecordSheet() {
             start_time: val.start || "",
             end_time: val.end || "",
             salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
-            note: val.memo || "",
+            note: val.note || "",
             position: row.position || "",
             org_start_time,
             org_end_time,

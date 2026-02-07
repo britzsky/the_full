@@ -2,13 +2,9 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
-import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
-import dayjs from "dayjs";
 import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
@@ -23,12 +19,47 @@ import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountM
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 
-function AccountMemberSheet() {
-  // =========================
-  // ✅ 유틸이면 account_id=2 강제
-  // =========================
+function AccountMemberRecordMainTableTab() {
   const UTIL_POSITION = "6";
-  const UTIL_ACCOUNT_ID = "2";
+  const UTIL_ACCOUNT_ID = "2"; // ✅ 유틸이면 account_id는 2로 저장/표시
+
+  // =========================
+  // ✅ 근무표(월~일) 4주 생성
+  // =========================
+  const WEEK_DAYS = useMemo(() => ["월", "화", "수", "목", "금", "토", "일"], []);
+  const WEEK_COUNT = 4;
+
+  const makeScheduleKey = useCallback((weekIdx, dayIdx) => `wk${weekIdx + 1}_${dayIdx}`, []);
+
+  const scheduleKeySet = useMemo(() => {
+    const s = new Set();
+    for (let w = 0; w < WEEK_COUNT; w += 1) {
+      for (let d = 0; d < 7; d += 1) s.add(`wk${w + 1}_${d}`);
+    }
+    return s;
+  }, []);
+
+  const makeEmptySchedule = useCallback(() => {
+    const obj = {};
+    for (let w = 0; w < WEEK_COUNT; w += 1) {
+      for (let d = 0; d < 7; d += 1) obj[makeScheduleKey(w, d)] = ""; // 기본: 선택
+    }
+    return obj;
+  }, [makeScheduleKey]);
+
+  const scheduleColumns = useMemo(() => {
+    const cols = [];
+    for (let w = 0; w < WEEK_COUNT; w += 1) {
+      for (let d = 0; d < 7; d += 1) {
+        cols.push({
+          header: WEEK_DAYS[d],
+          accessorKey: makeScheduleKey(w, d),
+          size: 30, // ✅ 좁게
+        });
+      }
+    }
+    return cols;
+  }, [WEEK_DAYS, makeScheduleKey]);
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
@@ -36,7 +67,6 @@ function AccountMemberSheet() {
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const [excelDownloading, setExcelDownloading] = useState(false);
 
   const {
     activeRows,
@@ -44,39 +74,16 @@ function AccountMemberSheet() {
     originalRows,
     setOriginalRows,
     accountList,
-    workSystemList, // ✅ 추가
-    originalWorkSystemList, // ✅ 추가
-    fetchWorkSystemList, // ✅ 추가
-    saveWorkSystemList, // ✅ 추가
+    workSystemList,
+    originalWorkSystemList,
+    fetchWorkSystemList,
+    saveWorkSystemList,
     saveData,
     fetchAccountMembersAllList,
     loading: hookLoading,
   } = useAccountMembersheetData(selectedAccountId, activeStatus);
 
   const [loading, setLoading] = useState(true);
-
-  const applyUtilAccountId = useCallback(
-    (rows) => {
-      const list = Array.isArray(rows) ? rows : [];
-      return list.map((r) => {
-        const pos = String(r?.position_type ?? "");
-        const acc = r?.account_id;
-
-        // ✅ 유틸이면 무조건 2
-        if (pos === UTIL_POSITION) {
-          return { ...r, account_id: UTIL_ACCOUNT_ID };
-        }
-
-        // ✅ 유틸이 아닌데 account_id가 2로 남아있으면 선택 거래처로 복구(원하면 제거 가능)
-        if (String(acc ?? "") === UTIL_ACCOUNT_ID) {
-          return { ...r, account_id: selectedAccountId || (accountList?.[0]?.account_id ?? "") };
-        }
-
-        return r;
-      });
-    },
-    [UTIL_POSITION, UTIL_ACCOUNT_ID, selectedAccountId, accountList]
-  );
 
   // =========================
   // ✅ 근무형태 관리 Modal 상태
@@ -88,126 +95,21 @@ function AccountMemberSheet() {
   const numericCols = ["salary"];
 
   // =========================
-  // ✅ 이미지 업로드/뷰어 기능 (추가)
+  // ✅ 이미지 업로드/뷰어 기능
   // =========================
   const imageFields = ["employment_contract", "id", "bankbook"];
-  const [viewFile, setViewFile] = useState({ src: null, isPdf: false });
-  const [pdfScale, setPdfScale] = useState(1);
-  const [viewerPos, setViewerPos] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const [viewImageSrc, setViewImageSrc] = useState(null);
   const fileIconSx = { color: "#1e88e5" };
 
-  const getExt = (p = "") => {
-    const clean = String(p).split("?")[0].split("#")[0];
-    return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
-  };
-
-  const toAbsoluteUrl = (p) => {
-    if (!p) return "";
-    if (/^https?:\/\//i.test(p)) return p;
-    const base = String(API_BASE_URL || "").replace(/\/$/, "");
-    let path = String(p);
-    if (!path.startsWith("/")) path = `/${path}`;
-    if (base.endsWith("/api") && path.startsWith("/api/")) {
-      path = path.replace(/^\/api/, "");
-    }
-    return `${base}${path}`;
-  };
-  const isPdfFile = (p) => getExt(p) === "pdf";
-
-  const handleViewImage = async (value) => {
+  const handleViewImage = (value) => {
     if (!value) return;
-    setPdfScale(1);
-
-    // 파일 객체는 바로 미리보기
     if (typeof value === "object") {
-      const url = URL.createObjectURL(value);
-      const isPdf = String(value.type || "")
-        .toLowerCase()
-        .includes("pdf");
-      setViewFile({ src: url, isPdf });
-      return;
-    }
-
-    // 서버 경로는 blob으로 받아서 다운로드 대신 미리보기
-    try {
-      const absUrl = toAbsoluteUrl(value);
-      const res = await api.get(absUrl, { responseType: "blob" });
-      const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
-      const isPdf = contentType.includes("pdf") || isPdfFile(value);
-      const blobUrl = URL.createObjectURL(res.data);
-      setViewFile({ src: blobUrl, isPdf });
-    } catch (err) {
-      console.error("미리보기 로드 실패:", err);
-      const fallbackUrl = toAbsoluteUrl(value);
-      if (fallbackUrl) {
-        const isPdf = isPdfFile(value);
-        setViewFile({ src: fallbackUrl, isPdf });
-        return;
-      }
-      Swal.fire("미리보기 실패", "파일을 불러오지 못했습니다.", "error");
+      setViewImageSrc(URL.createObjectURL(value));
+    } else {
+      setViewImageSrc(`${API_BASE_URL}${value}`);
     }
   };
-  const handleCloseViewer = () => {
-    if (viewFile?.src?.startsWith("blob:")) {
-      URL.revokeObjectURL(viewFile.src);
-    }
-    setViewFile({ src: null, isPdf: false });
-    setPdfScale(1);
-  };
-
-  useEffect(() => {
-    if (!viewFile?.src) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const modalW = isMobile ? w * 0.92 : w * 0.48;
-    const modalH = isMobile ? h * 0.92 : h * 0.88;
-    setViewerPos({
-      x: Math.max(0, (w - modalW) / 2),
-      y: Math.max(0, (h - modalH) / 2),
-    });
-  }, [viewFile?.src, isMobile]);
-
-  const handleDragStart = (e) => {
-    e.preventDefault();
-    setDragging(true);
-    dragOffsetRef.current = {
-      x: e.clientX - viewerPos.x,
-      y: e.clientY - viewerPos.y,
-    };
-  };
-
-  const handleDragMove = useCallback(
-    (e) => {
-      if (!dragging) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const modalW = isMobile ? w * 0.92 : w * 0.48;
-      const modalH = isMobile ? h * 0.92 : h * 0.88;
-      const nextX = e.clientX - dragOffsetRef.current.x;
-      const nextY = e.clientY - dragOffsetRef.current.y;
-      setViewerPos({
-        x: Math.min(Math.max(0, nextX), Math.max(0, w - modalW)),
-        y: Math.min(Math.max(0, nextY), Math.max(0, h - modalH)),
-      });
-    },
-    [dragging, isMobile]
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setDragging(false);
-  }, []);
-
-  useEffect(() => {
-    if (!dragging) return;
-    window.addEventListener("mousemove", handleDragMove);
-    window.addEventListener("mouseup", handleDragEnd);
-    return () => {
-      window.removeEventListener("mousemove", handleDragMove);
-      window.removeEventListener("mouseup", handleDragEnd);
-    };
-  }, [dragging, handleDragMove, handleDragEnd]);
+  const handleCloseViewer = () => setViewImageSrc(null);
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
@@ -250,12 +152,50 @@ function AccountMemberSheet() {
     }
     throw new Error(res.data.message || "이미지 업로드 실패");
   };
+
   // =========================
+  // ✅ 유틸이면 account_id=2 강제 (저장/행추가/직책변경 공통 보정)
+  // =========================
+  const applyUtilAccountId = useCallback(
+    (rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      return list.map((r) => {
+        const pos = String(r?.position_type ?? "");
+        const acc = r?.account_id;
+
+        // 유틸이면 무조건 2
+        if (pos === UTIL_POSITION) {
+          return { ...r, account_id: UTIL_ACCOUNT_ID };
+        }
+
+        // 유틸이 아닌데 account_id가 2로 남아있으면 selectedAccountId로 복구(원하면 이 로직 제거 가능)
+        if (String(acc ?? "") === UTIL_ACCOUNT_ID) {
+          return { ...r, account_id: selectedAccountId || (accountList?.[0]?.account_id ?? "") };
+        }
+
+        return r;
+      });
+    },
+    [UTIL_ACCOUNT_ID, UTIL_POSITION, selectedAccountId, accountList]
+  );
+
+  // ✅ (월~일) 스케줄 기본 키가 없으면 채워 넣기
+  const hydrateSchedule = useCallback(
+    (row) => {
+      const base = makeEmptySchedule();
+      const out = { ...base, ...(row || {}) };
+      // 혹시 null 들어오면 빈 값으로
+      scheduleKeySet.forEach((k) => {
+        if (out[k] == null) out[k] = "";
+      });
+      return out;
+    },
+    [makeEmptySchedule, scheduleKeySet]
+  );
 
   useEffect(() => {
     if (selectedAccountId) return;
     if (!Array.isArray(accountList) || accountList.length === 0) return;
-
     setSelectedAccountId(String(accountList[0].account_id));
   }, [accountList, selectedAccountId]);
 
@@ -266,7 +206,7 @@ function AccountMemberSheet() {
     Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
   }, [selectedAccountId, activeStatus]);
 
-  // 합계 계산
+  // 합계 계산 (현재 화면에서는 사실상 의미 없지만 기존 유지)
   const calculateTotal = (row) => {
     const breakfast = parseNumber(row.breakfast);
     const lunch = parseNumber(row.lunch);
@@ -276,13 +216,16 @@ function AccountMemberSheet() {
     return Math.round(avgMeals + ceremony);
   };
 
-  // ★★★★★ activeRows 변경 시 loading false 제거
+  // ★★★★★ activeRows 로딩 후 초기 세팅 (유틸 account_id 보정 + 스케줄 키 주입)
   useEffect(() => {
     if (activeRows && activeRows.length > 0) {
-      const updated = activeRows.map((row) => ({
-        ...row,
-        total: calculateTotal(row),
-      }));
+      const updated = activeRows.map((row) => {
+        const merged = hydrateSchedule(row);
+        return {
+          ...merged,
+          total: calculateTotal(merged),
+        };
+      });
 
       const fixed = applyUtilAccountId(updated);
       setActiveRows(fixed);
@@ -290,7 +233,7 @@ function AccountMemberSheet() {
     } else {
       setOriginalRows([]);
     }
-  }, [activeRows?.length, applyUtilAccountId]);
+  }, [activeRows?.length]);
 
   // 시간 옵션
   const generateTimeOptions = (startHHMM, endHHMM, stepMinutes = 30) => {
@@ -336,20 +279,6 @@ function AccountMemberSheet() {
     { value: "2", label: "더채움" },
   ];
 
-  const workSystemLabelMap = useMemo(() => {
-    const m = new Map();
-    (workSystemList || []).forEach((w) => {
-      const key = String(w.idx ?? w.work_system ?? "");
-      if (key) m.set(key, w.work_system ?? "");
-    });
-    return m;
-  }, [workSystemList]);
-
-  const mapLabel = (options, v) => {
-    const key = String(v ?? "");
-    return options.find((o) => String(o.value) === key)?.label ?? key;
-  };
-
   const formatDateForInput = (val) => {
     if (!val && val !== 0) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -371,187 +300,6 @@ function AccountMemberSheet() {
       })),
     [accountList]
   );
-
-  const buildExcelRows = (rows) =>
-    (rows || []).map((r) => ({
-      ...r,
-      salary: formatNumber(parseNumber(r.salary)),
-      cor_type: mapLabel(corOptions, r.cor_type),
-      contract_type: mapLabel(contractOptions, r.contract_type),
-      position_type: mapLabel(positionOptions, r.position_type),
-      idx: workSystemLabelMap.get(String(r.idx ?? "")) ?? String(r.idx ?? ""),
-    }));
-
-  const handleExcelDownloadAllAccounts = async () => {
-    if (excelDownloading) return;
-    setExcelDownloading(true);
-
-    try {
-      Swal.fire({
-        title: "엑셀 생성 중...",
-        text: "현장 직원관리 데이터를 조회하고 있습니다.",
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading(),
-      });
-
-      const res = await api.get("/Operate/AccountMemberAllList", {
-        params: { del_yn: activeStatus },
-      });
-      const rows = buildExcelRows(
-        (res.data || []).map((item) => ({
-          account_id: item.account_id,
-          member_id: item.member_id,
-          name: item.name,
-          rrn: item.rrn,
-          position_type: item.position_type,
-          account_number: item.account_number,
-          phone: item.phone,
-          address: item.address,
-          contract_type: item.contract_type,
-          join_dt: item.join_dt,
-          act_join_dt: item.act_join_dt,
-          ret_set_dt: item.ret_set_dt,
-          loss_major_insurances: item.loss_major_insurances,
-          del_yn: item.del_yn,
-          del_dt: item.del_dt,
-          del_note: item.del_note,
-          salary: parseNumber(item.salary),
-          idx: item.idx,
-          start_time: normalizeTime(item.start_time),
-          end_time: normalizeTime(item.end_time),
-          national_pension: item.national_pension,
-          health_insurance: item.health_insurance,
-          industrial_insurance: item.industrial_insurance,
-          employment_insurance: item.employment_insurance,
-          employment_contract: item.employment_contract,
-          headoffice_note: item.headoffice_note,
-          subsidy: item.subsidy,
-          note: item.note,
-          id: item.id,
-          bankbook: item.bankbook,
-          cor_type: item.cor_type,
-        }))
-      );
-
-      const wb = new ExcelJS.Workbook();
-      wb.creator = "AccountMemberSheet";
-
-      const ws = wb.addWorksheet("현장 직원관리");
-      const cols = columns
-        .filter((c) => c.accessorKey)
-        .map((c) => ({ header: c.header, key: c.accessorKey, width: 14 }));
-
-      const now = dayjs();
-      const y = now.year();
-      const m = String(now.month() + 1).padStart(2, "0");
-      const accNameMap = new Map();
-      (accountList || []).forEach((a) => {
-        accNameMap.set(String(a.account_id), a.account_name);
-      });
-
-      const addSectionTitle = (title, colCount) => {
-        ws.addRow([title]);
-        const r = ws.lastRow.number;
-        ws.mergeCells(r, 1, r, colCount);
-        const cell = ws.getCell(r, 1);
-        cell.font = { bold: true, size: 12 };
-        cell.alignment = { vertical: "middle", horizontal: "left" };
-        ws.getRow(r).height = 26;
-      };
-
-      const styleHeaderRow = (rowNum) => {
-        const row = ws.getRow(rowNum);
-        row.font = { bold: true };
-        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        row.eachCell((cell) => {
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FFF0F0F0" },
-          };
-        });
-      };
-
-      const styleDataRow = (rowNum) => {
-        const row = ws.getRow(rowNum);
-        row.alignment = { vertical: "top", horizontal: "left", wrapText: true };
-        row.eachCell((cell) => {
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-        });
-      };
-
-      // ✅ 컬럼명 중복 방지: columns에는 header를 쓰지 않고, 아래에서 헤더 row를 직접 추가
-      const baseCols = cols.map((c) => ({ key: c.key, width: c.width }));
-      ws.columns = baseCols;
-
-      const grouped = new Map();
-      rows.forEach((r) => {
-        const k = String(r.account_id ?? "");
-        if (!grouped.has(k)) grouped.set(k, []);
-        grouped.get(k).push(r);
-      });
-
-      const header = cols.map((c) => c.header);
-      const autoWidthValues = baseCols.map(() => []);
-
-      grouped.forEach((list, accId) => {
-        const name = accNameMap.get(accId) || "거래처";
-        addSectionTitle(`■ ${name} (${accId})  /  ${y}-${m}`, cols.length);
-
-        ws.addRow(header);
-        ws.getRow(ws.lastRow.number).height = 23;
-        styleHeaderRow(ws.lastRow.number);
-        header.forEach((h, i) => autoWidthValues[i].push(h));
-
-        list.forEach((r) => {
-          const row = {};
-          cols.forEach((c) => {
-            row[c.key] = r[c.key] ?? "";
-          });
-          ws.addRow(row);
-          ws.getRow(ws.lastRow.number).height = 23;
-          styleDataRow(ws.lastRow.number);
-          cols.forEach((c, i) => autoWidthValues[i].push(row[c.key]));
-        });
-
-        ws.addRow([]);
-      });
-
-      const calcWidth = (values, min = 15, max = 80) => {
-        const longest = Math.max(...values.map((v) => String(v ?? "").length), 0);
-        return Math.min(Math.max(longest + 2, min), max);
-      };
-      autoWidthValues.forEach((vals, i) => {
-        ws.getColumn(i + 1).width = calcWidth(vals);
-      });
-
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-      const d = String(now.date()).padStart(2, "0");
-      const filename = `현장직원관리_전체_${y}-${m}-${d}.xlsx`;
-      saveAs(blob, filename);
-
-      Swal.fire({ title: "완료", text: "엑셀 다운로드가 완료되었습니다.", icon: "success" });
-    } catch (e) {
-      console.error(e);
-      Swal.fire({ title: "실패", text: "엑셀 생성 중 오류가 발생했습니다.", icon: "error" });
-    } finally {
-      setExcelDownloading(false);
-    }
-  };
 
   const selectedAccountOption = useMemo(() => {
     const v = String(selectedAccountId ?? "");
@@ -580,21 +328,9 @@ function AccountMemberSheet() {
   const columns = useMemo(
     () => [
       { header: "구분", accessorKey: "cor_type", size: 100 },
-      { header: "성명", accessorKey: "name", size: 100 },
-      { header: "주민번호", accessorKey: "rrn", size: 100 },
-      { header: "업장명", accessorKey: "account_id", size: 150 },
-      { header: "직책", accessorKey: "position_type", size: 100 },
-      { header: "계좌번호", accessorKey: "account_number", size: 150 },
+      { header: "성명", accessorKey: "name", size: 80 },
       { header: "연락처", accessorKey: "phone", size: 100 },
-      { header: "주소", accessorKey: "address", size: 150 },
-      { header: "계약형태", accessorKey: "contract_type", size: 50 },
-      { header: "실입사일", accessorKey: "act_join_dt", size: 80 },
       { header: "입사일", accessorKey: "join_dt", size: 80 },
-      { header: "퇴직정산일", accessorKey: "ret_set_dt", size: 80 },
-      { header: "4대보험 상실일", accessorKey: "loss_major_insurances", size: 80 },
-      { header: "퇴사여부", accessorKey: "del_yn", size: 80 },
-      { header: "퇴사일", accessorKey: "del_dt", size: 80 },
-      { header: "퇴사사유", accessorKey: "del_note", size: 100 },
       {
         header: "급여(월)",
         accessorKey: "salary",
@@ -604,20 +340,13 @@ function AccountMemberSheet() {
       { header: "근무형태", accessorKey: "idx", size: 180 },
       { header: "시작", accessorKey: "start_time", size: 60 },
       { header: "마감", accessorKey: "end_time", size: 60 },
-      { header: "국민연금", accessorKey: "national_pension", size: 80 },
-      { header: "건강보험", accessorKey: "health_insurance", size: 80 },
-      { header: "산재보험", accessorKey: "industrial_insurance", size: 80 },
-      { header: "고용보험", accessorKey: "employment_insurance", size: 80 },
-      { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
-      { header: "본사노트", accessorKey: "headoffice_note", minWidth: 80, maxWidth: 150 },
-      { header: "지원금", accessorKey: "subsidy", minWidth: 80, maxWidth: 150 },
 
-      // ✅ 이미지 컬럼 3개 추가 (RecSheet와 동일 항목명)
-      { header: "근로계약서", accessorKey: "employment_contract", size: 120 },
-      { header: "신분증", accessorKey: "id", size: 120 },
-      { header: "통장사본", accessorKey: "bankbook", size: 120 },
+      { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
+
+      // ✅ 근무표(월~일) 4주(28칸)
+      ...scheduleColumns,
     ],
-    []
+    [scheduleColumns]
   );
 
   const table = useReactTable({
@@ -626,13 +355,13 @@ function AccountMemberSheet() {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  // ✅ 저장 로직: 최종 payload에서도 유틸 account_id=2 강제
   const handleSave = async () => {
     const changedRows = activeRows.filter((row, idx) => {
       const original = originalRows[idx];
       if (!original) return true;
 
       return Object.keys(row).some((key) => {
-        // ✅ 이미지 필드: object(File)로 바뀌면 무조건 변경
         if (imageFields.includes(key)) {
           const v = row[key];
           const o = original[key];
@@ -643,6 +372,7 @@ function AccountMemberSheet() {
         if (numericCols.includes(key)) {
           return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
         }
+
         return String(row[key] ?? "") !== String(original[key] ?? "");
       });
     });
@@ -655,7 +385,6 @@ function AccountMemberSheet() {
     try {
       const userId = localStorage.getItem("user_id");
 
-      // ⭐ 빈 문자열 제거 → null 값으로 변환
       const cleanRow = (row) => {
         const newRow = { ...row };
         Object.keys(newRow).forEach((key) => {
@@ -666,10 +395,11 @@ function AccountMemberSheet() {
         return newRow;
       };
 
-      // ✅ 이미지가 File이면 업로드 후 경로 문자열로 치환
       const processed = await Promise.all(
         changedRows.map(async (row) => {
-          const newRow = cleanRow(row);
+          // ✅ 혹시 스케줄 키 누락된 row가 있으면 채워서 저장
+          const hydrated = hydrateSchedule(row);
+          const newRow = cleanRow(hydrated);
 
           for (const field of imageFields) {
             if (newRow[field] && typeof newRow[field] === "object") {
@@ -685,16 +415,20 @@ function AccountMemberSheet() {
         })
       );
 
+      // ✅ 여기서 한번 더 유틸 account_id=2 강제
       const processedFixed = applyUtilAccountId(processed);
 
       const res = await api.post("/Operate/AccountMembersSave", {
-        data: processed,
+        data: processedFixed,
       });
 
       if (res.data.code === 200) {
         Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
-        const fixedAll = applyUtilAccountId(activeRows);
-        setOriginalRows([...fixedAll]);
+
+        // 원본 스냅샷도 보정된 상태로 유지
+        const fixedAll = applyUtilAccountId(activeRows.map((r) => hydrateSchedule(r)));
+        setOriginalRows(fixedAll);
+
         await fetchAccountMembersAllList();
       } else {
         Swal.fire("저장 실패", res.data.message || "서버 오류", "error");
@@ -709,15 +443,12 @@ function AccountMemberSheet() {
   // =========================
   const openWorkSystemModal = async () => {
     const latest = await fetchWorkSystemList({ snapshot: true });
-
     setWsRows(latest || []);
     setWsOriginal(latest || []);
     setWsOpen(true);
   };
 
-  const closeWorkSystemModal = () => {
-    setWsOpen(false);
-  };
+  const closeWorkSystemModal = () => setWsOpen(false);
 
   const handleWsAddRow = () => {
     const newRow = {
@@ -778,19 +509,16 @@ function AccountMemberSheet() {
   };
 
   // =========================
-  // ✅ 유틸관리 모달 로직 (추가)
+  // ✅ 유틸관리 모달 로직 (기존 그대로 - 네 코드 유지)
   // =========================
   const [utilOpen, setUtilOpen] = useState(false);
 
-  // 왼쪽: /Account/AccountUtilMemberList (member_id, position_type)
   const [utilMemberRows, setUtilMemberRows] = useState([]);
   const [utilSelectedMember, setUtilSelectedMember] = useState(null);
 
-  // 가운데: /Account/AccountUtilMappingList (member_id로 조회) -> idx, account_id, member_id, name, position_type
   const [utilMappingRows, setUtilMappingRows] = useState([]);
-  const [utilSelectedMappingRowIndex, setUtilSelectedMappingRowIndex] = useState(null); // (추후 삭제 기능에 쓸 수 있음)
+  const [utilSelectedMappingRowIndex, setUtilSelectedMappingRowIndex] = useState(null);
 
-  // 오른쪽: /Account/AccountList -> account_id, account_name
   const [utilAccountRows, setUtilAccountRows] = useState([]);
   const [utilSelectedAccount, setUtilSelectedAccount] = useState(null);
 
@@ -819,7 +547,6 @@ function AccountMemberSheet() {
 
   const openUtilModal = async () => {
     try {
-      // 모달 초기화
       setUtilSelectedMember(null);
       setUtilSelectedAccount(null);
       setUtilSelectedMappingRowIndex(null);
@@ -838,9 +565,7 @@ function AccountMemberSheet() {
     }
   };
 
-  const closeUtilModal = () => {
-    setUtilOpen(false);
-  };
+  const closeUtilModal = () => setUtilOpen(false);
 
   const handleSelectUtilMember = async (row) => {
     try {
@@ -874,7 +599,6 @@ function AccountMemberSheet() {
     const position_type = utilSelectedMember.position_type;
     const account_id = utilSelectedAccount.account_id;
 
-    // 중복 방지: 같은 member_id + account_id 이미 있으면 추가 안함
     const exists = (utilMappingRows || []).some(
       (r) =>
         String(r.member_id) === String(member_id) && String(r.account_id) === String(account_id)
@@ -885,7 +609,7 @@ function AccountMemberSheet() {
     }
 
     const newRow = {
-      idx: null, // 신규
+      idx: null,
       account_id,
       member_id,
       name: utilSelectedMember.name ?? utilSelectedMember.member_name ?? "",
@@ -902,12 +626,6 @@ function AccountMemberSheet() {
     }
 
     try {
-      // 서버 스펙이 명확하지 않아서, member_id + data 함께 전송 (대부분 이 형태로 처리 가능)
-      const payload = {
-        member_id: utilSelectedMember.member_id,
-        data: utilMappingRows || [],
-      };
-
       const res = await api.post("/Account/AccountUtilMemberMappingSave", utilMappingRows);
       const ok = res?.status === 200 || res?.data?.code === 200;
 
@@ -918,7 +636,6 @@ function AccountMemberSheet() {
 
       Swal.fire("저장 완료", "유틸 매핑이 저장되었습니다.", "success");
 
-      // 저장 후 가운데 재조회
       const latest = await fetchUtilMappingList(utilSelectedMember.member_id);
       setUtilMappingRows(latest || []);
       setUtilOpen(false);
@@ -927,13 +644,15 @@ function AccountMemberSheet() {
     }
   };
 
+  // ✅ 행추가: 기본 직책 1. (유틸로 추가하고 싶으면 defaultPositionType을 6으로 바꾸면 됨)
+  //    그리고 유틸(6)인 경우 account_id는 무조건 2가 들어가도록 처리
   const handleAddRow = () => {
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
-    const defaultPositionType = "1"; // ✅ 문자열로 통일
+    const defaultPositionType = "1"; // 신규 기본 직책
     const initAccountId =
-      defaultPositionType === UTIL_POSITION ? UTIL_ACCOUNT_ID : String(defaultAccountId);
+      defaultPositionType === UTIL_POSITION ? UTIL_ACCOUNT_ID : defaultAccountId;
 
     const newRow = {
       name: "",
@@ -965,6 +684,10 @@ function AccountMemberSheet() {
       industrial_insurance: "",
       employment_insurance: "",
       note: "",
+
+      // ✅ 근무표 기본값(28칸)
+      ...makeEmptySchedule(),
+
       headoffice_note: "",
       subsidy: "",
       total: 0,
@@ -975,12 +698,28 @@ function AccountMemberSheet() {
       cor_type: "1",
     };
 
-    const fixedRow = applyUtilAccountId([newRow])[0];
-    setActiveRows((prev) => [fixedRow, ...(prev || [])]);
-    setOriginalRows((prev) => [fixedRow, ...(prev || [])]);
+    setActiveRows((prev) => [newRow, ...(prev || [])]);
+    setOriginalRows((prev) => [newRow, ...(prev || [])]);
   };
 
-  const renderTable = (table, rows, originals) => {
+  // ✅ 근무표 합계(출근+파출) 계산
+  const getScheduleTotal = useCallback(
+    (rows) => {
+      let total = 0;
+
+      (rows || []).forEach((r) => {
+        scheduleKeySet.forEach((k) => {
+          const v = String(r?.[k] ?? "");
+          if (v === "1" || v === "2") total += 1; // 출근/파출이면 +1
+        });
+      });
+
+      return total;
+    },
+    [scheduleKeySet]
+  );
+
+  const renderTable = (tableArg, rows, originals) => {
     const dateFields = new Set([
       "join_dt",
       "act_join_dt",
@@ -992,6 +731,7 @@ function AccountMemberSheet() {
       "industrial_insurance",
       "employment_insurance",
     ]);
+
     const selectFields = new Set([
       "position_type",
       "del_yn",
@@ -1001,8 +741,21 @@ function AccountMemberSheet() {
       "account_id",
       "idx",
       "cor_type",
+      // ✅ 스케줄(월~일) 칸도 select
+      ...Array.from(scheduleKeySet),
     ]);
+
     const nonEditableCols = new Set(["diner_date", "total"]);
+    const scheduleTotal = getScheduleTotal(rows);
+
+    // ✅ 주말 배경
+    const getScheduleBg = (key) => {
+      if (!scheduleKeySet.has(key)) return undefined;
+      const m = String(key).match(/^wk\d+_(\d)$/);
+      const dayIdx = m ? Number(m[1]) : -1;
+      if (dayIdx === 5 || dayIdx === 6) return "#fbe4d5"; // 토/일 배경
+      return "#fff";
+    };
 
     return (
       <MDBox
@@ -1021,6 +774,7 @@ function AccountMemberSheet() {
             minWidth: "100%",
             borderSpacing: 0,
             tableLayout: "fixed",
+            fontSize: "9px",
           },
           "& th, & td": {
             border: "1px solid #686D76",
@@ -1050,48 +804,59 @@ function AccountMemberSheet() {
           },
           "& td:nth-of-type(3), & th:nth-of-type(3)": {
             position: "sticky",
-            left: "200px",
+            left: "180px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(4), & th:nth-of-type(4)": {
             position: "sticky",
-            left: "300px",
+            left: "280px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(5), & th:nth-of-type(5)": {
             position: "sticky",
-            left: "480px",
+            left: "392px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(6), & th:nth-of-type(6)": {
-            // 계좌번호
             position: "sticky",
-            left: "580px",
+            left: "472px",
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(7), & th:nth-of-type(7)": {
             position: "sticky",
-            left: "730px",
+            left: "652px",
             background: "#f0f0f0",
             zIndex: 3,
           },
-          "thead th:nth-of-type(-n+7)": { zIndex: 5 },
+          "& td:nth-of-type(8), & th:nth-of-type(8)": {
+            position: "sticky",
+            left: "732px",
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
+          "& td:nth-of-type(9), & th:nth-of-type(9)": {
+            position: "sticky",
+            left: "812px",
+            background: "#f0f0f0",
+            zIndex: 3,
+          },
+          "thead th:nth-of-type(-n+9)": { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
           "td[contenteditable]": { minWidth: "80px", cursor: "text" },
           "& select": {
             fontSize: "12px",
             padding: "4px",
-            minWidth: "80px",
+            minWidth: "40px",
             border: "none",
             background: "transparent",
             outline: "none",
             cursor: "pointer",
           },
-          "& select.edited-cell": { color: "#d32f2f", fontWeight: 500 },
+          "& select.edited-cell": { color: "#d32f2f", fontWeight: 600 },
           "& input[type='date']": {
             fontSize: "12px",
             padding: "4px",
@@ -1103,7 +868,7 @@ function AccountMemberSheet() {
       >
         <table className="dinersheet-table">
           <thead>
-            {table.getHeaderGroups().map((headerGroup) => (
+            {tableArg.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th key={header.id} style={{ width: header.column.columnDef.size }}>
@@ -1115,7 +880,7 @@ function AccountMemberSheet() {
           </thead>
 
           <tbody>
-            {table.getRowModel().rows.map((row, rowIndex) => (
+            {tableArg.getRowModel().rows.map((row, rowIndex) => (
               <tr key={row.id}>
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
@@ -1125,7 +890,6 @@ function AccountMemberSheet() {
                   const isNumeric = numericCols.includes(colKey);
                   const isImage = imageFields.includes(colKey);
 
-                  // ✅ 이미지 변경 판정 포함
                   const normCurrent = isImage
                     ? typeof currentValue === "object" && currentValue
                       ? "__FILE__"
@@ -1150,10 +914,9 @@ function AccountMemberSheet() {
                     const updatedRows = rows.map((r, idx) => {
                       if (idx !== rowIndex) return r;
 
-                      // ✅ position_type 변경 시: 유틸(6)면 account_id = null 처리
+                      // ✅ 직책 변경 시 유틸(6)면 account_id=2 강제
                       if (colKey === "position_type") {
                         const nextPos = String(newValue);
-
                         const nextAccount =
                           nextPos === UTIL_POSITION
                             ? UTIL_ACCOUNT_ID
@@ -1161,11 +924,13 @@ function AccountMemberSheet() {
                             ? selectedAccountId || (accountList?.[0]?.account_id ?? "")
                             : r.account_id;
 
+                        const merged = hydrateSchedule(r);
+
                         return {
-                          ...r,
+                          ...merged,
                           position_type: newValue,
                           account_id: nextAccount,
-                          total: calculateTotal({ ...r, position_type: newValue }),
+                          total: calculateTotal({ ...merged, position_type: newValue }),
                         };
                       }
 
@@ -1175,39 +940,42 @@ function AccountMemberSheet() {
                           (w) => String(w.idx) === String(newValue)
                         );
 
+                        const merged = hydrateSchedule(r);
+
+                        const nextStart = selected?.start_time
+                          ? normalizeTime(selected.start_time)
+                          : merged.start_time;
+                        const nextEnd = selected?.end_time
+                          ? normalizeTime(selected.end_time)
+                          : merged.end_time;
+
                         return {
-                          ...r,
+                          ...merged,
                           idx: newValue,
-                          start_time: selected?.start_time
-                            ? normalizeTime(selected.start_time)
-                            : r.start_time,
-                          end_time: selected?.end_time
-                            ? normalizeTime(selected.end_time)
-                            : r.end_time,
+                          start_time: nextStart,
+                          end_time: nextEnd,
                           total: calculateTotal({
-                            ...r,
+                            ...merged,
                             idx: newValue,
-                            start_time: selected?.start_time
-                              ? normalizeTime(selected.start_time)
-                              : r.start_time,
-                            end_time: selected?.end_time
-                              ? normalizeTime(selected.end_time)
-                              : r.end_time,
+                            start_time: nextStart,
+                            end_time: nextEnd,
                           }),
                         };
                       }
 
+                      const merged = hydrateSchedule(r);
                       return {
-                        ...r,
+                        ...merged,
                         [colKey]: newValue,
-                        total: calculateTotal({ ...r, [colKey]: newValue }),
+                        total: calculateTotal({ ...merged, [colKey]: newValue }),
                       };
                     });
 
+                    // ✅ 혹시 모를 케이스 대비: 한번 더 유틸 account_id 보정
                     setActiveRows(applyUtilAccountId(updatedRows));
                   };
 
-                  // ✅ 이미지 컬럼 렌더링 (RecSheet 방식 그대로)
+                  // ✅ 이미지 컬럼
                   if (isImage) {
                     const value = currentValue ?? "";
                     const hasImage = !!value;
@@ -1221,7 +989,7 @@ function AccountMemberSheet() {
                       >
                         <input
                           type="file"
-                          accept="image/*,application/pdf"
+                          accept="image/*"
                           id={inputId}
                           style={{ display: "none" }}
                           onChange={(e) => {
@@ -1316,10 +1084,14 @@ function AccountMemberSheet() {
                     );
                   }
 
+                  // ✅ 셀 배경 (토/일)
+                  const cellBg = getScheduleBg(colKey);
+
                   return (
                     <td
                       key={cell.id}
                       style={{
+                        background: cellBg,
                         textAlign: [
                           "rrn",
                           "account_number",
@@ -1342,6 +1114,8 @@ function AccountMemberSheet() {
                           ? "center"
                           : colKey === "salary"
                           ? "right"
+                          : scheduleKeySet.has(colKey)
+                          ? "center"
                           : "left",
                       }}
                       contentEditable={isEditable && !isSelect && !isDate}
@@ -1380,20 +1154,6 @@ function AccountMemberSheet() {
                             onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
                             getOptionLabel={(opt) => opt?.label ?? ""}
                             isOptionEqualToValue={(opt, val) => opt.value === val.value}
-                            renderOption={(props, option) => (
-                              <li
-                                {...props}
-                                style={{
-                                  fontSize: "12px",
-                                  paddingTop: 4,
-                                  paddingBottom: 4,
-                                  color: isChanged ? "#d32f2f" : "inherit",
-                                  fontWeight: isChanged ? 600 : 400,
-                                }}
-                              >
-                                {option.label}
-                              </li>
-                            )}
                             renderInput={(params) => (
                               <TextField
                                 {...params}
@@ -1447,20 +1207,6 @@ function AccountMemberSheet() {
                                 onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
                                 getOptionLabel={(opt) => opt?.label ?? ""}
                                 isOptionEqualToValue={(opt, val) => opt.value === val.value}
-                                renderOption={(props, option) => (
-                                  <li
-                                    {...props}
-                                    style={{
-                                      fontSize: "12px",
-                                      paddingTop: 4,
-                                      paddingBottom: 4,
-                                      color: isAccountChanged ? "#d32f2f" : "inherit",
-                                      fontWeight: isAccountChanged ? 600 : 400,
-                                    }}
-                                  >
-                                    {option.label}
-                                  </li>
-                                )}
                                 renderInput={(params) => (
                                   <TextField
                                     {...params}
@@ -1494,7 +1240,10 @@ function AccountMemberSheet() {
                                     fontSize: 18,
                                     color: isAccountChanged ? "#d32f2f" : "inherit",
                                   },
-                                  "& .MuiAutocomplete-option": { fontSize: "12px", minHeight: 28 },
+                                  "& .MuiAutocomplete-option": {
+                                    fontSize: "12px",
+                                    minHeight: 28,
+                                  },
                                 }}
                                 ListboxProps={{ style: { fontSize: "12px" } }}
                               />
@@ -1510,6 +1259,7 @@ function AccountMemberSheet() {
                               background: "transparent",
                               cursor: "pointer",
                               border: "none",
+                              textAlign: scheduleKeySet.has(colKey) ? "center" : "left",
                             }}
                           >
                             {colKey === "cor_type" &&
@@ -1561,6 +1311,15 @@ function AccountMemberSheet() {
                                 ))}
                               </>
                             )}
+
+                            {/* ✅ 월~일 근무표 칸: 선택/출근/파출 */}
+                            {scheduleKeySet.has(colKey) && (
+                              <>
+                                <option value="">선택</option>
+                                <option value="1">출근</option>
+                                <option value="2">파출</option>
+                              </>
+                            )}
                           </select>
                         )
                       ) : isDate ? (
@@ -1579,6 +1338,40 @@ function AccountMemberSheet() {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr>
+              {tableArg.getVisibleFlatColumns().map((col) => {
+                const key = col.columnDef.accessorKey;
+
+                // 라벨은 비고(note) 컬럼 위치에 표시
+                if (key === "note") {
+                  return (
+                    <td
+                      key={`foot-total-${col.id}`}
+                      style={{ fontWeight: 700, background: "#f0f0f0" }}
+                    >
+                      합계
+                    </td>
+                  );
+                }
+
+                // 근무표 28칸 영역에만 합계 표시
+                if (scheduleKeySet.has(key)) {
+                  return (
+                    <td
+                      key={`foot-total-${col.id}`}
+                      style={{ fontWeight: 700, background: "#fff" }}
+                    >
+                      {scheduleTotal}
+                    </td>
+                  );
+                }
+
+                // 나머지는 빈칸
+                return <td key={`foot-total-${col.id}`} style={{ background: "#f0f0f0" }} />;
+              })}
+            </tr>
+          </tfoot>
         </table>
       </MDBox>
     );
@@ -1597,7 +1390,6 @@ function AccountMemberSheet() {
 
   return (
     <>
-      {/* 상단 필터 + 버튼 (모바일 대응) */}
       <MDBox
         pt={1}
         pb={1}
@@ -1628,16 +1420,14 @@ function AccountMemberSheet() {
           <option value="Y">퇴사자</option>
         </TextField>
 
-        {/* ✅ (수정) 거래처 select → Autocomplete(검색 가능) */}
         <Autocomplete
           size="small"
           sx={{ minWidth: 200 }}
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => {
-            if (!opt) return;
             setLoading(true);
-            setSelectedAccountId(opt.value);
+            setSelectedAccountId(opt ? opt.value : "");
           }}
           inputValue={accountInput}
           onInputChange={(_, newValue) => setAccountInput(newValue)}
@@ -1667,27 +1457,17 @@ function AccountMemberSheet() {
           )}
         />
 
-        <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
+        {/* <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
           근무형태 관리
         </MDButton>
 
-        {/* ✅ 유틸관리 버튼 추가 */}
         <MDButton variant="gradient" color="warning" onClick={openUtilModal}>
           유틸관리
         </MDButton>
 
-        <MDButton
-          variant="gradient"
-          color="dark"
-          onClick={handleExcelDownloadAllAccounts}
-          disabled={excelDownloading}
-        >
-          전체 거래처 엑셀
-        </MDButton>
-
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>
           행추가
-        </MDButton>
+        </MDButton> */}
 
         <MDButton variant="gradient" color="info" onClick={handleSave}>
           저장
@@ -1821,6 +1601,7 @@ function AccountMemberSheet() {
 
                         <td className={isNewRow || changedWorkSystem ? "edited-cell" : ""}>
                           <input
+                            style={{ fontSize: "10px" }}
                             value={r.work_system ?? ""}
                             onChange={(e) => handleWsChange(i, "work_system", e.target.value)}
                             placeholder="예) 주5일(09~18)"
@@ -1868,7 +1649,7 @@ function AccountMemberSheet() {
       </Modal>
 
       {/* =========================
-          ✅ 유틸관리 모달 (추가)
+          ✅ 유틸관리 모달 (네 코드 그대로)
          ========================= */}
       <Modal open={utilOpen} onClose={closeUtilModal}>
         <Box
@@ -2186,17 +1967,20 @@ function AccountMemberSheet() {
       </Modal>
 
       {/* =========================
-          ✅ 이미지 뷰어 (추가)
+          ✅ 이미지 뷰어
          ========================= */}
-      {viewFile?.src && (
+      {viewImageSrc && (
         <div
           style={{
             position: "fixed",
             top: 0,
             left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "transparent",
+            width: "50vw",
+            height: "90vh",
+            backgroundColor: "rgba(0,0,0,0.7)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
             zIndex: 9999,
           }}
           onClick={handleCloseViewer}
@@ -2204,197 +1988,61 @@ function AccountMemberSheet() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              position: "absolute",
-              left: viewerPos.x,
-              top: viewerPos.y,
-              width: isMobile ? "92vw" : "48vw",
-              height: isMobile ? "92vh" : "88vh",
+              position: "relative",
+              maxWidth: isMobile ? "95%" : "80%",
+              maxHeight: isMobile ? "90%" : "80%",
             }}
           >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                backgroundColor: "rgba(0,0,0,0.7)",
-                borderRadius: 8,
-              }}
-            />
-
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 32,
-                cursor: "move",
-                zIndex: 1002,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "0 8px",
-                color: "#fff",
-                fontSize: 12,
-                userSelect: "none",
-              }}
-              onMouseDown={handleDragStart}
-            >
-              <span>미리보기</span>
-              <button
-                onClick={handleCloseViewer}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: 14,
-                }}
-              >
-                X
-              </button>
-            </div>
-
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                height: "100%",
-                zIndex: 1001,
-                paddingTop: 32,
-                boxSizing: "border-box",
-                overflow: "hidden",
-              }}
-            >
-              {viewFile.isPdf ? (
-                <Box
-                  sx={{
-                    width: "100%",
-                    height: "100%",
-                    bgcolor: "#111",
-                    overflow: "auto",
-                    position: "relative",
-                  }}
-                >
+            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
+              {({ zoomIn, zoomOut, resetTransform }) => (
+                <>
                   <div
                     style={{
-                      width: "100%",
-                      height: "100%",
-                      transform: `scale(${pdfScale})`,
-                      transformOrigin: "top left",
+                      position: "absolute",
+                      top: 8,
+                      right: 8,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      zIndex: 1000,
                     }}
                   >
-                    <iframe
-                      title="pdf-preview"
-                      src={`${viewFile.src}#view=FitH`}
-                      style={{ width: "100%", height: "100%", border: 0 }}
-                    />
+                    <button
+                      onClick={zoomIn}
+                      style={{ border: "none", padding: 6, cursor: "pointer" }}
+                    >
+                      +
+                    </button>
+                    <button
+                      onClick={zoomOut}
+                      style={{ border: "none", padding: 6, cursor: "pointer" }}
+                    >
+                      -
+                    </button>
+                    <button
+                      onClick={resetTransform}
+                      style={{ border: "none", padding: 6, cursor: "pointer" }}
+                    >
+                      ⟳
+                    </button>
+                    <button
+                      onClick={handleCloseViewer}
+                      style={{ border: "none", padding: 6, cursor: "pointer" }}
+                    >
+                      X
+                    </button>
                   </div>
-                </Box>
-              ) : (
-                <div
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    overflow: "auto",
-                    position: "relative",
-                  }}
-                >
-                  <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-                    {({ zoomIn, zoomOut, resetTransform }) => (
-                      <>
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 8,
-                            right: 8,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 4,
-                            zIndex: 1000,
-                            pointerEvents: "auto",
-                          }}
-                        >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              zoomIn();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            +
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              zoomOut();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            -
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              resetTransform();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            ⟳
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              handleCloseViewer();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            X
-                          </button>
-                        </div>
 
-                        <TransformComponent>
-                          <img
-                            src={encodeURI(viewFile.src)}
-                            alt="미리보기"
-                            style={{
-                              maxWidth: "100%",
-                              maxHeight: "100%",
-                              height: "auto",
-                              width: "auto",
-                              borderRadius: 8,
-                              display: "block",
-                            }}
-                          />
-                        </TransformComponent>
-                      </>
-                    )}
-                  </TransformWrapper>
-                </div>
+                  <TransformComponent>
+                    <img
+                      src={encodeURI(viewImageSrc)}
+                      alt="미리보기"
+                      style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }}
+                    />
+                  </TransformComponent>
+                </>
               )}
-            </div>
+            </TransformWrapper>
           </div>
         </div>
       )}
@@ -2402,4 +2050,4 @@ function AccountMemberSheet() {
   );
 }
 
-export default AccountMemberSheet;
+export default AccountMemberRecordMainTableTab;

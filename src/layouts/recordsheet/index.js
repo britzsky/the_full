@@ -112,7 +112,7 @@ const formatMoneyLike = (v) => {
 
 // ✅ 셀 비교용 헬퍼
 const normalizeCell = (cell) => {
-  if (!cell) return { type: "", start: "", end: "", salary: 0, memo: "", pay_yn: "N" };
+  if (!cell) return { type: "", start: "", end: "", salary: 0, note: "", pay_yn: "N" };
 
   const toNum = (v) => {
     if (v == null || v === "") return 0;
@@ -127,7 +127,7 @@ const normalizeCell = (cell) => {
     start: cell.start || cell.start_time || "",
     end: cell.end || cell.end_time || "",
     salary: toNum(cell.salary),
-    memo: cell.memo ?? cell.note ?? "",
+    note: cell.note ?? cell.note ?? "",
     pay_yn: payYn,
   };
 };
@@ -140,7 +140,7 @@ const isCellEqual = (a, b) => {
     na.start === nb.start &&
     na.end === nb.end &&
     na.salary === nb.salary &&
-    na.memo === nb.memo &&
+    na.note === nb.note &&
     na.pay_yn === nb.pay_yn
   );
 };
@@ -159,7 +159,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
     start: "",
     end: "",
     salary: "",
-    memo: "",
+    note: "",
     pay_yn: "N",
     ...rawVal,
   };
@@ -208,7 +208,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
       updatedValue.start_time = "";
       updatedValue.end_time = "";
       updatedValue.salary = "";
-      updatedValue.memo = "";
+      updatedValue.note = "";
       updatedValue.pay_yn = "N";
     }
 
@@ -218,9 +218,9 @@ const AttendanceCell = React.memo(function AttendanceCell({
       if (!nextIsDispatch) updatedValue.pay_yn = "N";
     }
 
-    // 🔹 초과근무 자동 계산
+    // 🔹 초과/조기퇴근 자동 계산 (note에 0.5 단위로 반영)
     if (
-      updatedValue.type === "3" &&
+      (updatedValue.type === "3" || updatedValue.type === "17") &&
       updatedValue.start &&
       updatedValue.end &&
       (field === "start" || field === "end")
@@ -233,12 +233,21 @@ const AttendanceCell = React.memo(function AttendanceCell({
       const baseEnd = parseTime(org.org_end_time);
 
       if (start && end && baseStart && baseEnd) {
-        const diffMinutes = end.diff(start, "minute") - baseEnd.diff(baseStart, "minute");
+        const workedMinutes = end.diff(start, "minute");
+        const baseMinutes = baseEnd.diff(baseStart, "minute");
+        const diffMinutes = workedMinutes - baseMinutes; // 초과면 +, 조기퇴근이면 -
 
-        updatedValue.memo =
-          diffMinutes > 0
-            ? (Math.floor(diffMinutes / 60) + (diffMinutes % 60 >= 30 ? 0.5 : 0)).toString()
-            : "";
+        // 30분 단위로 환산(0.5)
+        const abs = Math.abs(diffMinutes);
+        const units = Math.floor(abs / 60) + (abs % 60 >= 30 ? 0.5 : 0);
+
+        if (updatedValue.type === "3") {
+          // 초과: +일 때만 표시
+          updatedValue.note = diffMinutes > 0 ? String(units) : "";
+        } else if (updatedValue.type === "17") {
+          // 조기퇴근: -일 때만 표시
+          updatedValue.note = diffMinutes < 0 ? String(-units) : "";
+        }
       }
     }
 
@@ -269,7 +278,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
         ))}
       </select>
 
-      {["1", "2", "3", "5", "6", "7", "8"].includes(val.type) && (
+      {["1", "2", "3", "5", "6", "7", "8", "17"].includes(val.type) && (
         <>
           <select
             value={val.start}
@@ -336,8 +345,8 @@ const AttendanceCell = React.memo(function AttendanceCell({
         <input
           type="text"
           placeholder={val.type === "3" ? "초과" : val.type === "17" ? "조기퇴근" : "대체휴무"}
-          value={val.memo ?? ""}
-          onChange={(e) => handleChange("memo", e.target.value)}
+          value={val.note ?? ""}
+          onChange={(e) => handleChange("note", e.target.value)}
           style={{
             fontSize: "0.725rem",
             textAlign: "center",
@@ -533,7 +542,12 @@ function RecordSheet() {
     const qLower = q.toLowerCase();
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((a) =>
+        String(a?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
@@ -691,7 +705,11 @@ function RecordSheet() {
           (realEnd.isBefore(monthEnd) || realEnd.isSame(monthEnd, "day"));
 
         const fromDay = startInMonth ? realStart.date() : realStart.isAfter(monthEnd) ? null : 1;
-        const toDay = endInMonth ? realEnd.date() : realEnd.isBefore(monthStart) ? null : daysInThisMonth;
+        const toDay = endInMonth
+          ? realEnd.date()
+          : realEnd.isBefore(monthStart)
+          ? null
+          : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -760,8 +778,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                  ? "미지급"
-                  : "부분"
+                ? "미지급"
+                : "부분"
               : "-";
 
           return {
@@ -789,9 +807,7 @@ function RecordSheet() {
   };
 
   const handlePayRangeApply = async () => {
-    const selectedIds = Object.keys(payRangeSelected || {}).filter(
-      (k) => payRangeSelected[k]
-    );
+    const selectedIds = Object.keys(payRangeSelected || {}).filter((k) => payRangeSelected[k]);
     if (!selectedIds.length) {
       Swal.fire("선택 필요", "지급 처리할 인원을 선택하세요.", "warning");
       return;
@@ -839,13 +855,13 @@ function RecordSheet() {
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-      src?.record_type ??
-      src?.work_type ??
-      src?.recordType ??
-      src?.workType ??
-      src?.work_kind ??
-      src?.work_cd ??
-      "",
+        src?.record_type ??
+        src?.work_type ??
+        src?.recordType ??
+        src?.workType ??
+        src?.work_kind ??
+        src?.work_cd ??
+        "",
       ""
     );
 
@@ -916,11 +932,7 @@ function RecordSheet() {
     if (hasPivotDayKey || hasDaysField) return arr;
 
     const hasLongDay = arr.some(
-      (r) =>
-        r?.record_date != null ||
-        r?.record_day != null ||
-        r?.day != null ||
-        r?.date != null
+      (r) => r?.record_date != null || r?.record_day != null || r?.day != null || r?.date != null
     );
 
     if (!hasLongDay) return arr;
@@ -972,8 +984,8 @@ function RecordSheet() {
       const s = safeTrim(v.start_time ?? v.start ?? "", "");
       const e = safeTrim(v.end_time ?? v.end ?? "", "");
       const sal = safeTrim(v.salary ?? "", "");
-      const memo = safeTrim(v.memo ?? v.note ?? "", "");
-      return !t && !s && !e && !sal && !memo;
+      const note = safeTrim(v.note ?? v.note ?? "", "");
+      return !t && !s && !e && !sal && !note;
     };
 
     const dedupedRows = (() => {
@@ -1036,35 +1048,33 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-            ...source,
-            type: t,
-            gubun: safeTrim(source.gubun, baseGubun),
-            position_type: safeTrim(source.position_type, basePt),
-            start: source.start_time || source.start || "",
-            end: source.end_time || source.end || "",
-            start_time: source.start_time || "",
-            end_time: source.end_time || "",
-            salary: source.salary || "",
-            memo: source.memo ?? source.note ?? "",
-            pay_yn:
-              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y"
-                ? "Y"
-                : "N",
-          }
+              ...source,
+              type: t,
+              gubun: safeTrim(source.gubun, baseGubun),
+              position_type: safeTrim(source.position_type, basePt),
+              start: source.start_time || source.start || "",
+              end: source.end_time || source.end || "",
+              start_time: source.start_time || "",
+              end_time: source.end_time || "",
+              salary: source.salary || "",
+              note: source.note ?? source.note ?? "",
+              pay_yn:
+                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+            }
           : {
-            account_id: item.account_id,
-            member_id: item.member_id,
-            gubun: baseGubun,
-            position_type: basePt,
-            type: "",
-            start: "",
-            end: "",
-            start_time: "",
-            end_time: "",
-            salary: "",
-            memo: "",
-            pay_yn: "N",
-          };
+              account_id: item.account_id,
+              member_id: item.member_id,
+              gubun: baseGubun,
+              position_type: basePt,
+              type: "",
+              start: "",
+              end: "",
+              start_time: "",
+              end_time: "",
+              salary: "",
+              note: "",
+              pay_yn: "N",
+            };
       }
 
       return { ...base, ...dayEntries };
@@ -1132,7 +1142,10 @@ function RecordSheet() {
       const s = cell.trim();
       if (!s) return ["", "", "", ""];
 
-      const lines = s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const lines = s
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
       let typeLabel = lines[0] || "";
       let start = "";
       let end = "";
@@ -1165,8 +1178,7 @@ function RecordSheet() {
     const start = cell.start || cell.start_time || "";
     const end = cell.end || cell.end_time || "";
 
-    const salaryRaw =
-      cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
+    const salaryRaw = cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
     const isDispatchType = String(t) === "5" || String(t) === "6";
     const payYn = String(cell?.pay_yn ?? "").toUpperCase() === "Y";
     const salary = isDispatchType ? formatMoneyLike(salaryRaw) : "";
@@ -1186,8 +1198,7 @@ function RecordSheet() {
     const start = cell.start || cell.start_time || "";
     const end = cell.end || cell.end_time || "";
 
-    const salaryRaw =
-      cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
+    const salaryRaw = cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
     const isDispatchType = String(t) === "5" || String(t) === "6";
     const salary = isDispatchType ? formatMoneyLike(salaryRaw) : "";
 
@@ -1330,16 +1341,9 @@ function RecordSheet() {
           ...Array.from({ length: dateList.length }, () => ({ width: 14 })),
         ];
 
-        addSectionTitle(
-          wsAttend,
-          `■ ${accName} (${accId})  /  ${rangeLabel}`,
-          attendColCount
-        );
+        addSectionTitle(wsAttend, `■ ${accName} (${accId})  /  ${rangeLabel}`, attendColCount);
 
-        const header = [
-          "직원명",
-          ...dateList.map((d) => `${d.format("M/D")}`),
-        ];
+        const header = ["직원명", ...dateList.map((d) => `${d.format("M/D")}`)];
         wsAttend.addRow(header);
         styleHeaderRow(wsAttend, wsAttend.lastRow.number);
 
@@ -1362,7 +1366,11 @@ function RecordSheet() {
             (realEnd.isBefore(monthEnd) || realEnd.isSame(monthEnd, "day"));
 
           const fromDay = startInMonth ? realStart.date() : realStart.isAfter(monthEnd) ? null : 1;
-          const toDay = endInMonth ? realEnd.date() : realEnd.isBefore(monthStart) ? null : daysInThisMonth;
+          const toDay = endInMonth
+            ? realEnd.date()
+            : realEnd.isBefore(monthStart)
+            ? null
+            : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -1384,8 +1392,9 @@ function RecordSheet() {
             const entry = memberMap.get(mid);
             for (let d = 1; d <= daysInThisMonth; d++) {
               const key = `day_${d}`;
-              const dateKey = dayjs(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`)
-                .format("YYYY-MM-DD");
+              const dateKey = dayjs(
+                `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+              ).format("YYYY-MM-DD");
               entry.cells[dateKey] = row[key];
             }
           });
@@ -1503,18 +1512,12 @@ function RecordSheet() {
           d.period_pay && Number(d.period_pay) > 0
             ? d.period_pay
             : d.salary !== "" && d.salary != null
-              ? d.salary
-              : d.total;
+            ? d.salary
+            : d.total;
         const totalCnt = Number(d.total_cnt || 0);
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
-          totalCnt > 0
-            ? paidCnt === totalCnt
-              ? "지급"
-              : paidCnt === 0
-                ? "미지급"
-                : "부분"
-            : "";
+          totalCnt > 0 ? (paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분") : "";
 
         wsDispatch.addRow([
           accName,
@@ -2041,13 +2044,8 @@ function RecordSheet() {
       (acc, r) => acc + (Number(r.total_pay || 0) || 0),
       0
     );
-    const selectedRows = (payRangeRows || []).filter(
-      (r) => payRangeSelected?.[r.member_id]
-    );
-    const selectedSum = selectedRows.reduce(
-      (acc, r) => acc + (Number(r.total_pay || 0) || 0),
-      0
-    );
+    const selectedRows = (payRangeRows || []).filter((r) => payRangeSelected?.[r.member_id]);
+    const selectedSum = selectedRows.reduce((acc, r) => acc + (Number(r.total_pay || 0) || 0), 0);
     return {
       totalCount: payRangeRows?.length || 0,
       selectedCount: selectedRows.length,
@@ -2060,8 +2058,7 @@ function RecordSheet() {
     (payRangeRows || []).length > 0 &&
     (payRangeRows || []).every((r) => payRangeSelected?.[r.member_id]);
   const payRangeSomeSelected =
-    (payRangeRows || []).some((r) => payRangeSelected?.[r.member_id]) &&
-    !payRangeAllSelected;
+    (payRangeRows || []).some((r) => payRangeSelected?.[r.member_id]) && !payRangeAllSelected;
 
   const excelModalBtn = {
     outline: {
@@ -2358,7 +2355,7 @@ function RecordSheet() {
             start_time: val.start || "",
             end_time: val.end || "",
             salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
-            note: val.memo || "",
+            note: val.note || "",
             pay_yn: String(val?.pay_yn ?? "N").toUpperCase() === "Y" ? "Y" : "N",
             position: row.position || "",
             org_start_time,
@@ -3066,17 +3063,14 @@ function RecordSheet() {
                             size="small"
                             sx={payCheckboxSx}
                             checked={!!payRangeSelected?.[r.member_id]}
-                            onChange={(e) =>
-                              handlePayRangeToggleOne(r.member_id, e.target.checked)
-                            }
+                            onChange={(e) => handlePayRangeToggleOne(r.member_id, e.target.checked)}
                           />
                         </td>
                         <td>{r.name || ""}</td>
                         <td>{r.phone || ""}</td>
                         <td>{formatMoneyLike(r.total_pay || 0)}</td>
                         <td>
-                          {r.pay_status}{" "}
-                          {r.total_cnt > 0 ? `(${r.paid_cnt}/${r.total_cnt})` : ""}
+                          {r.pay_status} {r.total_cnt > 0 ? `(${r.paid_cnt}/${r.total_cnt})` : ""}
                         </td>
                       </tr>
                     ))}

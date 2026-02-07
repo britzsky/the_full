@@ -138,7 +138,7 @@ const isCellEqual = (a, b) => {
 };
 
 // ✅ 출근현황 셀
-const AttendanceCell = React.note(function AttendanceCell({
+const AttendanceCell = React.memo(function AttendanceCell({
   getValue,
   row,
   column,

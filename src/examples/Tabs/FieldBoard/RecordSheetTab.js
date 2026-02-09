@@ -63,6 +63,38 @@ const TYPE_LABEL = {
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
 const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
+const isDispatchTypeValue = (v) => {
+  const t = safeTrim(v, "");
+  if (!t) return false;
+  return t === "5" || t === "6" || t === "파출" || t === "직원파출";
+};
+
+const getDispatchKeys = (row) => {
+  if (!row) return [];
+  const keys = [];
+  const mid = safeTrim(row.member_id ?? row.memberId ?? "", "");
+  if (mid) keys.push(String(mid));
+  const name = safeTrim(row.name ?? "", "");
+  if (name) keys.push(name);
+  return keys;
+};
+
+const getDispatchStatFromMap = (map, row) => {
+  if (!map || !row) return null;
+  const keys = getDispatchKeys(row);
+  for (const k of keys) {
+    if (map.has(k)) return map.get(k);
+  }
+  return null;
+};
+
+const toNumberLike = (v) => {
+  const cleaned = String(v ?? "").replace(/[^0-9.-]/g, "").trim();
+  if (!cleaned) return 0;
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
+};
+
 // ✅ 은행명 추출
 const extractBankName = (accountNumber) => {
   const s = safeTrim(accountNumber, "");
@@ -636,7 +668,71 @@ function RecordSheet() {
   ) => {
     const normalizedSheetRows = normalizeSheetRows(sheetRowsArg, daysInMonthArg);
 
-    const newAttendance = (normalizedSheetRows || []).map((item) => {
+    const parseEmployDispatchAmount = (v) => {
+      if (v == null || v === "") return "";
+      const s = String(v);
+      const matches = s.match(/([0-9][0-9,]*)/g);
+      if (!matches || matches.length === 0) return "";
+      const last = matches[matches.length - 1];
+      const n = Number(String(last).replace(/,/g, ""));
+      return Number.isNaN(n) ? "" : n;
+    };
+
+    const memberDispatchAmountMap = new Map();
+    (memberRowsArg || []).forEach((m) => {
+      const mid = m?.member_id;
+      if (!mid) return;
+      const amt = parseEmployDispatchAmount(m?.employ_dispatch);
+      if (amt !== "") memberDispatchAmountMap.set(String(mid), amt);
+    });
+
+    // ✅ member_id 기준 중복 제거 (동명이인/중복 row 병합)
+    const isEmptyDay = (v) => {
+      if (!v) return true;
+      const t = safeTrim(v.type ?? "", "");
+      const s = safeTrim(v.start_time ?? v.start ?? "", "");
+      const e = safeTrim(v.end_time ?? v.end ?? "", "");
+      const sal = safeTrim(v.salary ?? "", "");
+      const note = safeTrim(v.note ?? v.note ?? "", "");
+      return !t && !s && !e && !sal && !note;
+    };
+
+    const dedupedRows = (() => {
+      const map = new Map();
+      const passthrough = [];
+
+      (normalizedSheetRows || []).forEach((item) => {
+        const mid = item?.member_id;
+        if (!mid) {
+          passthrough.push(item);
+          return;
+        }
+
+        if (!map.has(mid)) {
+          map.set(mid, { ...item });
+          return;
+        }
+
+        const target = map.get(mid);
+        for (let d = 1; d <= daysInMonthArg; d++) {
+          const key = `day_${d}`;
+          const curr = target[key];
+          const next = item[key];
+          if (isEmptyDay(curr) && !isEmptyDay(next)) {
+            target[key] = next;
+          }
+        }
+
+        if (!target.day_default && item.day_default) target.day_default = item.day_default;
+        if (!target.position && item.position) target.position = item.position;
+        if (!target.position_type && item.position_type) target.position_type = item.position_type;
+        if (!target.gubun && item.gubun) target.gubun = item.gubun;
+      });
+
+      return [...map.values(), ...passthrough];
+    })();
+
+    const newAttendance = (dedupedRows || []).map((item) => {
       const member = (memberRowsArg || []).find((m) => m.member_id === item.member_id);
 
       const baseGubun = safeTrim(item.gubun ?? item.day_default?.gubun, "nor");
@@ -658,6 +754,8 @@ function RecordSheet() {
         const source = getDaySource(item, d) || item[key] || null;
 
         const t = pickType(source);
+        const memberDispatchAmount = memberDispatchAmountMap.get(String(item.member_id)) ?? "";
+        const isEmployeeDispatch = String(t) === "6" || String(t) === "직원파출";
 
         dayEntries[key] = source
           ? {
@@ -669,8 +767,10 @@ function RecordSheet() {
               end: source.end_time || source.end || "",
               start_time: source.start_time || "",
               end_time: source.end_time || "",
-              salary: source.salary || "",
+              salary: isEmployeeDispatch ? memberDispatchAmount : source.salary || "",
               note: source.note ?? source.note ?? "",
+              pay_yn:
+                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
             }
           : {
               account_id: item.account_id,
@@ -1443,6 +1543,31 @@ function RecordSheet() {
     },
   });
 
+  const dispatchAmountMap = useMemo(() => {
+    const map = new Map();
+    (attendanceRows || []).forEach((row) => {
+      const keys = getDispatchKeys(row);
+      if (keys.length === 0) return;
+      let totalCnt = 0;
+      let totalPay = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = row?.[`day_${d}`];
+        if (!cell) continue;
+        const t = safeTrim(cell?.type ?? "", "");
+        if (!isDispatchTypeValue(t)) continue;
+        totalCnt += 1;
+        totalPay += toNumberLike(cell?.salary);
+      }
+      if (totalCnt > 0 || totalPay > 0) {
+        const stat = { totalCnt, totalPay };
+        keys.forEach((k) => {
+          if (!map.has(k)) map.set(k, stat);
+        });
+      }
+    });
+    return map;
+  }, [attendanceRows, daysInMonth]);
+
   const employeeTable = useReactTable({
     data: employeeRowsView,
     columns: [
@@ -1452,7 +1577,6 @@ function RecordSheet() {
       { header: "직원파출", accessorKey: "employ_dispatch", size: "3%", cell: ReadonlyCell },
       { header: "초과", accessorKey: "over_work", size: "3%", cell: ReadonlyCell },
       { header: "결근", accessorKey: "non_work", size: "3%", cell: ReadonlyCell },
-      { header: "비고", accessorKey: "note", size: "20%", cell: ReadonlyCell },
     ],
     getCoreRowModel: getCoreRowModel(),
   });
@@ -1479,7 +1603,26 @@ function RecordSheet() {
         size: "3%",
         cell: (props) => <DispatchEditableCell {...props} field="account_number" />,
       },
-      { header: "금액", accessorKey: "total", size: "15%", cell: ReadonlyCell },
+      {
+        header: "금액",
+        accessorKey: "total",
+        size: "15%",
+        cell: ({ row, getValue }) => {
+          const stat = getDispatchStatFromMap(dispatchAmountMap, row.original);
+          if (!stat) {
+            return <span style={{ fontSize: "0.75rem" }}>0회</span>;
+          }
+          const cnt = Number(stat.totalCnt || 0);
+          const pay = Number(stat.totalPay || 0);
+          if (cnt <= 0) return <span style={{ fontSize: "0.75rem" }}>0회</span>;
+          const payText = pay > 0 ? `${formatMoneyLike(pay)}원` : "-";
+          return (
+            <span style={{ fontSize: "0.75rem" }}>
+              {cnt}회, {payText}
+            </span>
+          );
+        },
+      },
       {
         header: "관리",
         id: "actions",
@@ -1487,7 +1630,7 @@ function RecordSheet() {
         cell: ({ row }) => <DispatchActionCell row={row} onToggle={handleToggleDispatch} />,
       },
     ],
-    [handleToggleDispatch]
+    [dispatchAmountMap, handleToggleDispatch]
   );
 
   const dispatchTable = useReactTable({

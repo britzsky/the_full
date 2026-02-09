@@ -63,7 +63,19 @@ function AccountPurchaseTallyTab() {
   // =========================================
   // ✅ 숫자(콤마 대상) 컬럼
   // =========================================
-  const MONEY_KEYS = useMemo(() => ["qty", "unitPrice", "amount"], []);
+  const MONEY_KEYS = useMemo(
+    () => [
+      "cons_tax",
+      "cons_vat",
+      "cons_free",
+      "cons_total",
+      "food_tax",
+      "food_vat",
+      "food_free",
+      "food_total",
+    ],
+    []
+  );
 
   const stripComma = useCallback((v) => {
     if (v === null || v === undefined) return "";
@@ -189,7 +201,7 @@ function AccountPurchaseTallyTab() {
     "& th": {
       backgroundColor: "#fef6e4",
       position: "sticky",
-      top: 43,
+      top: 0,
       zIndex: 2,
       borderCollapse: "separate",
     },
@@ -206,14 +218,25 @@ function AccountPurchaseTallyTab() {
     () => [
       { header: "사업장", accessorKey: "account_name", size: 120 },
       { header: "날짜", accessorKey: "saleDate", size: 100 },
-      { header: "상품명", accessorKey: "name", size: 180 },
-      { header: "구분", accessorKey: "itemType", size: 90 },
-      { header: "수량", accessorKey: "qty", size: 80 },
-      { header: "단가", accessorKey: "unitPrice", size: 80 },
-      { header: "금액", accessorKey: "amount", size: 80 },
-      { header: "VAT", accessorKey: "taxType", size: 90 },
-      { header: "증빙자료사진", accessorKey: "receipt_image", size: 200 },
-      { header: "기타", accessorKey: "note", size: 200 },
+      { header: "구매처", accessorKey: "purchase_name", size: 160 },
+
+      // 소모품
+      { header: "과세", accessorKey: "cons_tax", size: 90 },
+      { header: "부가세", accessorKey: "cons_vat", size: 90 },
+      { header: "면세", accessorKey: "cons_free", size: 90 },
+      { header: "합계", accessorKey: "cons_total", size: 90 },
+
+      // 식자재
+      { header: "과세", accessorKey: "food_tax", size: 90 },
+      { header: "부가세", accessorKey: "food_vat", size: 90 },
+      { header: "면세", accessorKey: "food_free", size: 90 },
+      { header: "합계", accessorKey: "food_total", size: 90 },
+
+      // 기타
+      { header: "증빙자료 사진▼", accessorKey: "receipt_image", size: 160 },
+
+      // 이체일
+      { header: "이체일", accessorKey: "transfer_dt", size: 110 },
     ],
     []
   );
@@ -465,7 +488,12 @@ function AccountPurchaseTallyTab() {
     const qLower = q.toLowerCase();
     const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((o) =>
+        String(o?.label || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       handleAccountChange(null, partial);
       setAccountInput(partial.label || q);
@@ -629,6 +657,7 @@ function AccountPurchaseTallyTab() {
 
       {/* 🔹 테이블 */}
       <MDBox pt={0} pb={2} sx={tableSx}>
+        {/* ✅ (NEW) 첨부 이미지처럼 타이틀바 + 우측 버튼 */}
         <MDBox
           py={1}
           px={1}
@@ -643,7 +672,7 @@ function AccountPurchaseTallyTab() {
           sx={{ position: "sticky", top: 0, zIndex: 3 }}
         >
           <MDTypography variant="h6" color="white">
-            매입 집계용
+            매입집계
           </MDTypography>
         </MDBox>
 
@@ -651,19 +680,56 @@ function AccountPurchaseTallyTab() {
           <Grid item xs={12}>
             <table>
               <thead>
+                {/* ✅ 1줄: 그룹 헤더 */}
                 <tr>
-                  {columns.map((col) => (
-                    <th key={col.accessorKey} style={{ minWidth: col.size }}>
-                      {col.header}
-                    </th>
-                  ))}
+                  <th rowSpan={2} style={{ minWidth: 120 }}>
+                    사업장
+                  </th>
+                  <th rowSpan={2} style={{ minWidth: 100 }}>
+                    날짜
+                  </th>
+                  <th rowSpan={2} style={{ minWidth: 160 }}>
+                    구매처
+                  </th>
+
+                  <th colSpan={4} style={{ minWidth: 360 }}>
+                    소모품
+                  </th>
+                  <th colSpan={4} style={{ minWidth: 360 }}>
+                    식자재
+                  </th>
+
+                  <th colSpan={1} style={{ minWidth: 160 }}>
+                    기타
+                  </th>
+                  <th rowSpan={2} style={{ minWidth: 110 }}>
+                    이체일
+                  </th>
+                </tr>
+
+                {/* ✅ 2줄: 상세 헤더 */}
+                <tr>
+                  {/* 소모품 */}
+                  <th style={{ minWidth: 90 }}>과세</th>
+                  <th style={{ minWidth: 90 }}>부가세</th>
+                  <th style={{ minWidth: 90 }}>면세</th>
+                  <th style={{ minWidth: 90 }}>합계</th>
+
+                  {/* 식자재 */}
+                  <th style={{ minWidth: 90 }}>과세</th>
+                  <th style={{ minWidth: 90 }}>부가세</th>
+                  <th style={{ minWidth: 90 }}>면세</th>
+                  <th style={{ minWidth: 90 }}>합계</th>
+
+                  {/* 기타 */}
+                  <th style={{ minWidth: 160 }}>증빙자료 사진▼</th>
                 </tr>
               </thead>
 
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={columns.length} style={{ textAlign: "center", padding: "12px" }}>
+                    <td colSpan={13} style={{ textAlign: "center", padding: "12px" }}>
                       데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
                     </td>
                   </tr>
@@ -674,68 +740,9 @@ function AccountPurchaseTallyTab() {
                         const key = col.accessorKey;
                         const value = row[key] ?? "";
 
-                        // 🔹 taxType 컬럼은 select로 표시 (1=과세, 2=면세, 3=알수없음)
-                        if (key === "taxType") {
-                          return (
-                            <td
-                              key={key}
-                              style={{
-                                ...getCellStyle(rowIndex, key, value),
-                                width: `${col.size}px`,
-                              }}
-                            >
-                              <select
-                                value={value}
-                                onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
-                                style={{
-                                  fontSize: "12px",
-                                  border: "none",
-                                  background: "transparent",
-                                  textAlign: "center",
-                                  width: "100%",
-                                }}
-                              >
-                                <option value="1">과세</option>
-                                <option value="2">면세</option>
-                                <option value="3">알수없음</option>
-                              </select>
-                            </td>
-                          );
-                        }
-
-                        // 🔹 itemType 컬럼은 select로 표시 (1=식재료, 2=소모품, 3=알수없음)
-                        if (key === "itemType") {
-                          return (
-                            <td
-                              key={key}
-                              style={{
-                                ...getCellStyle(rowIndex, key, value),
-                                width: `${col.size}px`,
-                              }}
-                            >
-                              <select
-                                value={value}
-                                onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
-                                style={{
-                                  fontSize: "12px",
-                                  border: "none",
-                                  background: "transparent",
-                                  textAlign: "center",
-                                  width: "100%",
-                                }}
-                              >
-                                <option value="1">식재료</option>
-                                <option value="2">소모품</option>
-                                <option value="3">알수없음</option>
-                              </select>
-                            </td>
-                          );
-                        }
-
-                        // 🔹 증빙자료사진 컬럼: 다운로드 + 미리보기(떠있는창)
+                        // ✅ 증빙자료사진: 다운로드 + 미리보기
                         if (key === "receipt_image") {
                           const hasImage = !!value;
-
                           return (
                             <td
                               key={key}
@@ -776,21 +783,22 @@ function AccountPurchaseTallyTab() {
                           );
                         }
 
-                        // 🔹 기본 텍스트 / 수정 가능 셀
+                        // ✅ 날짜/이체일 같은 date는 input date로 바꾸고 싶으면 여기서 분기 가능
+                        // if (key === "saleDate" || key === "transfer_dt") { ... }
+
+                        // ✅ 기본 셀: 수정 가능 + 금액은 콤마 유지
                         return (
                           <td
                             key={key}
                             contentEditable
                             suppressContentEditableWarning
                             onBlur={(e) => {
-                              const text = e.target.innerText;
+                              const text = e.currentTarget.innerText;
 
-                              // ✅ qty/unitPrice/amount 는 입력 후 콤마 적용
                               if (MONEY_KEYS.includes(key)) {
                                 const formatted = formatComma(text);
                                 handleCellChange(rowIndex, key, formatted);
-                                // eslint-disable-next-line no-param-reassign
-                                e.target.innerText = formatted; // contentEditable 즉시 반영
+                                e.currentTarget.innerText = formatted;
                                 return;
                               }
 
@@ -801,7 +809,7 @@ function AccountPurchaseTallyTab() {
                               width: `${col.size}px`,
                             }}
                           >
-                            {value}
+                            {MONEY_KEYS.includes(key) ? formatComma(value) : value}
                           </td>
                         );
                       })}

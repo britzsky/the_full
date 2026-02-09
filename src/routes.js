@@ -63,7 +63,7 @@ import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseTally from "layouts/accounting/accountpurchasetally";
 import HeadOfficeCorporateCardManager from "layouts/accounting/corporatecardsheet";
 import AccountCorporateCardManager from "layouts/accounting/accountcorporatecardsheet";
-import PurchaseDeadLineManager from "examples/Tabs/Accounting/AccountPurchaseDeadlineTab";
+import PurchaseDeadLineManager from "layouts/accounting/accountpurchasetally";
 
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";

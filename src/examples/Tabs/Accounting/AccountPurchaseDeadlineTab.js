@@ -94,7 +94,7 @@ function AccountPurchaseDeadlineTab() {
     () => ["vat", "taxFree", "tax", "total", "totalCash", "totalCard"],
     []
   );
-  const DETAIL_MONEY_KEYS = useMemo(() => ["qty", "unitPrice", "amount"], []);
+  const DETAIL_MONEY_KEYS = useMemo(() => ["qty", "unitPrice", "amount", "tax", "vat"], []);
 
   const stripComma = useCallback((v) => {
     if (v === null || v === undefined) return "";
@@ -114,22 +114,31 @@ function AccountPurchaseDeadlineTab() {
 
   // ✅ 조회 결과가 들어오면 금액 필드에 콤마 적용(초기 표시용)
   useEffect(() => {
-    if (!rows) return;
     if (!Array.isArray(rows) || rows.length === 0) return;
 
-    const formatted = rows.map((r) => {
+    const normalized = rows.map((r) => {
       const nr = { ...r };
+
+      // ✅ money format
       MONEY_KEYS.forEach((k) => {
         nr[k] = formatComma(nr[k]);
       });
+
+      // ✅ payType 보정: 1/2 아니면 기본 1(현금)
+      const pt = String(nr.payType ?? "").trim();
+      nr.payType = pt === "1" || pt === "2" ? pt : "1";
+
       return nr;
     });
 
-    const changed = formatted.some((r, i) =>
-      MONEY_KEYS.some((k) => String(r?.[k] ?? "") !== String(rows?.[i]?.[k] ?? ""))
-    );
+    // rows 변경 감지 (money + payType)
+    const changed = normalized.some((r, i) => {
+      const a = rows[i] || {};
+      if (String(r.payType) !== String(a.payType ?? "")) return true;
+      return MONEY_KEYS.some((k) => String(r?.[k] ?? "") !== String(a?.[k] ?? ""));
+    });
 
-    if (changed) setRows(formatted);
+    if (changed) setRows(normalized);
   }, [rows, setRows, MONEY_KEYS, formatComma]);
 
   // ✅ 최초 로딩: 거래처 목록 조회 + 첫 번째 거래처 자동 선택 & 자동 조회
@@ -287,7 +296,7 @@ function AccountPurchaseDeadlineTab() {
   const columns = useMemo(
     () => [
       { header: "사업장", accessorKey: "account_name", size: 120 },
-      { header: "구매일자", accessorKey: "saleDate", size: 110 },
+      { header: "구매일자", accessorKey: "saleDate", size: 120 },
       { header: "구매처", accessorKey: "use_name", size: 180 },
       { header: "사업자번호", accessorKey: "bizNo", size: 100 },
       { header: "과세", accessorKey: "tax", size: 80 },
@@ -465,6 +474,9 @@ function AccountPurchaseDeadlineTab() {
       if (!next.account_id) next.account_id = filters.account_id;
       next.user_id = next.user_id || user_id;
       next.type = next.type || filters.type;
+      // ✅ "행의 payType"만 쓴다. (빈 값이면 기본 1로 고정)
+      const pt = String(next.payType ?? "").trim();
+      next.payType = pt === "1" || pt === "2" ? pt : "1";
 
       return next;
     },
@@ -475,7 +487,7 @@ function AccountPurchaseDeadlineTab() {
   // ✅ 하단(상세) 변경감지/저장 빌드
   // =========================
   const DETAIL_SAVE_KEYS = useMemo(
-    () => ["saleDate", "name", "qty", "unitPrice", "amount", "taxType", "itemType", "note"],
+    () => ["saleDate", "name", "qty", "unitPrice", "vat", "amount", "taxType", "itemType", "note"],
     []
   );
 
@@ -514,7 +526,7 @@ function AccountPurchaseDeadlineTab() {
     [DETAIL_MONEY_KEYS, stripComma, selectedSaleId, filters.account_id]
   );
 
-  // ✅ 상단 rows가 바뀌면: 선택 유지 / 없으면 첫 행 선택 후 상세 조회
+  // ✅ rows 바뀔 때: 선택만 유지/보정 (상세 재조회 X)
   useEffect(() => {
     if (!rows || rows.length === 0) {
       setSelectedSaleId("");
@@ -535,16 +547,22 @@ function AccountPurchaseDeadlineTab() {
 
     if (String(nextSaleId) !== String(selectedSaleId)) {
       setSelectedSaleId(String(nextSaleId));
-      setSelectedMasterIndex(nextIdx);
-    } else if (selectedMasterIndex !== nextIdx) {
+    }
+    if (selectedMasterIndex !== nextIdx) {
       setSelectedMasterIndex(nextIdx);
     }
+  }, [rows]); // ✅ rows만 감시 (fetch 없음)
 
+  // ✅ selectedSaleId 바뀔 때만: 상세 재조회
+  useEffect(() => {
+    if (!selectedSaleId) return;
+
+    const master = (rows || []).find((r) => String(r.sale_id) === String(selectedSaleId));
     fetchPurchaseDetailList({
-      sale_id: nextSaleId,
-      account_id: rows[nextIdx]?.account_id || filters.account_id,
+      sale_id: selectedSaleId,
+      account_id: master?.account_id || filters.account_id,
     });
-  }, [rows]); // 의도적으로 rows만
+  }, [selectedSaleId]); // ✅ rows 변화로는 재조회 안 함
 
   // ✅ 상단 행 클릭 → 하단 조회 (중복 account_id 제거)
   const handleMasterRowClick = useCallback(
@@ -1014,6 +1032,152 @@ function AccountPurchaseDeadlineTab() {
     [setDetailRows]
   );
 
+  // ✅ 하단 amount 합계
+  const detailAmountSum = useMemo(() => {
+    return (detailRows || []).reduce((sum, r) => {
+      const n = Number(stripComma(r?.amount));
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0);
+  }, [detailRows, stripComma]);
+
+  const detailAmountSumText = useMemo(
+    () => detailAmountSum.toLocaleString("ko-KR"),
+    [detailAmountSum]
+  );
+
+  // ✅ (NEW) 하단 vat 합계
+  const detailVatSum = useMemo(() => {
+    return (detailRows || []).reduce((sum, r) => {
+      const n = Number(stripComma(r?.vat));
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0);
+  }, [detailRows, stripComma]);
+
+  const detailVatSumText = useMemo(() => detailVatSum.toLocaleString("ko-KR"), [detailVatSum]);
+
+  // ✅ (NEW) 하단 tax 합계
+  const detailTaxSum = useMemo(() => {
+    return (detailRows || []).reduce((sum, r) => {
+      const n = Number(stripComma(r?.tax));
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0);
+  }, [detailRows, stripComma]);
+
+  const detailTaxSumText = useMemo(() => detailTaxSum.toLocaleString("ko-KR"), [detailTaxSum]);
+
+  useEffect(() => {
+    if (!selectedSaleId) return;
+    if (selectedMasterIndex < 0) return;
+
+    // 합계 숫자
+    const sumTax = detailTaxSum; // ✅ 상세 tax 합계를 상단 tax로
+    const sumVat = detailVatSum;
+
+    setRows((prev) => {
+      if (!Array.isArray(prev) || !prev[selectedMasterIndex]) return prev;
+
+      const cur = prev[selectedMasterIndex];
+
+      // 상단 taxFree가 있으면 total에 포함
+      const taxFreeNum = Number(stripComma(cur?.taxFree));
+      const safeTaxFree = Number.isFinite(taxFreeNum) ? taxFreeNum : 0;
+
+      const nextTaxText = sumTax.toLocaleString("ko-KR");
+      const nextVatText = sumVat.toLocaleString("ko-KR");
+      const nextTotalText = (sumTax + sumVat + safeTaxFree).toLocaleString("ko-KR");
+
+      // 변화 없으면 그대로(무한루프 방지)
+      const same =
+        String(cur?.tax ?? "") === String(nextTaxText) &&
+        String(cur?.vat ?? "") === String(nextVatText) &&
+        String(cur?.total ?? "") === String(nextTotalText);
+
+      if (same) return prev;
+
+      return prev.map((r, i) => {
+        if (i !== selectedMasterIndex) return r;
+        return {
+          ...r,
+          tax: nextTaxText,
+          vat: nextVatText,
+          total: nextTotalText,
+        };
+      });
+    });
+  }, [
+    detailTaxSum,
+    detailAmountSum,
+    detailVatSum,
+    selectedSaleId,
+    selectedMasterIndex,
+    setRows,
+    stripComma,
+  ]);
+
+  const toNum = useCallback(
+    (v) => {
+      const n = Number(stripComma(v));
+      return Number.isFinite(n) ? n : 0;
+    },
+    [stripComma]
+  );
+
+  const computeAmount = useCallback(
+    (qty, unitPrice) => {
+      const q = toNum(qty);
+      const p = toNum(unitPrice);
+      return q * p;
+    },
+    [toNum]
+  );
+
+  // ✅ 과세(taxType=1)일 때만 VAT = amount / 11 (반올림)
+  const computeVat = useCallback((amount, taxType) => {
+    const a = Number(amount);
+    if (!Number.isFinite(a)) return 0;
+    if (String(taxType) !== "1") return 0;
+    return Math.round(a / 11);
+  }, []);
+
+  // ✅ 과세(taxType=1)일 때만 TAX = amount * 0.1 (반올림)
+  const computeTax = useCallback((amount, taxType) => {
+    const a = Number(amount);
+    if (!Number.isFinite(a)) return 0;
+    if (String(taxType) !== "1") return 0;
+    return Math.round(a * 0.1);
+  }, []);
+
+  // ✅ 하단 VAT/TAX: amount + taxType 기준으로 항상 자동 정리
+  useEffect(() => {
+    if (!Array.isArray(detailRows) || detailRows.length === 0) return;
+
+    setDetailRows((prev) => {
+      let changed = false;
+
+      const next = prev.map((row) => {
+        const taxType = String(row?.taxType ?? "");
+        const amountNum = toNum(row?.amount);
+
+        const vatNum = computeVat(amountNum, taxType);
+        const taxNum = computeTax(amountNum, taxType);
+
+        const vatText = (taxType === "1" ? vatNum : 0).toLocaleString("ko-KR");
+        const taxText = (taxType === "1" ? taxNum : 0).toLocaleString("ko-KR");
+
+        const needVat = String(row?.vat ?? "") !== String(vatText);
+        const needTax = String(row?.tax ?? "") !== String(taxText);
+
+        if (needVat || needTax) {
+          changed = true;
+          return { ...row, vat: vatText, tax: taxText };
+        }
+        return row;
+      });
+
+      return changed ? next : prev; // ✅ 무한루프 방지
+    });
+  }, [detailRows, setDetailRows, toNum, computeVat, computeTax]);
+
   // =========================
   // ✅ (NEW) 거래처 Autocomplete 옵션/선택값
   // =========================
@@ -1039,7 +1203,12 @@ function AccountPurchaseDeadlineTab() {
     const qLower = q.toLowerCase();
     const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((o) =>
+        String(o?.label || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       handleAccountChange(null, partial);
       setAccountInput(partial.label || q);
@@ -1054,878 +1223,1074 @@ function AccountPurchaseDeadlineTab() {
       adapterLocale="ko"
       localeText={koKR.components.MuiLocalizationProvider.defaultProps.localeText}
     >
-      <DashboardLayout>
+      <>
         <MDBox
+          pt={1}
+          pb={1}
           sx={{
+            display: "flex",
+            justifyContent: isMobile ? "space-between" : "flex-end",
+            alignItems: "center",
+            gap: isMobile ? 1 : 2,
+            flexWrap: isMobile ? "wrap" : "nowrap",
             position: "sticky",
-            top: 0,
             zIndex: 10,
+            top: 85,
             backgroundColor: "#ffffff",
-            borderBottom: "1px solid #eee",
           }}
         >
-          <DashboardNavbar title="📦 매입관리" />
-          <MDBox
-            pt={1}
-            pb={3}
-            sx={{
-              display: "flex",
-              flexWrap: isMobile ? "wrap" : "nowrap",
-              justifyContent: isMobile ? "flex-start" : "flex-end",
-              alignItems: "center",
-              gap: isMobile ? 1 : 2,
-            }}
+          <TextField
+            select
+            label="타입"
+            size="small"
+            name="type"
+            onChange={handleFilterChange}
+            sx={{ minWidth: isMobile ? 100 : 120 }}
+            SelectProps={{ native: true }}
+            value={filters.type}
           >
-            <MDBox
-              display="flex"
-              flexWrap={isMobile ? "wrap" : "nowrap"}
-              flexDirection={isMobile ? "column" : "row"}
-              justifyContent={isMobile ? "flex-start" : "flex-end"}
-              alignItems={isMobile ? "stretch" : "center"}
-              gap={isMobile ? 1 : 1}
-              my={1}
-              mx={1}
-              sx={{
-                position: "sticky",
-                top: 110,
-                zIndex: 10,
-                backgroundColor: "#ffffff",
-                padding: isMobile ? 1 : 2,
-                borderRadius: isMobile ? 1 : 2,
-              }}
-            >
-              <TextField
-                select
-                label="타입"
-                size="small"
-                name="type"
-                onChange={handleFilterChange}
-                sx={{ minWidth: isMobile ? 100 : 120 }}
-                SelectProps={{ native: true }}
-                value={filters.type}
-              >
-                <option value="1">요양원</option>
-                <option value="4">산업체</option>
-                <option value="5">학교</option>
-              </TextField>
+            <option value="1">요양원</option>
+            <option value="4">산업체</option>
+            <option value="5">학교</option>
+          </TextField>
 
-              <TextField
-                select
-                label="조회구분"
-                size="small"
-                name="payType"
-                onChange={handleFilterChange}
-                sx={{ minWidth: isMobile ? 100 : 120 }}
-                SelectProps={{ native: true }}
-                value={filters.payType}
-              >
-                <option value="0">전체</option>
-                <option value="1">현금</option>
-                <option value="2">카드</option>
-              </TextField>
+          <TextField
+            select
+            label="조회구분"
+            size="small"
+            name="payType"
+            onChange={handleFilterChange}
+            sx={{ minWidth: isMobile ? 100 : 120 }}
+            SelectProps={{ native: true }}
+            value={filters.payType}
+          >
+            <option value="0">전체</option>
+            <option value="1">현금</option>
+            <option value="2">카드</option>
+          </TextField>
 
-              <TextField
-                type="date"
-                name="fromDate"
-                value={filters.fromDate}
-                onChange={handleFilterChange}
-                size="small"
-                label="조회기간(From)"
-                InputLabelProps={{ shrink: true }}
-                sx={{ minWidth: isMobile ? 100 : 120 }}
-              />
+          <TextField
+            type="date"
+            name="fromDate"
+            value={filters.fromDate}
+            onChange={handleFilterChange}
+            size="small"
+            label="조회기간(From)"
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: isMobile ? 100 : 120 }}
+          />
 
-              <TextField
-                type="date"
-                name="toDate"
-                value={filters.toDate}
-                onChange={handleFilterChange}
-                size="small"
-                label="조회기간(To)"
-                InputLabelProps={{ shrink: true }}
-                sx={{ minWidth: isMobile ? 100 : 120 }}
-              />
+          <TextField
+            type="date"
+            name="toDate"
+            value={filters.toDate}
+            onChange={handleFilterChange}
+            size="small"
+            label="조회기간(To)"
+            InputLabelProps={{ shrink: true }}
+            sx={{ minWidth: isMobile ? 100 : 120 }}
+          />
 
-              {/* ✅ 거래처: 검색 가능한 Autocomplete */}
-              <Autocomplete
-                size="small"
-                sx={{ minWidth: 200 }}
-                options={accountOptions}
-                value={selectedAccountOption}
-                onChange={handleAccountChange}
-                inputValue={accountInput}
-                onInputChange={(_, newValue) => setAccountInput(newValue)}
-                getOptionLabel={(opt) => opt?.label ?? ""}
-                isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
-                filterOptions={(options, state) => {
-                  const q = (state.inputValue ?? "").trim().toLowerCase();
-                  if (!q) return options;
-                  return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+          {/* ✅ 거래처: 검색 가능한 Autocomplete */}
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={selectedAccountOption}
+            onChange={handleAccountChange}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
+            filterOptions={(options, state) => {
+              const q = (state.inputValue ?? "").trim().toLowerCase();
+              if (!q) return options;
+              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
                 }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="거래처 검색"
-                    placeholder="거래처명을 입력"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        selectAccountByInput();
-                      }
-                    }}
-                    sx={{
-                      "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                      "& input": { padding: "0 8px" },
-                    }}
-                  />
-                )}
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
               />
+            )}
+          />
 
-              <MDButton
-                variant="gradient"
-                color="info"
-                onClick={handleSearch}
-                sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
-              >
-                조회
-              </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleSearch}
+            sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
+          >
+            조회
+          </MDButton>
 
-              <MDButton
-                variant="gradient"
-                color="info"
-                onClick={handleSave}
-                sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
-              >
-                저장
-              </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleSave}
+            sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
+          >
+            저장
+          </MDButton>
 
-              <MDButton
-                variant="gradient"
-                color="info"
-                onClick={handleExcelMenuOpen}
-                sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "11px" : "13px" }}
-              >
-                엑셀다운로드
-              </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleExcelMenuOpen}
+            sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "11px" : "13px" }}
+          >
+            엑셀다운로드
+          </MDButton>
 
-              <Menu anchorEl={excelAnchorEl} open={excelMenuOpen} onClose={handleExcelMenuClose}>
-                <MenuItem onClick={() => handleExcelDownload("taxInvoice")}>세금계산서</MenuItem>
-                <MenuItem onClick={() => handleExcelDownload("invoice")}>계산서</MenuItem>
-                <MenuItem onClick={() => handleExcelDownload("simple")}>간이과세</MenuItem>
-              </Menu>
+          <Menu anchorEl={excelAnchorEl} open={excelMenuOpen} onClose={handleExcelMenuClose}>
+            <MenuItem onClick={() => handleExcelDownload("taxInvoice")}>세금계산서</MenuItem>
+            <MenuItem onClick={() => handleExcelDownload("invoice")}>계산서</MenuItem>
+            <MenuItem onClick={() => handleExcelDownload("simple")}>간이과세</MenuItem>
+          </Menu>
 
-              <MDButton
-                variant="gradient"
-                color="info"
-                sx={{ minWidth: isMobile ? 70 : 90, fontSize: isMobile ? "11px" : "13px" }}
-              >
-                인쇄
-              </MDButton>
-            </MDBox>
-          </MDBox>
-          {/* =========================
+          <MDButton
+            variant="gradient"
+            color="info"
+            sx={{ minWidth: isMobile ? 70 : 90, fontSize: isMobile ? "11px" : "13px" }}
+          >
+            인쇄
+          </MDButton>
+        </MDBox>
+        {/* =========================
           ✅ 상단(집계) 테이블
          ========================= */}
-          <MDBox pt={0} pb={2} sx={tableSx}>
-            <MDBox
-              py={1}
-              px={1}
-              pt={1}
-              variant="gradient"
-              bgColor="info"
-              borderRadius="lg"
-              coloredShadow="info"
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              sx={{ position: "sticky", top: 0, zIndex: 3 }}
-            >
-              <MDTypography variant="h6" color="white">
-                매입마감
-              </MDTypography>
-            </MDBox>
+        <MDBox pt={0} pb={2} sx={tableSx}>
+          <MDBox
+            py={1}
+            px={1}
+            pt={1}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="info"
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{ position: "sticky", top: 0, zIndex: 3 }}
+          >
+            <MDTypography variant="h6" color="white">
+              매입마감
+            </MDTypography>
+          </MDBox>
 
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
-                <table>
-                  <thead>
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <table>
+                <thead>
+                  <tr>
+                    {columns.map((col) => (
+                      <th key={col.accessorKey} style={{ minWidth: col.size }}>
+                        {col.header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {rows.length === 0 ? (
                     <tr>
-                      {columns.map((col) => (
-                        <th key={col.accessorKey} style={{ minWidth: col.size }}>
-                          {col.header}
-                        </th>
-                      ))}
+                      <td colSpan={columns.length} style={{ textAlign: "center", padding: "12px" }}>
+                        데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
+                      </td>
                     </tr>
-                  </thead>
-
-                  <tbody>
-                    {rows.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={columns.length}
-                          style={{ textAlign: "center", padding: "12px" }}
-                        >
-                          데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
-                        </td>
-                      </tr>
-                    ) : (
-                      rows.map((row, rowIndex) => (
-                        <tr
-                          key={rowIndex}
-                          onClick={() => handleMasterRowClick(row, rowIndex)}
-                          style={{
-                            cursor: "pointer",
-                            backgroundColor:
-                              rowIndex === selectedMasterIndex
-                                ? "rgba(25,118,210,0.10)"
-                                : "transparent",
-                          }}
-                        >
-                          {columns.map((col) => {
-                            const key = col.accessorKey;
-                            const value = row[key] ?? "";
-                            if (key === "saleDate") {
-                              const v = String(value || "");
-                              const d = dayjs(v, "YYYY-MM-DD", true).isValid()
-                                ? dayjs(v, "YYYY-MM-DD")
-                                : null;
-
-                              return (
-                                <td
-                                  key={key}
-                                  style={{
-                                    ...getCellStyle(rowIndex, key, value),
-                                    width: `${col.size}px`,
-                                    padding: "4px", // ✅ DatePicker가 셀 꽉 차게
-                                  }}
-                                  onClick={(e) => e.stopPropagation()} // ✅ 행 클릭(상세조회) 방지
-                                >
-                                  <DatePicker
-                                    value={d}
-                                    onChange={(newVal) => {
-                                      // ✅ 달력 선택/직접입력 모두 여기로 들어옴
-                                      const next =
-                                        newVal && newVal.isValid()
-                                          ? newVal.format("YYYY-MM-DD")
-                                          : "";
-                                      handleCellChange(rowIndex, key, next);
-                                    }}
-                                    format="YYYY-MM-DD"
-                                    slotProps={{
-                                      textField: {
-                                        variant: "standard",
-                                        fullWidth: true,
-                                        inputProps: {
-                                          style: {
-                                            textAlign: "center",
-                                            fontSize: "12px",
-                                            padding: "2x",
-                                            color: "inherit", // ✅ td의 빨간색/검은색 상속
-                                          },
-                                        },
-                                        InputProps: {
-                                          disableUnderline: true,
-                                          style: { color: "inherit" }, // ✅ 빨간색 상속
-                                        },
-                                      },
-                                      // ✅ 테이블 overflow/z-index 때문에 캘린더가 잘리는 경우 방지
-                                      popper: {
-                                        disablePortal: false, // 기본이 portal이긴 한데 명시해두면 안전
-                                        sx: { zIndex: 25000 },
-                                      },
-                                    }}
-                                  />
-                                </td>
-                              );
-                            }
-                            // ✅ 사업장(account_name)은 수정 불가
-                            if (key === "account_name") {
-                              return (
-                                <td
-                                  key={key}
-                                  style={{
-                                    width: `${col.size}px`,
-                                    color: "#111",
-                                    backgroundColor: "rgba(0,0,0,0.03)",
-                                    cursor: "default",
-                                  }}
-                                  title="사업장명은 수정할 수 없습니다."
-                                >
-                                  {value}
-                                </td>
-                              );
-                            }
-
-                            if (key === "payType") {
-                              return (
-                                <td
-                                  key={key}
-                                  style={{
-                                    ...getCellStyle(rowIndex, key, value),
-                                    width: `${col.size}px`,
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <select
-                                    value={value}
-                                    onChange={(e) =>
-                                      handleCellChange(rowIndex, key, e.target.value)
-                                    }
-                                    style={{
-                                      fontSize: "12px",
-                                      border: "none",
-                                      background: "transparent",
-                                      textAlign: "center",
-                                      width: "100%",
-                                    }}
-                                  >
-                                    <option value="1">현금</option>
-                                    <option value="2">카드</option>
-                                  </select>
-                                </td>
-                              );
-                            }
-
-                            if (key === "receipt_image") {
-                              const hasImage = !!value;
-
-                              return (
-                                <td
-                                  key={key}
-                                  style={{
-                                    ...getCellStyle(rowIndex, key, value),
-                                    width: `${col.size}px`,
-                                  }}
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <Box
-                                    display="flex"
-                                    justifyContent="center"
-                                    alignItems="center"
-                                    gap={0.5}
-                                  >
-                                    <IconButton
-                                      size="small"
-                                      onClick={
-                                        hasImage ? () => handleDownload(value) : handleNoImageAlert
-                                      }
-                                      color={hasImage ? "primary" : "error"}
-                                      sx={{ padding: "3px", lineHeight: 0 }}
-                                    >
-                                      <DownloadIcon fontSize="small" />
-                                    </IconButton>
-
-                                    <IconButton
-                                      size="small"
-                                      onClick={
-                                        hasImage ? () => handleViewImage(value) : handleNoImageAlert
-                                      }
-                                      color={hasImage ? "primary" : "error"}
-                                      sx={{ padding: "3px", lineHeight: 0 }}
-                                    >
-                                      <ImageSearchIcon fontSize="small" />
-                                    </IconButton>
-                                  </Box>
-                                </td>
-                              );
-                            }
+                  ) : (
+                    rows.map((row, rowIndex) => (
+                      <tr
+                        key={rowIndex}
+                        onClick={() => handleMasterRowClick(row, rowIndex)}
+                        style={{
+                          cursor: "pointer",
+                          backgroundColor:
+                            rowIndex === selectedMasterIndex
+                              ? "rgba(25,118,210,0.10)"
+                              : "transparent",
+                        }}
+                      >
+                        {columns.map((col) => {
+                          const key = col.accessorKey;
+                          const value = row[key] ?? "";
+                          if (key === "saleDate") {
+                            const v = String(value || "");
+                            const d = dayjs(v, "YYYY-MM-DD", true).isValid()
+                              ? dayjs(v, "YYYY-MM-DD")
+                              : null;
 
                             return (
                               <td
                                 key={key}
-                                contentEditable
-                                suppressContentEditableWarning
-                                //onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => {
-                                  const text = e.target.innerText;
-
-                                  // ✅ bizNo 자동 포맷
-                                  if (key === "bizNo") {
-                                    const formatted = formatBizNo(text);
-                                    handleCellChange(rowIndex, key, formatted);
-                                    e.target.innerText = formatted;
-                                    return;
-                                  }
-
-                                  if (MONEY_KEYS.includes(key)) {
-                                    const formatted = formatComma(text);
-                                    handleCellChange(rowIndex, key, formatted);
-                                    e.target.innerText = formatted;
-                                    return;
-                                  }
-
-                                  handleCellChange(rowIndex, key, text);
-                                }}
                                 style={{
                                   ...getCellStyle(rowIndex, key, value),
                                   width: `${col.size}px`,
+                                  padding: "4px", // ✅ DatePicker가 셀 꽉 차게
                                 }}
+                                onClick={(e) => e.stopPropagation()} // ✅ 행 클릭(상세조회) 방지
+                              >
+                                <DatePicker
+                                  value={d}
+                                  onChange={(newVal) => {
+                                    // ✅ 달력 선택/직접입력 모두 여기로 들어옴
+                                    const next =
+                                      newVal && newVal.isValid() ? newVal.format("YYYY-MM-DD") : "";
+                                    handleCellChange(rowIndex, key, next);
+                                  }}
+                                  format="YYYY-MM-DD"
+                                  slotProps={{
+                                    textField: {
+                                      variant: "standard",
+                                      fullWidth: true,
+                                      inputProps: {
+                                        style: {
+                                          textAlign: "center",
+                                          fontSize: "12px",
+                                          padding: "2x",
+                                          color: "inherit", // ✅ td의 빨간색/검은색 상속
+                                        },
+                                      },
+                                      InputProps: {
+                                        disableUnderline: true,
+                                        style: { color: "inherit" }, // ✅ 빨간색 상속
+                                      },
+                                    },
+                                    // ✅ 테이블 overflow/z-index 때문에 캘린더가 잘리는 경우 방지
+                                    popper: {
+                                      disablePortal: false, // 기본이 portal이긴 한데 명시해두면 안전
+                                      sx: { zIndex: 25000 },
+                                    },
+                                  }}
+                                />
+                              </td>
+                            );
+                          }
+                          // ✅ 사업장(account_name)은 수정 불가
+                          if (key === "account_name") {
+                            return (
+                              <td
+                                key={key}
+                                style={{
+                                  width: `${col.size}px`,
+                                  color: "#111",
+                                  backgroundColor: "rgba(0,0,0,0.03)",
+                                  cursor: "default",
+                                }}
+                                title="사업장명은 수정할 수 없습니다."
                               >
                                 {value}
                               </td>
                             );
-                          })}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </Grid>
+                          }
+
+                          if (key === "payType") {
+                            const safePayType = String(value ?? "").trim();
+                            const selectValue =
+                              safePayType === "1" || safePayType === "2" ? safePayType : "1";
+
+                            return (
+                              <td
+                                key={key}
+                                style={{
+                                  ...getCellStyle(rowIndex, key, value),
+                                  width: `${col.size}px`,
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <select
+                                  value={selectValue}
+                                  onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
+                                  style={{
+                                    fontSize: "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    textAlign: "center",
+                                    width: "100%",
+                                  }}
+                                >
+                                  <option value="1">현금</option>
+                                  <option value="2">카드</option>
+                                </select>
+                              </td>
+                            );
+                          }
+
+                          if (key === "receipt_image") {
+                            const hasImage = !!value;
+
+                            return (
+                              <td
+                                key={key}
+                                style={{
+                                  ...getCellStyle(rowIndex, key, value),
+                                  width: `${col.size}px`,
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Box
+                                  display="flex"
+                                  justifyContent="center"
+                                  alignItems="center"
+                                  gap={0.5}
+                                >
+                                  <IconButton
+                                    size="small"
+                                    onClick={
+                                      hasImage ? () => handleDownload(value) : handleNoImageAlert
+                                    }
+                                    color={hasImage ? "primary" : "error"}
+                                    sx={{ padding: "3px", lineHeight: 0 }}
+                                  >
+                                    <DownloadIcon fontSize="small" />
+                                  </IconButton>
+
+                                  <IconButton
+                                    size="small"
+                                    onClick={
+                                      hasImage ? () => handleViewImage(value) : handleNoImageAlert
+                                    }
+                                    color={hasImage ? "primary" : "error"}
+                                    sx={{ padding: "3px", lineHeight: 0 }}
+                                  >
+                                    <ImageSearchIcon fontSize="small" />
+                                  </IconButton>
+                                </Box>
+                              </td>
+                            );
+                          }
+
+                          return (
+                            <td
+                              key={key}
+                              contentEditable
+                              suppressContentEditableWarning
+                              onClick={(e) => e.stopPropagation()} // ✅ 이거 켜기
+                              onKeyDown={(e) => e.stopPropagation()} // ✅ 입력 중 전파 방지(추천)
+                              onBlur={(e) => {
+                                const text = e.target.innerText;
+
+                                // ✅ bizNo 자동 포맷
+                                if (key === "bizNo") {
+                                  const formatted = formatBizNo(text);
+                                  handleCellChange(rowIndex, key, formatted);
+                                  e.target.innerText = formatted;
+                                  return;
+                                }
+
+                                if (MONEY_KEYS.includes(key)) {
+                                  const formatted = formatComma(text);
+                                  handleCellChange(rowIndex, key, formatted);
+                                  e.target.innerText = formatted;
+                                  return;
+                                }
+
+                                handleCellChange(rowIndex, key, text);
+                              }}
+                              style={{
+                                ...getCellStyle(rowIndex, key, value),
+                                width: `${col.size}px`,
+                              }}
+                            >
+                              {value}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </Grid>
-          </MDBox>
+          </Grid>
+        </MDBox>
 
-          {/* ✅ 상단/하단 사이: 하단 행추가 버튼 */}
-          <MDBox display="flex" justifyContent="flex-end" px={1} py={1} gap={1}>
-            <MDButton
-              variant="gradient"
-              color="success"
-              onClick={handleDetailAddRow}
-              sx={{ minWidth: isMobile ? 110 : 130, fontSize: isMobile ? "11px" : "13px" }}
-            >
-              상세 행추가
-            </MDButton>
-          </MDBox>
+        {/* ✅ 상단/하단 사이: 하단 행추가 버튼 */}
+        <MDBox display="flex" justifyContent="flex-end" px={1} py={1} gap={1}>
+          <MDButton
+            variant="gradient"
+            color="success"
+            onClick={handleDetailAddRow}
+            sx={{ minWidth: isMobile ? 110 : 130, fontSize: isMobile ? "11px" : "13px" }}
+          >
+            상세 행추가
+          </MDButton>
+        </MDBox>
 
-          {/* =========================
+        {/* =========================
           ✅ 하단(상세) 테이블  (✅ 여기서 taxType/itemType 셀을 select로 변경)
          ========================= */}
-          <MDBox pt={0} pb={2} sx={tableSx}>
-            <MDBox
-              py={1}
-              px={1}
-              pt={1}
-              variant="gradient"
-              bgColor="info"
-              borderRadius="lg"
-              coloredShadow="secondary"
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              sx={{ position: "sticky", top: 0, zIndex: 3 }}
-            >
-              <MDTypography variant="h6" color="white">
-                매입상세
-              </MDTypography>
-            </MDBox>
-
-            <Grid container spacing={3}>
-              <Grid item xs={12}>
-                <table>
-                  <thead>
-                    <tr>
-                      {[
-                        { h: "일자", k: "saleDate", w: 110 },
-                        { h: "품목", k: "name", w: 220 },
-                        { h: "수량", k: "qty", w: 90 },
-                        { h: "단가", k: "unitPrice", w: 110 },
-                        { h: "금액", k: "amount", w: 120 },
-                        { h: "과세구분", k: "taxType", w: 110 },
-                        { h: "품목구분", k: "itemType", w: 110 },
-                        { h: "비고", k: "note", w: 240 },
-                      ].map((c) => (
-                        <th key={c.k} style={{ minWidth: c.w }}>
-                          {c.h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {detailLoading ? (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: "center", padding: "12px" }}>
-                          상세 조회 중...
-                        </td>
-                      </tr>
-                    ) : !selectedSaleId ? (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: "center", padding: "12px" }}>
-                          상단에서 행을 클릭하면 상세가 조회됩니다.
-                        </td>
-                      </tr>
-                    ) : detailRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} style={{ textAlign: "center", padding: "12px" }}>
-                          상세 데이터가 없습니다. [상세 행추가]로 입력할 수 있습니다.
-                        </td>
-                      </tr>
-                    ) : (
-                      detailRows.map((r, i) => {
-                        const o = originalDetailRows?.[i] || {};
-                        const rowChanged = isDetailRowChanged(o, r);
-
-                        return (
-                          <tr
-                            key={i}
-                            style={{
-                              backgroundColor: rowChanged ? "rgba(211,47,47,0.04)" : "transparent",
-                            }}
-                          >
-                            {/* saleDate */}
-                            <td
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) =>
-                                setDetailCell(i, "saleDate", e.target.innerText.trim())
-                              }
-                              style={{
-                                width: 110,
-                                ...getDetailCellStyle(i, "saleDate", r.saleDate),
-                              }}
-                            >
-                              {r.saleDate ?? ""}
-                            </td>
-
-                            {/* name */}
-                            <td
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => setDetailCell(i, "name", e.target.innerText)}
-                              style={{
-                                width: 220,
-                                textAlign: "left",
-                                ...getDetailCellStyle(i, "name", r.name),
-                              }}
-                            >
-                              {r.name ?? ""}
-                            </td>
-
-                            {/* qty */}
-                            <td
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const formatted = formatComma(e.target.innerText);
-                                setDetailCell(i, "qty", formatted);
-                                e.target.innerText = formatted;
-                              }}
-                              style={{
-                                width: 90,
-                                textAlign: "right",
-                                ...getDetailCellStyle(i, "qty", r.qty),
-                              }}
-                            >
-                              {r.qty ?? ""}
-                            </td>
-
-                            {/* unitPrice */}
-                            <td
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const formatted = formatComma(e.target.innerText);
-                                setDetailCell(i, "unitPrice", formatted);
-                                e.target.innerText = formatted;
-                              }}
-                              style={{
-                                width: 110,
-                                textAlign: "right",
-                                ...getDetailCellStyle(i, "unitPrice", r.unitPrice),
-                              }}
-                            >
-                              {r.unitPrice ?? ""}
-                            </td>
-
-                            {/* amount */}
-                            <td
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => {
-                                const formatted = formatComma(e.target.innerText);
-                                setDetailCell(i, "amount", formatted);
-                                e.target.innerText = formatted;
-                              }}
-                              style={{
-                                width: 120,
-                                textAlign: "right",
-                                ...getDetailCellStyle(i, "amount", r.amount),
-                              }}
-                            >
-                              {r.amount ?? ""}
-                            </td>
-
-                            {/* ✅ taxType: select (1=과세,2=면세,3=알수없음) */}
-                            {(() => {
-                              const cellStyle = getDetailCellStyle(i, "taxType", r.taxType);
-                              return (
-                                <td style={{ width: 110, ...cellStyle }}>
-                                  <select
-                                    value={r.taxType ?? ""}
-                                    onChange={(e) => setDetailCell(i, "taxType", e.target.value)}
-                                    style={{
-                                      fontSize: "12px",
-                                      border: "none",
-                                      background: "transparent",
-                                      textAlign: "center",
-                                      width: "100%",
-                                      color: "inherit",
-                                    }}
-                                  >
-                                    <option value="1">과세</option>
-                                    <option value="2">면세</option>
-                                    <option value="3">알수없음</option>
-                                  </select>
-                                </td>
-                              );
-                            })()}
-
-                            {/* ✅ itemType: select (1=식재료,2=소모품,3=알수없음) */}
-                            {(() => {
-                              const cellStyle = getDetailCellStyle(i, "itemType", r.itemType);
-                              return (
-                                <td style={{ width: 110, ...cellStyle }}>
-                                  <select
-                                    value={r.itemType ?? ""}
-                                    onChange={(e) => setDetailCell(i, "itemType", e.target.value)}
-                                    style={{
-                                      fontSize: "12px",
-                                      border: "none",
-                                      background: "transparent",
-                                      textAlign: "center",
-                                      width: "100%",
-                                      color: "inherit",
-                                    }}
-                                  >
-                                    <option value="1">식재료</option>
-                                    <option value="2">소모품</option>
-                                    <option value="3">알수없음</option>
-                                  </select>
-                                </td>
-                              );
-                            })()}
-
-                            {/* note */}
-                            <td
-                              contentEditable
-                              suppressContentEditableWarning
-                              onBlur={(e) => setDetailCell(i, "note", e.target.innerText)}
-                              style={{
-                                width: 240,
-                                textAlign: "left",
-                                ...getDetailCellStyle(i, "note", r.note),
-                              }}
-                            >
-                              {r.note ?? ""}
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </Grid>
-            </Grid>
+        <MDBox pt={0} pb={2} sx={tableSx}>
+          <MDBox
+            py={1}
+            px={1}
+            pt={1}
+            variant="gradient"
+            bgColor="info"
+            borderRadius="lg"
+            coloredShadow="secondary"
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{ position: "sticky", top: 0, zIndex: 3 }}
+          >
+            <MDTypography variant="h6" color="white">
+              매입상세
+            </MDTypography>
           </MDBox>
 
-          {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
-          {viewerOpen &&
-            ReactDOM.createPortal(
-              <Box sx={{ position: "fixed", inset: 0, zIndex: 18000, pointerEvents: "none" }}>
-                <Draggable
-                  nodeRef={viewerNodeRef}
-                  handle="#receipt-viewer-titlebar"
-                  bounds="parent"
-                  cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <table>
+                <thead>
+                  <tr>
+                    {[
+                      { h: "일자", k: "saleDate", w: 110 },
+                      { h: "품목", k: "name", w: 220 },
+                      { h: "수량", k: "qty", w: 90 },
+                      { h: "단가", k: "unitPrice", w: 110 },
+                      { h: "과세", k: "tax", w: 110 },
+                      { h: "부가세", k: "vat", w: 110 },
+                      { h: "금액", k: "amount", w: 120 },
+                      { h: "과세구분", k: "taxType", w: 110 },
+                      { h: "품목구분", k: "itemType", w: 110 },
+                      { h: "비고", k: "note", w: 240 },
+                    ].map((c) => (
+                      <th key={c.k} style={{ minWidth: c.w }}>
+                        {c.h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {detailLoading ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: "center", padding: "12px" }}>
+                        상세 조회 중...
+                      </td>
+                    </tr>
+                  ) : !selectedSaleId ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: "center", padding: "12px" }}>
+                        상단에서 행을 클릭하면 상세가 조회됩니다.
+                      </td>
+                    </tr>
+                  ) : detailRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: "center", padding: "12px" }}>
+                        상세 데이터가 없습니다. [상세 행추가]로 입력할 수 있습니다.
+                      </td>
+                    </tr>
+                  ) : (
+                    detailRows.map((r, i) => {
+                      const o = originalDetailRows?.[i] || {};
+                      const rowChanged = isDetailRowChanged(o, r);
+
+                      return (
+                        <tr
+                          key={i}
+                          style={{
+                            backgroundColor: rowChanged ? "rgba(211,47,47,0.04)" : "transparent",
+                          }}
+                        >
+                          {/* saleDate */}
+                          <td
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => setDetailCell(i, "saleDate", e.target.innerText.trim())}
+                            style={{
+                              width: 110,
+                              ...getDetailCellStyle(i, "saleDate", r.saleDate),
+                            }}
+                          >
+                            {r.saleDate ?? ""}
+                          </td>
+
+                          {/* name */}
+                          <td
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => setDetailCell(i, "name", e.target.innerText)}
+                            style={{
+                              width: 220,
+                              textAlign: "left",
+                              ...getDetailCellStyle(i, "name", r.name),
+                            }}
+                          >
+                            {r.name ?? ""}
+                          </td>
+
+                          <td
+                            style={{
+                              width: 90,
+                              textAlign: "right",
+                              ...getDetailCellStyle(i, "qty", r.qty),
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={r.qty ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                // qty 변경 즉시 반영
+                                const nextAmountNum = computeAmount(v, r.unitPrice);
+                                const nextAmountText = nextAmountNum
+                                  ? nextAmountNum.toLocaleString("ko-KR")
+                                  : "";
+
+                                const vatNum = computeVat(nextAmountNum, next.taxType);
+                                next.vat =
+                                  String(next.taxType) === "1"
+                                    ? vatNum.toLocaleString("ko-KR")
+                                    : "0";
+
+                                setDetailRows((prev) =>
+                                  prev.map((row, idx) => {
+                                    if (idx !== i) return row;
+
+                                    const nextAmountNum = computeAmount(v, row.unitPrice);
+                                    const nextAmountText = nextAmountNum
+                                      ? nextAmountNum.toLocaleString("ko-KR")
+                                      : "";
+
+                                    const taxType = String(row.taxType ?? "");
+                                    const vatNum = computeVat(nextAmountNum, taxType);
+                                    const taxNum = computeTax(nextAmountNum, taxType);
+
+                                    return {
+                                      ...row,
+                                      qty: v,
+                                      amount: nextAmountText,
+                                      vat: (taxType === "1" ? vatNum : 0).toLocaleString("ko-KR"),
+                                      tax: (taxType === "1" ? taxNum : 0).toLocaleString("ko-KR"),
+                                    };
+                                  })
+                                );
+                              }}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "qty", formatted);
+                              }}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: "inherit",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              width: 110,
+                              textAlign: "right",
+                              ...getDetailCellStyle(i, "unitPrice", r.unitPrice),
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={r.unitPrice ?? ""}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                const nextAmountNum = computeAmount(r.qty, v);
+                                const nextAmountText = nextAmountNum
+                                  ? nextAmountNum.toLocaleString("ko-KR")
+                                  : "";
+
+                                const vatNum = computeVat(nextAmountNum, next.taxType);
+                                next.vat =
+                                  String(next.taxType) === "1"
+                                    ? vatNum.toLocaleString("ko-KR")
+                                    : "0";
+
+                                setDetailRows((prev) =>
+                                  prev.map((row, idx) => {
+                                    if (idx !== i) return row;
+
+                                    const nextAmountNum = computeAmount(row.qty, v);
+                                    const nextAmountText = nextAmountNum
+                                      ? nextAmountNum.toLocaleString("ko-KR")
+                                      : "";
+
+                                    const taxType = String(row.taxType ?? "");
+                                    const vatNum = computeVat(nextAmountNum, taxType);
+                                    const taxNum = computeTax(nextAmountNum, taxType);
+
+                                    return {
+                                      ...row,
+                                      unitPrice: v,
+                                      amount: nextAmountText,
+                                      vat: (taxType === "1" ? vatNum : 0).toLocaleString("ko-KR"),
+                                      tax: (taxType === "1" ? taxNum : 0).toLocaleString("ko-KR"),
+                                    };
+                                  })
+                                );
+                              }}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "unitPrice", formatted);
+                              }}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: "inherit",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              width: 110,
+                              textAlign: "right",
+                              ...getDetailCellStyle(i, "tax", r.tax),
+                              backgroundColor: "rgba(0,0,0,0.03)",
+                            }}
+                            title="과세(tax)는 amount 기준으로 자동 계산됩니다."
+                          >
+                            <input
+                              type="text"
+                              value={r.tax ?? ""}
+                              readOnly
+                              tabIndex={-1}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: "inherit",
+                                cursor: "not-allowed",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              width: 110,
+                              textAlign: "right",
+                              ...getDetailCellStyle(i, "vat", r.vat),
+                              backgroundColor: "rgba(0,0,0,0.03)",
+                            }}
+                            title="부가세(vat)는 amount와 과세구분(taxType) 기준으로 자동 계산됩니다."
+                          >
+                            <input
+                              type="text"
+                              value={r.vat ?? ""}
+                              readOnly
+                              tabIndex={-1}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: "inherit",
+                                cursor: "not-allowed",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              width: 120,
+                              textAlign: "right",
+                              ...getDetailCellStyle(i, "amount", r.amount),
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={r.amount ?? ""}
+                              onChange={(e) => {
+                                // 금액 직접 수정도 즉시 합계 반영
+                                const v = e.target.value;
+
+                                setDetailRows((prev) =>
+                                  prev.map((row, idx) => {
+                                    if (idx !== i) return row;
+
+                                    const taxType = String(row.taxType ?? "");
+                                    const amountNum = toNum(v);
+                                    const vatNum = computeVat(amountNum, taxType);
+                                    const taxNum = computeTax(amountNum, taxType);
+
+                                    return {
+                                      ...row,
+                                      amount: v,
+                                      vat: (taxType === "1" ? vatNum : 0).toLocaleString("ko-KR"),
+                                      tax: (taxType === "1" ? taxNum : 0).toLocaleString("ko-KR"),
+                                    };
+                                  })
+                                );
+                              }}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "amount", formatted);
+                              }}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: "inherit",
+                              }}
+                            />
+                          </td>
+
+                          {/* ✅ taxType: select (1=과세,2=면세,3=알수없음) */}
+                          {(() => {
+                            const cellStyle = getDetailCellStyle(i, "taxType", r.taxType);
+                            return (
+                              <td style={{ width: 110, ...cellStyle }}>
+                                <select
+                                  value={r.taxType ?? ""}
+                                  onChange={(e) => {
+                                    const nextTaxType = e.target.value;
+
+                                    setDetailRows((prev) =>
+                                      prev.map((row, idx) => {
+                                        if (idx !== i) return row;
+
+                                        const amountNum = toNum(row.amount);
+                                        const vatNum = computeVat(amountNum, nextTaxType);
+
+                                        return {
+                                          ...row,
+                                          taxType: nextTaxType,
+                                          vat: (String(nextTaxType) === "1"
+                                            ? vatNum
+                                            : 0
+                                          ).toLocaleString("ko-KR"),
+                                          tax: (String(nextTaxType) === "1"
+                                            ? taxNum
+                                            : 0
+                                          ).toLocaleString("ko-KR"),
+                                        };
+                                      })
+                                    );
+                                  }}
+                                  style={{
+                                    fontSize: "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    textAlign: "center",
+                                    width: "100%",
+                                    color: "inherit",
+                                  }}
+                                >
+                                  <option value="1">과세</option>
+                                  <option value="2">면세</option>
+                                  <option value="3">알수없음</option>
+                                </select>
+                              </td>
+                            );
+                          })()}
+
+                          {/* ✅ itemType: select (1=식재료,2=소모품,3=알수없음) */}
+                          {(() => {
+                            const cellStyle = getDetailCellStyle(i, "itemType", r.itemType);
+                            return (
+                              <td style={{ width: 110, ...cellStyle }}>
+                                <select
+                                  value={r.itemType ?? ""}
+                                  onChange={(e) => setDetailCell(i, "itemType", e.target.value)}
+                                  style={{
+                                    fontSize: "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    textAlign: "center",
+                                    width: "100%",
+                                    color: "inherit",
+                                  }}
+                                >
+                                  <option value="1">식재료</option>
+                                  <option value="2">소모품</option>
+                                  <option value="3">경관식</option>
+                                </select>
+                              </td>
+                            );
+                          })()}
+
+                          {/* note */}
+                          <td
+                            contentEditable
+                            suppressContentEditableWarning
+                            onBlur={(e) => setDetailCell(i, "note", e.target.innerText)}
+                            style={{
+                              width: 240,
+                              textAlign: "left",
+                              ...getDetailCellStyle(i, "note", r.note),
+                            }}
+                          >
+                            {r.note ?? ""}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                {selectedSaleId && detailRows.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      <td
+                        colSpan={4}
+                        style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}
+                      >
+                        합계
+                      </td>
+
+                      {/* ✅ tax 합계 (과세) */}
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {detailTaxSumText}
+                      </td>
+
+                      {/* ✅ vat 합계 */}
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {detailVatSumText}
+                      </td>
+
+                      {/* ✅ amount 합계 */}
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {detailAmountSumText}
+                      </td>
+
+                      <td colSpan={3} style={{ background: "#f7f7f7" }} />
+                    </tr>
+                  </tfoot>
+                )}
+              </table>
+            </Grid>
+          </Grid>
+        </MDBox>
+
+        {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
+        {viewerOpen &&
+          ReactDOM.createPortal(
+            <Box sx={{ position: "fixed", inset: 0, zIndex: 18000, pointerEvents: "none" }}>
+              <Draggable
+                nodeRef={viewerNodeRef}
+                handle="#receipt-viewer-titlebar"
+                bounds="parent"
+                cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
+              >
+                <Paper
+                  ref={viewerNodeRef}
+                  sx={{
+                    position: "absolute",
+                    top: 120,
+                    left: 120,
+                    m: 0,
+                    width: "450px",
+                    height: "650px",
+                    maxWidth: "95vw",
+                    maxHeight: "90vh",
+                    borderRadius: 1.2,
+                    border: "1px solid rgba(0,0,0,0.25)",
+                    boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+                    overflow: "hidden",
+                    resize: "both",
+                    pointerEvents: "auto",
+                    backgroundColor: "#000",
+                    zIndex: 19000,
+                  }}
                 >
-                  <Paper
-                    ref={viewerNodeRef}
+                  <Box
+                    id="receipt-viewer-titlebar"
                     sx={{
-                      position: "absolute",
-                      top: 120,
-                      left: 120,
-                      m: 0,
-                      width: "450px",
-                      height: "650px",
-                      maxWidth: "95vw",
-                      maxHeight: "90vh",
-                      borderRadius: 1.2,
-                      border: "1px solid rgba(0,0,0,0.25)",
-                      boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                      overflow: "hidden",
-                      resize: "both",
-                      pointerEvents: "auto",
-                      backgroundColor: "#000",
-                      zIndex: 19000,
+                      height: 42,
+                      bgcolor: "#1b1b1b",
+                      color: "#fff",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      px: 1,
+                      cursor: "move",
+                      userSelect: "none",
                     }}
                   >
-                    <Box
-                      id="receipt-viewer-titlebar"
+                    <Typography
+                      variant="caption"
                       sx={{
-                        height: 42,
-                        bgcolor: "#1b1b1b",
-                        color: "#fff",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                        px: 1,
-                        cursor: "move",
-                        userSelect: "none",
+                        flex: 1,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        pr: 1,
                       }}
                     >
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          flex: 1,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          pr: 1,
-                        }}
-                      >
-                        {currentFile?.title || "영수증 미리보기"}
-                        {fileItems.length ? `  (${viewerIndex + 1}/${fileItems.length})` : ""}
-                      </Typography>
+                      {currentFile?.title || "영수증 미리보기"}
+                      {fileItems.length ? `  (${viewerIndex + 1}/${fileItems.length})` : ""}
+                    </Typography>
 
-                      <Tooltip title="이전(←)">
-                        <span>
-                          <IconButton
-                            size="small"
-                            sx={{ color: "#fff" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              goPrev();
-                            }}
-                            disabled={fileItems.length <= 1}
-                          >
-                            <ChevronLeftIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-
-                      <Tooltip title="다음(→)">
-                        <span>
-                          <IconButton
-                            size="small"
-                            sx={{ color: "#fff" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              goNext();
-                            }}
-                            disabled={fileItems.length <= 1}
-                          >
-                            <ChevronRightIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-
-                      <Tooltip title="새 탭으로 열기">
-                        <span>
-                          <IconButton
-                            size="small"
-                            sx={{ color: "#fff" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const src = currentFile?.src;
-                              if (src) window.open(src, "_blank", "noopener,noreferrer");
-                            }}
-                            disabled={!currentFile?.src}
-                          >
-                            <OpenInNewIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-
-                      <Tooltip title="다운로드">
-                        <span>
-                          <IconButton
-                            size="small"
-                            sx={{ color: "#fff" }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const path = currentFile?.path;
-                              if (path) handleDownload(path);
-                            }}
-                            disabled={!currentFile?.path}
-                          >
-                            <DownloadIcon fontSize="small" />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-
-                      <Tooltip title="닫기(ESC)">
+                    <Tooltip title="이전(←)">
+                      <span>
                         <IconButton
                           size="small"
                           sx={{ color: "#fff" }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleCloseViewer();
+                            goPrev();
                           }}
+                          disabled={fileItems.length <= 1}
                         >
-                          <CloseIcon fontSize="small" />
+                          <ChevronLeftIcon fontSize="small" />
                         </IconButton>
-                      </Tooltip>
-                    </Box>
+                      </span>
+                    </Tooltip>
 
-                    <Box
-                      sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}
-                    >
-                      {currentFile?.src ? (
-                        currentFile.isPdf ? (
-                          <Box sx={{ width: "100%", height: "100%", bgcolor: "#111" }}>
-                            <iframe
-                              title="pdf-preview"
-                              src={currentFile.src}
-                              style={{ width: "100%", height: "100%", border: 0 }}
-                            />
-                          </Box>
-                        ) : (
-                          <TransformWrapper
-                            initialScale={1}
-                            minScale={0.5}
-                            maxScale={6}
-                            centerOnInit
-                            wheel={{ step: 0.12 }}
-                            doubleClick={{ mode: "zoomIn" }}
-                          >
-                            {({ zoomIn, zoomOut, resetTransform }) => (
-                              <>
-                                {/* 기존 줌 버튼들 그대로 */}
-                                <TransformComponent
-                                  wrapperStyle={{ width: "100%", height: "100%" }}
-                                  contentStyle={{ width: "100%", height: "100%" }}
-                                >
-                                  <Box
-                                    sx={{
-                                      width: "100%",
-                                      height: "100%",
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                    }}
-                                  >
-                                    <img
-                                      src={currentFile.src}
-                                      alt="미리보기"
-                                      onError={() =>
-                                        Swal.fire(
-                                          "미리보기 실패",
-                                          "이미지 경로 또는 서버 응답을 확인해주세요.",
-                                          "error"
-                                        )
-                                      }
-                                      style={{
-                                        maxWidth: "95%",
-                                        maxHeight: "95%",
-                                        userSelect: "none",
-                                      }}
-                                    />
-                                  </Box>
-                                </TransformComponent>
-                              </>
-                            )}
-                          </TransformWrapper>
-                        )
+                    <Tooltip title="다음(→)">
+                      <span>
+                        <IconButton
+                          size="small"
+                          sx={{ color: "#fff" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goNext();
+                          }}
+                          disabled={fileItems.length <= 1}
+                        >
+                          <ChevronRightIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+
+                    <Tooltip title="새 탭으로 열기">
+                      <span>
+                        <IconButton
+                          size="small"
+                          sx={{ color: "#fff" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const src = currentFile?.src;
+                            if (src) window.open(src, "_blank", "noopener,noreferrer");
+                          }}
+                          disabled={!currentFile?.src}
+                        >
+                          <OpenInNewIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+
+                    <Tooltip title="다운로드">
+                      <span>
+                        <IconButton
+                          size="small"
+                          sx={{ color: "#fff" }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const path = currentFile?.path;
+                            if (path) handleDownload(path);
+                          }}
+                          disabled={!currentFile?.path}
+                        >
+                          <DownloadIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+
+                    <Tooltip title="닫기(ESC)">
+                      <IconButton
+                        size="small"
+                        sx={{ color: "#fff" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCloseViewer();
+                        }}
+                      >
+                        <CloseIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+
+                  <Box sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}>
+                    {currentFile?.src ? (
+                      currentFile.isPdf ? (
+                        <Box sx={{ width: "100%", height: "100%", bgcolor: "#111" }}>
+                          <iframe
+                            title="pdf-preview"
+                            src={currentFile.src}
+                            style={{ width: "100%", height: "100%", border: 0 }}
+                          />
+                        </Box>
                       ) : (
-                        <Typography sx={{ color: "#fff", p: 2 }}>파일이 없습니다.</Typography>
-                      )}
-                    </Box>
-                  </Paper>
-                </Draggable>
-              </Box>,
-              document.body
-            )}
-        </MDBox>
-      </DashboardLayout>
+                        <TransformWrapper
+                          initialScale={1}
+                          minScale={0.5}
+                          maxScale={6}
+                          centerOnInit
+                          wheel={{ step: 0.12 }}
+                          doubleClick={{ mode: "zoomIn" }}
+                        >
+                          {({ zoomIn, zoomOut, resetTransform }) => (
+                            <>
+                              {/* 기존 줌 버튼들 그대로 */}
+                              <TransformComponent
+                                wrapperStyle={{ width: "100%", height: "100%" }}
+                                contentStyle={{ width: "100%", height: "100%" }}
+                              >
+                                <Box
+                                  sx={{
+                                    width: "100%",
+                                    height: "100%",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  <img
+                                    src={currentFile.src}
+                                    alt="미리보기"
+                                    onError={() =>
+                                      Swal.fire(
+                                        "미리보기 실패",
+                                        "이미지 경로 또는 서버 응답을 확인해주세요.",
+                                        "error"
+                                      )
+                                    }
+                                    style={{
+                                      maxWidth: "95%",
+                                      maxHeight: "95%",
+                                      userSelect: "none",
+                                    }}
+                                  />
+                                </Box>
+                              </TransformComponent>
+                            </>
+                          )}
+                        </TransformWrapper>
+                      )
+                    ) : (
+                      <Typography sx={{ color: "#fff", p: 2 }}>파일이 없습니다.</Typography>
+                    )}
+                  </Box>
+                </Paper>
+              </Draggable>
+            </Box>,
+            document.body
+          )}
+      </>
     </LocalizationProvider>
   );
 }

@@ -15,11 +15,11 @@ function AccountingTab() {
   // ✅ 숫자 이모지 아이콘
   const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
 
-  const tabLabels = ["매입집계", "매입마감"];
+  const tabLabels = ["매입마감", "매입집계"];
 
   const tabComponents = [
-    <AccountPurchaseTallyTab key="tally" />,
     <AccountPurchaseDeadlineTab key="deadline" />,
+    <AccountPurchaseTallyTab key="tally" />,
   ];
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>

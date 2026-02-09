@@ -52,6 +52,8 @@ export default function useAccountPurchaseDeadlineDetailData() {
 
         qty: formatNumber(item.qty),
         unitPrice: formatNumber(item.unitPrice),
+        vat: formatNumber(item.vat),
+        tax: formatNumber(item.tax),
         amount: formatNumber(item.amount),
 
         taxType: item.taxType ?? "",

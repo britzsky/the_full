@@ -32,7 +32,7 @@ export default function useAccountPurchaseTallyData() {
     setLoading(true);
     try {
       // ✅ GET 파라미터는 반드시 params 로 감싸기
-      const res = await api.get("/Account/AccountPurchaseDetailList", {
+      const res = await api.get("/Account/AccountPurchaseAnalysisList", {
         params: filters,
       });
 
@@ -62,7 +62,7 @@ export default function useAccountPurchaseTallyData() {
         taxType: item.taxType,
         itemType: item.itemType,
         receipt_image: item.receipt_image,
-        note: item.note
+        note: item.note,
       }));
 
       setRows(mapped);

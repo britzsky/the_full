@@ -437,13 +437,15 @@ function AccountMemberSheet() {
       wb.creator = "AccountMemberSheet";
 
       const ws = wb.addWorksheet("현장 직원관리");
-      const cols = columns
+      const baseCols = columns
         .filter((c) => c.accessorKey)
         .map((c) => ({ header: c.header, key: c.accessorKey, width: 14 }));
 
       const now = dayjs();
       const y = now.year();
       const m = String(now.month() + 1).padStart(2, "0");
+      const d = String(now.date()).padStart(2, "0");
+      const todayLabel = now.format("YYYY-MM-DD");
       const accNameMap = new Map();
       (accountList || []).forEach((a) => {
         accNameMap.set(String(a.account_id), a.account_name);
@@ -492,40 +494,44 @@ function AccountMemberSheet() {
       };
 
       // ✅ 컬럼명 중복 방지: columns에는 header를 쓰지 않고, 아래에서 헤더 row를 직접 추가
-      const baseCols = cols.map((c) => ({ key: c.key, width: c.width }));
-      ws.columns = baseCols;
-
-      const grouped = new Map();
-      rows.forEach((r) => {
-        const k = String(r.account_id ?? "");
-        if (!grouped.has(k)) grouped.set(k, []);
-        grouped.get(k).push(r);
+      const excelCols = [];
+      baseCols.forEach((c) => {
+        if (c.key === "cor_type") {
+          excelCols.push(c);
+          excelCols.push({ header: "업장", key: "account_label", width: 20 });
+          return;
+        }
+        if (c.key === "account_id") return;
+        excelCols.push(c);
       });
 
-      const header = cols.map((c) => c.header);
-      const autoWidthValues = baseCols.map(() => []);
+      ws.columns = excelCols.map((c) => ({ key: c.key, width: c.width }));
 
-      grouped.forEach((list, accId) => {
-        const name = accNameMap.get(accId) || "거래처";
-        addSectionTitle(`■ ${name} (${accId})  /  ${y}-${m}`, cols.length);
+      const rowsWithAccount = rows.map((r) => {
+        const accId = String(r.account_id ?? "");
+        const accName = accNameMap.get(accId);
+        const accountLabel = accName || "";
+        return { ...r, account_label: accountLabel };
+      });
 
-        ws.addRow(header);
-        ws.getRow(ws.lastRow.number).height = 23;
-        styleHeaderRow(ws.lastRow.number);
-        header.forEach((h, i) => autoWidthValues[i].push(h));
+      const header = excelCols.map((c) => c.header);
+      const autoWidthValues = excelCols.map(() => []);
 
-        list.forEach((r) => {
-          const row = {};
-          cols.forEach((c) => {
-            row[c.key] = r[c.key] ?? "";
-          });
-          ws.addRow(row);
-          ws.getRow(ws.lastRow.number).height = 23;
-          styleDataRow(ws.lastRow.number);
-          cols.forEach((c, i) => autoWidthValues[i].push(row[c.key]));
+      addSectionTitle(`■ 현장직원관리 전체 / ${todayLabel}`, excelCols.length);
+      ws.addRow(header);
+      ws.getRow(ws.lastRow.number).height = 23;
+      styleHeaderRow(ws.lastRow.number);
+      header.forEach((h, i) => autoWidthValues[i].push(h));
+
+      rowsWithAccount.forEach((r) => {
+        const row = {};
+        excelCols.forEach((c) => {
+          row[c.key] = r[c.key] ?? "";
         });
-
-        ws.addRow([]);
+        ws.addRow(row);
+        ws.getRow(ws.lastRow.number).height = 23;
+        styleDataRow(ws.lastRow.number);
+        excelCols.forEach((c, i) => autoWidthValues[i].push(row[c.key]));
       });
 
       const calcWidth = (values, min = 15, max = 80) => {
@@ -540,7 +546,6 @@ function AccountMemberSheet() {
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
-      const d = String(now.date()).padStart(2, "0");
       const filename = `현장직원관리_전체_${y}-${m}-${d}.xlsx`;
       saveAs(blob, filename);
 

@@ -54,7 +54,10 @@ export default function DeadlineBalanceTab() {
   // =========================================================
   // ✅ 권한(특정 user_id만 편집/저장/입금 가능)
   // =========================================================
-  const allowedEditors = useMemo(() => new Set(["yh2", "sy9", "britzsky", "ww1", "dh2", "hh2"]), []);
+  const allowedEditors = useMemo(
+    () => new Set(["yh2", "sy9", "britzsky", "ww1", "dh2", "hh2"]),
+    []
+  );
   const userId = useMemo(() => {
     const v = localStorage.getItem("user_id");
     return (v ?? "").trim();
@@ -291,10 +294,12 @@ export default function DeadlineBalanceTab() {
       updated.balance_dt = dayjs().format("YYYY-MM-DD");
 
       if (selectedCustomer && ["1", "2", "3", "5"].includes(value)) {
+        const mm = String(month).padStart(2, "0"); // 1 -> "01", 10 -> "10"
+
         const diff = await fetchAccountDeadlineDifferencePriceSearch(
           selectedCustomer.account_id,
           year,
-          month,
+          mm,
           value
         );
 
@@ -713,8 +718,8 @@ export default function DeadlineBalanceTab() {
                               backgroundColor: isSelected
                                 ? "#ffe4e1"
                                 : key === "before_price2"
-                                  ? "#FDE7B3"
-                                  : "transparent",
+                                ? "#FDE7B3"
+                                : "transparent",
                               fontWeight: "bold",
                             }}
                           >

@@ -56,6 +56,14 @@ function PropertySheetTab() {
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
+  // ✅ localStorage account_id 있으면 거래처 고정
+  const lockedAccountId = useMemo(() => {
+    const v = localStorage.getItem("account_id");
+    return v ? String(v) : "";
+  }, []);
+
+  const isAccountLocked = !!lockedAccountId;
+
   const selectAccountByInput = useCallback(() => {
     if (isAccountLocked) return;
     const q = String(accountInput || "").trim();
@@ -109,14 +117,6 @@ function PropertySheetTab() {
     setRows(updated);
     setOriginalRows(deepCopy);
   }, [activeRows]);
-
-  // ✅ localStorage account_id 있으면 거래처 고정
-  const lockedAccountId = useMemo(() => {
-    const v = localStorage.getItem("account_id");
-    return v ? String(v) : "";
-  }, []);
-
-  const isAccountLocked = !!lockedAccountId;
 
   useEffect(() => {
     if (!accountList?.length) return;

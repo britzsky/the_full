@@ -570,6 +570,10 @@ function AccountPurchaseDeadlineTab() {
       const saleId = row?.sale_id;
       if (!saleId) return;
 
+      // ✅ (중요) 다른 행 클릭 시 이전 상세가 남아있어서 상단 합계를 건드리는 문제 방지
+      setDetailRows([]);
+      setOriginalDetailRows([]);
+
       setSelectedSaleId(String(saleId));
       setSelectedMasterIndex(rowIndex);
 
@@ -578,7 +582,7 @@ function AccountPurchaseDeadlineTab() {
         account_id: row?.account_id || filters.account_id,
       });
     },
-    [fetchPurchaseDetailList, filters.account_id]
+    [fetchPurchaseDetailList, filters.account_id, setDetailRows, setOriginalDetailRows]
   );
 
   // ✅ 하단 행추가 버튼
@@ -1069,8 +1073,11 @@ function AccountPurchaseDeadlineTab() {
     if (!selectedSaleId) return;
     if (selectedMasterIndex < 0) return;
 
-    // 합계 숫자
-    const sumTax = detailTaxSum; // ✅ 상세 tax 합계를 상단 tax로
+    // ✅ 하단이 아직 로딩 중이거나, 하단 데이터가 없으면 상단 합계 자동반영 금지
+    if (detailLoading) return;
+    if (!Array.isArray(detailRows) || detailRows.length === 0) return;
+
+    const sumTax = detailTaxSum;
     const sumVat = detailVatSum;
 
     setRows((prev) => {
@@ -1078,7 +1085,6 @@ function AccountPurchaseDeadlineTab() {
 
       const cur = prev[selectedMasterIndex];
 
-      // 상단 taxFree가 있으면 total에 포함
       const taxFreeNum = Number(stripComma(cur?.taxFree));
       const safeTaxFree = Number.isFinite(taxFreeNum) ? taxFreeNum : 0;
 
@@ -1086,7 +1092,6 @@ function AccountPurchaseDeadlineTab() {
       const nextVatText = sumVat.toLocaleString("ko-KR");
       const nextTotalText = (sumTax + sumVat + safeTaxFree).toLocaleString("ko-KR");
 
-      // 변화 없으면 그대로(무한루프 방지)
       const same =
         String(cur?.tax ?? "") === String(nextTaxText) &&
         String(cur?.vat ?? "") === String(nextVatText) &&
@@ -1096,20 +1101,16 @@ function AccountPurchaseDeadlineTab() {
 
       return prev.map((r, i) => {
         if (i !== selectedMasterIndex) return r;
-        return {
-          ...r,
-          tax: nextTaxText,
-          vat: nextVatText,
-          total: nextTotalText,
-        };
+        return { ...r, tax: nextTaxText, vat: nextVatText, total: nextTotalText };
       });
     });
   }, [
-    detailTaxSum,
-    detailAmountSum,
-    detailVatSum,
     selectedSaleId,
     selectedMasterIndex,
+    detailLoading,
+    detailRows,
+    detailTaxSum,
+    detailVatSum,
     setRows,
     stripComma,
   ]);
@@ -1139,44 +1140,81 @@ function AccountPurchaseDeadlineTab() {
     return Math.round(a / 11);
   }, []);
 
-  // ✅ 과세(taxType=1)일 때만 TAX = amount * 0.1 (반올림)
+  // ✅ 과세(taxType=1)일 때만 과세(공급가액) = amount - VAT
   const computeTax = useCallback((amount, taxType) => {
     const a = Number(amount);
     if (!Number.isFinite(a)) return 0;
     if (String(taxType) !== "1") return 0;
-    return Math.round(a * 0.1);
+    const vat = Math.round(a / 11);
+    const supply = a - vat;
+    return supply > 0 ? supply : 0;
   }, []);
+
+  const detailTaxFreeSum = useMemo(() => {
+    return (detailRows || []).reduce((sum, r) => {
+      const taxType = String(r?.taxType ?? "");
+      if (taxType === "1") return sum; // 과세면 제외
+      const n = Number(stripComma(r?.amount));
+      return sum + (Number.isFinite(n) ? n : 0);
+    }, 0);
+  }, [detailRows, stripComma]);
+
+  const detailTaxFreeSumText = useMemo(
+    () => detailTaxFreeSum.toLocaleString("ko-KR"),
+    [detailTaxFreeSum]
+  );
 
   // ✅ 하단 VAT/TAX: amount + taxType 기준으로 항상 자동 정리
   useEffect(() => {
+    if (!selectedSaleId) return;
+    if (selectedMasterIndex < 0) return;
+    if (detailLoading) return;
     if (!Array.isArray(detailRows) || detailRows.length === 0) return;
 
-    setDetailRows((prev) => {
-      let changed = false;
+    const sumTax = detailTaxSum; // ✅ 공급가액(과세)
+    const sumVat = detailVatSum; // ✅ 세액
+    const sumTotal = detailAmountSum; // ✅ 총액(하단 금액 합계)
+    const sumTaxFree = detailTaxFreeSum; // ✅ 면세 합계(선택)
 
-      const next = prev.map((row) => {
-        const taxType = String(row?.taxType ?? "");
-        const amountNum = toNum(row?.amount);
+    setRows((prev) => {
+      if (!Array.isArray(prev) || !prev[selectedMasterIndex]) return prev;
+      const cur = prev[selectedMasterIndex];
 
-        const vatNum = computeVat(amountNum, taxType);
-        const taxNum = computeTax(amountNum, taxType);
+      const nextTaxText = sumTax.toLocaleString("ko-KR");
+      const nextVatText = sumVat.toLocaleString("ko-KR");
+      const nextTotalText = sumTotal.toLocaleString("ko-KR"); // ✅ 핵심 변경
+      const nextTaxFreeText = sumTaxFree.toLocaleString("ko-KR"); // ✅ 추천
 
-        const vatText = (taxType === "1" ? vatNum : 0).toLocaleString("ko-KR");
-        const taxText = (taxType === "1" ? taxNum : 0).toLocaleString("ko-KR");
+      const same =
+        String(cur?.tax ?? "") === String(nextTaxText) &&
+        String(cur?.vat ?? "") === String(nextVatText) &&
+        String(cur?.total ?? "") === String(nextTotalText) &&
+        String(cur?.taxFree ?? "") === String(nextTaxFreeText);
 
-        const needVat = String(row?.vat ?? "") !== String(vatText);
-        const needTax = String(row?.tax ?? "") !== String(taxText);
+      if (same) return prev;
 
-        if (needVat || needTax) {
-          changed = true;
-          return { ...row, vat: vatText, tax: taxText };
-        }
-        return row;
+      return prev.map((r, i) => {
+        if (i !== selectedMasterIndex) return r;
+        return {
+          ...r,
+          tax: nextTaxText,
+          vat: nextVatText,
+          total: nextTotalText,
+          taxFree: nextTaxFreeText, // ✅ 추천
+        };
       });
-
-      return changed ? next : prev; // ✅ 무한루프 방지
     });
-  }, [detailRows, setDetailRows, toNum, computeVat, computeTax]);
+  }, [
+    selectedSaleId,
+    selectedMasterIndex,
+    detailLoading,
+    detailRows,
+    detailTaxSum,
+    detailVatSum,
+    detailAmountSum,
+    detailTaxFreeSum,
+    setRows,
+  ]);
 
   // =========================
   // ✅ (NEW) 거래처 Autocomplete 옵션/선택값
@@ -1750,12 +1788,6 @@ function AccountPurchaseDeadlineTab() {
                                   ? nextAmountNum.toLocaleString("ko-KR")
                                   : "";
 
-                                const vatNum = computeVat(nextAmountNum, next.taxType);
-                                next.vat =
-                                  String(next.taxType) === "1"
-                                    ? vatNum.toLocaleString("ko-KR")
-                                    : "0";
-
                                 setDetailRows((prev) =>
                                   prev.map((row, idx) => {
                                     if (idx !== i) return row;
@@ -1811,12 +1843,6 @@ function AccountPurchaseDeadlineTab() {
                                 const nextAmountText = nextAmountNum
                                   ? nextAmountNum.toLocaleString("ko-KR")
                                   : "";
-
-                                const vatNum = computeVat(nextAmountNum, next.taxType);
-                                next.vat =
-                                  String(next.taxType) === "1"
-                                    ? vatNum.toLocaleString("ko-KR")
-                                    : "0";
 
                                 setDetailRows((prev) =>
                                   prev.map((row, idx) => {
@@ -1975,6 +2001,7 @@ function AccountPurchaseDeadlineTab() {
 
                                         const amountNum = toNum(row.amount);
                                         const vatNum = computeVat(amountNum, nextTaxType);
+                                        const taxNum = computeTax(amountNum, nextTaxType);
 
                                         return {
                                           ...row,

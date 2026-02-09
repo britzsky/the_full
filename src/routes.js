@@ -74,6 +74,9 @@ import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
 import DinersManager from "layouts/dinersnumbersheet";
 
+// 개발팀 전용
+import TallyDevelopManager from "layouts/tallysheet_develop";
+
 // 테스트
 //import Temp from "layouts/temp/AccountEventTab";
 
@@ -472,6 +475,16 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/diners/dinersnumber",
         component: <DinersManager />,
+      },
+      {
+        type: "collapse",
+        name: "📋 집계표-개발팀",
+        key: "account",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/layouts/tallysheet_develop",
+        component: <TallyDevelopManager />,
+        allowUserIds: ["britzsky", "ww1"],
+        allowedDepartments: [6], // 🔹 부서권한
       },
       // {
       //   type: "collapse",

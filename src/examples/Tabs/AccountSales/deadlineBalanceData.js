@@ -58,7 +58,7 @@ export default function useDeadlineBalanceData(year, month) {
     setLoading(true);
     try {
       const res = await api.get("/Account/AccountDepositHistoryList", {
-        params: { account_id, year },
+        params: { account_id, year, month },
       });
 
       const rows = (res.data || []).map((item) => ({

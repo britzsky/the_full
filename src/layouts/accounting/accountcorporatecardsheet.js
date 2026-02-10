@@ -356,7 +356,12 @@ function AccountCorporateCardSheet() {
     const qLower = q.toLowerCase();
     const exact = list.find((o) => String(o?.account_name || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((o) => String(o?.account_name || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((o) =>
+        String(o?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
@@ -441,19 +446,19 @@ function AccountCorporateCardSheet() {
         const acctKey = String(r.account_id ?? selectedAccountId ?? "");
         const options = cardsByAccount[acctKey] || [];
 
-      const cardNoDigits = onlyDigits(r.cardNo ?? r.card_no ?? "");
-      const serverCardIdx = r.card_idx ?? r.cardIdx ?? r.idx ?? ""; // 안전하게 후보들
+        const cardNoDigits = onlyDigits(r.cardNo ?? r.card_no ?? "");
+        const serverCardIdx = r.card_idx ?? r.cardIdx ?? r.idx ?? ""; // 안전하게 후보들
 
-      const mappedIdx =
-        String(serverCardIdx || "") ||
-        (cardNoDigits ? String(options.find((o) => o.card_no === cardNoDigits)?.idx || "") : "");
+        const mappedIdx =
+          String(serverCardIdx || "") ||
+          (cardNoDigits ? String(options.find((o) => o.card_no === cardNoDigits)?.idx || "") : "");
 
-      return {
-        ...r,
-        cardNo: cardNoDigits, // digits 정규화
-        card_idx: mappedIdx, // ✅ select value (idx)
-        receipt_type: normalizeReceiptTypeVal(r.receipt_type),
-      };
+        return {
+          ...r,
+          cardNo: cardNoDigits, // digits 정규화
+          card_idx: mappedIdx, // ✅ select value (idx)
+          receipt_type: normalizeReceiptTypeVal(r.receipt_type),
+        };
       });
 
     setMasterRows((prev) => {
@@ -503,7 +508,6 @@ function AccountCorporateCardSheet() {
     const detailEl = detailWrapRef.current;
     if (detailEl) detailEl.scrollTop = detailScrollPosRef.current;
   }, [loading]);
-
 
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
@@ -991,7 +995,12 @@ function AccountCorporateCardSheet() {
     const qLower = q.toLowerCase();
     const exact = list.find((o) => String(o?.account_name || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((o) => String(o?.account_name || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((o) =>
+        String(o?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setModalAccountId(partial.account_id);
       setModalAccountInput(partial.account_name || q);
@@ -1134,6 +1143,120 @@ function AccountCorporateCardSheet() {
     ],
     []
   );
+
+  // ========================= ✅ 합계(footer) 계산 =========================
+  const sumMasterTax = useMemo(
+    () => (masterRows || []).reduce((acc, r) => acc + parseNumber(r?.tax), 0),
+    [masterRows]
+  );
+  const sumMasterVat = useMemo(
+    () => (masterRows || []).reduce((acc, r) => acc + parseNumber(r?.vat), 0),
+    [masterRows]
+  );
+  const sumMasterTaxFree = useMemo(
+    () => (masterRows || []).reduce((acc, r) => acc + parseNumber(r?.taxFree), 0),
+    [masterRows]
+  );
+  const sumMasterTotal = useMemo(
+    () => (masterRows || []).reduce((acc, r) => acc + parseNumber(r?.total), 0),
+    [masterRows]
+  );
+
+  const sumDetailQty = useMemo(
+    () => (detailRows || []).reduce((acc, r) => acc + parseNumber(r?.qty), 0),
+    [detailRows]
+  );
+  const sumDetailAmount = useMemo(
+    () => (detailRows || []).reduce((acc, r) => acc + parseNumber(r?.amount), 0),
+    [detailRows]
+  );
+
+  // ========================= ✅ 하단 수정 → 상단 자동 반영 =========================
+  useEffect(() => {
+    if (!selectedMaster) return;
+
+    // 상단에서 저장된 행이면 sale_id로, 신규면 client_id로 매칭
+    const masterKey = selectedMaster.sale_id
+      ? { type: "sale_id", value: String(selectedMaster.sale_id) }
+      : selectedMaster.client_id
+      ? { type: "client_id", value: String(selectedMaster.client_id) }
+      : null;
+
+    if (!masterKey) return;
+
+    // 1) 하단 amount 합계로 상단 total 자동 반영
+    const nextTotal = Number(sumDetailAmount || 0);
+
+    // 2) (선택) taxType 기준으로 과세/면세 자동 분리
+    //    - 과세(1): 공급가 = amount/1.1, 부가세 = amount - 공급가
+    //    - 면세(2): taxFree에 누적
+    let nextTax = 0;
+    let nextVat = 0;
+    let nextTaxFree = 0;
+
+    (detailRows || []).forEach((r) => {
+      const amt = parseNumber(r?.amount);
+      const tt = parseNumMaybe(r?.taxType); // 1/2/3 or null
+
+      if (tt === 1) {
+        const supply = Math.round(amt / 1.1);
+        const vat = amt - supply;
+        nextTax += supply;
+        nextVat += vat;
+      } else if (tt === 2) {
+        nextTaxFree += amt;
+      } else {
+        // 알수없음(3)이나 미선택("")은 total만 맞추고, 분해는 하지 않음
+        // 필요하면 여기 정책을 바꿔도 됨
+      }
+    });
+
+    // 3) masterRows 업데이트 (불필요한 set 방지)
+    setMasterRows((prev) => {
+      const idx = prev.findIndex((r) =>
+        masterKey.type === "sale_id"
+          ? String(r.sale_id) === masterKey.value
+          : String(r.client_id) === masterKey.value
+      );
+      if (idx < 0) return prev;
+
+      const row = prev[idx];
+
+      // 기존 값과 동일하면 업데이트 안 함 (무한렌더/깜빡임 방지)
+      const same =
+        parseNumber(row.total) === nextTotal &&
+        parseNumber(row.tax) === nextTax &&
+        parseNumber(row.vat) === nextVat &&
+        parseNumber(row.taxFree) === nextTaxFree;
+
+      if (same) return prev;
+
+      const next = [...prev];
+      next[idx] = {
+        ...row,
+        total: nextTotal,
+        tax: nextTax,
+        vat: nextVat,
+        taxFree: nextTaxFree,
+        // 필요하면 totalCard도 같이 맞추고 싶으면 아래처럼:
+        // totalCard: nextTotal,
+      };
+      return next;
+    });
+
+    // 선택된 행 state도 같이 최신화(하이라이트/상단 선택 유지)
+    setSelectedMaster((prev) =>
+      prev
+        ? {
+            ...prev,
+            total: nextTotal,
+            tax: nextTax,
+            vat: nextVat,
+            taxFree: nextTaxFree,
+          }
+        : prev
+    );
+  }, [detailRows, sumDetailAmount, selectedMaster]);
 
   if (loading) return <LoadingScreen />;
 
@@ -1282,6 +1405,13 @@ function AccountCorporateCardSheet() {
               width: "max-content",
               minWidth: "100%",
               borderSpacing: 0,
+            },
+            "& tfoot td": {
+              backgroundColor: "#fafafa",
+              position: "sticky",
+              bottom: 0,
+              zIndex: 3,
+              fontWeight: 700,
             },
             "& th, & td": {
               border: "1px solid #686D76",
@@ -1569,6 +1699,53 @@ function AccountCorporateCardSheet() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr>
+                {masterColumns.map((c, i) => {
+                  // 첫 칸에 라벨
+                  if (i === 0) {
+                    return (
+                      <td key={c.key} style={{ width: c.size }}>
+                        합계
+                      </td>
+                    );
+                  }
+
+                  // 합계 표시할 컬럼만 값 넣기
+                  if (c.key === "tax") {
+                    return (
+                      <td key={c.key} style={{ width: c.size }}>
+                        {formatNumber(sumMasterTax)}
+                      </td>
+                    );
+                  }
+                  if (c.key === "vat") {
+                    return (
+                      <td key={c.key} style={{ width: c.size }}>
+                        {formatNumber(sumMasterVat)}
+                      </td>
+                    );
+                  }
+                  if (c.key === "taxFree") {
+                    return (
+                      <td key={c.key} style={{ width: c.size }}>
+                        {formatNumber(sumMasterTaxFree)}
+                      </td>
+                    );
+                  }
+                  if (c.key === "total") {
+                    return (
+                      <td key={c.key} style={{ width: c.size }}>
+                        {formatNumber(sumMasterTotal)}
+                      </td>
+                    );
+                  }
+
+                  // 나머지는 빈칸
+                  return <td key={c.key} style={{ width: c.size }} />;
+                })}
+              </tr>
+            </tfoot>
           </table>
         </MDBox>
 
@@ -1611,6 +1788,13 @@ function AccountCorporateCardSheet() {
                 width: "max-content",
                 minWidth: "100%",
                 borderSpacing: 0,
+              },
+              "& tfoot td": {
+                backgroundColor: "#fafafa",
+                position: "sticky",
+                bottom: 0,
+                zIndex: 3,
+                fontWeight: 700,
               },
               "& th, & td": {
                 border: "1px solid #686D76",
@@ -1752,6 +1936,37 @@ function AccountCorporateCardSheet() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr>
+                  {detailColumns.map((c, i) => {
+                    if (i === 0) {
+                      return (
+                        <td key={c.key} style={{ width: c.size }}>
+                          합계
+                        </td>
+                      );
+                    }
+
+                    if (c.key === "qty") {
+                      return (
+                        <td key={c.key} style={{ width: c.size }}>
+                          {formatNumber(sumDetailQty)}
+                        </td>
+                      );
+                    }
+
+                    if (c.key === "amount") {
+                      return (
+                        <td key={c.key} style={{ width: c.size }}>
+                          {formatNumber(sumDetailAmount)}
+                        </td>
+                      );
+                    }
+
+                    return <td key={c.key} style={{ width: c.size }} />;
+                  })}
+                </tr>
+              </tfoot>
             </table>
           </MDBox>
         </MDBox>

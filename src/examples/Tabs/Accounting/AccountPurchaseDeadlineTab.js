@@ -68,6 +68,83 @@ function AccountPurchaseDeadlineTab() {
   const [accountList, setAccountList] = useState([]);
   const [accountInput, setAccountInput] = useState("");
 
+  // ✅ 타입(요양원/산업체/학교) 옵션: 거래처(account_id) 기준으로 서버에서 받기
+  const [typeOptions, setTypeOptions] = useState([]); // [{value, label}]
+  const [typeLoading, setTypeLoading] = useState(false);
+
+  const normalizeTypeOptions = useCallback((data) => {
+    // res.data 형태가 무엇이든 최대한 안전하게 배열로 만들기
+    const arr = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+
+    const mapped = arr
+      .map((x) => {
+        const value = x?.type ?? x?.account_type ?? x?.mapping_type ?? x?.code ?? x?.value ?? x?.id;
+
+        const label =
+          x?.type_name ??
+          x?.account_type_name ??
+          x?.mapping_name ??
+          x?.name ??
+          x?.label ??
+          x?.text ??
+          x?.value_name ??
+          x?.type ??
+          x?.account_type ??
+          x?.code ??
+          x?.value;
+
+        if (value === null || value === undefined || String(value).trim() === "") return null;
+
+        return { value: String(value), label: String(label ?? value) };
+      })
+      .filter(Boolean);
+
+    // 중복 제거(값 기준)
+    const uniq = [];
+    const seen = new Set();
+    for (const o of mapped) {
+      if (seen.has(o.value)) continue;
+      seen.add(o.value);
+      uniq.push(o);
+    }
+    return uniq;
+  }, []);
+
+  const fetchTypeOptions = useCallback(
+    async (accountId) => {
+      if (!accountId) {
+        setTypeOptions([]);
+        return [];
+      }
+      try {
+        setTypeLoading(true);
+        const res = await api.get("/Operate/AccountMappingV2List", {
+          params: { account_id: accountId },
+        });
+
+        const opts = normalizeTypeOptions(res?.data);
+
+        setTypeOptions(opts);
+        return opts;
+      } catch (e) {
+        console.error("타입 옵션 조회 실패(/Operate/AccountMappingV2List):", e);
+        setTypeOptions([]);
+        return [];
+      } finally {
+        setTypeLoading(false);
+      }
+    },
+    [normalizeTypeOptions]
+  );
+
+  const resolveNextType = useCallback((opts, currentType) => {
+    const cur = String(currentType ?? "");
+    if (opts?.some((o) => o.value === cur)) return cur;
+    if (opts?.length) return String(opts[0].value);
+    // 서버 옵션이 비면 기존 기본값 유지(원하면 "1"로 고정해도 됨)
+    return cur || "1";
+  }, []);
+
   // ✅ (상단) 데이터 훅 사용
   const { rows, setRows, originalRows, loading, fetchPurchaseList } =
     useAccountPurchaseDeadlineData();
@@ -148,9 +225,9 @@ function AccountPurchaseDeadlineTab() {
     if (didInitRef.current) return;
     didInitRef.current = true;
 
-    api
-      .get("/Account/AccountList", { params: { account_type: "0" } })
-      .then((res) => {
+    (async () => {
+      try {
+        const res = await api.get("/Account/AccountList", { params: { account_type: "0" } });
         const list = (res.data || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
@@ -159,13 +236,26 @@ function AccountPurchaseDeadlineTab() {
 
         if (list.length > 0) {
           const firstId = String(list[0].account_id);
-          const next = { ...filters, account_id: firstId };
 
+          // ✅ 1) 거래처 먼저 세팅
+          const base = { ...filters, account_id: firstId };
+
+          // ✅ 2) 거래처 기준으로 타입 옵션 조회
+          const opts = await fetchTypeOptions(firstId);
+
+          // ✅ 3) 현재 type이 옵션에 없으면 첫 번째 옵션으로 보정
+          const nextType = resolveNextType(opts, base.type);
+
+          const next = { ...base, type: nextType };
           setFilters(next);
+
+          // ✅ 4) 조회
           fetchPurchaseList(next);
         }
-      })
-      .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
+      } catch (err) {
+        console.error("데이터 조회 실패 (AccountList):", err);
+      }
+    })();
   }, []); // ✅ 의도적으로 1회만
 
   // ✅ 조회조건 변경 (기본 TextField용)
@@ -185,24 +275,71 @@ function AccountPurchaseDeadlineTab() {
     });
   };
 
-  // ✅ (NEW) 거래처 Autocomplete 변경 핸들러
+  // ✅ (상단) 합계 계산
+  const masterSums = useMemo(() => {
+    const sum = (key) =>
+      (rows || []).reduce((acc, r) => {
+        const n = Number(stripComma(r?.[key]));
+        return acc + (Number.isFinite(n) ? n : 0);
+      }, 0);
+
+    return {
+      tax: sum("tax"),
+      vat: sum("vat"),
+      taxFree: sum("taxFree"),
+      totalCash: sum("totalCash"),
+      totalCard: sum("totalCard"),
+      total: sum("total"),
+    };
+  }, [rows, stripComma]);
+
+  const masterSumText = useMemo(
+    () => ({
+      tax: masterSums.tax.toLocaleString("ko-KR"),
+      vat: masterSums.vat.toLocaleString("ko-KR"),
+      taxFree: masterSums.taxFree.toLocaleString("ko-KR"),
+      totalCash: masterSums.totalCash.toLocaleString("ko-KR"),
+      totalCard: masterSums.totalCard.toLocaleString("ko-KR"),
+      total: masterSums.total.toLocaleString("ko-KR"),
+    }),
+    [masterSums]
+  );
+
   const handleAccountChange = useCallback(
-    (_, opt) => {
+    async (_, opt) => {
       const nextId = opt ? String(opt.value) : "";
-      setFilters((prev) => {
-        const next = { ...prev, account_id: nextId };
 
-        // ✅ 기존 select 변경과 동일하게: 상세 초기화 + 재조회
-        setSelectedSaleId("");
-        setSelectedMasterIndex(-1);
-        setDetailRows([]);
-        setOriginalDetailRows([]);
+      // ✅ 공통 초기화
+      setSelectedSaleId("");
+      setSelectedMasterIndex(-1);
+      setDetailRows([]);
+      setOriginalDetailRows([]);
 
-        if (nextId) fetchPurchaseList(next);
-        return next;
-      });
+      if (!nextId) {
+        setTypeOptions([]);
+        setFilters((prev) => ({ ...prev, account_id: "" }));
+        return;
+      }
+
+      // ✅ 1) 타입 옵션 먼저 조회
+      const opts = await fetchTypeOptions(nextId);
+
+      // ✅ 2) filters 기반으로 next 구성
+      const nextType = resolveNextType(opts, filters.type);
+      const next = { ...filters, account_id: nextId, type: nextType };
+
+      // ✅ 3) 상태 반영 + 조회
+      setFilters(next);
+      fetchPurchaseList(next);
     },
-    [fetchPurchaseList, setDetailRows, setOriginalDetailRows]
+    [
+      filters,
+      fetchPurchaseList,
+      fetchTypeOptions,
+      resolveNextType,
+      setDetailRows,
+      setOriginalDetailRows,
+    ]
   );
 
   // ✅ 조회 버튼 클릭
@@ -1286,10 +1423,22 @@ function AccountPurchaseDeadlineTab() {
             sx={{ minWidth: isMobile ? 100 : 120 }}
             SelectProps={{ native: true }}
             value={filters.type}
+            disabled={typeLoading}
           >
-            <option value="1">요양원</option>
-            <option value="4">산업체</option>
-            <option value="5">학교</option>
+            {/* ✅ 서버 옵션이 없을 때 fallback(원하면 제거 가능) */}
+            {typeOptions.length === 0 ? (
+              <>
+                <option value="1">요양원</option>
+                <option value="4">산업체</option>
+                <option value="5">학교</option>
+              </>
+            ) : (
+              typeOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))
+            )}
           </TextField>
 
           <TextField
@@ -1649,6 +1798,47 @@ function AccountPurchaseDeadlineTab() {
                     ))
                   )}
                 </tbody>
+                {rows.length > 0 && (
+                  <tfoot>
+                    <tr>
+                      {/* 사업장~사업자번호(4칸) */}
+                      <td
+                        colSpan={4}
+                        style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}
+                      >
+                        합계
+                      </td>
+
+                      {/* 과세 / 부가세 / 면세 */}
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {masterSumText.tax}
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {masterSumText.vat}
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {masterSumText.taxFree}
+                      </td>
+
+                      {/* 구분(payType) 칸은 비워둠 */}
+                      <td style={{ background: "#f7f7f7" }} />
+
+                      {/* 현금합계 / 카드합계 / 합계 */}
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {masterSumText.totalCash}
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {masterSumText.totalCard}
+                      </td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
+                        {masterSumText.total}
+                      </td>
+
+                      {/* 증빙자료사진 + 기타(2칸) */}
+                      <td colSpan={2} style={{ background: "#f7f7f7" }} />
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </Grid>
           </Grid>

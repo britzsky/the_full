@@ -70,7 +70,12 @@ export default function ProfitLossTableTab() {
     const qLower = q.toLowerCase();
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((a) =>
+        String(a?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
@@ -102,8 +107,17 @@ export default function ProfitLossTableTab() {
   // ✅ 숨길 컬럼
   const hiddenCols = ["주간일반", "주간직원"];
 
-  // ✅ 특정 거래처
-  const isHangyeol = selectedAccountId === "20250819193455";
+  // ✅ 특정 거래처들(주간일반/주간직원 컬럼까지 보여줄 거래처)
+  const HANGYEOL_ACCOUNT_IDS = new Set([
+    "20250819193455",
+    "20250819193504",
+    "20250819193603",
+    "20250919162439",
+    "20250819193620",
+    "20250819193632",
+  ]);
+
+  const isHangyeol = HANGYEOL_ACCOUNT_IDS.has(String(selectedAccountId));
 
   // ✅ 화면 헤더 구조
   const headers = [

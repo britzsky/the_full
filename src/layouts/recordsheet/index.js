@@ -92,7 +92,6 @@ const getDispatchStatFromMap = (map, row) => {
   return null;
 };
 
-
 const toNumberLike = (v) => {
   const s = String(v ?? "").replace(/[^0-9.-]/g, "");
   const n = Number(s);
@@ -145,7 +144,9 @@ const formatMoneyLike = (v) => {
 // ✅ 숫자 변환 (엑셀용)
 const toNumberMaybe = (v) => {
   if (v == null || v === "") return "";
-  const cleaned = String(v).replace(/[^0-9.-]/g, "").trim();
+  const cleaned = String(v)
+    .replace(/[^0-9.-]/g, "")
+    .trim();
   if (!cleaned) return "";
   const n = Number(cleaned);
   return Number.isNaN(n) ? "" : n;
@@ -790,8 +791,8 @@ function RecordSheet() {
         const toDay = endInMonth
           ? realEnd.date()
           : realEnd.isBefore(monthStart)
-            ? null
-            : daysInThisMonth;
+          ? null
+          : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -860,8 +861,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                  ? "미지급"
-                  : "부분"
+                ? "미지급"
+                : "부분"
               : "-";
 
           return {
@@ -937,13 +938,13 @@ function RecordSheet() {
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-      src?.record_type ??
-      src?.work_type ??
-      src?.recordType ??
-      src?.workType ??
-      src?.work_kind ??
-      src?.work_cd ??
-      "",
+        src?.record_type ??
+        src?.work_type ??
+        src?.recordType ??
+        src?.workType ??
+        src?.work_kind ??
+        src?.work_cd ??
+        "",
       ""
     );
 
@@ -1165,38 +1166,38 @@ function RecordSheet() {
         const source = getDaySource(item, d) || item[key] || null;
 
         const t = pickType(source);
-        const memberDispatchAmount = memberDispatchAmountMap.get(String(item.member_id)) ?? "";
-        const isEmployeeDispatch = String(t) === "6" || String(t) === "직원파출";
+        // const memberDispatchAmount = memberDispatchAmountMap.get(String(item.member_id)) ?? "";
+        // const isEmployeeDispatch = String(t) === "6" || String(t) === "직원파출";
 
         dayEntries[key] = source
           ? {
-            ...source,
-            type: t,
-            gubun: safeTrim(source.gubun, baseGubun),
-            position_type: safeTrim(source.position_type, basePt),
-            start: source.start_time || source.start || "",
-            end: source.end_time || source.end || "",
-            start_time: source.start_time || "",
-            end_time: source.end_time || "",
-            salary: isEmployeeDispatch ? memberDispatchAmount : source.salary || "",
-            note: source.note ?? source.note ?? "",
-            pay_yn:
-              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
-          }
+              ...source,
+              type: t,
+              gubun: safeTrim(source.gubun, baseGubun),
+              position_type: safeTrim(source.position_type, basePt),
+              start: source.start_time || source.start || "",
+              end: source.end_time || source.end || "",
+              start_time: source.start_time || "",
+              end_time: source.end_time || "",
+              salary: source.salary || "",
+              note: source.note ?? source.note ?? "",
+              pay_yn:
+                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+            }
           : {
-            account_id: item.account_id,
-            member_id: item.member_id,
-            gubun: baseGubun,
-            position_type: basePt,
-            type: "",
-            start: "",
-            end: "",
-            start_time: "",
-            end_time: "",
-            salary: "",
-            note: "",
-            pay_yn: "N",
-          };
+              account_id: item.account_id,
+              member_id: item.member_id,
+              gubun: baseGubun,
+              position_type: basePt,
+              type: "",
+              start: "",
+              end: "",
+              start_time: "",
+              end_time: "",
+              salary: "",
+              note: "",
+              pay_yn: "N",
+            };
       }
 
       return { ...base, ...dayEntries };
@@ -1441,7 +1442,7 @@ function RecordSheet() {
         35, // 직원파출
         15, // 초과
         15, // 결근
-        50  // 비고
+        50, // 비고
       ];
       const dispatchRightHeader = [
         "업장",
@@ -1461,7 +1462,7 @@ function RecordSheet() {
         12, // 파출횟수
         18, // 파출비
         18, // 파출비소계
-        40  // 비고
+        40, // 비고
       ];
       const separatorWidth = 3;
 
@@ -1632,7 +1633,12 @@ function RecordSheet() {
         addSectionTitle(wsAttend, `■ ${accName} (${accId})  /  ${rangeLabel}`, attendColCount);
 
         const rightHeaderCells = Array(attendRightHeader.length).fill("");
-        const header = ["직원명", ...dateList.map((d) => `${d.format("M/D")}`), "", ...rightHeaderCells];
+        const header = [
+          "직원명",
+          ...dateList.map((d) => `${d.format("M/D")}`),
+          "",
+          ...rightHeaderCells,
+        ];
         wsAttend.addRow(header);
         styleHeaderRow(wsAttend, wsAttend.lastRow.number);
         const headerRowNum = wsAttend.lastRow.number;
@@ -1726,8 +1732,8 @@ function RecordSheet() {
           const toDay = endInMonth
             ? realEnd.date()
             : realEnd.isBefore(monthStart)
-              ? null
-              : daysInThisMonth;
+            ? null
+            : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -1986,7 +1992,9 @@ function RecordSheet() {
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
           totalCnt > 0
-            ? `${paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"}(${paidCnt}/${totalCnt})`
+            ? `${
+                paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
+              }(${paidCnt}/${totalCnt})`
             : "";
 
         wsDispatch.addRow([

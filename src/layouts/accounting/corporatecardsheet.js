@@ -428,7 +428,12 @@ function CorporateCardSheet() {
     const qLower = q.toLowerCase();
     const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((o) =>
+        String(o?.label || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.value);
       setAccountInput(partial.label || q);
@@ -517,7 +522,6 @@ function CorporateCardSheet() {
     if (detailEl) detailEl.scrollTop = detailScrollPosRef.current;
   }, [loading]);
 
-
   const getRowCardNoDigits = (row) => onlyDigits(row?.cardNo ?? row?.card_no ?? row?.cardno ?? "");
 
   const getRowCardBrand = (row) =>
@@ -533,24 +537,66 @@ function CorporateCardSheet() {
     );
   }, []);
 
-  const handleDetailCellChange = useCallback((rowIndex, key, value) => {
-    const nextRaw = typeof value === "string" ? value.replace(/\u00A0/g, " ").trim() : value;
+  const handleDetailCellChange = useCallback(
+    (rowIndex, key, value) => {
+      const nextRaw = typeof value === "string" ? value.replace(/\u00A0/g, " ").trim() : value;
 
-    setDetailRows((prev) => {
-      const curRow = prev[rowIndex];
-      if (!curRow) return prev;
+      setDetailRows((prev) => {
+        const curRow = prev[rowIndex];
+        if (!curRow) return prev;
 
-      const curVal = curRow[key] ?? "";
-      if (isDetailFieldSame(key, curVal, nextRaw)) return prev;
+        const curVal = curRow[key] ?? "";
+        if (isDetailFieldSame(key, curVal, nextRaw)) return prev;
 
-      const nextVal =
-        DETAIL_NUMBER_KEYS.includes(key) || DETAIL_SELECT_KEYS.includes(key)
-          ? parseNumMaybe(nextRaw) ?? 0
-          : nextRaw;
+        const nextVal =
+          DETAIL_NUMBER_KEYS.includes(key) || DETAIL_SELECT_KEYS.includes(key)
+            ? parseNumMaybe(nextRaw) ?? 0
+            : nextRaw;
 
-      return prev.map((r, i) => (i === rowIndex ? { ...r, [key]: nextVal } : r));
-    });
-  }, []);
+        const nextRows = prev.map((r, i) => (i === rowIndex ? { ...r, [key]: nextVal } : r));
+
+        // ✅ (핵심) amount 변경 시 -> 하단 amount 합계로 상단 total 자동 업데이트
+        if (key === "amount") {
+          // ✅ 하단 데이터가 "없으면" 상단 total을 0으로 만들지 않음
+          // (행이 아예 0개인 상태면 total 건드리지 않음)
+          if ((nextRows || []).length > 0 && selectedMaster) {
+            const sum = (nextRows || []).reduce((acc, r) => acc + parseNumber(r?.amount), 0);
+
+            const selectedSaleId = String(selectedMaster?.sale_id || "").trim();
+
+            setMasterRows((mPrev) =>
+              (mPrev || []).map((mr) => {
+                const mrSaleId = String(mr?.sale_id || "").trim();
+
+                // ✅ sale_id 우선 매칭, (혹시 신규라면 client_id로도 매칭)
+                const sameRow =
+                  (selectedSaleId && mrSaleId && mrSaleId === selectedSaleId) ||
+                  (!selectedSaleId &&
+                    selectedMaster?.client_id &&
+                    String(mr?.client_id || "") === String(selectedMaster.client_id));
+
+                if (!sameRow) return mr;
+
+                return {
+                  ...mr,
+                  total: sum, // ✅ total 자동 반영
+                  __dirty: true, // ✅ 저장 대상 표시
+                };
+              })
+            );
+
+            // ✅ 선택행 객체도 같이 갱신(하이라이트/화면 동기화)
+            setSelectedMaster((prevSel) =>
+              prevSel ? { ...prevSel, total: sum, __dirty: true } : prevSel
+            );
+          }
+        }
+
+        return nextRows;
+      });
+    },
+    [selectedMaster]
+  );
 
   // ✅ 카드 선택
   const handleCardSelect = useCallback(
@@ -1399,6 +1445,124 @@ function CorporateCardSheet() {
     []
   );
 
+  // ✅ (추가) 하단 amount 합계 계산
+  const sumDetailAmount = useCallback((rows) => {
+    return (rows || []).reduce((acc, r) => acc + parseNumber(r?.amount), 0);
+  }, []);
+
+  // ✅ (추가) 상단 total 합계(전체 행)
+  const masterTotalSum = useMemo(() => {
+    return (masterRows || []).reduce((acc, r) => acc + parseNumber(r?.total), 0);
+  }, [masterRows]);
+
+  // ✅ (추가) 하단 amount 합계(현재 선택된 상세 목록)
+  const detailAmountSum = useMemo(() => {
+    return sumDetailAmount(detailRows || []);
+  }, [detailRows, sumDetailAmount]);
+
+  // ✅ (추가) footer 위치를 위해 컬럼 index
+  const masterTotalColIndex = useMemo(
+    () => masterColumns.findIndex((c) => c.key === "total"),
+    [masterColumns]
+  );
+
+  const detailAmountColIndex = useMemo(
+    () => detailColumns.findIndex((c) => c.key === "amount"),
+    [detailColumns]
+  );
+
+  // ========================= ✅ 하단 수정 → 상단 자동 반영(과세/면세 분해 포함) =========================
+  useEffect(() => {
+    if (!selectedMaster) return;
+
+    // 하단이 아예 없으면 상단을 0으로 덮어쓰지 않도록(원하면 정책 변경 가능)
+    if (!(detailRows || []).length) return;
+
+    // ✅ 상단에서 저장된 행이면 sale_id로, 신규면 client_id로 매칭
+    const masterKey = selectedMaster.sale_id
+      ? { type: "sale_id", value: String(selectedMaster.sale_id) }
+      : selectedMaster.client_id
+      ? { type: "client_id", value: String(selectedMaster.client_id) }
+      : null;
+
+    if (!masterKey) return;
+
+    // 1) 하단 amount 합계로 상단 total 자동 반영
+    const nextTotal = (detailRows || []).reduce((acc, r) => acc + parseNumber(r?.amount), 0);
+
+    // 2) taxType 기준으로 과세/면세 자동 분리
+    //    - 과세(1): 공급가 = amount/1.1, 부가세 = amount - 공급가
+    //    - 면세(2): taxFree에 누적
+    let nextTax = 0;
+    let nextVat = 0;
+    let nextTaxFree = 0;
+
+    (detailRows || []).forEach((r) => {
+      const amt = parseNumber(r?.amount);
+      const tt = parseNumMaybe(r?.taxType); // 1/2/3 or null
+
+      if (tt === 1) {
+        const supply = Math.round(amt / 1.1);
+        const vat = amt - supply;
+        nextTax += supply;
+        nextVat += vat;
+      } else if (tt === 2) {
+        nextTaxFree += amt;
+      } else {
+        // 알수없음(3)이나 미선택("")은 total만 맞추고 분해는 하지 않음
+        // 정책 바꾸고 싶으면 여기서 처리
+      }
+    });
+
+    // 3) masterRows 업데이트 (불필요한 set 방지)
+    setMasterRows((prev) => {
+      const idx = (prev || []).findIndex((r) =>
+        masterKey.type === "sale_id"
+          ? String(r.sale_id) === masterKey.value
+          : String(r.client_id) === masterKey.value
+      );
+      if (idx < 0) return prev;
+
+      const row = prev[idx];
+
+      // 기존 값과 동일하면 업데이트 안 함 (무한렌더/깜빡임 방지)
+      const same =
+        parseNumber(row.total) === nextTotal &&
+        parseNumber(row.tax) === nextTax &&
+        parseNumber(row.vat) === nextVat &&
+        parseNumber(row.taxFree) === nextTaxFree;
+
+      if (same) return prev;
+
+      const next = [...prev];
+      next[idx] = {
+        ...row,
+        total: nextTotal,
+        tax: nextTax,
+        vat: nextVat,
+        taxFree: nextTaxFree,
+        __dirty: true, // ✅ 저장 대상 표시
+        // 필요하면 totalCard도 같이 맞추려면:
+        // totalCard: nextTotal,
+      };
+      return next;
+    });
+
+    // 선택된 행 state도 같이 최신화(하이라이트/화면 동기화)
+    setSelectedMaster((prevSel) =>
+      prevSel
+        ? {
+            ...prevSel,
+            total: nextTotal,
+            tax: nextTax,
+            vat: nextVat,
+            taxFree: nextTaxFree,
+            __dirty: true,
+          }
+        : prevSel
+    );
+  }, [detailRows, selectedMaster]);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -1547,6 +1711,9 @@ function CorporateCardSheet() {
               width: "max-content",
               minWidth: "100%",
               borderSpacing: 0,
+            },
+            "& tfoot td": {
+              borderTop: "2px solid #333",
             },
             "& th, & td": {
               border: "1px solid #686D76",
@@ -1886,6 +2053,49 @@ function CorporateCardSheet() {
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr>
+                {/* total 컬럼 전까지는 "합계" 라벨 */}
+                <td
+                  colSpan={Math.max(masterTotalColIndex, 1)}
+                  style={{
+                    position: "sticky",
+                    bottom: 0,
+                    background: "#fff",
+                    fontWeight: 700,
+                    textAlign: "right",
+                    paddingRight: 10,
+                    zIndex: 1,
+                  }}
+                >
+                  합계
+                </td>
+
+                {/* total 컬럼에 합계 표시 */}
+                <td
+                  style={{
+                    position: "sticky",
+                    bottom: 0,
+                    background: "#fff",
+                    fontWeight: 700,
+                    zIndex: 1,
+                  }}
+                >
+                  {formatNumber(masterTotalSum)}
+                </td>
+
+                {/* 나머지 컬럼은 빈칸 */}
+                <td
+                  colSpan={Math.max(masterColumns.length - masterTotalColIndex - 1, 0)}
+                  style={{
+                    position: "sticky",
+                    bottom: 0,
+                    background: "#fff",
+                    zIndex: 1,
+                  }}
+                />
+              </tr>
+            </tfoot>
           </table>
         </MDBox>
 
@@ -2067,6 +2277,46 @@ function CorporateCardSheet() {
                   </tr>
                 ))}
               </tbody>
+              <tfoot>
+                <tr>
+                  <td
+                    colSpan={Math.max(detailAmountColIndex, 1)}
+                    style={{
+                      position: "sticky",
+                      bottom: 0,
+                      background: "#fff",
+                      fontWeight: 700,
+                      textAlign: "right",
+                      paddingRight: 10,
+                      zIndex: 1,
+                    }}
+                  >
+                    합계
+                  </td>
+
+                  <td
+                    style={{
+                      position: "sticky",
+                      bottom: 0,
+                      background: "#fff",
+                      fontWeight: 700,
+                      zIndex: 1,
+                    }}
+                  >
+                    {formatNumber(detailAmountSum)}
+                  </td>
+
+                  <td
+                    colSpan={Math.max(detailColumns.length - detailAmountColIndex - 1, 0)}
+                    style={{
+                      position: "sticky",
+                      bottom: 0,
+                      background: "#fff",
+                      zIndex: 1,
+                    }}
+                  />
+                </tr>
+              </tfoot>
             </table>
           </MDBox>
         </MDBox>

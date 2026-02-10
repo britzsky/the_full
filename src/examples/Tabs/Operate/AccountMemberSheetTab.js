@@ -932,6 +932,381 @@ function AccountMemberSheet() {
     }
   };
 
+  // =========================
+  // ✅ 직원파출관리 모달 로직 (유틸관리 복제 → "파견일자"로 변경)
+  // =========================
+  const DISPATCH_TYPE = 6;
+
+  const [dispatchAccountId, setDispatchAccountId] = useState("");
+  const [dispatchAccountInput, setDispatchAccountInput] = useState("");
+
+  const selectedDispatchAccountOption = useMemo(() => {
+    const v = String(dispatchAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, dispatchAccountId]);
+
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+
+  // 왼쪽: 직원 목록
+  const [dispatchMemberRows, setDispatchMemberRows] = useState([]);
+  const [dispatchSelectedMember, setDispatchSelectedMember] = useState(null);
+
+  // 가운데: 매핑 목록
+  const [dispatchMappingRows, setDispatchMappingRows] = useState([]);
+  const [dispatchSelectedMappingRowIndex, setDispatchSelectedMappingRowIndex] = useState(null);
+
+  // 오른쪽: 업장 목록
+  const [dispatchAccountRows, setDispatchAccountRows] = useState([]);
+  const [dispatchSelectedAccount, setDispatchSelectedAccount] = useState(null);
+
+  // ✅ record_date → record_year / record_month / record_date(YYYY-MM-DD) 분리
+  const splitRecordDate = (dateStr) => {
+    const d = dayjs(dateStr);
+    if (!dateStr || !d.isValid()) {
+      return { record_year: null, record_month: null, record_date: null };
+    }
+    return {
+      record_year: d.year(),
+      record_month: d.month() + 1,
+      record_date: d.date(),
+      //record_date: d.format("YYYY-MM-DD"),
+    };
+  };
+
+  // ✅ 가운데 테이블에서 파견일자 수정용
+  const handleDispatchRowChange = (rowIndex, key, value) => {
+    setDispatchMappingRows((prev) =>
+      (prev || []).map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r))
+    );
+  };
+
+  // ✅ (중요) API는 유틸관리와 동일하게 호출하되, year/month를 params에 포함
+  //    서버가 year/month를 아직 안 받더라도 무시될 수 있으니 안전함
+  // ✅ 왼쪽: 직원 목록 (/Operate/AccountMemberAllList)
+  // params: account_id, del_yn='N'
+  const fetchDispatchMemberList = useCallback(
+    async (accountIdParam) => {
+      const accId = String(accountIdParam ?? dispatchAccountId ?? "");
+      if (!accId) return [];
+
+      const res = await api.get("/Operate/AccountMemberAllList", {
+        params: { account_id: accId, del_yn: "N" },
+      });
+
+      const list = res?.data?.data ?? res?.data ?? [];
+      return Array.isArray(list) ? list : [];
+    },
+    [dispatchAccountId]
+  );
+
+  // ✅ 가운데: 매핑 조회 (/Account/AccountMemberDispatchMappingList)
+  // 더 이상 year/month로 필터하지 않고 member_id만으로 조회
+  const fetchDispatchMappingList = useCallback(async (memberId) => {
+    if (!memberId) return [];
+
+    const res = await api.get("/Account/AccountMemberDispatchMappingList", {
+      params: { member_id: memberId },
+    });
+
+    const list = res?.data?.data ?? res?.data ?? [];
+    return Array.isArray(list) ? list : [];
+  }, []);
+
+  // ✅ 오른쪽: 업장 목록 (/Account/AccountList)
+  const fetchDispatchAccountList = useCallback(async () => {
+    const res = await api.get("/Account/AccountList", {
+      params: { account_type: 0 },
+    });
+    const list = res?.data?.data ?? res?.data ?? [];
+    return Array.isArray(list) ? list : [];
+  }, []);
+
+  const openDispatchModal = async () => {
+    try {
+      setDispatchSelectedMember(null);
+      setDispatchSelectedAccount(null);
+      setDispatchSelectedMappingRowIndex(null);
+      setDispatchMappingRows([]);
+
+      const initAccId =
+        String(selectedAccountId ?? "") || String(accountOptions?.[0]?.value ?? "") || "";
+
+      setDispatchAccountId(initAccId);
+
+      const [members, accounts] = await Promise.all([
+        fetchDispatchMemberList(initAccId),
+        fetchDispatchAccountList(),
+      ]);
+
+      setDispatchMemberRows(members || []);
+      setDispatchAccountRows(accounts || []);
+
+      setDispatchOpen(true);
+    } catch (err) {
+      Swal.fire("조회 실패", err?.message || "오류", "error");
+    }
+  };
+
+  const closeDispatchModal = () => {
+    setDispatchOpen(false);
+  };
+
+  const handleSelectDispatchMember = async (row) => {
+    try {
+      setDispatchSelectedMember(row);
+      setDispatchSelectedMappingRowIndex(null);
+
+      const memberId = row?.member_id;
+      if (!memberId) {
+        setDispatchMappingRows([]);
+        return;
+      }
+
+      const mappings = await fetchDispatchMappingList(memberId);
+
+      // ✅ 서버에서 record_date / record_year/record_month 형태가 뭐가 오든 UI용 record_date(YYYY-MM-DD)로 맞춤
+      const normalized = (mappings || []).map((x) => {
+        const date =
+          x.record_date ||
+          (x.record_year && x.record_month && x.record_day
+            ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
+                2,
+                "0"
+              )}-${String(x.record_day).padStart(2, "0")}`
+            : "");
+
+        return {
+          ...x,
+          // ✅ 직원 시간도 같이 보강(없으면 직원값으로)
+          start_time: normalizeTime(x.start_time ?? row.start_time),
+          end_time: normalizeTime(x.end_time ?? row.end_time),
+
+          // ✅ 파견일자 UI 필드
+          record_date: date ? dayjs(date).format("YYYY-MM-DD") : "",
+
+          // ✅ type 기본값
+          type: x.type ?? DISPATCH_TYPE,
+        };
+      });
+
+      setDispatchMappingRows(normalized);
+    } catch (err) {
+      Swal.fire("조회 실패", err?.message || "오류", "error");
+    }
+  };
+
+  const handleAddDispatchMappingFromRight = () => {
+    if (!dispatchSelectedMember?.member_id) {
+      Swal.fire("안내", "왼쪽에서 직원을 먼저 선택해주세요.", "info");
+      return;
+    }
+    if (!dispatchSelectedAccount?.account_id) {
+      Swal.fire("안내", "오른쪽에서 업장을 먼저 선택해주세요.", "info");
+      return;
+    }
+
+    const member_id = dispatchSelectedMember.member_id;
+    const position_type = dispatchSelectedMember.position_type;
+
+    // ✅ 직원 소속 고객사(직원 원 소속)
+    const account_id = dispatchSelectedMember.account_id;
+
+    // ✅ 파견 고객사(업장 목록에서 선택)
+    const dispatch_account_id = dispatchSelectedAccount.account_id;
+
+    // ✅ 중복 방지: member_id + dispatch_account_id 기준
+    const exists = (dispatchMappingRows || []).some(
+      (r) =>
+        String(r.member_id) === String(member_id) &&
+        String(r.dispatch_account_id) === String(dispatch_account_id)
+    );
+    if (exists) {
+      Swal.fire("안내", "이미 매핑된 업장입니다.", "info");
+      return;
+    }
+
+    const newRow = {
+      idx: null, // 신규
+      member_id,
+      name: dispatchSelectedMember.name ?? dispatchSelectedMember.member_name ?? "",
+      position_type,
+
+      account_id,
+      dispatch_account_id,
+
+      // ✅ 직원 목록에서 시간 포함
+      start_time: normalizeTime(dispatchSelectedMember.start_time),
+      end_time: normalizeTime(dispatchSelectedMember.end_time),
+
+      // ✅ 파견일자(달력 선택) - 기본값: 오늘
+      record_date: dayjs().format("YYYY-MM-DD"),
+
+      // ✅ type 고정
+      type: DISPATCH_TYPE,
+    };
+
+    setDispatchMappingRows((prev) => [newRow, ...(prev || [])]);
+  };
+
+  const handleDispatchSave = async () => {
+    if (!dispatchSelectedMember?.member_id) {
+      Swal.fire("안내", "왼쪽에서 직원을 먼저 선택해주세요.", "info");
+      return;
+    }
+
+    // ✅ 파견일자 필수 체크
+    const noDate = (dispatchMappingRows || []).some((r) => !r.record_date);
+    if (noDate) {
+      Swal.fire("안내", "가운데 매핑 목록에서 파견일자를 모두 선택해주세요.", "info");
+      return;
+    }
+
+    try {
+      const payload = (dispatchMappingRows || []).map((r) => {
+        const { record_year, record_month, record_date } = splitRecordDate(r.record_date);
+
+        return {
+          // 서버가 idx로 update 구분하면 같이 보내기
+          idx: r.idx ?? null,
+
+          member_id: dispatchSelectedMember.member_id,
+
+          // ✅ 소속/파견 고객사
+          account_id: r.account_id ?? dispatchSelectedMember.account_id,
+          dispatch_account_id: r.dispatch_account_id,
+
+          // ✅ 직원 정보
+          name: r.name ?? dispatchSelectedMember.name,
+          position_type: r.position_type ?? dispatchSelectedMember.position_type,
+
+          // ✅ 시간 포함
+          start_time: r.start_time ?? normalizeTime(dispatchSelectedMember.start_time),
+          end_time: r.end_time ?? normalizeTime(dispatchSelectedMember.end_time),
+
+          // ✅ 저장용 날짜 3종
+          record_year,
+          record_month,
+          record_date,
+
+          // ✅ type은 6 고정
+          type: DISPATCH_TYPE,
+        };
+      });
+
+      const res = await api.post("/Account/AccountMemberDispatchMappingSave", payload);
+      const ok = res?.status === 200 || res?.data?.code === 200;
+
+      if (!ok) {
+        Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
+        return;
+      }
+
+      Swal.fire("저장 완료", "직원 파출 매핑이 저장되었습니다.", "success");
+
+      // 저장 후 가운데 재조회
+      const latest = await fetchDispatchMappingList(dispatchSelectedMember.member_id);
+
+      const normalized = (latest || []).map((x) => {
+        const date =
+          x.record_date ||
+          (x.record_year && x.record_month && x.record_day
+            ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
+                2,
+                "0"
+              )}-${String(x.record_day).padStart(2, "0")}`
+            : "");
+
+        return {
+          ...x,
+          start_time: normalizeTime(x.start_time ?? dispatchSelectedMember.start_time),
+          end_time: normalizeTime(x.end_time ?? dispatchSelectedMember.end_time),
+          record_date: date ? dayjs(date).format("YYYY-MM-DD") : "",
+          type: x.type ?? DISPATCH_TYPE,
+        };
+      });
+
+      setDispatchMappingRows(normalized);
+      setDispatchOpen(false);
+    } catch (err) {
+      Swal.fire("저장 실패", err?.message || "오류", "error");
+    }
+  };
+
+  useEffect(() => {
+    if (!dispatchOpen) return;
+
+    (async () => {
+      try {
+        // 왼쪽 직원목록: 거래처 기준
+        if (dispatchAccountId) {
+          const members = await fetchDispatchMemberList(dispatchAccountId);
+          setDispatchMemberRows(members || []);
+        } else {
+          setDispatchMemberRows([]);
+        }
+
+        // 오른쪽 업장 목록
+        const accounts = await fetchDispatchAccountList();
+        setDispatchAccountRows(accounts || []);
+
+        // 가운데 매핑(선택된 직원이 있으면)
+        if (dispatchSelectedMember?.member_id) {
+          const mappings = await fetchDispatchMappingList(dispatchSelectedMember.member_id);
+
+          const normalized = (mappings || []).map((x) => {
+            const date =
+              x.record_date ||
+              (x.record_year && x.record_month && x.record_day
+                ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
+                    2,
+                    "0"
+                  )}-${String(x.record_day).padStart(2, "0")}`
+                : "");
+
+            return {
+              ...x,
+              start_time: normalizeTime(x.start_time ?? dispatchSelectedMember.start_time),
+              end_time: normalizeTime(x.end_time ?? dispatchSelectedMember.end_time),
+              record_date: date ? dayjs(date).format("YYYY-MM-DD") : "",
+              type: x.type ?? DISPATCH_TYPE,
+            };
+          });
+
+          setDispatchMappingRows(normalized);
+        } else {
+          setDispatchMappingRows([]);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+  }, [
+    dispatchOpen,
+    dispatchAccountId,
+    dispatchSelectedMember?.member_id,
+    fetchDispatchMemberList,
+    fetchDispatchAccountList,
+    fetchDispatchMappingList,
+  ]);
+
+  // 직원파출관리 모달에서 업장명 표시용 맵
+  const dispatchAccountNameMap = useMemo(() => {
+    const m = new Map();
+    (dispatchAccountRows || []).forEach((a) => {
+      m.set(String(a.account_id), a.account_name);
+    });
+    return m;
+  }, [dispatchAccountRows]);
+
+  // ✅ 직원 소속 고객사(account_id) 이름 맵 (accountOptions 기반)
+  const memberAccountNameMap = useMemo(() => {
+    const m = new Map();
+    (accountOptions || []).forEach((a) => {
+      m.set(String(a.value), a.label);
+    });
+    return m;
+  }, [accountOptions]);
+
   const handleAddRow = () => {
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
@@ -1681,6 +2056,10 @@ function AccountMemberSheet() {
           유틸관리
         </MDButton>
 
+        <MDButton variant="gradient" color="warning" onClick={openDispatchModal}>
+          직원파출관리
+        </MDButton>
+
         <MDButton
           variant="gradient"
           color="dark"
@@ -2171,6 +2550,400 @@ function AccountMemberSheet() {
                         <tr
                           key={`${r.account_id ?? "a"}-${i}`}
                           onClick={() => setUtilSelectedAccount(r)}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",
+                          }}
+                        >
+                          <td style={{ textAlign: "left", fontWeight: selected ? 700 : 400 }}>
+                            {r.account_name ?? ""}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MDBox>
+            </MDBox>
+          </MDBox>
+        </Box>
+      </Modal>
+
+      {/* =========================
+      ✅ 직원파출관리 모달 (유틸관리 복제 + 연/월 선택)
+      ========================= */}
+      <Modal open={dispatchOpen} onClose={closeDispatchModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile ? "98vw" : "95vw",
+            maxWidth: 1300,
+            height: isMobile ? "90vh" : "80vh",
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <MDBox
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: 30,
+              bgcolor: "#fff",
+              px: 2,
+              py: 1,
+              borderBottom: "1px solid #e0e0e0",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+              gap: 1,
+            }}
+          >
+            <MDBox display="flex" alignItems="center" gap={1} sx={{ flexWrap: "wrap" }}>
+              <MDTypography variant="h6">직원파출관리</MDTypography>
+            </MDBox>
+
+            {/* ✅ 거래처 선택(왼쪽 직원목록 필터) */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 220 }}
+              options={accountOptions}
+              value={selectedDispatchAccountOption}
+              inputValue={dispatchAccountInput}
+              onInputChange={(_, v) => setDispatchAccountInput(v)}
+              onChange={async (_, opt) => {
+                if (!opt) return;
+
+                // 거래처 변경
+                setDispatchAccountId(opt.value);
+                setDispatchAccountInput(opt.label ?? "");
+
+                // 선택 초기화
+                setDispatchSelectedMember(null);
+                setDispatchSelectedAccount(null);
+                setDispatchSelectedMappingRowIndex(null);
+                setDispatchMappingRows([]);
+
+                // ✅ 왼쪽 직원목록 재조회
+                try {
+                  const members = await fetchDispatchMemberList(opt.value);
+                  setDispatchMemberRows(members || []);
+                } catch (e) {
+                  Swal.fire("조회 실패", e?.message || "오류", "error");
+                }
+              }}
+              getOptionLabel={(opt) => opt?.label ?? ""}
+              isOptionEqualToValue={(opt, val) => opt.value === val.value}
+              filterOptions={(options, state) => {
+                const q = (state.inputValue ?? "").trim().toLowerCase();
+                if (!q) return options;
+                return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처"
+                  placeholder="거래처 검색"
+                  sx={{
+                    "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
+            />
+
+            <MDBox display="flex" gap={1}>
+              <MDButton variant="gradient" color="info" onClick={handleDispatchSave}>
+                저장
+              </MDButton>
+              <MDButton variant="outlined" color="secondary" onClick={closeDispatchModal}>
+                닫기
+              </MDButton>
+            </MDBox>
+          </MDBox>
+
+          <MDBox
+            sx={{
+              flex: 1,
+              display: "flex",
+              gap: 1,
+              p: 1.5,
+              overflow: "hidden",
+              bgcolor: "#fff",
+            }}
+          >
+            {/* 왼쪽 테이블 */}
+            <MDBox
+              sx={{
+                flex: 1,
+                minWidth: 240,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  직원 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  행 클릭 → 가운데 매핑 조회
+                </MDTypography>
+              </MDBox>
+
+              <MDBox
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  "& table": { width: "100%", borderCollapse: "collapse" },
+                  "& th, & td": {
+                    borderBottom: "1px solid #eee",
+                    padding: "8px 6px",
+                    fontSize: 12,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  },
+                  "& th": { position: "sticky", top: 0, bgcolor: "#f7f7f7", zIndex: 2 },
+                }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 110 }}>성명</th>
+                      <th style={{ width: 90 }}>직책</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(dispatchMemberRows || []).map((r, i) => {
+                      const selected =
+                        String(dispatchSelectedMember?.member_id ?? "") ===
+                        String(r.member_id ?? "");
+                      const posLabel =
+                        positionOptions.find((p) => String(p.value) === String(r.position_type))
+                          ?.label ?? String(r.position_type ?? "");
+
+                      return (
+                        <tr
+                          key={`${r.member_id ?? "m"}-${i}`}
+                          onClick={() => handleSelectDispatchMember(r)}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",
+                          }}
+                        >
+                          <td style={{ fontWeight: selected ? 700 : 400 }}>{r.name ?? ""}</td>
+                          <td style={{ fontWeight: selected ? 700 : 400 }}>{posLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MDBox>
+            </MDBox>
+
+            {/* 가운데 테이블 */}
+            <MDBox
+              sx={{
+                flex: 1.7, // ✅ 더 크게
+                minWidth: 600, // ✅ 더 넓게
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  매핑 목록 (가운데)
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  선택된 직원:{" "}
+                  <b>
+                    {dispatchSelectedMember?.member_id ? dispatchSelectedMember.member_id : "-"}
+                  </b>
+                </MDTypography>
+              </MDBox>
+
+              <MDBox
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  "& table": { width: "100%", borderCollapse: "collapse" },
+                  "& th, & td": {
+                    borderBottom: "1px solid #eee",
+                    padding: "8px 6px",
+                    fontSize: 12,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  },
+                  "& th": { position: "sticky", top: 0, bgcolor: "#f7f7f7", zIndex: 2 },
+                }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ width: 70 }}>순번</th>
+                      <th style={{ width: 220 }}>소속 고객사</th>
+                      <th style={{ width: 220 }}>파견 고객사</th>
+                      <th style={{ width: 130 }}>파견일자</th>
+                      <th style={{ width: 80 }}>시작</th>
+                      <th style={{ width: 80 }}>마감</th>
+                      <th style={{ width: 110 }}>성명</th>
+                      <th style={{ width: 90 }}>직책</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(dispatchMappingRows || []).map((r, i) => {
+                      const selected = dispatchSelectedMappingRowIndex === i;
+
+                      const posLabel =
+                        positionOptions.find((p) => String(p.value) === String(r.position_type))
+                          ?.label ?? String(r.position_type ?? "");
+
+                      const ownerAccId = String(r.account_id ?? "");
+                      const ownerAccName = memberAccountNameMap.get(ownerAccId) ?? "";
+                      const ownerText = ownerAccName
+                        ? `${ownerAccId} (${ownerAccName})`
+                        : ownerAccId;
+
+                      const dispAccId = String(r.dispatch_account_id ?? "");
+                      const dispAccName = dispatchAccountNameMap.get(dispAccId) ?? "";
+                      const dispText = dispAccName ? `${dispAccId} (${dispAccName})` : dispAccId;
+
+                      return (
+                        <tr
+                          key={`${r.idx ?? "new"}-${ownerAccId}-${dispAccId}-${i}`}
+                          onClick={() => setDispatchSelectedMappingRowIndex(i)}
+                          style={{
+                            cursor: "pointer",
+                            backgroundColor: selected ? "rgba(255,193,7,0.12)" : "#fff",
+                          }}
+                        >
+                          <td>{r.idx ?? ""}</td>
+                          <td style={{ textAlign: "left" }}>{ownerText}</td>
+                          <td style={{ textAlign: "left" }}>{dispText}</td>
+
+                          {/* ✅ 파견일자: 달력 선택 */}
+                          <td>
+                            <input
+                              type="date"
+                              value={r.record_date ?? ""}
+                              onChange={(e) =>
+                                handleDispatchRowChange(i, "record_date", e.target.value)
+                              }
+                              style={{
+                                width: "100%",
+                                fontSize: 12,
+                                border: "none",
+                                background: "transparent",
+                                outline: "none",
+                                cursor: "pointer",
+                              }}
+                            />
+                          </td>
+
+                          {/* ✅ 직원목록에서 들고온 시간 표시(필요하면 수정 가능하게 select로 바꿔도 됨) */}
+                          <td>{r.start_time ?? ""}</td>
+                          <td>{r.end_time ?? ""}</td>
+
+                          <td>{r.name ?? ""}</td>
+                          <td>{posLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </MDBox>
+            </MDBox>
+
+            {/* 가운데-오른쪽 컨트롤 */}
+            <MDBox
+              sx={{
+                width: isMobile ? 54 : 70,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <MDButton
+                variant="gradient"
+                color="info"
+                onClick={handleAddDispatchMappingFromRight}
+                sx={{ minWidth: isMobile ? 46 : 56, px: 0 }}
+              >
+                {"<"}
+              </MDButton>
+              <MDTypography variant="caption" sx={{ color: "#666", textAlign: "center" }}>
+                업장 → 매핑
+              </MDTypography>
+            </MDBox>
+
+            {/* 오른쪽 테이블 */}
+            <MDBox
+              sx={{
+                flex: 1,
+                minWidth: 300,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  업장 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  행 선택 후 &lt; 버튼
+                </MDTypography>
+              </MDBox>
+
+              <MDBox
+                sx={{
+                  flex: 1,
+                  overflow: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  "& table": { width: "100%", borderCollapse: "collapse" },
+                  "& th, & td": {
+                    borderBottom: "1px solid #eee",
+                    padding: "8px 6px",
+                    fontSize: 12,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  },
+                  "& th": { position: "sticky", top: 0, bgcolor: "#f7f7f7", zIndex: 2 },
+                }}
+              >
+                <table>
+                  <thead>
+                    <tr>
+                      <th>고객사</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(dispatchAccountRows || []).map((r, i) => {
+                      const selected =
+                        String(dispatchSelectedAccount?.account_id ?? "") ===
+                        String(r.account_id ?? "");
+                      return (
+                        <tr
+                          key={`${r.account_id ?? "a"}-${i}`}
+                          onClick={() => setDispatchSelectedAccount(r)}
                           style={{
                             cursor: "pointer",
                             backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",

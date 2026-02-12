@@ -413,6 +413,15 @@ export default function BudgetTableTab() {
                               : undefined;
                             const current = row[field];
 
+                            const getRatioColor = (key, value) => {
+                              if (key !== "day_use_ratio" && key !== "use_ratio") return undefined;
+                              const num = Number(value);
+                              if (Number.isNaN(num)) return undefined;
+                              if (num >= 100) return "#f44336";
+                              if (num >= 90) return "#ff9800";
+                              return undefined;
+                            };
+
                             const originalNorm = isNumeric
                               ? Number(original ?? 0)
                               : (original ?? "");
@@ -443,7 +452,12 @@ export default function BudgetTableTab() {
                                   <td
                                     key={field}
                                     className={col.sticky ? "sticky-col" : undefined}
-                                    style={{ ...baseCellStyle, textAlign: "right" }}
+                                    style={{
+                                      ...baseCellStyle,
+                                      textAlign: "right",
+                                      color: getRatioColor(field, current),
+                                      fontWeight: getRatioColor(field, current) ? 800 : undefined,
+                                    }}
                                   >
                                     {current == null
                                       ? ""

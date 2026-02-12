@@ -32,7 +32,10 @@ function AccountMemberSheet() {
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
+  const [memberInput, setMemberInput] = useState("");
+  const [memberSearchName, setMemberSearchName] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
+  const accountInitRef = useRef(false);
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -51,7 +54,7 @@ function AccountMemberSheet() {
     saveData,
     fetchAccountMembersAllList,
     loading: hookLoading,
-  } = useAccountMembersheetData(selectedAccountId, activeStatus);
+  } = useAccountMembersheetData(selectedAccountId, activeStatus, memberSearchName);
 
   const [loading, setLoading] = useState(true);
 
@@ -253,18 +256,23 @@ function AccountMemberSheet() {
   // =========================
 
   useEffect(() => {
-    if (selectedAccountId) return;
+    if (accountInitRef.current) return;
+    if (selectedAccountId) {
+      accountInitRef.current = true;
+      return;
+    }
     if (!Array.isArray(accountList) || accountList.length === 0) return;
 
     setSelectedAccountId(String(accountList[0].account_id));
+    accountInitRef.current = true;
   }, [accountList, selectedAccountId]);
 
   useEffect(() => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId && !memberSearchName) return;
 
     setLoading(true);
     Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
-  }, [selectedAccountId, activeStatus]);
+  }, [selectedAccountId, activeStatus, memberSearchName]);
 
   // 합계 계산
   const calculateTotal = (row) => {
@@ -331,6 +339,11 @@ function AccountMemberSheet() {
     { value: "Y", label: "퇴사" },
   ];
 
+  const displayOptions = [
+    { value: "Y", label: "표시" },
+    { value: "N", label: "숨김" },
+  ];
+
   const corOptions = [
     { value: "1", label: "(주)더채움" },
     { value: "2", label: "더채움" },
@@ -371,6 +384,7 @@ function AccountMemberSheet() {
       })),
     [accountList]
   );
+
 
   const buildExcelRows = (rows) =>
     (rows || []).map((r) => ({
@@ -413,6 +427,7 @@ function AccountMemberSheet() {
           ret_set_dt: item.ret_set_dt,
           loss_major_insurances: item.loss_major_insurances,
           del_yn: item.del_yn,
+          display_yn: item.display_yn ?? "Y",
           del_dt: item.del_dt,
           del_note: item.del_note,
           salary: parseNumber(item.salary),
@@ -582,6 +597,12 @@ function AccountMemberSheet() {
     }
   }, [accountInput, accountOptions]);
 
+  const selectMemberByInput = useCallback(() => {
+    const q = String(memberInput || "").trim();
+    setMemberInput(q);
+    setMemberSearchName(q);
+  }, [memberInput]);
+
   const columns = useMemo(
     () => [
       { header: "구분", accessorKey: "cor_type", size: 100 },
@@ -598,6 +619,7 @@ function AccountMemberSheet() {
       { header: "퇴직정산일", accessorKey: "ret_set_dt", size: 80 },
       { header: "4대보험 상실일", accessorKey: "loss_major_insurances", size: 80 },
       { header: "퇴사여부", accessorKey: "del_yn", size: 80 },
+      { header: "출근부 표시 여부", accessorKey: "display_yn", size: 90 },
       { header: "퇴사일", accessorKey: "del_dt", size: 80 },
       { header: "퇴사사유", accessorKey: "del_note", size: 100 },
       {
@@ -1330,6 +1352,7 @@ function AccountMemberSheet() {
       ret_set_dt: "",
       loss_major_insurances: "",
       del_yn: activeStatus,
+      display_yn: "Y",
       del_dt: "",
       del_note: "",
       salary: "",
@@ -1375,6 +1398,7 @@ function AccountMemberSheet() {
     const selectFields = new Set([
       "position_type",
       "del_yn",
+      "display_yn",
       "contract_type",
       "start_time",
       "end_time",
@@ -1710,6 +1734,7 @@ function AccountMemberSheet() {
                           "ret_set_dt",
                           "loss_major_insurances",
                           "del_yn",
+                          "display_yn",
                           "del_dt",
                           "idx",
                           "start_time",
@@ -1906,6 +1931,13 @@ function AccountMemberSheet() {
                                 </option>
                               ))}
 
+                            {colKey === "display_yn" &&
+                              displayOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+
                             {colKey === "position_type" &&
                               positionOptions.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
@@ -2007,6 +2039,25 @@ function AccountMemberSheet() {
           <option value="N">재직자</option>
           <option value="Y">퇴사자</option>
         </TextField>
+
+        <TextField
+          size="small"
+          value={memberInput}
+          onChange={(e) => setMemberInput(e.target.value)}
+          label="직원 검색"
+          placeholder="직원명을 입력"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              selectMemberByInput();
+            }
+          }}
+          sx={{
+            minWidth: 200,
+            "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+            "& input": { padding: "0 8px" },
+          }}
+        />
 
         {/* ✅ (수정) 거래처 select → Autocomplete(검색 가능) */}
         <Autocomplete

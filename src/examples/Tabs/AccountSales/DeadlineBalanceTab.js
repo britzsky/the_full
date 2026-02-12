@@ -437,7 +437,14 @@ export default function DeadlineBalanceTab() {
     try {
       await api.post("/Account/AccountDeadlineBalanceSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
-      fetchDeadlineBalanceList();
+      const targetAccountId = modifiedRows[0]?.account_id;
+      if (targetAccountId) {
+        lastSelectedAccountId.current = targetAccountId;
+      }
+      await fetchDeadlineBalanceList();
+      if (targetAccountId) {
+        setRefetchTrigger(true);
+      }
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
     }

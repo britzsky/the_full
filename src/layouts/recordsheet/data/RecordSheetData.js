@@ -66,6 +66,7 @@ export default function useRecordsheetData(account_id, year, month) {
           phone: item.phone,
           total: item.total,
           salary: item.salary,
+          dispatch_account: item.dispatch_account,
           del_yn: item.del_yn,
         }))
       );
@@ -156,10 +157,10 @@ export default function useRecordsheetData(account_id, year, month) {
 
         const dayDefault = dayValues.day_default
           ? {
-              ...dayValues.day_default,
-              gubun: safeTrim(dayValues.day_default.gubun, rowGubun),
-              position_type: safeTrim(dayValues.day_default.position_type, rowPt),
-            }
+            ...dayValues.day_default,
+            gubun: safeTrim(dayValues.day_default.gubun, rowGubun),
+            position_type: safeTrim(dayValues.day_default.position_type, rowPt),
+          }
           : null;
 
         return {

@@ -147,6 +147,7 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
   }, [safeBudget, safeUsed]);
 
   const ratioText = `${ratio.toFixed(2)}%`;
+  const ratioColor = ratio >= 100 ? "#f44336" : ratio >= 90 ? "#ff9800" : undefined;
 
   const items = [
     { label: "월예산", value: formatNumber(safeBudget) },
@@ -199,7 +200,10 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
             }}
           >
             <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#444" }}>
-              {it.label} : {it.value}
+              {it.label} :{" "}
+              <span style={{ color: it.label === "예산대비" ? ratioColor : undefined }}>
+                {it.value}
+              </span>
             </Typography>
           </Box>
         ))}

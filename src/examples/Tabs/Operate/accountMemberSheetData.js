@@ -20,7 +20,7 @@ const normalizeTime = (t) => {
   return s.replace(/^0(\d):/, "$1:");
 };
 
-export default function useAccountMembersheetData(account_id, activeStatus) {
+export default function useAccountMembersheetData(account_id, activeStatus, memberName) {
   const [activeRows, setActiveRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
@@ -42,7 +42,9 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
 
   const fetchAccountMembersAllList = async (opts = { snapshot: true }) => {
     const params = {};
-    if (account_id) params.account_id = account_id;
+    const name = String(memberName ?? "").trim();
+    if (name) params.name = name;
+    else if (account_id) params.account_id = account_id;
     if (activeStatus) params.del_yn = activeStatus;
 
     setLoading(true);
@@ -66,6 +68,7 @@ export default function useAccountMembersheetData(account_id, activeStatus) {
         ret_set_dt: item.ret_set_dt,
         loss_major_insurances: item.loss_major_insurances,
         del_yn: item.del_yn,
+        display_yn: item.display_yn ?? "Y",
         del_dt: item.del_dt,
         del_note: item.del_note,
         salary: parseNumber(item.salary),

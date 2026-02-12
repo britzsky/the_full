@@ -242,8 +242,8 @@ const getTableStructure = (
       selectedAccountId === "20250819193651"
         ? "조식"
         : selectedAccountType === "학교"
-        ? "학생"
-        : "중식";
+          ? "학생"
+          : "중식";
 
     const baseColumns = [
       mainKey,
@@ -956,15 +956,15 @@ function DinersNumberSheet() {
       prev.map((row, i) =>
         i === rowIndex
           ? {
-              ...row,
-              [key]: value,
-              total: calculateTotal(
-                { ...row, [key]: value },
-                selectedAccountType,
-                stableExtraDietCols,
-                selectedAccountId
-              ),
-            }
+            ...row,
+            [key]: value,
+            total: calculateTotal(
+              { ...row, [key]: value },
+              selectedAccountType,
+              stableExtraDietCols,
+              selectedAccountId
+            ),
+          }
           : row
       )
     );
@@ -1035,6 +1035,35 @@ function DinersNumberSheet() {
     stableExtraDietCols,
     selectedAccountType
   );
+
+  const summaryRows = useMemo(() => {
+    const totals = {};
+    const avgs = {};
+    const counts = {};
+
+    visibleColumns.forEach((key) => {
+      if (numericCols.includes(key)) {
+        totals[key] = 0;
+        counts[key] = 0;
+      }
+    });
+
+    (activeRows || []).forEach((row) => {
+      visibleColumns.forEach((key) => {
+        if (!numericCols.includes(key)) return;
+        const val = parseNumber(row?.[key]);
+        totals[key] += val;
+        if (val > 0) counts[key] += 1;
+      });
+    });
+
+    Object.keys(totals).forEach((key) => {
+      const c = counts[key] || 0;
+      avgs[key] = c > 0 ? Math.round(totals[key] / c) : 0;
+    });
+
+    return { totals, avgs };
+  }, [activeRows, visibleColumns]);
 
   if (loading) return <LoadingScreen />;
 
@@ -1298,6 +1327,26 @@ function DinersNumberSheet() {
                         })}
                       </tr>
                     ))}
+                    <tr style={{ background: "#ffeb3b", fontWeight: 700 }}>
+                      <td>합계</td>
+                      {visibleColumns.map((key) => (
+                        <td key={`sum-${key}`}>
+                          {numericCols.includes(key) && key !== "total"
+                            ? formatNumber(summaryRows.totals[key])
+                            : ""}
+                        </td>
+                      ))}
+                    </tr>
+                    <tr style={{ background: "#b2ebf2", fontWeight: 700 }}>
+                      <td>평균</td>
+                      {visibleColumns.map((key) => (
+                        <td key={`avg-${key}`}>
+                          {numericCols.includes(key) && key !== "total"
+                            ? formatNumber(summaryRows.avgs[key])
+                            : ""}
+                        </td>
+                      ))}
+                    </tr>
                   </tbody>
                 </table>
               </MDBox>

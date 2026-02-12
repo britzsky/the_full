@@ -25,7 +25,10 @@ function AccountMemberSheet() {
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
+  const [memberInput, setMemberInput] = useState("");
+  const [memberSearchName, setMemberSearchName] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
+  const accountInitRef = useRef(false);
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -43,7 +46,7 @@ function AccountMemberSheet() {
     saveData,
     fetchAccountMembersAllList,
     loading: hookLoading,
-  } = useAccountMembersheetData(selectedAccountId, activeStatus);
+  } = useAccountMembersheetData(selectedAccountId, activeStatus, memberSearchName);
 
   const [loading, setLoading] = useState(true);
 
@@ -142,17 +145,22 @@ function AccountMemberSheet() {
   );
 
   useEffect(() => {
-    if (selectedAccountId) return;
+    if (accountInitRef.current) return;
+    if (selectedAccountId) {
+      accountInitRef.current = true;
+      return;
+    }
     if (!Array.isArray(accountList) || accountList.length === 0) return;
     setSelectedAccountId(String(accountList[0].account_id));
+    accountInitRef.current = true;
   }, [accountList, selectedAccountId]);
 
   useEffect(() => {
-    if (!selectedAccountId) return;
+    if (!selectedAccountId && !memberSearchName) return;
 
     setLoading(true);
     Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
-  }, [selectedAccountId, activeStatus]);
+  }, [selectedAccountId, activeStatus, memberSearchName]);
 
   // 합계 계산 (현재 화면에서는 사실상 의미 없지만 기존 유지)
   const calculateTotal = (row) => {
@@ -246,6 +254,7 @@ function AccountMemberSheet() {
     [accountList]
   );
 
+
   const selectedAccountOption = useMemo(() => {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
@@ -264,6 +273,12 @@ function AccountMemberSheet() {
       setAccountInput(partial.label || q);
     }
   }, [accountInput, accountOptions]);
+
+  const selectMemberByInput = useCallback(() => {
+    const q = String(memberInput || "").trim();
+    setMemberInput(q);
+    setMemberSearchName(q);
+  }, [memberInput]);
 
   const columns = useMemo(
     () => [
@@ -1274,6 +1289,25 @@ function AccountMemberSheet() {
           <option value="N">재직자</option>
           <option value="Y">퇴사자</option>
         </TextField>
+
+        <TextField
+          size="small"
+          value={memberInput}
+          onChange={(e) => setMemberInput(e.target.value)}
+          label="직원 검색"
+          placeholder="직원명을 입력"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              selectMemberByInput();
+            }
+          }}
+          sx={{
+            minWidth: 200,
+            "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+            "& input": { padding: "0 8px" },
+          }}
+        />
 
         <Autocomplete
           size="small"

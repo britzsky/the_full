@@ -1,4 +1,4 @@
-/* eslint-disable react/prop-types */
+﻿/* eslint-disable react/prop-types */
 import React, { useMemo, useEffect, useState, useCallback, useRef } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { useLocation, useParams } from "react-router-dom";
@@ -73,6 +73,11 @@ const isDispatchTypeValue = (v) => {
   return t === "5" || t === "6" || t === "파출" || t === "직원파출";
 };
 
+const isEmployeeDispatchType = (v) => {
+  const t = safeTrim(v, "");
+  return t === "6" || t === "직원파출";
+};
+
 const getDispatchKeys = (row) => {
   if (!row) return [];
   const keys = [];
@@ -141,6 +146,41 @@ const formatMoneyLike = (v) => {
   return s;
 };
 
+const parseEmployeeDispatchInfo = (v) => {
+  const s = safeTrim(v, "");
+  if (!s) return { count: 0, amount: "", origin: "", dispatch: "" };
+
+  let count = 0;
+  const countMatch = s.match(/([0-9]+)\s*회/);
+  if (countMatch) count = Number(countMatch[1]);
+
+  let amount = "";
+  const nums = s.match(/([0-9][0-9,]*)/g) || [];
+  if (nums.length >= 2) {
+    amount = toNumberLike(nums[nums.length - 1]);
+  } else if (nums.length === 1 && /원/.test(s)) {
+    const n = toNumberLike(nums[0]);
+    if (!(countMatch && n === count)) amount = n;
+  }
+
+  let origin = "";
+  let dispatch = "";
+  const originMatch = s.match(/원\s*소\s*속\s*[:：]?\s*([^,\/>→]+?)(?=\s*(파견|직원파출|\d+\s*회|\d|$))/);
+  if (originMatch) origin = originMatch[1].trim();
+  const dispatchMatch = s.match(/파견(?:업장)?\s*[:：]?\s*([^,\/>→]+?)(?=\s*(\d+\s*회|\d|$))/);
+  if (dispatchMatch) dispatch = dispatchMatch[1].trim();
+
+  if (!origin || !dispatch) {
+    const parts = s.split(/\s*(?:->|→|=>|>|\/)\s*/).filter(Boolean);
+    if (parts.length >= 2) {
+      if (!origin) origin = parts[0].trim();
+      if (!dispatch) dispatch = parts[1].trim();
+    }
+  }
+
+  return { count, amount, origin, dispatch };
+};
+
 // ✅ 숫자 변환 (엑셀용)
 const toNumberMaybe = (v) => {
   if (v == null || v === "") return "";
@@ -206,6 +246,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
     ...rawVal,
   };
   const isDispatchType = ["5", "6"].includes(String(val.type));
+  const isPayableDispatch = String(val.type) === "5" || String(val.type) === "파출";
 
   const times = [];
   for (let h = 5; h <= 20; h++) {
@@ -311,7 +352,15 @@ const AttendanceCell = React.memo(function AttendanceCell({
       <select
         value={val.type}
         onChange={(e) => handleChange("type", e.target.value)}
-        style={{ fontSize: "0.75rem", textAlign: "center", width: "100%" }}
+        style={{
+          fontSize: "0.75rem",
+          textAlign: "center",
+          width: "100%",
+          minWidth: 0,
+          maxWidth: "100%",
+          boxSizing: "border-box",
+          display: "block",
+        }}
       >
         {typeOptions.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -325,7 +374,14 @@ const AttendanceCell = React.memo(function AttendanceCell({
           <select
             value={val.start}
             onChange={(e) => handleChange("start", e.target.value)}
-            style={{ fontSize: "0.725rem", width: "100%" }}
+            style={{
+              fontSize: "0.725rem",
+              width: "100%",
+              minWidth: 0,
+              maxWidth: "100%",
+              boxSizing: "border-box",
+              display: "block",
+            }}
           >
             <option value="">출근</option>
             {times.map((t) => (
@@ -337,7 +393,14 @@ const AttendanceCell = React.memo(function AttendanceCell({
           <select
             value={val.end}
             onChange={(e) => handleChange("end", e.target.value)}
-            style={{ fontSize: "0.725rem", width: "100%" }}
+            style={{
+              fontSize: "0.725rem",
+              width: "100%",
+              minWidth: 0,
+              maxWidth: "100%",
+              boxSizing: "border-box",
+              display: "block",
+            }}
           >
             <option value="">퇴근</option>
             {times.map((t) => (
@@ -360,11 +423,15 @@ const AttendanceCell = React.memo(function AttendanceCell({
             textAlign: "center",
             border: "1px solid black",
             width: "100%",
+            minWidth: 0,
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            display: "block",
           }}
         />
       )}
 
-      {isDispatchType && (
+      {isPayableDispatch && (
         <label
           style={{
             display: "flex",
@@ -394,6 +461,10 @@ const AttendanceCell = React.memo(function AttendanceCell({
             textAlign: "center",
             border: "1px solid black",
             width: "100%",
+            minWidth: 0,
+            maxWidth: "100%",
+            boxSizing: "border-box",
+            display: "block",
           }}
         />
       )}
@@ -463,11 +534,14 @@ function DispatchEditableCell({ getValue, row, table, field }) {
       onChange={handleChange}
       style={{
         width: "100%",
+        height: 20,
+        boxSizing: "border-box",
         fontSize: "0.75rem",
+        lineHeight: 1.1,
         textAlign: "center",
         border: "1px solid #ccc",
-        borderRadius: 4,
-        padding: "2px 4px",
+        borderRadius: 3,
+        padding: "0 2px",
         background: "#fff",
         color: isChanged ? "red" : "black",
         fontWeight: isChanged ? 700 : 400,
@@ -548,6 +622,8 @@ function RecordSheet() {
   const [accountInput, setAccountInput] = useState("");
 
   const [dispatchDelFilter, setDispatchDelFilter] = useState("N");
+  const [dispatchMappingRows, setDispatchMappingRows] = useState([]);
+  const dispatchMappingReqSeqRef = useRef(0);
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
@@ -791,8 +867,8 @@ function RecordSheet() {
         const toDay = endInMonth
           ? realEnd.date()
           : realEnd.isBefore(monthStart)
-          ? null
-          : daysInThisMonth;
+            ? null
+            : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -861,8 +937,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                ? "미지급"
-                : "부분"
+                  ? "미지급"
+                  : "부분"
               : "-";
 
           return {
@@ -938,13 +1014,13 @@ function RecordSheet() {
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-        src?.record_type ??
-        src?.work_type ??
-        src?.recordType ??
-        src?.workType ??
-        src?.work_kind ??
-        src?.work_cd ??
-        "",
+      src?.record_type ??
+      src?.work_type ??
+      src?.recordType ??
+      src?.workType ??
+      src?.work_kind ??
+      src?.work_cd ??
+      "",
       ""
     );
 
@@ -1171,33 +1247,33 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-              ...source,
-              type: t,
-              gubun: safeTrim(source.gubun, baseGubun),
-              position_type: safeTrim(source.position_type, basePt),
-              start: source.start_time || source.start || "",
-              end: source.end_time || source.end || "",
-              start_time: source.start_time || "",
-              end_time: source.end_time || "",
-              salary: source.salary || "",
-              note: source.note ?? source.note ?? "",
-              pay_yn:
-                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
-            }
+            ...source,
+            type: t,
+            gubun: safeTrim(source.gubun, baseGubun),
+            position_type: safeTrim(source.position_type, basePt),
+            start: source.start_time || source.start || "",
+            end: source.end_time || source.end || "",
+            start_time: source.start_time || "",
+            end_time: source.end_time || "",
+            salary: source.salary || "",
+            note: source.note ?? source.note ?? "",
+            pay_yn:
+              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+          }
           : {
-              account_id: item.account_id,
-              member_id: item.member_id,
-              gubun: baseGubun,
-              position_type: basePt,
-              type: "",
-              start: "",
-              end: "",
-              start_time: "",
-              end_time: "",
-              salary: "",
-              note: "",
-              pay_yn: "N",
-            };
+            account_id: item.account_id,
+            member_id: item.member_id,
+            gubun: baseGubun,
+            position_type: basePt,
+            type: "",
+            start: "",
+            end: "",
+            start_time: "",
+            end_time: "",
+            salary: "",
+            note: "",
+            pay_yn: "N",
+          };
       }
 
       return { ...base, ...dayEntries };
@@ -1362,6 +1438,10 @@ function RecordSheet() {
       const rangeLabel = `${realStart.format("YYYY-MM-DD")} ~ ${realEnd.format("YYYY-MM-DD")}`;
 
       const filename = `출근부_전체거래처_${rangeLabel}.xlsx`;
+
+      const accountNameMap = new Map(
+        (accountList || []).map((a) => [String(a.account_id), safeTrim(a.account_name ?? "", "")])
+      );
 
       const wsAttend = wb.addWorksheet("출근현황");
       const wsDispatch = wb.addWorksheet("파출정보");
@@ -1581,6 +1661,7 @@ function RecordSheet() {
       let attendRightHeaderRowNum = null;
       const employeeRightRowsAll = [];
       const employeeRightRowMap = new Map();
+      const employeeDispatchSheetRowsAll = [];
 
       const mergeEmployeeRow = (target, next) => {
         const keys = [
@@ -1629,6 +1710,18 @@ function RecordSheet() {
         const acc = accountList[i];
         const accId = acc.account_id;
         const accName = acc.account_name || accId;
+
+        const employeeDispatchSummaryMap = new Map();
+        let dispatchMappingRowsArg = [];
+        try {
+          const mappingRes = await api.get("/Account/AccountMemberDispatchMappingList", {
+            params: { dispatch_account_id: accId },
+          });
+          dispatchMappingRowsArg = extractArray(mappingRes.data);
+        } catch (err) {
+          console.error("직원파출 매핑 조회 실패(엑셀):", err);
+          dispatchMappingRowsArg = [];
+        }
 
         addSectionTitle(wsAttend, `■ ${accName} (${accId})  /  ${rangeLabel}`, attendColCount);
 
@@ -1732,8 +1825,8 @@ function RecordSheet() {
           const toDay = endInMonth
             ? realEnd.date()
             : realEnd.isBefore(monthStart)
-            ? null
-            : daysInThisMonth;
+              ? null
+              : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -1775,12 +1868,24 @@ function RecordSheet() {
               const t = safeTrim(cell?.type ?? "", "");
               if (!isDispatchTypeValue(t)) continue;
 
+              const sal = toNumberLike(cell?.salary);
               const isEmployeeDispatch = t === "6" || t === "직원파출";
-              if (isEmployeeDispatch) continue;
+              if (isEmployeeDispatch) {
+                const midKey = String(mid);
+                const prev = employeeDispatchSummaryMap.get(midKey) || {
+                  member_id: midKey,
+                  name: row?.name || "",
+                  count: 0,
+                  amount: 0,
+                };
+                if (!prev.name) prev.name = row?.name || "";
+                prev.count += 1;
+                prev.amount += sal;
+                employeeDispatchSummaryMap.set(midKey, prev);
+                continue;
+              }
 
               const midKey = String(mid);
-
-              const sal = toNumberLike(cell?.salary);
               monthPayMap.set(mid, (monthPayMap.get(mid) || 0) + sal);
               globalDispatchTotal += sal;
 
@@ -1881,6 +1986,85 @@ function RecordSheet() {
         const dispatchRowsForAccount = dispatchRowsForAccountRaw.filter(
           (d) => (d.dispatchCount || 0) > 0 || (d.dispatchPays || []).length > 0
         );
+
+        if (employeeDispatchSummaryMap.size > 0) {
+          const employeeDispatchRowsForAccount = [];
+          const seenKey = new Set();
+          const seenMember = new Set();
+
+          (dispatchMappingRowsArg || []).forEach((row) => {
+            const mid = safeTrim(row?.member_id ?? row?.memberId ?? "", "");
+            if (!mid) return;
+
+            const stat = employeeDispatchSummaryMap.get(mid);
+            if (!stat || (!stat.count && !stat.amount)) return;
+
+            const recordDateRaw = safeTrim(row?.record_date ?? row?.recordDate ?? "", "");
+            if (recordDateRaw) {
+              const rd = dayjs(recordDateRaw);
+              if (rd.isValid() && (rd.isBefore(realStart, "day") || rd.isAfter(realEnd, "day"))) {
+                return;
+              }
+            }
+
+            const originId = safeTrim(row?.account_id ?? row?.origin_account_id ?? "", "");
+            const dispatchId = safeTrim(row?.dispatch_account_id ?? row?.dispatchAccountId ?? "", "");
+            if (dispatchId && dispatchId !== String(accId)) return;
+
+            const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
+            const origin = safeTrim(
+              row?.origin_account_name ??
+                row?.origin_account ??
+                accountNameMap.get(originId) ??
+                info.origin ??
+                "",
+              ""
+            );
+            const dispatch = safeTrim(
+              row?.dispatch_account_name ??
+                row?.dispatch_account ??
+                row?.dispatch_account_nm ??
+                row?.dispatch_accountName ??
+                accountNameMap.get(dispatchId) ??
+                info.dispatch ??
+                accName ??
+                "",
+              ""
+            );
+            const name = safeTrim(row?.name ?? row?.member_name ?? stat?.name ?? "", "");
+
+            if (!name && !origin && !dispatch) return;
+
+            const key = `${mid}::${origin || originId}::${dispatch || dispatchId}`;
+            if (seenKey.has(key)) return;
+            seenKey.add(key);
+            seenMember.add(mid);
+
+            employeeDispatchRowsForAccount.push({
+              name,
+              origin,
+              dispatch,
+              count: stat.count || 0,
+              amount: stat.amount || 0,
+            });
+          });
+
+          employeeDispatchSummaryMap.forEach((stat, midKey) => {
+            if (seenMember.has(midKey)) return;
+            if (!stat || (!stat.count && !stat.amount)) return;
+            employeeDispatchRowsForAccount.push({
+              name: stat.name || "",
+              origin: "",
+              dispatch: accName || "",
+              count: stat.count || 0,
+              amount: stat.amount || 0,
+            });
+          });
+
+          employeeDispatchRowsForAccount.forEach((row) => {
+            employeeDispatchSheetRowsAll.push(row);
+          });
+        }
 
         Array.from(memberMap.values()).forEach((row) => {
           const startRow = wsAttend.lastRow.number + 1;
@@ -1992,9 +2176,8 @@ function RecordSheet() {
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
           totalCnt > 0
-            ? `${
-                paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
-              }(${paidCnt}/${totalCnt})`
+            ? `${paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
+            }(${paidCnt}/${totalCnt})`
             : "";
 
         wsDispatch.addRow([
@@ -2099,6 +2282,38 @@ function RecordSheet() {
         rightDispatchTotalCellRef.alignment = { vertical: "middle", horizontal: "center" };
       }
 
+      if (employeeDispatchSheetRowsAll.length > 0) {
+        const wsEmployeeDispatch = wb.addWorksheet("직원파출정보");
+        const employeeDispatchHeader = ["직원명", "원소속", "파견업장", "횟수", "금액"];
+
+        wsEmployeeDispatch.columns = [
+          { width: 16 },
+          { width: 24 },
+          { width: 24 },
+          { width: 10 },
+          { width: 16 },
+        ];
+
+        addSectionTitle(wsEmployeeDispatch, `■ 직원파출정보 / ${rangeLabel}`, employeeDispatchHeader.length);
+        wsEmployeeDispatch.addRow(employeeDispatchHeader);
+        styleHeaderRow(wsEmployeeDispatch, wsEmployeeDispatch.lastRow.number);
+
+        employeeDispatchSheetRowsAll.forEach((d) => {
+          const countText = d.count > 0 ? `${d.count}회` : "-";
+          const amountText = d.amount ? `${formatMoneyLike(d.amount)}원` : "-";
+          wsEmployeeDispatch.addRow([
+            d.name || "-",
+            d.origin || "-",
+            d.dispatch || "-",
+            countText,
+            amountText,
+          ]);
+          styleDataRow(wsEmployeeDispatch, wsEmployeeDispatch.lastRow.number);
+        });
+
+        wsEmployeeDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
+      }
+
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2142,6 +2357,7 @@ function RecordSheet() {
     phone: "",
     rrn: "",
     account_number: "",
+    dispatch_account: "",
     note: "",
   });
 
@@ -2152,6 +2368,7 @@ function RecordSheet() {
       phone: "",
       rrn: "",
       account_number: "",
+      dispatch_account: "",
       note: "",
     });
     setOpen(false);
@@ -2229,6 +2446,7 @@ function RecordSheet() {
             salary: item.salary,
             note: item.note ?? item.memo ?? "",
             phone: item.phone ?? "",
+            dispatch_account: item.dispatch_account ?? "",
             del_yn: item.del_yn ?? del_yn ?? "N",
             dispatch_id: item.dispatch_id ?? item.id,
           })
@@ -2255,11 +2473,39 @@ function RecordSheet() {
     [selectedAccountId, year, month, dispatchDelFilter]
   );
 
+  const fetchDispatchMappingOnly = useCallback(async () => {
+    const accId = String(selectedAccountId ?? "");
+    if (!accId) {
+      setDispatchMappingRows([]);
+      return;
+    }
+
+    const mySeq = ++dispatchMappingReqSeqRef.current;
+    try {
+      const res = await api.get("/Account/AccountMemberDispatchMappingList", {
+        params: { dispatch_account_id: accId },
+      });
+
+      if (mySeq !== dispatchMappingReqSeqRef.current) return;
+
+      const list = extractArray(res.data);
+      setDispatchMappingRows(Array.isArray(list) ? list : []);
+    } catch (err) {
+      if (mySeq !== dispatchMappingReqSeqRef.current) return;
+      console.error("직원파출 매핑 조회 실패:", err);
+      setDispatchMappingRows([]);
+    }
+  }, [selectedAccountId, year, month]);
+
   // ✅ 핵심: year/month/selectedAccountId/filter 바뀌면 자동 재조회
   useEffect(() => {
     if (!selectedAccountId) return;
     fetchDispatchOnly(dispatchDelFilter);
   }, [selectedAccountId, year, month, dispatchDelFilter, fetchDispatchOnly]);
+
+  useEffect(() => {
+    fetchDispatchMappingOnly();
+  }, [fetchDispatchMappingOnly]);
 
   // ✅ 파출 등록
   const handleSubmit = () => {
@@ -2416,7 +2662,7 @@ function RecordSheet() {
   const handleDispatchSave = useCallback(async () => {
     if (!selectedAccountId) return;
 
-    const editableFields = ["phone", "rrn", "account_number"];
+    const editableFields = ["phone", "rrn", "account_number", "dispatch_account"];
 
     const changedRows = (dispatchRows || []).filter((row) => {
       const rid = String(row?._rid ?? "");
@@ -2444,6 +2690,7 @@ function RecordSheet() {
         fd.append("rrn", r.rrn || "");
         fd.append("phone", r.phone || "");
         fd.append("account_number", r.account_number || "");
+        fd.append("dispatch_account", r.dispatch_account || "");
         fd.append("total", r.total || "");
         fd.append("salary", r.salary ?? "");
         fd.append("del_yn", r.del_yn ?? "N");
@@ -2561,10 +2808,10 @@ function RecordSheet() {
 
             return <AttendanceCell {...props} typeOptions={typeOptions} />;
           },
-          size: "2%",
+          size: isMobile ? 52 : 80,
         };
       }),
-    [daysInMonth, year, month]
+    [daysInMonth, year, month, isMobile]
   );
 
   const attendanceColumns = useMemo(
@@ -2641,6 +2888,28 @@ function RecordSheet() {
         keys.forEach((k) => {
           if (!map.has(k)) map.set(k, stat);
         });
+      }
+    });
+    return map;
+  }, [attendanceRows, daysInMonth]);
+
+  const employeeDispatchStatMap = useMemo(() => {
+    const map = new Map();
+    (attendanceRows || []).forEach((row) => {
+      const mid = safeTrim(row.member_id ?? row.memberId ?? "", "");
+      if (!mid) return;
+      let totalCnt = 0;
+      let totalPay = 0;
+      for (let d = 1; d <= daysInMonth; d++) {
+        const cell = row?.[`day_${d}`];
+        if (!cell) continue;
+        const t = safeTrim(cell?.type ?? "", "");
+        if (!isEmployeeDispatchType(t)) continue;
+        totalCnt += 1;
+        totalPay += toNumberLike(cell?.salary);
+      }
+      if (totalCnt > 0 || totalPay > 0) {
+        map.set(String(mid), { totalCnt, totalPay });
       }
     });
     return map;
@@ -2749,13 +3018,79 @@ function RecordSheet() {
       { header: "직원명", accessorKey: "name", size: "3%", cell: ReadonlyCell },
       { header: "직책", accessorKey: "position", size: "3%", cell: ReadonlyCell },
       { header: "근로일수", accessorKey: "working_day", size: "3%", cell: ReadonlyCell },
-      { header: "직원파출", accessorKey: "employ_dispatch", size: "3%", cell: ReadonlyCell },
       { header: "초과", accessorKey: "over_work", size: "3%", cell: ReadonlyCell },
       { header: "결근", accessorKey: "non_work", size: "3%", cell: ReadonlyCell },
       { header: "비고", accessorKey: "note", size: "20%", cell: ReadonlyCell },
     ],
     getCoreRowModel: getCoreRowModel(),
   });
+
+  const employeeDispatchRows = useMemo(() => {
+    const accId = String(selectedAccountId ?? "");
+    if (!accId) return [];
+
+    const accNameMap = new Map(
+      (accountList || []).map((a) => [String(a.account_id), safeTrim(a.account_name ?? "", "")])
+    );
+
+    const rows = [];
+    const seen = new Set();
+
+    const isSameMonthRecord = (row) => {
+      const raw = safeTrim(row?.record_date ?? row?.recordDate ?? "", "");
+      if (!raw) return true;
+      const d = dayjs(raw);
+      if (!d.isValid()) return true;
+      return d.year() === Number(year) && d.month() + 1 === Number(month);
+    };
+
+    (dispatchMappingRows || []).forEach((row) => {
+      const mid = safeTrim(row?.member_id ?? row?.memberId ?? "", "");
+      if (!mid || seen.has(mid)) return;
+      if (!isSameMonthRecord(row)) return;
+
+      const originId = safeTrim(row?.account_id ?? row?.origin_account_id ?? "", "");
+      const dispatchId = safeTrim(row?.dispatch_account_id ?? row?.dispatchAccountId ?? "", "");
+
+      if (dispatchId && dispatchId !== accId) return;
+      if (originId && originId === accId) return;
+
+      seen.add(mid);
+
+      const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
+      const stat = employeeDispatchStatMap.get(mid);
+
+      const origin = safeTrim(
+        row?.origin_account_name ??
+        row?.origin_account ??
+        accNameMap.get(originId) ??
+        info.origin ??
+        "",
+        ""
+      );
+
+      const dispatch = safeTrim(
+        row?.dispatch_account_name ??
+        row?.dispatch_account ??
+        row?.dispatch_account_nm ??
+        row?.dispatch_accountName ??
+        accNameMap.get(dispatchId) ??
+        info.dispatch ??
+        "",
+        ""
+      );
+
+      const count = stat?.totalCnt ?? info.count ?? 0;
+      const amount = stat?.totalPay ?? info.amount ?? "";
+      const name = safeTrim(row?.name ?? row?.member_name ?? "", "");
+
+      if (!name && !origin && !dispatch) return;
+
+      rows.push({ name, origin, dispatch, count, amount });
+    });
+
+    return rows;
+  }, [dispatchMappingRows, selectedAccountId, employeeDispatchStatMap, accountList, year, month]);
 
   // ✅ 파출 컬럼: 편집/변경감지/삭제복원 유지
   const dispatchColumns = useMemo(
@@ -2814,16 +3149,54 @@ function RecordSheet() {
         cell: ({ row, getValue }) => {
           const stat = getDispatchStatFromMap(dispatchAmountMap, row.original);
           if (!stat) {
-            return <span style={{ fontSize: "0.75rem" }}>0회</span>;
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  lineHeight: 1.1,
+                  fontSize: "0.72rem",
+                  width: "100%",
+                }}
+              >
+                0회
+              </div>
+            );
           }
           const cnt = Number(stat.totalCnt || 0);
           const pay = Number(stat.totalPay || 0);
-          if (cnt <= 0) return <span style={{ fontSize: "0.75rem" }}>0회</span>;
+          if (cnt <= 0) {
+            return (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  lineHeight: 1.1,
+                  fontSize: "0.72rem",
+                  width: "100%",
+                }}
+              >
+                0회
+              </div>
+            );
+          }
           const payText = pay > 0 ? `${formatMoneyLike(pay)}원` : "-";
           return (
-            <span style={{ fontSize: "0.75rem" }}>
-              {cnt}회, {payText}
-            </span>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                lineHeight: 1.1,
+                fontSize: "0.72rem",
+                width: "100%",
+              }}
+            >
+              <span>{cnt}회</span>
+              <span>{payText}</span>
+            </div>
           );
         },
       },
@@ -2838,6 +3211,12 @@ function RecordSheet() {
             onToggle={handleToggleDispatchPay}
           />
         ),
+      },
+      {
+        header: "파출업체",
+        accessorKey: "dispatch_account",
+        size: "3%",
+        cell: (props) => <DispatchEditableCell {...props} field="dispatch_account" />,
       },
       {
         header: "관리",
@@ -2870,6 +3249,22 @@ function RecordSheet() {
       },
     },
   });
+
+  const dispatchColStyle = (columnId) => {
+    if (columnId === "phone") {
+      return { width: 110, minWidth: 110, maxWidth: 110 };
+    }
+    if (columnId === "rrn") {
+      return { width: 115, minWidth: 115, maxWidth: 115 };
+    }
+    if (columnId === "account_number") {
+      return { width: 180, minWidth: 180, maxWidth: 180 };
+    }
+    if (columnId === "total") {
+      return { width: 80, minWidth: 80, maxWidth: 80 };
+    }
+    return undefined;
+  };
 
   const tableSx = {
     maxHeight: "430px",
@@ -2973,10 +3368,18 @@ function RecordSheet() {
           const gubun = safeTrim(val?.gubun, rowGubun);
           const pt = safeTrim(val?.position_type, rowPt);
 
+          // ✅ 직원파출 저장 시 현재 거래처(account_id)로 강제
+          const isEmployeeDispatchSave =
+            String(curType) === "6" || String(orgType) === "6" || String(val?.type ?? "") === "6";
+          const resolvedAccountId =
+            isEmployeeDispatchSave && selectedAccountId
+              ? selectedAccountId
+              : val?.account_id || row.account_id || selectedAccountId || "";
+
           if (cleared) {
             const recordObj = {
               gubun,
-              account_id: val?.account_id || row.account_id || "",
+              account_id: resolvedAccountId,
               member_id: val?.member_id || row.member_id || "",
               position_type: pt,
               positionType: pt,
@@ -2990,16 +3393,20 @@ function RecordSheet() {
               end_time: "",
               salary: 0,
               note: "",
-              pay_yn: "N",
               position: row.position || "",
               org_start_time,
               org_end_time,
             };
 
             const gg = safeTrim(recordObj.gubun, "nor").toLowerCase();
-            if (gg === "dis") disRecords.push(recordObj);
-            else if (gg === "rec") recRecords.push(recordObj);
-            else normalRecords.push(recordObj);
+            if (gg === "dis") {
+              recordObj.pay_yn = "N";
+              disRecords.push(recordObj);
+            } else if (gg === "rec") {
+              recRecords.push(recordObj);
+            } else {
+              normalRecords.push(recordObj);
+            }
             return;
           }
 
@@ -3007,7 +3414,7 @@ function RecordSheet() {
 
           const recordObj = {
             gubun,
-            account_id: val.account_id || row.account_id || "",
+            account_id: resolvedAccountId,
             member_id: val.member_id || row.member_id || "",
             position_type: pt,
             positionType: pt,
@@ -3019,16 +3426,20 @@ function RecordSheet() {
             end_time: val.end || "",
             salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
             note: val.note || "",
-            pay_yn: String(val?.pay_yn ?? "N").toUpperCase() === "Y" ? "Y" : "N",
             position: row.position || "",
             org_start_time,
             org_end_time,
           };
 
           const gg = safeTrim(recordObj.gubun, "nor").toLowerCase();
-          if (gg === "dis") disRecords.push(recordObj);
-          else if (gg === "rec") recRecords.push(recordObj);
-          else normalRecords.push(recordObj);
+          if (gg === "dis") {
+            recordObj.pay_yn = String(val?.pay_yn ?? "N").toUpperCase() === "Y" ? "Y" : "N";
+            disRecords.push(recordObj);
+          } else if (gg === "rec") {
+            recRecords.push(recordObj);
+          } else {
+            normalRecords.push(recordObj);
+          }
         });
     });
 
@@ -3207,6 +3618,7 @@ function RecordSheet() {
                 await fetchAllData?.();
                 // ✅ 조회 버튼 눌렀을 때 파출도 즉시 재조회 + 스냅샷 갱신(빨간글씨 초기화)
                 await fetchDispatchOnly(dispatchDelFilter);
+                await fetchDispatchMappingOnly();
               }}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
@@ -3253,7 +3665,7 @@ function RecordSheet() {
             </MDBox>
 
             <MDBox pt={0} sx={tableSx}>
-              <table className="recordsheet-table">
+              <table className="recordsheet-table" style={{ tableLayout: "fixed" }}>
                 <thead>
                   {attendanceTable.getHeaderGroups().map((hg) => (
                     <tr key={hg.id}>
@@ -3375,6 +3787,48 @@ function RecordSheet() {
               </table>
             </MDBox>
           </Card>
+          {employeeDispatchRows.length > 0 && (
+            <Card sx={{ mt: 6 }}>
+              <MDBox
+                mx={0}
+                mt={-3}
+                py={1}
+                px={2}
+                variant="gradient"
+                bgColor="info"
+                borderRadius="lg"
+                coloredShadow="info"
+              >
+                <MDTypography variant="h6" color="white">
+                  직원파출 정보
+                </MDTypography>
+              </MDBox>
+              <MDBox pt={0} sx={tableSx}>
+                <table className="recordsheet-table">
+                  <thead>
+                    <tr>
+                      <th>직원명</th>
+                      <th>원소속</th>
+                      <th>파견업장</th>
+                      <th>횟수</th>
+                      <th>금액</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employeeDispatchRows.map((r, idx) => (
+                      <tr key={`${r.name}_${idx}`}>
+                        <td>{r.name || "-"}</td>
+                        <td>{r.origin || "-"}</td>
+                        <td>{r.dispatch || "-"}</td>
+                        <td>{r.count > 0 ? `${r.count}회` : "-"}</td>
+                        <td>{r.amount ? `${formatMoneyLike(r.amount)}원` : "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </MDBox>
+            </Card>
+          )}
         </Grid>
 
         {/* 파출 정보 */}
@@ -3447,7 +3901,7 @@ function RecordSheet() {
                   {dispatchTable.getHeaderGroups().map((hg) => (
                     <tr key={hg.id}>
                       {hg.headers.map((header) => (
-                        <th key={header.id}>
+                        <th key={header.id} style={dispatchColStyle(header.column.id)}>
                           {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
                       ))}
@@ -3463,7 +3917,7 @@ function RecordSheet() {
                       <React.Fragment key={row.id}>
                         <tr>
                           {row.getVisibleCells().map((cell) => (
-                            <td key={cell.id}>
+                            <td key={cell.id} style={dispatchColStyle(cell.column.id)}>
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </td>
                           ))}
@@ -3545,6 +3999,15 @@ function RecordSheet() {
             label="계좌정보"
             name="account_number"
             value={formData.account_number}
+            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            onChange={handleChange}
+          />
+          <TextField
+            fullWidth
+            margin="normal"
+            label="파출업체"
+            name="dispatch_account"
+            value={formData.dispatch_account}
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             onChange={handleChange}
           />

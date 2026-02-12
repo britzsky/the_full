@@ -150,6 +150,7 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
   }, [safeBudget, safeUsed]);
 
   const ratioText = `${ratio.toFixed(2)}%`;
+  const ratioColor = ratio >= 100 ? "#f44336" : ratio >= 90 ? "#ff9800" : undefined;
 
   const items = [
     { label: "월예산", value: formatNumber(safeBudget) },
@@ -202,7 +203,10 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
             }}
           >
             <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#444" }}>
-              {it.label} : {it.value}
+              {it.label} :{" "}
+              <span style={{ color: it.label === "예산대비" ? ratioColor : undefined }}>
+                {it.value}
+              </span>
             </Typography>
           </Box>
         ))}
@@ -467,8 +471,8 @@ function TallySheet() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => {},
-    fetchBudget2Grant = async () => {},
+    fetchBudgetGrant = async () => { },
+    fetchBudget2Grant = async () => { },
   } = hook || {};
 
   const prevYm = useMemo(() => {
@@ -2433,10 +2437,10 @@ function TallySheet() {
                       cursor: !isBaseCell
                         ? "default"
                         : canInlineEdit
-                        ? "text"
-                        : shouldBlockModalByType(rowType)
-                        ? "not-allowed"
-                        : "pointer",
+                          ? "text"
+                          : shouldBlockModalByType(rowType)
+                            ? "not-allowed"
+                            : "pointer",
                       background: activeCellBg || activeRowBg || baseBg || "",
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
@@ -2445,9 +2449,9 @@ function TallySheet() {
                       isEditable
                         ? undefined
                         : (e) => {
-                            e.preventDefault();
-                            handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
-                          }
+                          e.preventDefault();
+                          handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
+                        }
                     }
                     onClick={
                       isEditable
@@ -2878,8 +2882,8 @@ function TallySheet() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                  ? "기타(직접입력)"
-                  : ""
+                    ? "기타(직접입력)"
+                    : ""
               }
               onChange={handleBankSelect}
               displayEmpty
@@ -2897,18 +2901,18 @@ function TallySheet() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-              <TextField
-                fullWidth
-                required
-                margin="normal"
-                label="은행명 직접입력"
-                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                name="bank_name"
-                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                onChange={handleChange2}
-                sx={{ mt: 1 }}
-              />
-            )}
+                <TextField
+                  fullWidth
+                  required
+                  margin="normal"
+                  label="은행명 직접입력"
+                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                  name="bank_name"
+                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                  onChange={handleChange2}
+                  sx={{ mt: 1 }}
+                />
+              )}
           </Box>
 
           <TextField
@@ -3211,11 +3215,11 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                      ...x,
-                                      card_idx: v,
-                                      card_brand: picked?.card_brand || x.card_brand || "",
-                                      card_no: picked?.card_no || x.card_no || "",
-                                    }
+                                    ...x,
+                                    card_idx: v,
+                                    card_brand: picked?.card_brand || x.card_brand || "",
+                                    card_no: picked?.card_no || x.card_no || "",
+                                  }
                                   : x
                               )
                             );
@@ -3352,7 +3356,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                        String(orig.receipt_type || "UNKNOWN") ||
+                      String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -3389,12 +3393,12 @@ function TallySheet() {
                     );
                     const cardIdx = String(
                       r.card_idx ??
-                        r.corp_card_idx ??
-                        r.idx ??
-                        orig.card_idx ??
-                        orig.corp_card_idx ??
-                        orig.idx ??
-                        ""
+                      r.corp_card_idx ??
+                      r.idx ??
+                      orig.card_idx ??
+                      orig.corp_card_idx ??
+                      orig.idx ??
+                      ""
                     );
                     const picked = getCorpCardByIdx(cardIdx);
                     const cardBrand =
@@ -3653,12 +3657,12 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                      ...x,
-                                      payType: v,
-                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                      cash_receipt_type:
-                                        v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
-                                    }
+                                    ...x,
+                                    payType: v,
+                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                    cash_receipt_type:
+                                      v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
+                                  }
                                   : x
                               )
                             );
@@ -3809,9 +3813,9 @@ function TallySheet() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                        String(orig.cash_receipt_type ?? "3") ||
+                      String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                        String(orig.receipt_type ?? "UNKNOWN");
+                      String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -4129,7 +4133,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                        String(orig.receipt_type ?? "UNKNOWN");
+                      String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 

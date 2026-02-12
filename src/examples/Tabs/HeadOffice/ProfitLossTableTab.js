@@ -22,10 +22,22 @@ export default function ProfitLossTableTab() {
   const { profitLossTableRows, accountList, loading, fetchProfitLossTableList } =
     useProfitLossTableData(year, selectedAccountId);
 
-  // ✅ 데이터 조회
+  // ✅ "전체" 옵션 포함한 거래처 옵션 리스트
+  const accountOptions = useMemo(() => {
+    const allOption = { account_id: "ALL", account_name: "전체" };
+    return [allOption, ...(accountList || [])];
+  }, [accountList]);
+
+  // ✅ 실제 조회에 사용할 account_id (전체면 빈값으로 넘김)
+  const queryAccountId = useMemo(() => {
+    return selectedAccountId === "ALL" ? "" : selectedAccountId;
+  }, [selectedAccountId]);
+
+  // ✅ 데이터 조회 (전체 포함)
   useEffect(() => {
-    if (selectedAccountId) fetchProfitLossTableList(selectedAccountId);
-  }, [year, selectedAccountId]);
+    // "ALL"도 truthy라서 여기서 걸리긴 하지만, 안전하게 queryAccountId로 통일
+    if (selectedAccountId) fetchProfitLossTableList(queryAccountId);
+  }, [year, selectedAccountId, queryAccountId]);
 
   // ✅ 데이터 원본 저장
   useEffect(() => {
@@ -50,24 +62,28 @@ export default function ProfitLossTableTab() {
   useEffect(() => {
     if (didSetDefaultAccountRef.current) return;
     if (accountList.length > 0 && !selectedAccountId) {
+      // ✅ 기존 유지: 첫 거래처 자동 선택
+      // (원하면 여기서 "ALL"로 바꾸면 최초 화면이 전체조회로 시작함)
       setSelectedAccountId(accountList[0].account_id);
       didSetDefaultAccountRef.current = true;
     }
   }, [accountList, selectedAccountId]);
 
-  // ✅ Autocomplete에서 선택된 객체
+  // ✅ Autocomplete에서 선택된 객체 (전체 옵션 포함)
   const selectedAccount = useMemo(() => {
     if (!selectedAccountId) return null;
     return (
-      (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null
+      (accountOptions || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null
     );
-  }, [accountList, selectedAccountId]);
+  }, [accountOptions, selectedAccountId]);
 
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
     if (!q) return;
-    const list = accountList || [];
+
+    const list = accountOptions || []; // ✅ 전체 옵션 포함
     const qLower = q.toLowerCase();
+
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
     const partial =
       exact ||
@@ -76,11 +92,12 @@ export default function ProfitLossTableTab() {
           .toLowerCase()
           .includes(qLower)
       );
+
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
     }
-  }, [accountInput, accountList]);
+  }, [accountInput, accountOptions]);
 
   // ✅ 숫자 입력 가능한 항목
   const editableNumberFields = [
@@ -95,14 +112,10 @@ export default function ProfitLossTableTab() {
     "event_cost",
     "not_budget_cost",
     "etc_indirect_cost",
-    // "utility_bills_note" ❌ 숫자에서 제외
   ];
 
   // ✅ 텍스트 입력 가능한 항목
   const editableTextFields = ["utility_bills_note"];
-
-  // (기존 editableFields는 더 이상 쓰지 않거나, 아래처럼 합쳐서 쓰고 싶으면)
-  const editableFields = [...editableNumberFields, ...editableTextFields];
 
   // ✅ 숨길 컬럼
   const hiddenCols = ["주간일반", "주간직원"];
@@ -115,8 +128,10 @@ export default function ProfitLossTableTab() {
     "20250919162439",
     "20250819193620",
     "20250819193632",
+    "ALL",
   ]);
 
+  // ✅ 전체("ALL")일 때는 false 처리됨
   const isHangyeol = HANGYEOL_ACCOUNT_IDS.has(String(selectedAccountId));
 
   // ✅ 화면 헤더 구조
@@ -146,11 +161,9 @@ export default function ProfitLossTableTab() {
 
   // ✅ 컬럼 → DB 필드 매핑
   const fieldMap = {
-    // 인원
     생계인원: { value: "living_estimate", ratio: "living_estimate_ratio" },
     일반인원: { value: "basic_estimate", ratio: "basic_estimate_ratio" },
     인원합계: { value: "estimate_total", ratio: "estimate_total_ratio" },
-    // 매출
     생계비: { value: "living_cost", ratio: "living_ratio" },
     일반식대: { value: "basic_cost", ratio: "basic_ratio" },
     직원식대: { value: "employ_cost", ratio: "employ_ratio" },
@@ -158,7 +171,6 @@ export default function ProfitLossTableTab() {
     주간직원: { value: "daycare_emp_cost", ratio: "daycare_emp_ratio" },
     판장금: { value: "payback_price", ratio: "payback_ratio" },
     매출소계: { value: "sales_total", ratio: "sales_total_ratio" },
-    // 매입
     식자재: { value: "food_cost", ratio: "food_ratio" },
     음식물처리: { value: "food_process", ratio: "food_trash_ratio" },
     식기세척기: { value: "dishwasher", ratio: "dishwasher_ratio" },
@@ -168,17 +180,14 @@ export default function ProfitLossTableTab() {
     이벤트: { value: "event_cost", ratio: "event_ratio" },
     예산미발행: { value: "not_budget_cost" },
     매입소계: { value: "purchase_total", ratio: "purchase_total_ratio" },
-    // 인건
     인건비정보: { value: "person_cost", ratio: "person_ratio" },
     파출비: { value: "dispatch_cost", ratio: "dispatch_ratio" },
     인건소계: { value: "person_total", ratio: "person_total_ratio" },
-    // 간접
     수도광열비: { value: "utility_bills", ratio: "utility_ratio" },
     비고: { value: "utility_bills_note" },
     세금정보: { value: "duty_secure", ratio: "duty_secure_ratio" },
     기타간접비: { value: "etc_indirect_cost" },
     간접소계: { value: "indirect_total", ratio: "indirect_total_ratio" },
-    // 영업이익
     영업이익: { value: "business_profit", ratio: "business_profit_ratio" },
   };
 
@@ -193,14 +202,13 @@ export default function ProfitLossTableTab() {
     const modifiedRows = editRows
       .map((row) => {
         const changedFields = {};
-        // ✅ 숫자 필드 diff
+
         editableNumberFields.forEach((field) => {
           const original = Number(row._original[field] ?? 0);
           const current = Number(row[field] ?? 0);
           if (original !== current) changedFields[field] = row[field];
         });
 
-        // ✅ 텍스트 필드 diff
         editableTextFields.forEach((field) => {
           const original = String(row._original[field] ?? "").trim();
           const current = String(row[field] ?? "").trim();
@@ -227,7 +235,8 @@ export default function ProfitLossTableTab() {
     try {
       await api.post("/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
-      fetchProfitLossTableList();
+      // ✅ 저장 후 재조회도 전체 반영
+      fetchProfitLossTableList(queryAccountId);
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
     }
@@ -238,10 +247,8 @@ export default function ProfitLossTableTab() {
     const newRows = [...editRows];
 
     if (editableTextFields.includes(field)) {
-      // ✅ 텍스트는 그대로 저장
       newRows[rowIdx][field] = value;
     } else {
-      // ✅ 숫자: 콤마 제거 후 Number
       const numericValue = value === "" || value === null ? null : Number(value.replace(/,/g, ""));
       newRows[rowIdx][field] = numericValue;
     }
@@ -253,44 +260,41 @@ export default function ProfitLossTableTab() {
 
   return (
     <>
-      {/* 상단 필터 + 저장 버튼 */}
       <MDBox
         pt={1}
         pb={1}
         sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap" }}
       >
-        {/* ✅ 거래처 검색 가능한 Autocomplete */}
-        {accountList.length > 0 && (
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 200 }}
-            options={accountList || []}
-            value={selectedAccount}
-            onChange={(_, newValue) => {
-              setSelectedAccountId(newValue ? newValue.account_id : "");
-            }}
-            inputValue={accountInput}
-            onInputChange={(_, newValue) => setAccountInput(newValue)}
-            // ✅ 입력 텍스트로 검색: account_name 기준
-            getOptionLabel={(option) => option?.account_name ?? ""}
-            isOptionEqualToValue={(option, value) =>
-              String(option.account_id) === String(value.account_id)
-            }
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="거래처 검색"
-                placeholder="거래처명을 입력"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    selectAccountByInput();
-                  }
-                }}
-              />
-            )}
-          />
-        )}
+        {/* ✅ 거래처 검색 가능한 Autocomplete (전체 옵션 포함) */}
+        <Autocomplete
+          size="small"
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={selectedAccount}
+          onChange={(_, newValue) => {
+            // ✅ clear 되면 전체로
+            setSelectedAccountId(newValue ? newValue.account_id : "ALL");
+          }}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
+          getOptionLabel={(option) => option?.account_name ?? ""}
+          isOptionEqualToValue={(option, value) =>
+            String(option.account_id) === String(value.account_id)
+          }
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
+            />
+          )}
+        />
 
         <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small">
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -406,7 +410,7 @@ export default function ProfitLossTableTab() {
                                   type="text"
                                   value={r[field] ?? ""}
                                   style={{
-                                    width: "100px", // ✅ 텍스트는 좀 넓게
+                                    width: "120px", // ✅ 텍스트는 좀 넓게
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",
@@ -426,7 +430,7 @@ export default function ProfitLossTableTab() {
                                       : ""
                                   }
                                   style={{
-                                    width: "60px",
+                                    width: "80px",
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",
@@ -443,7 +447,7 @@ export default function ProfitLossTableTab() {
                                   value={formatNumber(r[field] ?? 0)}
                                   disabled
                                   style={{
-                                    width: "60px", // ✅ 텍스트는 좀 넓게
+                                    width: "80px", // ✅ 텍스트는 좀 넓게
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",

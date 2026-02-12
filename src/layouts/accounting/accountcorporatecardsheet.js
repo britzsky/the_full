@@ -1175,6 +1175,9 @@ function AccountCorporateCardSheet() {
   useEffect(() => {
     if (!selectedMaster) return;
 
+    // ✅ 핵심: 하단 행이 없으면 상단 합계를 절대 건드리지 않음
+    if (!detailRows || detailRows.length === 0) return;
+
     // 상단에서 저장된 행이면 sale_id로, 신규면 client_id로 매칭
     const masterKey = selectedMaster.sale_id
       ? { type: "sale_id", value: String(selectedMaster.sale_id) }
@@ -1188,15 +1191,13 @@ function AccountCorporateCardSheet() {
     const nextTotal = Number(sumDetailAmount || 0);
 
     // 2) (선택) taxType 기준으로 과세/면세 자동 분리
-    //    - 과세(1): 공급가 = amount/1.1, 부가세 = amount - 공급가
-    //    - 면세(2): taxFree에 누적
     let nextTax = 0;
     let nextVat = 0;
     let nextTaxFree = 0;
 
     (detailRows || []).forEach((r) => {
       const amt = parseNumber(r?.amount);
-      const tt = parseNumMaybe(r?.taxType); // 1/2/3 or null
+      const tt = parseNumMaybe(r?.taxType);
 
       if (tt === 1) {
         const supply = Math.round(amt / 1.1);
@@ -1205,13 +1206,9 @@ function AccountCorporateCardSheet() {
         nextVat += vat;
       } else if (tt === 2) {
         nextTaxFree += amt;
-      } else {
-        // 알수없음(3)이나 미선택("")은 total만 맞추고, 분해는 하지 않음
-        // 필요하면 여기 정책을 바꿔도 됨
       }
     });
 
-    // 3) masterRows 업데이트 (불필요한 set 방지)
     setMasterRows((prev) => {
       const idx = prev.findIndex((r) =>
         masterKey.type === "sale_id"
@@ -1222,7 +1219,6 @@ function AccountCorporateCardSheet() {
 
       const row = prev[idx];
 
-      // 기존 값과 동일하면 업데이트 안 함 (무한렌더/깜빡임 방지)
       const same =
         parseNumber(row.total) === nextTotal &&
         parseNumber(row.tax) === nextTax &&
@@ -1232,29 +1228,12 @@ function AccountCorporateCardSheet() {
       if (same) return prev;
 
       const next = [...prev];
-      next[idx] = {
-        ...row,
-        total: nextTotal,
-        tax: nextTax,
-        vat: nextVat,
-        taxFree: nextTaxFree,
-        // 필요하면 totalCard도 같이 맞추고 싶으면 아래처럼:
-        // totalCard: nextTotal,
-      };
+      next[idx] = { ...row, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree };
       return next;
     });
 
-    // 선택된 행 state도 같이 최신화(하이라이트/상단 선택 유지)
     setSelectedMaster((prev) =>
-      prev
-        ? {
-            ...prev,
-            total: nextTotal,
-            tax: nextTax,
-            vat: nextVat,
-            taxFree: nextTaxFree,
-          }
-        : prev
+      prev ? { ...prev, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree } : prev
     );
   }, [detailRows, sumDetailAmount, selectedMaster]);
 

@@ -421,6 +421,7 @@ export default function DeadlineBalanceTab() {
           basic_cost: parseNumber(r.basic_cost),
           employ_cost: parseNumber(r.employ_cost),
           integrity_cost: parseNumber(r.integrity_cost),
+          month_balance_price: parseNumber(r.month_balance_price),
           balance_price: parseNumber(r.balance_price),
           before_price: parseNumber(r.before_price),
           year,
@@ -451,6 +452,7 @@ export default function DeadlineBalanceTab() {
       { header: "일반식대", accessorKey: "basic_cost" },
       { header: "직원식대", accessorKey: "employ_cost" },
       { header: "보전", accessorKey: "integrity_cost" },
+      { header: "월 미수잔액", accessorKey: "month_balance_price" },
       { header: "이전 미수잔액", accessorKey: "before_price2" },
       { header: "총 미수잔액", accessorKey: "balance_price" },
       { header: "입금예정일", accessorKey: "input_exp" },
@@ -664,6 +666,7 @@ export default function DeadlineBalanceTab() {
                             "integrity_cost",
                             "input_exp",
                             "balance_price",
+                            "month_balance_price",
                           ].includes(key)
                         ) {
                           return (

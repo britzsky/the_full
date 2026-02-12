@@ -56,6 +56,7 @@ import ContractManager from "layouts/accountinfosheet";
 import OperateSchedule from "layouts/operate/OperateScheduleSheet";
 import OperateTab from "layouts/operate/operatetab";
 import OperateTab_3 from "layouts/operate/operatetab_3";
+import OperateTab_4 from "layouts/operate/operatetab_4";
 import AccountIssueManager from "layouts/operate/accountissuesheet";
 import BudgetManager from "layouts/operate/budgettablesheet";
 // 회계
@@ -63,6 +64,8 @@ import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseTally from "layouts/accounting/accountpurchasetally";
 import HeadOfficeCorporateCardManager from "layouts/accounting/corporatecardsheet";
 import AccountCorporateCardManager from "layouts/accounting/accountcorporatecardsheet";
+import AccountPersonPurchaseManager from "layouts/accounting/accountpersonpurchasesheet";
+
 import PurchaseDeadLineManager from "layouts/accounting/accountpurchasetally";
 
 // 인사
@@ -166,17 +169,16 @@ const routes = [
         allowedPositions: [0, 1], // 🔹 직책권한 (대표님 / 팀장님)
         accessMode: "OR",
       },
-      // {
-      //   type: "collapse",
-      //   name: "📝 전자결재 관리",
-      //   key: "weekmenu",
-      //   //icon: <Icon fontSize="small">*</Icon>,
-      //   route: "/electronicpaymentmanager",
-      //   component: <ElectronicPaymentManager />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-      //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
-      //   accessMode: "AND",
-      // },
+      {
+        type: "collapse",
+        name: "📝 전자결재 관리",
+        key: "weekmenu",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/electronicpaymentmanager",
+        component: <ElectronicPaymentManager />,
+        allowedDepartments: [6], // 🔹 부서권한
+        accessMode: "AND",
+      },
     ],
   },
   {
@@ -230,9 +232,9 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/AccountSales/AccountSalesTab",
         component: <AccountSales />,
-        allowedDepartments: [0, 4, 6], // 🔹 부서권한
+        allowedDepartments: [0, 5, 4, 6], // 🔹 부서권한
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["dh2", "dh2", "ww1", "hh2", "mh3"],
+        allowUserIds: ["dh2", "mh2", "ww1", "hh2", "mh3"],
         accessMode: "OR",
       },
     ],
@@ -270,17 +272,16 @@ const routes = [
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
         accessMode: "AND",
       },
-      // {
-      //   type: "collapse",
-      //   name: "🧑‍🔧 현장관리",
-      //   key: "fieldstaff",
-      //   //icon: <Icon fontSize="small">*</Icon>,
-      //   route: "/fieldstaff",
-      //   component: <OperateTab_2 />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
-      //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
-      //   accessMode: "AND",
-      // },
+      {
+        type: "collapse",
+        name: "🧑‍🔧 현장관리",
+        key: "fieldstaff",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/fieldstaff",
+        component: <OperateTab_4 />,
+        allowedDepartments: [6], // 🔹 부서권한
+        accessMode: "AND",
+      },
       {
         type: "collapse",
         name: "🧑‍🔧 채용관리",
@@ -364,6 +365,16 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/accountcorporatecard",
         component: <AccountCorporateCardManager />,
+        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        accessMode: "OR",
+      },
+      {
+        type: "collapse",
+        name: "💳 개인구매 관리",
+        key: "accountpersonpurchase",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/purchase/accountpersonpurchase",
+        component: <AccountPersonPurchaseManager />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
         accessMode: "OR",
       },

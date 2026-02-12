@@ -39,6 +39,7 @@ export default function useDeadlineBalanceData(year, month) {
         employ_cost: formatNumber(item.employ_cost),
         integrity_cost: formatNumber(item.integrity_cost),
         input_exp: item.input_exp,
+        month_balance_price: formatNumber(item.month_balance_price),
         balance_price: formatNumber(item.balance_price),
         before_price: formatNumber(item.before_price),
         before_price2: parseNumber(item.before_price2),

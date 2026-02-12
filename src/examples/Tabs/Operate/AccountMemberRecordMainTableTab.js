@@ -27,7 +27,7 @@ function AccountMemberRecordMainTableTab() {
   // ✅ 근무표(월~일) 4주 생성
   // =========================
   const WEEK_DAYS = useMemo(() => ["월", "화", "수", "목", "금", "토", "일"], []);
-  const WEEK_COUNT = 4;
+  const WEEK_COUNT = 1;
 
   const makeScheduleKey = useCallback((weekIdx, dayIdx) => `wk${weekIdx + 1}_${dayIdx}`, []);
 

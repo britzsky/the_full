@@ -58,6 +58,7 @@ const TYPE_LABEL = {
   14: "육아휴직",
   15: "하계휴가",
   16: "업장휴무",
+  17: "경조사",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
@@ -712,6 +713,7 @@ function RecordSheet() {
           account_id: r.account_id,
           member_id: r.member_id,
           position: r.position || "",
+          del_yn: r.del_yn ?? "",
           gubun: r.gubun ?? "nor",
           position_type: r.position_type ?? "",
           day_default: r.day_default || null,
@@ -815,6 +817,7 @@ function RecordSheet() {
         account_id: item.account_id,
         member_id: item.member_id,
         position: item.position || member?.position || "",
+        del_yn: item.del_yn ?? member?.del_yn ?? "",
         gubun: baseGubun,
         position_type: basePt,
         day_default: item.day_default || null,
@@ -2295,8 +2298,12 @@ function RecordSheet() {
                   {attendanceTable.getRowModel().rows.map((row) => (
                     <tr key={row.id}>
                       {row.getVisibleCells().map((cell) => {
+                        const isRetired =
+                          String(row.original?.del_yn ?? "").toUpperCase() === "Y";
                         let bg = "";
-                        if (cell.column.id.startsWith("day_")) {
+                        if (isRetired) {
+                          bg = "#f7f0f0";
+                        } else if (cell.column.id.startsWith("day_")) {
                           const v = cell.getValue();
                           bg = typeColors[v?.type || ""] || "";
                         }

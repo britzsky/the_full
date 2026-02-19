@@ -101,6 +101,7 @@ export default function useRecordsheetData(account_id, year, month) {
           gubun: item.gubun ?? "nor",
           position_type: item.position_type ?? "",
           position: item.position ?? "",
+          del_yn: item.del_yn ?? "",
         };
       });
 
@@ -137,6 +138,7 @@ export default function useRecordsheetData(account_id, year, month) {
           account_id: firstItem.account_id || "",
           member_id: firstItem.member_id || "",
           position: firstItem.position || "",
+          del_yn: firstItem.del_yn ?? "",
 
           // ✅ row 기본값
           gubun: baseGubun,

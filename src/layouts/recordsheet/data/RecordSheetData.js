@@ -47,6 +47,7 @@ export default function useRecordsheetData(account_id, year, month) {
           member_id: item.member_id,
           name: item.name,
           position: item.position,
+          del_yn: item.del_yn ?? "",
           working_day: item.working_day,
           employ_dispatch: item.employ_dispatch || "",
           over_work: item.over_work || "",
@@ -93,6 +94,7 @@ export default function useRecordsheetData(account_id, year, month) {
             name: item.name || `member_${mid}`,
             account_id: item.account_id || "",
             position: item.position || "",
+            del_yn: item.del_yn ?? "",
             // ✅ row-level 고정값(없으면 나중에 days에서 다시 추론)
             gubun: safeTrim(item.gubun, ""),
             position_type: safeTrim(item.position_type, ""),
@@ -168,6 +170,7 @@ export default function useRecordsheetData(account_id, year, month) {
           account_id: g.account_id,
           member_id: g.member_id,
           position: g.position,
+          del_yn: g.del_yn ?? "",
           // ✅ row-level 확정값 (저장 fallback용)
           gubun: rowGubun,
           position_type: rowPt,

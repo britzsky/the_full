@@ -57,7 +57,7 @@ import OperateSchedule from "layouts/operate/OperateScheduleSheet";
 import OperateTab from "layouts/operate/operatetab";
 import OperateTab_3 from "layouts/operate/operatetab_3";
 import OperateTab_4 from "layouts/operate/operatetab_4";
-import AccountIssueManager from "layouts/operate/accountissuesheet";
+import AccountIssueManager2 from "layouts/operate/accountissuesheet2";
 import BudgetManager from "layouts/operate/budgettablesheet";
 // 회계
 import AccountSales from "layouts/accountsales/accountsales";
@@ -320,8 +320,8 @@ const routes = [
         name: "📋 고객사 소통",
         key: "business",
         //icon: <Icon fontSize="small">*</Icon>,
-        route: "/Operate/accountissuesheet",
-        component: <AccountIssueManager />,
+        route: "/Operate/accountissuesheet2",
+        component: <AccountIssueManager2 />,
         allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
         accessMode: "AND",

@@ -6,7 +6,8 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 // 탭용 서브 컴포넌트 import
 import DeadlineBalanceTab from "./AccountSales/DeadlineBalanceTab";
 import DeadlineFilesTab from "./AccountSales/DeadlineFilesTab";
-import DeadlineIssueTab from "./AccountSales/DeadlineIssueTab";
+import DeadlineIssueTab2 from "./AccountSales/DeadlineIssueTab2";
+import DeadlineIssueStatsTab2 from "./AccountSales/DeadlineIssueStatsTab2";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 function AccountSalesTab() {
@@ -14,18 +15,15 @@ function AccountSalesTab() {
 
   const handleTabChange = (_, newValue) => setTabIndex(newValue);
   // ✅ 숫자 이모지 아이콘
-  const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
+  const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣"];
 
-  const tabLabels = [
-    "매출마감/미수잔액",
-    "마감자료",
-    "마감이슈",
-  ];
+  const tabLabels = ["매출마감/미수잔액", "마감자료", "마감이슈", "마감이슈통계"];
 
   const tabComponents = [
     <DeadlineBalanceTab key="dead" />,
     <DeadlineFilesTab key="files" />,
-    <DeadlineIssueTab key="issue" />,
+    <DeadlineIssueTab2 key="issue" />,
+    <DeadlineIssueStatsTab2 key="issueStat" />,
   ];
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>

@@ -62,6 +62,7 @@ const TYPE_LABEL = {
   14: "육아휴직",
   15: "하계휴가",
   16: "업장휴무",
+  18: "경조사",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
@@ -1128,6 +1129,7 @@ function RecordSheet() {
           account_id: r.account_id,
           member_id: r.member_id,
           position: r.position || "",
+          del_yn: r.del_yn ?? "",
           gubun: r.gubun ?? "nor",
           position_type: r.position_type ?? "",
           day_default: r.day_default || null,
@@ -1231,6 +1233,7 @@ function RecordSheet() {
         account_id: item.account_id,
         member_id: item.member_id,
         position: item.position || member?.position || "",
+        del_yn: item.del_yn ?? member?.del_yn ?? "",
         gubun: baseGubun,
         position_type: basePt,
         day_default: item.day_default || null,
@@ -2014,21 +2017,21 @@ function RecordSheet() {
             const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
             const origin = safeTrim(
               row?.origin_account_name ??
-                row?.origin_account ??
-                accountNameMap.get(originId) ??
-                info.origin ??
-                "",
+              row?.origin_account ??
+              accountNameMap.get(originId) ??
+              info.origin ??
+              "",
               ""
             );
             const dispatch = safeTrim(
               row?.dispatch_account_name ??
-                row?.dispatch_account ??
-                row?.dispatch_account_nm ??
-                row?.dispatch_accountName ??
-                accountNameMap.get(dispatchId) ??
-                info.dispatch ??
-                accName ??
-                "",
+              row?.dispatch_account ??
+              row?.dispatch_account_nm ??
+              row?.dispatch_accountName ??
+              accountNameMap.get(dispatchId) ??
+              info.dispatch ??
+              accName ??
+              "",
               ""
             );
             const name = safeTrim(row?.name ?? row?.member_name ?? stat?.name ?? "", "");
@@ -2814,17 +2817,31 @@ function RecordSheet() {
     [daysInMonth, year, month, isMobile]
   );
 
+  const memberDelYnMap = useMemo(() => {
+    const map = new Map();
+    (memberRows || []).forEach((m) => {
+      const delYn = String(m?.del_yn ?? "").toUpperCase();
+      const mid = safeTrim(m?.member_id ?? m?.memberId ?? "", "");
+      if (mid) map.set(mid, delYn || "N");
+      const name = safeTrim(m?.name ?? "", "");
+      if (name && !map.has(name)) map.set(name, delYn || "N");
+    });
+    return map;
+  }, [memberRows]);
+
   const attendanceColumns = useMemo(
     () => [
       {
         header: "직원명",
         accessorKey: "name",
         size: "2%",
-        cell: (info) => <b>{info.getValue()}</b>,
+        cell: (info) => {
+          return <b>{info.getValue()}</b>;
+        },
       },
       ...dayColumns,
     ],
-    [dayColumns]
+    [dayColumns, memberDelYnMap]
   );
 
   const attendanceTable = useReactTable({
@@ -3682,8 +3699,20 @@ function RecordSheet() {
                   {attendanceTable.getRowModel().rows.map((row) => (
                     <tr key={row.id}>
                       {row.getVisibleCells().map((cell) => {
+                        const rowDelYn = String(row.original?.del_yn ?? "").toUpperCase();
+                        const memberId = safeTrim(
+                          row.original?.member_id ?? row.original?.memberId ?? "",
+                          ""
+                        );
+                        const fallbackDelYn =
+                          (memberId && memberDelYnMap.get(memberId)) ||
+                          memberDelYnMap.get(safeTrim(row.original?.name ?? "", "")) ||
+                          "N";
+                        const isRetired = rowDelYn === "Y" || fallbackDelYn === "Y";
                         let bg = "";
-                        if (cell.column.id.startsWith("day_")) {
+                        if (isRetired && cell.column.id === "name") {
+                          bg = "#ffe5e5";
+                        } else if (cell.column.id.startsWith("day_")) {
                           const v = cell.getValue();
                           bg = typeColors[v?.type || ""] || "";
                         }

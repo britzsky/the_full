@@ -47,6 +47,7 @@ export default function useProfitLossTableData(year, account_id) {
         const rows = (res.data || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
+          account_type: item.account_type,
         }));
         setAccountList(rows);
       })

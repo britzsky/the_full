@@ -471,8 +471,8 @@ function TallySheet() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => { },
-    fetchBudget2Grant = async () => { },
+    fetchBudgetGrant = async () => {},
+    fetchBudget2Grant = async () => {},
   } = hook || {};
 
   const prevYm = useMemo(() => {
@@ -2144,6 +2144,7 @@ function TallySheet() {
     biz_image: null,
     add_yn: "N",
     add_name: "",
+    account_type: 0,
   };
 
   const [formData, setFormData] = useState(initialForm);
@@ -2232,6 +2233,7 @@ function TallySheet() {
       "bank_no",
       "bank_image",
       "biz_image",
+      "account_type",
     ];
 
     const missing = requiredFields.filter((key) => !formData[key]);
@@ -2437,10 +2439,10 @@ function TallySheet() {
                       cursor: !isBaseCell
                         ? "default"
                         : canInlineEdit
-                          ? "text"
-                          : shouldBlockModalByType(rowType)
-                            ? "not-allowed"
-                            : "pointer",
+                        ? "text"
+                        : shouldBlockModalByType(rowType)
+                        ? "not-allowed"
+                        : "pointer",
                       background: activeCellBg || activeRowBg || baseBg || "",
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
@@ -2449,9 +2451,9 @@ function TallySheet() {
                       isEditable
                         ? undefined
                         : (e) => {
-                          e.preventDefault();
-                          handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
-                        }
+                            e.preventDefault();
+                            handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
+                          }
                     }
                     onClick={
                       isEditable
@@ -2817,7 +2819,7 @@ function TallySheet() {
               </Box>
             </Grid>
 
-            <Grid item xs={8} sm={9}>
+            <Grid item xs={4} sm={4}>
               <TextField
                 fullWidth
                 margin="none"
@@ -2830,6 +2832,28 @@ function TallySheet() {
                 placeholder="약식사용 체크 시 입력"
                 size="small"
               />
+            </Grid>
+
+            <Grid item xs={4} sm={2}>
+              <Typography sx={{ fontSize: "0.8rem", mb: 0.5 }}>유형 (필수)</Typography>
+            </Grid>
+            <Grid item xs={4} sm={3}>
+              <Select
+                fullWidth
+                size="small"
+                value={formData.account_type ?? 0} // ✅ 기본 0
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    account_type: Number(e.target.value), // ✅ 0/1/2 숫자로 저장
+                  }))
+                }
+                sx={{ fontSize: "0.85rem", height: "40px" }}
+              >
+                <MenuItem value={0}>식재료</MenuItem>
+                <MenuItem value={1}>소모품</MenuItem>
+                <MenuItem value={2}>복합</MenuItem>
+              </Select>
             </Grid>
           </Grid>
 
@@ -2882,12 +2906,12 @@ function TallySheet() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                    ? "기타(직접입력)"
-                    : ""
+                  ? "기타(직접입력)"
+                  : ""
               }
               onChange={handleBankSelect}
               displayEmpty
-              sx={{ fontSize: "0.85rem" }}
+              sx={{ fontSize: "0.85rem", height: "40px" }}
             >
               <MenuItem value="">
                 <em>은행 선택</em>
@@ -2901,18 +2925,18 @@ function TallySheet() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-                <TextField
-                  fullWidth
-                  required
-                  margin="normal"
-                  label="은행명 직접입력"
-                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                  name="bank_name"
-                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                  onChange={handleChange2}
-                  sx={{ mt: 1 }}
-                />
-              )}
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                label="은행명 직접입력"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="bank_name"
+                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                onChange={handleChange2}
+                sx={{ mt: 1 }}
+              />
+            )}
           </Box>
 
           <TextField
@@ -3215,11 +3239,11 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    card_idx: v,
-                                    card_brand: picked?.card_brand || x.card_brand || "",
-                                    card_no: picked?.card_no || x.card_no || "",
-                                  }
+                                      ...x,
+                                      card_idx: v,
+                                      card_brand: picked?.card_brand || x.card_brand || "",
+                                      card_no: picked?.card_no || x.card_no || "",
+                                    }
                                   : x
                               )
                             );
@@ -3356,7 +3380,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                      String(orig.receipt_type || "UNKNOWN") ||
+                        String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -3393,12 +3417,12 @@ function TallySheet() {
                     );
                     const cardIdx = String(
                       r.card_idx ??
-                      r.corp_card_idx ??
-                      r.idx ??
-                      orig.card_idx ??
-                      orig.corp_card_idx ??
-                      orig.idx ??
-                      ""
+                        r.corp_card_idx ??
+                        r.idx ??
+                        orig.card_idx ??
+                        orig.corp_card_idx ??
+                        orig.idx ??
+                        ""
                     );
                     const picked = getCorpCardByIdx(cardIdx);
                     const cardBrand =
@@ -3657,12 +3681,12 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    payType: v,
-                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                    cash_receipt_type:
-                                      v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
-                                  }
+                                      ...x,
+                                      payType: v,
+                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                      cash_receipt_type:
+                                        v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
+                                    }
                                   : x
                               )
                             );
@@ -3813,9 +3837,9 @@ function TallySheet() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                      String(orig.cash_receipt_type ?? "3") ||
+                        String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -4133,7 +4157,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 

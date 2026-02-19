@@ -277,7 +277,7 @@ export default function useTallysheetData(account_id, year, month) {
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
     api
-      .get("/Account/AccountList", {
+      .get("/Account/AccountListV2", {
         params: { account_type: "0" },
       })
       .then((res) => {

@@ -40,7 +40,6 @@ const DEPT_LABELS = {
 };
 
 function UserManagement() {
-  const STICKY_TOP_OFFSET = "calc(48px + 12px)";
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -101,9 +100,7 @@ function UserManagement() {
 
   const handleDelYnChange = (userId, nextValue, originalValue) => {
     // 드롭다운 변경값을 화면에 즉시 반영
-    setRows((prev) =>
-      prev.map((r) => (r.user_id === userId ? { ...r, del_yn: nextValue } : r))
-    );
+    setRows((prev) => prev.map((r) => (r.user_id === userId ? { ...r, del_yn: nextValue } : r)));
 
     // 원래값과 비교해서 변경 목록 갱신
     setPendingDelYn((prev) => {
@@ -254,16 +251,13 @@ function UserManagement() {
         Cell: ({ row }) => {
           const userId = row.original.user_id;
           const currentValue =
-            pendingDelYn[userId] ??
-            String(row.original.del_yn || "N").toUpperCase();
+            pendingDelYn[userId] ?? String(row.original.del_yn || "N").toUpperCase();
           return (
             <Select
               key={`${userId}-${currentValue}`}
               size="small"
               value={currentValue}
-              onChange={(e) =>
-                handleDelYnChange(userId, e.target.value, row.original.orig_del_yn)
-              }
+              onChange={(e) => handleDelYnChange(userId, e.target.value, row.original.orig_del_yn)}
               sx={{ height: 30, minWidth: 90, fontSize: 10, color: "#111" }}
             >
               <MenuItem value="N">재직</MenuItem>
@@ -279,129 +273,113 @@ function UserManagement() {
   return (
     <DashboardLayout>
       {/* 상단 네비 */}
-      <DashboardNavbar title="사용자 관리" />
-      <MDBox
-        pt={2}
-        pb={3}
-        sx={{
-          background: "linear-gradient(180deg, #f2f6fb 0%, #ffffff 70%)",
-          borderRadius: "16px",
-        }}
-      >
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <Card>
-              {/* 상단 액션 바 */}
+      <DashboardNavbar title="🧑‍🔧사용자 관리" />
+      <Grid container spacing={2}>
+        <Grid item xs={12}>
+          <Card>
+            <MDBox
+              sx={{
+                position: "sticky",
+                top: 0,
+                zIndex: 10,
+                backgroundColor: "#ffffff",
+                borderBottom: "1px solid #eee",
+              }}
+            >
               <MDBox
-                mx={0}
-                mt={0}
-                py={1}
-                px={2}
-                variant="gradient"
-                bgColor="info"
-                borderRadius="lg"
-                coloredShadow="info"
-                display="flex"
-                justifyContent="space-between"
-                alignItems="center"
-                // ✅ 스크롤 시 상단 네비 아래에 붙여서 액션(저장/새로고침) 유지
-                sx={(theme) => ({
-                  position: "sticky",
-                  top: STICKY_TOP_OFFSET,
-                  zIndex: theme.zIndex.appBar - 1,
-                  flexWrap: "wrap",
-                  gap: 1,
-                })}
+                pt={1}
+                pb={1}
+                sx={{
+                  display: "flex",
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                  justifyContent: isMobile ? "flex-start" : "flex-end",
+                  alignItems: "center",
+                  gap: isMobile ? 1 : 2,
+                }}
               >
-                <MDTypography variant="h6" color="white">
-                  사용자 목록
+                <MDButton
+                  size="small"
+                  variant="contained"
+                  color="success"
+                  onClick={fetchUsers}
+                  disabled={loading}
+                >
+                  새로고침
+                </MDButton>
+                <MDButton
+                  size="small"
+                  variant="contained"
+                  color="info"
+                  onClick={handleSaveDelYn}
+                  disabled={saving}
+                >
+                  저장
+                </MDButton>
+              </MDBox>
+            </MDBox>
+            <MDBox p={2} sx={{ maxHeight: "82vh" }}>
+              {loading ? (
+                <MDTypography variant="caption" color="text">
+                  불러오는 중...
                 </MDTypography>
-                <MDBox display="flex" gap={1} flexWrap="wrap">
-                  <MDButton
-                    size="small"
-                    variant="contained"
-                    color="light"
-                    onClick={fetchUsers}
-                    disabled={loading}
-                  >
-                    새로고침
-                  </MDButton>
-                  <MDButton
-                    size="small"
-                    variant="contained"
-                    color="warning"
-                    onClick={handleSaveDelYn}
-                    disabled={saving}
-                  >
-                    저장
-                  </MDButton>
-                </MDBox>
-              </MDBox>
-
-              <MDBox p={2}>
-                {loading ? (
-                  <MDTypography variant="caption" color="text">
-                    불러오는 중...
-                  </MDTypography>
-                ) : (
-                  <>
-                    {isMobile ? (
-                      // ✅ 모바일: 카드형 리스트
-                      <MDBox display="flex" flexDirection="column" gap={1}>
-                        {rows.map((row) => (
-                          <Card key={row.user_id} sx={{ p: 1.5 }}>
-                            <MDBox display="flex" justifyContent="space-between" gap={1}>
-                              <MDBox>
-                                <MDTypography variant="caption" color="#111" fontWeight="medium">
-                                  {row.user_name} ({row.user_id})
-                                </MDTypography>
-                                <MDTypography variant="caption" color="text">
-                                  {row.dept_or_account} · {row.position_label}
-                                </MDTypography>
-                                <MDTypography variant="caption" color="text">
-                                  {row.phone || "-"}
-                                </MDTypography>
-                                <MDTypography variant="caption" color="text">
-                                  {row.join_dt || "-"}
-                                </MDTypography>
-                              </MDBox>
-                              <Select
-                                size="small"
-                                value={pendingDelYn[row.user_id] ?? row.del_yn}
-                                onChange={(e) =>
-                                  handleDelYnChange(row.user_id, e.target.value, row.orig_del_yn)
-                                }
-                                sx={{ height: 30, minWidth: 90, fontSize: 10, color: "#111" }}
-                              >
-                                <MenuItem value="N">재직</MenuItem>
-                                <MenuItem value="Y">퇴사</MenuItem>
-                              </Select>
+              ) : (
+                <>
+                  {isMobile ? (
+                    // ✅ 모바일: 카드형 리스트
+                    <MDBox display="flex" flexDirection="column" gap={1}>
+                      {rows.map((row) => (
+                        <Card key={row.user_id} sx={{ p: 1.5 }}>
+                          <MDBox display="flex" justifyContent="space-between" gap={1}>
+                            <MDBox>
+                              <MDTypography variant="caption" color="#111" fontWeight="medium">
+                                {row.user_name} ({row.user_id})
+                              </MDTypography>
+                              <MDTypography variant="caption" color="text">
+                                {row.dept_or_account} · {row.position_label}
+                              </MDTypography>
+                              <MDTypography variant="caption" color="text">
+                                {row.phone || "-"}
+                              </MDTypography>
+                              <MDTypography variant="caption" color="text">
+                                {row.join_dt || "-"}
+                              </MDTypography>
                             </MDBox>
-                            <MDTypography variant="caption" color="text">
-                              {row.address_full}
-                            </MDTypography>
-                          </Card>
-                        ))}
-                      </MDBox>
-                    ) : (
-                      // 데스크톱: 테이블
-                      <DataTable
-                        table={{ columns, rows }}
-                        canSearch
-                        entriesPerPage={{ defaultValue: 20, entries: [10, 20, 30, 40, 50] }}
-                        showTotalEntries
-                        isSorted
-                        noEndBorder
-                      />
-                    )}
-                  </>
-                )}
-              </MDBox>
-            </Card>
-          </Grid>
+                            <Select
+                              size="small"
+                              value={pendingDelYn[row.user_id] ?? row.del_yn}
+                              onChange={(e) =>
+                                handleDelYnChange(row.user_id, e.target.value, row.orig_del_yn)
+                              }
+                              sx={{ height: 30, minWidth: 90, fontSize: 10, color: "#111" }}
+                            >
+                              <MenuItem value="N">재직</MenuItem>
+                              <MenuItem value="Y">퇴사</MenuItem>
+                            </Select>
+                          </MDBox>
+                          <MDTypography variant="caption" color="text">
+                            {row.address_full}
+                          </MDTypography>
+                        </Card>
+                      ))}
+                    </MDBox>
+                  ) : (
+                    // 데스크톱: 테이블
+                    <DataTable
+                      table={{ columns, rows }}
+                      canSearch
+                      entriesPerPage={{ defaultValue: 17 }}
+                      showTotalEntries
+                      isSorted
+                      noEndBorder
+                      sticky
+                    />
+                  )}
+                </>
+              )}
+            </MDBox>
+          </Card>
         </Grid>
-      </MDBox>
-
+      </Grid>
     </DashboardLayout>
   );
 }

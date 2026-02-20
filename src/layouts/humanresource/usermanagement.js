@@ -8,6 +8,7 @@ import { useTheme, useMediaQuery } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
+import MDInput from "components/MDInput";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import DataTable from "examples/Tables/DataTable";
@@ -48,6 +49,7 @@ function UserManagement() {
   const [loading, setLoading] = useState(false);
   const [pendingDelYn, setPendingDelYn] = useState({});
   const [saving, setSaving] = useState(false);
+  const [searchKeyword, setSearchKeyword] = useState("");
 
   // 로그인 사용자 아이디 (저장 요청에 포함)
   const localUserId = useMemo(() => localStorage.getItem("user_id") || "", []);
@@ -270,6 +272,25 @@ function UserManagement() {
     []
   );
 
+  const filteredRows = useMemo(() => {
+    const keyword = searchKeyword.trim().toLowerCase();
+    if (!keyword) return rows;
+
+    return rows.filter((row) =>
+      [
+        row.user_id,
+        row.user_name,
+        row.dept_or_account,
+        row.position_label,
+        row.join_dt,
+        row.birth_date,
+        row.phone,
+        row.address_full,
+        row.del_yn === "Y" ? "퇴사" : "재직",
+      ].some((value) => String(value ?? "").toLowerCase().includes(keyword))
+    );
+  }, [rows, searchKeyword]);
+
   return (
     <DashboardLayout>
       {/* 상단 네비 */}
@@ -297,8 +318,17 @@ function UserManagement() {
                   gap: isMobile ? 1 : 2,
                 }}
               >
+                <MDBox sx={{ width: isMobile ? "100%" : "14rem", mr: isMobile ? 0 : 1 }}>
+                  <MDInput
+                    placeholder="검색하기"
+                    value={searchKeyword}
+                    size="small"
+                    fullWidth
+                    onChange={({ currentTarget }) => setSearchKeyword(currentTarget.value)}
+                  />
+                </MDBox>
                 <MDButton
-                  size="small"
+                  size="medium"
                   variant="contained"
                   color="success"
                   onClick={fetchUsers}
@@ -307,17 +337,19 @@ function UserManagement() {
                   새로고침
                 </MDButton>
                 <MDButton
-                  size="small"
+                  size="medium"
                   variant="contained"
                   color="info"
                   onClick={handleSaveDelYn}
                   disabled={saving}
+                  sx={{ mr: isMobile ? 0 : 1 }}
                 >
                   저장
                 </MDButton>
               </MDBox>
             </MDBox>
-            <MDBox p={2} sx={{ maxHeight: "82vh" }}>
+            {/* 작은 화면에서 테이블이 박스 밖으로 넘치지 않도록 내부 스크롤 처리 */}
+            <MDBox p={2} sx={{ maxHeight: "84vh", overflow: "auto" }}>
               {loading ? (
                 <MDTypography variant="caption" color="text">
                   불러오는 중...
@@ -327,7 +359,7 @@ function UserManagement() {
                   {isMobile ? (
                     // ✅ 모바일: 카드형 리스트
                     <MDBox display="flex" flexDirection="column" gap={1}>
-                      {rows.map((row) => (
+                      {filteredRows.map((row) => (
                         <Card key={row.user_id} sx={{ p: 1.5 }}>
                           <MDBox display="flex" justifyContent="space-between" gap={1}>
                             <MDBox>
@@ -365,9 +397,10 @@ function UserManagement() {
                   ) : (
                     // 데스크톱: 테이블
                     <DataTable
-                      table={{ columns, rows }}
-                      canSearch
-                      entriesPerPage={{ defaultValue: 17 }}
+                      table={{ columns, rows: filteredRows }}
+                      canSearch={false}
+                      entriesPerPage={{ defaultValue: 20 }}
+                      entriesPerPagePosition="bottom-right"
                       showTotalEntries
                       isSorted
                       noEndBorder

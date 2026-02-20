@@ -15,13 +15,13 @@ Coded by www.creative-tim.com
 
 import { useMemo, useEffect, useState } from "react";
 
-// prop-types is a library for typechecking of props
+// prop-types는 props 타입 검사를 위한 라이브러리
 import PropTypes from "prop-types";
 
-// react-table components
+// react-table 컴포넌트
 import { useTable, usePagination, useGlobalFilter, useAsyncDebounce, useSortBy } from "react-table";
 
-// @mui material components
+// @mui Material 컴포넌트
 import Table from "@mui/material/Table";
 import TableBody from "@mui/material/TableBody";
 import TableContainer from "@mui/material/TableContainer";
@@ -29,18 +29,19 @@ import TableRow from "@mui/material/TableRow";
 import Icon from "@mui/material/Icon";
 import Autocomplete from "@mui/material/Autocomplete";
 
-// Material Dashboard 2 React components
+// Material Dashboard 2 React 컴포넌트
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDInput from "components/MDInput";
 import MDPagination from "components/MDPagination";
 
-// Material Dashboard 2 React example components
+// Material Dashboard 2 React 예제 컴포넌트
 import DataTableHeadCell from "examples/Tables/DataTable/DataTableHeadCell";
 import DataTableBodyCell from "examples/Tables/DataTable/DataTableBodyCell";
 
 function DataTable({
   entriesPerPage,
+  entriesPerPagePosition,
   canSearch,
   showTotalEntries,
   table,
@@ -48,7 +49,7 @@ function DataTable({
   isSorted,
   noEndBorder,
 }) {
-  // 기본 출력 갯수
+  // 기본 출력 개수
   const defaultValue = entriesPerPage.defaultValue ? entriesPerPage.defaultValue : 25;
   const entries = entriesPerPage.entries
     ? entriesPerPage.entries.map((el) => el.toString())
@@ -81,13 +82,33 @@ function DataTable({
     state: { pageIndex, pageSize, globalFilter },
   } = tableInstance;
 
-  // Set the default value for the entries per page when component mounts
+  // 컴포넌트 마운트 시 페이지당 표시 개수 기본값 설정
   useEffect(() => setPageSize(defaultValue || 10), [defaultValue]);
 
-  // Set the entries per page value based on the select value
+  // 선택 값에 따라 페이지당 표시 개수 설정
   const setEntriesPerPage = (value) => setPageSize(value);
+  const hasBottomRightEntries = entriesPerPage && entriesPerPagePosition === "bottom-right";
+  const hasTopControls = canSearch || (entriesPerPage && !hasBottomRightEntries);
+  const entriesPerPageControl = (
+    <MDBox display="flex" alignItems="center">
+      <Autocomplete
+        disableClearable
+        value={pageSize.toString()}
+        options={entries}
+        onChange={(event, newValue) => {
+          setEntriesPerPage(parseInt(newValue, 10));
+        }}
+        size="small"
+        sx={{ width: "5rem" }}
+        renderInput={(params) => <MDInput {...params} />}
+      />
+      <MDTypography variant="caption" color="secondary">
+        &nbsp;&nbsp;페이지당 표시 개수
+      </MDTypography>
+    </MDBox>
+  );
 
-  // Render the paginations
+  // 페이지네이션 렌더링
   const renderPagination = pageOptions.map((option) => (
     <MDPagination
       item
@@ -99,25 +120,25 @@ function DataTable({
     </MDPagination>
   ));
 
-  // Handler for the input to set the pagination index
+  // 입력값으로 이동할 페이지 인덱스를 설정하는 핸들러
   const handleInputPagination = ({ target: { value } }) =>
     value > pageOptions.length || value < 0 ? gotoPage(0) : gotoPage(Number(value));
 
-  // Customized page options starting from 1
+  // 1부터 시작하는 사용자용 페이지 옵션
   const customizedPageOptions = pageOptions.map((option) => option + 1);
 
-  // Setting value for the pagination input
+  // 페이지네이션 입력값 처리
   const handleInputPaginationValue = ({ target: value }) => gotoPage(Number(value.value - 1));
 
-  // Search input value state
+  // 검색 입력값 상태
   const [search, setSearch] = useState(globalFilter);
 
-  // Search input state handle
+  // 검색 입력값 변경 처리
   const onSearchChange = useAsyncDebounce((value) => {
     setGlobalFilter(value || undefined);
   }, 100);
 
-  // A function that sets the sorted value for the table
+  // 테이블 정렬 상태 값을 설정하는 함수
   const setSortedValue = (column) => {
     let sortedValue;
 
@@ -132,10 +153,10 @@ function DataTable({
     return sortedValue;
   };
 
-  // Setting the entries starting point
+  // 현재 페이지 시작 항목 번호 설정
   const entriesStart = pageIndex === 0 ? pageIndex + 1 : pageIndex * pageSize + 1;
 
-  // Setting the entries ending point
+  // 현재 페이지 끝 항목 번호 설정
   let entriesEnd;
 
   if (pageIndex === 0) {
@@ -148,26 +169,9 @@ function DataTable({
 
   return (
     <TableContainer sx={{ boxShadow: "none" }}>
-      {entriesPerPage || canSearch ? (
+      {hasTopControls ? (
         <MDBox display="flex" justifyContent="space-between" alignItems="center" p={3}>
-          {entriesPerPage && (
-            <MDBox display="flex" alignItems="center">
-              <Autocomplete
-                disableClearable
-                value={pageSize.toString()}
-                options={entries}
-                onChange={(event, newValue) => {
-                  setEntriesPerPage(parseInt(newValue, 10));
-                }}
-                size="small"
-                sx={{ width: "5rem" }}
-                renderInput={(params) => <MDInput {...params} />}
-              />
-              <MDTypography variant="caption" color="secondary">
-                &nbsp;&nbsp;페이지당 표시 개수
-              </MDTypography>
-            </MDBox>
-          )}
+          {entriesPerPage && !hasBottomRightEntries && entriesPerPageControl}
           {canSearch && (
             <MDBox width="12rem" ml="auto">
               <MDInput
@@ -226,7 +230,7 @@ function DataTable({
       <MDBox
         display="flex"
         flexDirection={{ xs: "column", sm: "row" }}
-        justifyContent="space-between"
+        justifyContent="flex-start"
         alignItems={{ xs: "flex-start", sm: "center" }}
         p={!showTotalEntries && pageOptions.length === 1 ? 0 : 3}
       >
@@ -236,11 +240,9 @@ function DataTable({
               variant={pagination.variant ? pagination.variant : "gradient"}
               color={pagination.color ? pagination.color : "info"}
             >
-              {canPreviousPage && (
-                <MDPagination item onClick={() => previousPage()}>
-                  <Icon sx={{ fontWeight: "bold" }}>chevron_left</Icon>
-                </MDPagination>
-              )}
+              <MDPagination item onClick={() => previousPage()} disabled={!canPreviousPage}>
+                <Icon sx={{ fontWeight: "bold" }}>chevron_left</Icon>
+              </MDPagination>
               {renderPagination.length > 6 ? (
                 <MDBox width="5rem" mx={1}>
                   <MDInput
@@ -252,11 +254,9 @@ function DataTable({
               ) : (
                 renderPagination
               )}
-              {canNextPage && (
-                <MDPagination item onClick={() => nextPage()}>
-                  <Icon sx={{ fontWeight: "bold" }}>chevron_right</Icon>
-                </MDPagination>
-              )}
+              <MDPagination item onClick={() => nextPage()} disabled={!canNextPage}>
+                <Icon sx={{ fontWeight: "bold" }}>chevron_right</Icon>
+              </MDPagination>
             </MDPagination>
           )}
           {showTotalEntries && (
@@ -264,15 +264,21 @@ function DataTable({
               {entriesStart} - {entriesEnd} / {rows.length}건
             </MDTypography>
           )}
+          {hasBottomRightEntries && (
+            <MDBox display="flex" alignItems="center" ml={{ xs: 0, sm: 1.5 }}>
+              {entriesPerPageControl}
+            </MDBox>
+          )}
         </MDBox>
       </MDBox>
     </TableContainer>
   );
 }
 
-// Setting default values for the props of DataTable
+// DataTable props 기본값 설정
 DataTable.defaultProps = {
   entriesPerPage: { defaultValue: 10, entries: [5, 10, 15, 20, 25] },
+  entriesPerPagePosition: "top",
   canSearch: false,
   showTotalEntries: true,
   pagination: { variant: "gradient", color: "info" },
@@ -280,7 +286,7 @@ DataTable.defaultProps = {
   noEndBorder: false,
 };
 
-// Typechecking props for the DataTable
+// DataTable props 타입 검사
 DataTable.propTypes = {
   entriesPerPage: PropTypes.oneOfType([
     PropTypes.shape({
@@ -289,6 +295,7 @@ DataTable.propTypes = {
     }),
     PropTypes.bool,
   ]),
+  entriesPerPagePosition: PropTypes.oneOf(["top", "bottom-right"]),
   canSearch: PropTypes.bool,
   showTotalEntries: PropTypes.bool,
   table: PropTypes.objectOf(PropTypes.array).isRequired,

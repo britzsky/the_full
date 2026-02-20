@@ -27,7 +27,7 @@ import PropTypes from "prop-types";
 
 // 기본 빈 행 수(최소 표시 행)
 const MIN_ROWS = 10;
-// 이슈/비고 멀티라인 최대 노출 줄 수
+// 이슈/해결방안/비고 멀티라인 최대 노출 줄 수
 const ISSUE_NOTE_MAX_ROWS = 10;
 // 좌/우 패널 공통 높이(화면 하단까지 사용)
 const CONTENT_HEIGHT = "calc(100vh - 220px)";
@@ -46,6 +46,7 @@ const LEFT_COL_WIDTH = {
   issue: 131,
   result: 66,
   endDate: 90,
+  solution: 131,
   note: 131,
 };
 const ACCOUNT_CACHE_KEY = "account_communication_account_list_v1";
@@ -130,6 +131,7 @@ const makeBlankRow = (id) => ({
   issue: "",
   result: "",
   end_date: "",
+  solution: "",
   note: "",
   user_id: "",
 });
@@ -157,6 +159,7 @@ const normalizeRow = (row) => ({
   issue: row.issue || "",
   result: normalizeResult(row.result),
   end_date: toDateInputValue(row.end_date),
+  solution: row.solution || "",
   note: row.note || "",
   user_id: row.user_id ? String(row.user_id) : "",
 });
@@ -169,6 +172,7 @@ const isRowEmpty = (row) =>
   !row.issue &&
   !row.result &&
   !row.end_date &&
+  !row.solution &&
   !row.note;
 
 // 저장 전 변경감지를 위한 행 비교 함수
@@ -182,6 +186,7 @@ const isSameRow = (a, b) =>
   String(a.issue || "") === String(b.issue || "") &&
   String(a.result || "") === String(b.result || "") &&
   String(a.end_date || "") === String(b.end_date || "") &&
+  String(a.solution || "") === String(b.solution || "") &&
   String(a.note || "") === String(b.note || "");
 
 // 세션 캐시 조회
@@ -292,6 +297,13 @@ export default function AccountCommunicationTable({ teamCode }) {
   const [accountDropdownRowId, setAccountDropdownRowId] = useState(null);
   const [selectedAccountKey, setSelectedAccountKey] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
+  const isCustomerIssueTeam = String(teamCode) === "1";
+  const [ctxMenu, setCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
 
   // 구분 관리 모달 상태
   const [typeModalOpen, setTypeModalOpen] = useState(false);
@@ -354,6 +366,7 @@ export default function AccountCommunicationTable({ teamCode }) {
         const endDate = toDateInputValue(row.end_date);
         const resultCode = String(row.result || "").trim();
         const issueText = String(row.issue || "").trim();
+        const solutionText = String(row.solution || "").trim();
         const noteText = String(row.note || "").trim();
         const typeCode = String(row.type || "").trim();
 
@@ -364,6 +377,7 @@ export default function AccountCommunicationTable({ teamCode }) {
           (accountMeta.accountName && accountMeta.accountName !== "미지정") ||
           typeCode ||
           issueText ||
+          solutionText ||
           noteText ||
           resultCode
         );
@@ -374,6 +388,7 @@ export default function AccountCommunicationTable({ teamCode }) {
           subDate,
           endDate,
           issueText,
+          solutionText,
           noteText,
           typeCode,
           resultCode,
@@ -658,6 +673,121 @@ export default function AccountCommunicationTable({ teamCode }) {
     scrollToBottom(mainTableScrollRef);
   };
 
+  // 우클릭 컨텍스트 메뉴 열기
+  const handleRowContextMenu = (e, row, rowIndex) => {
+    e.preventDefault();
+    handleAccountCellSelect(row);
+    setCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  };
+
+  const closeCtxMenu = () => {
+    setCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  };
+
+  // 우클릭 시에는 셀 내부 입력 컨트롤 이벤트(달력/셀렉트/자동완성)가 동작하지 않도록 차단
+  const blockRightMouseCellInteraction = (e) => {
+    if (e.button !== 2) return;
+    e.stopPropagation();
+  };
+
+  const removeRowFromState = (rowIndex, rowId) => {
+    setRows((prev) => prev.filter((_, i) => i !== rowIndex));
+    setOriginalRows((prev) => prev.filter((_, i) => i !== rowIndex));
+    setPanelRows((prev) => prev.filter((r) => r.id !== rowId));
+  };
+
+  const handleDeleteRow = async (rowIndex) => {
+    if (rowIndex == null) return;
+    const row = rows[rowIndex];
+    if (!row) return;
+
+    const result = await Swal.fire({
+      title: "행 삭제",
+      text: "해당 행을 삭제할까요?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#9e9e9e",
+      confirmButtonText: "삭제",
+      cancelButtonText: "취소",
+    });
+
+    if (!result.isConfirmed) return;
+
+    // 미저장 신규 행은 서버 저장 없이 화면에서만 제거
+    if (row.idx == null) {
+      removeRowFromState(rowIndex, row.id);
+      closeCtxMenu();
+      Swal.fire({
+        title: "삭제",
+        text: "삭제 처리되었습니다.",
+        icon: "success",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+      return;
+    }
+
+    const currentUserId = getStoredUserId();
+    if (!currentUserId) {
+      Swal.fire("사용자 확인", "로그인 사용자 ID를 찾을 수 없습니다. 다시 로그인 후 삭제해주세요.", "warning");
+      return;
+    }
+
+    try {
+      const deletePayload = {
+        idx: row.idx,
+        team_code: teamCode,
+        sub_date: toDateInputValue(row.sub_date) || null,
+        account_id: row.account_id || null,
+        type: row.type ? Number(row.type) : null,
+        issue: row.issue || "",
+        result: row.result ? Number(row.result) : null,
+        end_date: toDateInputValue(row.end_date) || null,
+        solution: row.solution || "",
+        note: row.note || "",
+        user_id: currentUserId || null,
+        del_yn: "Y",
+      };
+
+      const res = await api.post("/Account/AccountCommunicationSave", { data: [deletePayload] });
+
+      if (res.data?.code === 200) {
+        removeRowFromState(rowIndex, row.id);
+        closeCtxMenu();
+        Swal.fire({
+          title: "삭제",
+          text: "삭제 처리되었습니다.",
+          icon: "success",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+      } else {
+        Swal.fire({
+          title: "오류",
+          text: res.data?.message || "삭제 저장에 실패했습니다.",
+          icon: "error",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        title: "오류",
+        text: "삭제 저장 중 오류가 발생했습니다.",
+        icon: "error",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    }
+  };
+
   // 메인 테이블 저장
   const handleSave = async () => {
     const currentUserId = getStoredUserId();
@@ -687,16 +817,17 @@ export default function AccountCommunicationTable({ teamCode }) {
     }
 
     const payload = modified.map((row) => ({
-      idx: row.idx,
-      team_code: teamCode,
-      sub_date: toDateInputValue(row.sub_date) || null,
-      account_id: row.account_id || null,
-      type: row.type ? Number(row.type) : null,
-      issue: row.issue || "",
-      result: row.result ? Number(row.result) : null,
-      end_date: toDateInputValue(row.end_date) || null,
-      note: row.note || "",
-      user_id: currentUserId || null,
+        idx: row.idx,
+        team_code: teamCode,
+        sub_date: toDateInputValue(row.sub_date) || null,
+        account_id: row.account_id || null,
+        type: row.type ? Number(row.type) : null,
+        issue: row.issue || "",
+        result: row.result ? Number(row.result) : null,
+        end_date: toDateInputValue(row.end_date) || null,
+        solution: row.solution || "",
+        note: row.note || "",
+        user_id: currentUserId || null,
     }));
 
     try {
@@ -987,6 +1118,7 @@ export default function AccountCommunicationTable({ teamCode }) {
           <col style={{ width: showAccount ? 176 : 188 }} />
           <col style={{ width: 62 }} />
           <col style={{ width: 92 }} />
+          {isCustomerIssueTeam && <col style={{ width: showAccount ? 176 : 188 }} />}
           <col style={{ width: showAccount ? 176 : 188 }} />
         </colgroup>
         <thead>
@@ -994,10 +1126,11 @@ export default function AccountCommunicationTable({ teamCode }) {
             <th style={headCellStyle}>접수일</th>
             {showAccount && <th style={headCellStyle}>고객사</th>}
             <th style={headCellStyle}>구분</th>
-            <th style={{ ...headCellStyle, textAlign: "left" }}>이슈</th>
+            <th style={headCellStyle}>이슈</th>
             <th style={headCellStyle}>결과</th>
             <th style={headCellStyle}>마감일</th>
-            <th style={{ ...headCellStyle, textAlign: "left" }}>비고</th>
+            {isCustomerIssueTeam && <th style={headCellStyle}>해결방안</th>}
+            <th style={headCellStyle}>비고</th>
           </tr>
         </thead>
         <tbody>
@@ -1081,15 +1214,28 @@ export default function AccountCommunicationTable({ teamCode }) {
                     overflowWrap: "anywhere",
                   }}
                 >
-                  {item.noteText || "-"}
+                  {isCustomerIssueTeam ? item.solutionText || "-" : item.noteText || "-"}
                 </td>
+                {isCustomerIssueTeam && (
+                  <td
+                    style={{
+                      ...bodyCellStyle,
+                      padding: "6px",
+                      whiteSpace: "normal",
+                      wordBreak: "break-all",
+                      overflowWrap: "anywhere",
+                    }}
+                  >
+                  {item.noteText || "-"}
+                  </td>
+                )}
               </tr>
             );
           })}
           {dataRows.length === 0 && (
             <tr>
               <td
-                colSpan={showAccount ? 7 : 6}
+                colSpan={(showAccount ? 7 : 6) + (isCustomerIssueTeam ? 1 : 0)}
                 style={{ ...bodyCellStyle, textAlign: "center", padding: "16px" }}
               >
                 {emptyText}
@@ -1135,6 +1281,7 @@ export default function AccountCommunicationTable({ teamCode }) {
                 <col style={colStyle(LEFT_COL_WIDTH.issue)} />
                 <col style={colStyle(LEFT_COL_WIDTH.result)} />
                 <col style={colStyle(LEFT_COL_WIDTH.endDate)} />
+                {isCustomerIssueTeam && <col style={colStyle(LEFT_COL_WIDTH.solution)} />}
                 <col style={colStyle(LEFT_COL_WIDTH.note)} />
               </colgroup>
               <thead>
@@ -1145,11 +1292,12 @@ export default function AccountCommunicationTable({ teamCode }) {
                   <th style={colStyle(LEFT_COL_WIDTH.issue)}>이슈</th>
                   <th style={colStyle(LEFT_COL_WIDTH.result)}>결과</th>
                   <th style={colStyle(LEFT_COL_WIDTH.endDate)}>마감일</th>
+                  {isCustomerIssueTeam && <th style={colStyle(LEFT_COL_WIDTH.solution)}>해결방안</th>}
                   <th style={colStyle(LEFT_COL_WIDTH.note)}>비고</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
+                {rows.map((row, rowIndex) => {
                   const deadlineColor = getDeadlineTextColor(row.end_date, row.result);
                   const isSelectedRow = selectedRowId === row.id;
                   return (
@@ -1157,6 +1305,9 @@ export default function AccountCommunicationTable({ teamCode }) {
                       key={row.id}
                       className={isSelectedRow ? "row-selected" : ""}
                       onClick={() => handleAccountCellSelect(row)}
+                      onContextMenu={(e) => handleRowContextMenu(e, row, rowIndex)}
+                      onMouseDownCapture={blockRightMouseCellInteraction}
+                      style={{ cursor: "context-menu" }}
                     >
                       <td>
                         <Box
@@ -1400,7 +1551,6 @@ export default function AccountCommunicationTable({ teamCode }) {
                           sx={{
                             ...selectSx,
                             ...typeBoxSx,
-                            ...(isSelectedRow ? { backgroundColor: SELECTED_ROW_BG } : {}),
                             display: "block",
                             width: "88%",
                             minWidth: 52,
@@ -1458,7 +1608,6 @@ export default function AccountCommunicationTable({ teamCode }) {
                           sx={{
                             ...selectSx,
                             ...resultSx(row.result || ""),
-                            ...(isSelectedRow ? { backgroundColor: SELECTED_ROW_BG } : {}),
                             display: "block",
                             width: "88%",
                             minWidth: 52,
@@ -1581,9 +1730,24 @@ export default function AccountCommunicationTable({ teamCode }) {
                           />
                         </Box>
                       </td>
+                      {isCustomerIssueTeam && (
+                        <td style={{ verticalAlign: "middle" }}>
+                          <TextField
+                            size="small"
+                            onContextMenu={(e) => e.preventDefault()}
+                            value={row.solution || ""}
+                            onChange={(e) => handleRowChange(row.id, "solution", e.target.value)}
+                            multiline
+                            minRows={1}
+                            maxRows={ISSUE_NOTE_MAX_ROWS}
+                            sx={{ ...textFieldSx, ...multilineFieldSx, width: "100%" }}
+                          />
+                        </td>
+                      )}
                       <td style={{ verticalAlign: "middle" }}>
                         <TextField
                           size="small"
+                          onContextMenu={(e) => e.preventDefault()}
                           value={row.note}
                           onChange={(e) => handleRowChange(row.id, "note", e.target.value)}
                           multiline
@@ -1785,6 +1949,54 @@ export default function AccountCommunicationTable({ teamCode }) {
           </Box>
         </Box>
       </MDBox>
+
+      {ctxMenu.open && (
+        <div
+          onClick={closeCtxMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeCtxMenu();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 10000,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: ctxMenu.mouseY,
+              left: ctxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={() => handleDeleteRow(ctxMenu.rowIndex)}
+            >
+              🗑️ 행 삭제
+            </button>
+          </div>
+        </div>
+      )}
 
       <Modal open={typeModalOpen} onClose={() => setTypeModalOpen(false)}>
         <Box

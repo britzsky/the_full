@@ -39,6 +39,7 @@ const typeColors = {
   4: "#f9d9d9",
   5: "#ffe6cc",
   6: "#cce6ff",
+  19: "#d9f2e6",
   16: "#DDAED3",
   17: "#9F8383",
 };
@@ -63,6 +64,7 @@ const TYPE_LABEL = {
   15: "하계휴가",
   16: "업장휴무",
   18: "경조사",
+  19: "통합",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
@@ -236,6 +238,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
   table,
   typeOptions,
 }) {
+  const isJoinLocked = Boolean(table.options.meta?.isCellLocked?.(row.original, column.id));
   const rawVal = getValue() || {};
   const val = {
     type: "",
@@ -267,6 +270,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
   };
 
   const handleChange = (field, newVal) => {
+    if (isJoinLocked) return;
     const dayKey = column.id;
 
     const rowGubun = safeTrim(row.original?.gubun, "nor");
@@ -345,12 +349,14 @@ const AttendanceCell = React.memo(function AttendanceCell({
         flexDirection: "column",
         gap: "2px",
         backgroundColor: bgColor,
+        ...(isJoinLocked ? { backgroundColor: "#e0e0e0" } : {}),
         padding: "2px",
         borderRadius: "4px",
         width: "100%",
       }}
     >
       <select
+        disabled={isJoinLocked}
         value={val.type}
         onChange={(e) => handleChange("type", e.target.value)}
         style={{
@@ -370,9 +376,10 @@ const AttendanceCell = React.memo(function AttendanceCell({
         ))}
       </select>
 
-      {["1", "2", "3", "5", "6", "7", "8", "17"].includes(val.type) && (
+      {["1", "2", "3", "5", "6", "7", "8", "17", "19"].includes(val.type) && (
         <>
           <select
+            disabled={isJoinLocked}
             value={val.start}
             onChange={(e) => handleChange("start", e.target.value)}
             style={{
@@ -392,6 +399,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
             ))}
           </select>
           <select
+            disabled={isJoinLocked}
             value={val.end}
             onChange={(e) => handleChange("end", e.target.value)}
             style={{
@@ -415,6 +423,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
 
       {isDispatchType && (
         <input
+          disabled={isJoinLocked}
           type="text"
           placeholder="급여"
           value={val.salary != null && val.salary !== "" ? Number(val.salary).toLocaleString() : ""}
@@ -444,6 +453,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
         >
           <input
             type="checkbox"
+            disabled={isJoinLocked}
             checked={String(val.pay_yn ?? "N").toUpperCase() === "Y"}
             onChange={(e) => handleChange("pay_yn", e.target.checked ? "Y" : "N")}
           />
@@ -453,6 +463,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
 
       {["3", "11", "17"].includes(val.type) && (
         <input
+          disabled={isJoinLocked}
           type="text"
           placeholder={val.type === "3" ? "초과" : val.type === "17" ? "조기퇴근" : "대체휴무"}
           value={val.note ?? ""}
@@ -510,10 +521,10 @@ const ensureDispatchRid = (row) => {
 
 const normalizeDispatchValue = (field, v) => {
   const s = String(v ?? "");
-  if (field === "phone" || field === "rrn") return s.replace(/[^0-9]/g, "");
-  if (field === "account_number") return s.replace(/\s/g, "");
+  // ✅ 파출정보 수정이력 비교 시 공백(스페이스)도 변경으로 인식
+  //    (기존처럼 trim/공백제거를 하지 않고 원문 그대로 비교)
   if (field === "del_yn") return s.trim().toUpperCase();
-  return s.trim();
+  return s;
 };
 
 function DispatchEditableCell({ getValue, row, table, field }) {
@@ -653,6 +664,32 @@ function RecordSheet() {
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
     useRecordsheetData(selectedAccountId, year, month);
+
+  const isCellLockedByActJoin = useCallback(
+    (row, columnId) => {
+      if (!row || !String(columnId || "").startsWith("day_")) return false;
+      const gubun = safeTrim(row?.gubun ?? "", "").toLowerCase();
+      if (gubun !== "rec") return false;
+
+      const joinRaw = safeTrim(row?.act_join_dt ?? "", "");
+      if (!joinRaw) return false;
+
+      const joinDate = dayjs(joinRaw);
+      if (!joinDate.isValid()) return false;
+
+      const dayNum = Number(String(columnId).replace("day_", ""));
+      if (!Number.isFinite(dayNum)) return false;
+
+      const joinYear = joinDate.year();
+      const joinMonth = joinDate.month() + 1;
+      const joinDay = joinDate.date();
+
+      if (year < joinYear || (year === joinYear && month < joinMonth)) return true;
+      if (year > joinYear || (year === joinYear && month > joinMonth)) return false;
+      return dayNum < joinDay;
+    },
+    [year, month]
+  );
 
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
@@ -1130,6 +1167,7 @@ function RecordSheet() {
           member_id: r.member_id,
           position: r.position || "",
           del_yn: r.del_yn ?? "",
+          act_join_dt: safeTrim(r.act_join_dt ?? "", ""),
           gubun: r.gubun ?? "nor",
           position_type: r.position_type ?? "",
           day_default: r.day_default || null,
@@ -1217,6 +1255,7 @@ function RecordSheet() {
         if (!target.position && item.position) target.position = item.position;
         if (!target.position_type && item.position_type) target.position_type = item.position_type;
         if (!target.gubun && item.gubun) target.gubun = item.gubun;
+        if (!target.act_join_dt && item.act_join_dt) target.act_join_dt = item.act_join_dt;
       });
 
       return [...map.values(), ...passthrough];
@@ -1234,6 +1273,7 @@ function RecordSheet() {
         member_id: item.member_id,
         position: item.position || member?.position || "",
         del_yn: item.del_yn ?? member?.del_yn ?? "",
+        act_join_dt: safeTrim(item.act_join_dt ?? member?.act_join_dt ?? "", ""),
         gubun: baseGubun,
         position_type: basePt,
         day_default: item.day_default || null,
@@ -1401,11 +1441,30 @@ function RecordSheet() {
     const end = cell.end || cell.end_time || "";
 
     const salaryRaw = cell.salary != null && String(cell.salary).trim() !== "" ? cell.salary : "";
+    const noteRaw = cell.note != null && String(cell.note).trim() !== "" ? cell.note : "";
     const isDispatchType = String(t) === "5" || String(t) === "6";
-    const salary = isDispatchType ? toNumberMaybe(salaryRaw) : "";
+    // ✅ 파출은 salary, 초과/조기퇴근/대체휴무 등은 note 값을 4번째 줄에 반영
+    let bottomValue = "";
+    if (isDispatchType) {
+      bottomValue = toNumberMaybe(salaryRaw);
+    } else if (noteRaw !== "") {
+      bottomValue = toNumberMaybe(noteRaw);
+    } else if (salaryRaw !== "") {
+      bottomValue = toNumberMaybe(salaryRaw);
+    }
 
-    return [typeLabel, start || "", end || "", salary === "" ? "" : salary];
+    return [typeLabel, start || "", end || "", bottomValue];
   }
+
+  const EXCEL_ATTENDANCE_COLOR_TYPES = new Set(["3", "4", "5", "6", "16", "17", "19"]);
+  const getExcelAttendanceFillArgb = (type) => {
+    const key = safeTrim(type, "");
+    if (!EXCEL_ATTENDANCE_COLOR_TYPES.has(key)) return "";
+    const hex = String(typeColors[key] || "").trim();
+    if (!/^#?[0-9a-fA-F]{6}$/.test(hex)) return "";
+    const raw = hex.startsWith("#") ? hex.slice(1) : hex;
+    return `FF${raw.toUpperCase()}`;
+  };
 
   // ✅ 거래처 전체 엑셀 다운로드
   const handleExcelDownloadAllAccounts = async () => {
@@ -1447,7 +1506,9 @@ function RecordSheet() {
       );
 
       const wsAttend = wb.addWorksheet("출근현황");
+      const wsAttendSummary = wb.addWorksheet("출근현황요약");
       const wsDispatch = wb.addWorksheet("파출정보");
+      const wsDispatchSummary = wb.addWorksheet("파출정보 요약");
 
       const addSectionTitle = (ws, title, colCount) => {
         ws.addRow([title]);
@@ -1547,58 +1608,10 @@ function RecordSheet() {
         18, // 파출비소계
         40, // 비고
       ];
-      const separatorWidth = 3;
-
-      const attendRightStartCol = attendColCount + 2;
-      const attendRightEndCol = attendRightStartCol + attendRightHeader.length - 1;
-
-      const appendRightPlaceholders = (arr) => {
-        arr.push(""); // 구분용 빈칸
-        for (let i = 0; i < attendRightHeader.length; i++) arr.push("");
-      };
-
-      const styleAttendRightHeader = (ws, rowNum) => {
-        attendRightHeader.forEach((label, idx) => {
-          const cell = ws.getCell(rowNum, attendRightStartCol + idx);
-          cell.value = label;
-          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FFE3F2FD" },
-          };
-          cell.font = { bold: true };
-        });
-      };
-
-      const styleAttendRightDataRow = (ws, rowNum) => {
-        for (let c = attendRightStartCol; c <= attendRightEndCol; c++) {
-          const cell = ws.getCell(rowNum, c);
-          cell.alignment = {
-            vertical: "middle",
-            horizontal: c === attendRightEndCol ? "left" : "center",
-            wrapText: true,
-          };
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-        }
-      };
 
       wsAttend.columns = [
         { width: 14 },
         ...Array.from({ length: dateList.length }, () => ({ width: 14 })),
-        { width: separatorWidth },
-        ...attendRightWidths.map((w) => ({ width: w })),
       ];
 
       const dispatchHeader = [
@@ -1623,45 +1636,16 @@ function RecordSheet() {
         { width: 14 },
         { width: 12 },
         { width: 14 },
-        { width: separatorWidth },
-        ...dispatchRightWidths.map((w) => ({ width: w })),
       ];
 
       addSectionTitle(wsDispatch, `■ 파출정보 / ${rangeLabel}`, dispatchHeader.length);
       wsDispatch.addRow(dispatchHeader);
       styleHeaderRow(wsDispatch, wsDispatch.lastRow.number);
-      const dispatchHeaderRowNum = wsDispatch.lastRow.number;
-      const dispatchRightStartCol = dispatchHeader.length + 2;
-      const dispatchRightEndCol = dispatchRightStartCol + dispatchRightHeader.length - 1;
-
-      dispatchRightHeader.forEach((label, idx) => {
-        const cell = wsDispatch.getCell(dispatchHeaderRowNum, dispatchRightStartCol + idx);
-        cell.value = label;
-        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-        cell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFFCE8C6" },
-        };
-        cell.font = { bold: true };
-      });
-
-      const rightDispatchTotalCellRef = wsDispatch.getCell(
-        dispatchHeaderRowNum - 1,
-        dispatchRightStartCol + 5
-      );
 
       const allDispatchRows = new Map();
       const dispatchRightRowsAll = [];
 
       let globalDispatchTotal = 0;
-      let attendRightHeaderRowNum = null;
       const employeeRightRowsAll = [];
       const employeeRightRowMap = new Map();
       const employeeDispatchSheetRowsAll = [];
@@ -1728,38 +1712,9 @@ function RecordSheet() {
 
         addSectionTitle(wsAttend, `■ ${accName} (${accId})  /  ${rangeLabel}`, attendColCount);
 
-        const rightHeaderCells = Array(attendRightHeader.length).fill("");
-        const header = [
-          "직원명",
-          ...dateList.map((d) => `${d.format("M/D")}`),
-          "",
-          ...rightHeaderCells,
-        ];
+        const header = ["직원명", ...dateList.map((d) => `${d.format("M/D")}`)];
         wsAttend.addRow(header);
         styleHeaderRow(wsAttend, wsAttend.lastRow.number);
-        const headerRowNum = wsAttend.lastRow.number;
-        const sepCol = attendColCount + 1;
-        if (attendRightHeaderRowNum == null) {
-          attendRightHeaderRowNum = headerRowNum;
-          styleAttendRightHeader(wsAttend, headerRowNum);
-        } else {
-          // ✅ 출근현황 시트 우측 직원정보 헤더는 1회만 표시
-          for (let c = attendRightStartCol; c <= attendRightEndCol; c++) {
-            const cell = wsAttend.getCell(headerRowNum, c);
-            cell.fill = null;
-            cell.font = { bold: false };
-            cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-            cell.border = null;
-            cell.value = "";
-          }
-        }
-        // ✅ 구분용 빈 열은 흰색
-        const sepCell = wsAttend.getCell(headerRowNum, sepCol);
-        sepCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFFFFFFF" },
-        };
 
         const memberMap = new Map(); // 회원 아이디 → { 이름, 셀: { [날짜키]: 셀 } }
         const memberInfoMap = new Map(); // 회원 아이디 → { rrn, account_number, position_type }
@@ -2076,20 +2031,18 @@ function RecordSheet() {
           const r2 = [""];
           const r3 = [""];
           const r4 = [""];
+          const dayTypes = [];
 
           dateList.forEach((d) => {
             const key = d.format("YYYY-MM-DD");
+            const cell = row.cells[key];
             const [v1, v2, v3, v4] = splitDayCellAttend(row.cells[key]);
+            dayTypes.push(safeTrim(cell?.type ?? "", ""));
             r1.push(v1);
             r2.push(v2);
             r3.push(v3);
             r4.push(v4);
           });
-
-          appendRightPlaceholders(r1);
-          appendRightPlaceholders(r2);
-          appendRightPlaceholders(r3);
-          appendRightPlaceholders(r4);
 
           wsAttend.addRow(r1);
           styleDataRow(wsAttend, wsAttend.lastRow.number);
@@ -2105,14 +2058,21 @@ function RecordSheet() {
               const cell = wsAttend.getCell(r, c);
               cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
             }
-            for (let c = attendRightStartCol; c <= attendRightEndCol; c++) {
-              const cell = wsAttend.getCell(r, c);
-              cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-              cell.border = null;
-              cell.fill = null;
-              cell.font = { bold: false };
-            }
           }
+
+          // ✅ 전체 거래처 엑셀: 날짜 셀(4줄 블록) 배경색 적용
+          dayTypes.forEach((type, idx) => {
+            const argb = getExcelAttendanceFillArgb(type);
+            if (!argb) return;
+            const col = idx + 2;
+            for (let r = startRow; r <= startRow + 3; r++) {
+              wsAttend.getCell(r, col).fill = {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb },
+              };
+            }
+          });
 
           // ✅ 급여(4번째 줄) 숫자 포맷 적용
           const salaryRowNum = startRow + 3;
@@ -2137,35 +2097,6 @@ function RecordSheet() {
 
         wsAttend.addRow([]);
         wsAttend.addRow([]);
-      }
-
-      // ✅ 출근현황 우측 직원정보(한 테이블) 채우기
-      if (attendRightHeaderRowNum != null) {
-        const ensureAttendRightRow = (rowNum) => {
-          while (wsAttend.rowCount < rowNum) {
-            wsAttend.addRow([]);
-            styleDataRow(wsAttend, wsAttend.lastRow.number);
-          }
-        };
-
-        let rightEmployeeRowCursor = attendRightHeaderRowNum + 1;
-        employeeRightRowsAll.forEach((d) => {
-          const rowNum = rightEmployeeRowCursor;
-          ensureAttendRightRow(rowNum);
-          const row = wsAttend.getRow(rowNum);
-
-          row.getCell(attendRightStartCol + 0).value = d.account_name || "";
-          row.getCell(attendRightStartCol + 1).value = d.name || "";
-          row.getCell(attendRightStartCol + 2).value = d.position || "";
-          row.getCell(attendRightStartCol + 3).value = d.working_day ?? "";
-          row.getCell(attendRightStartCol + 4).value = d.employ_dispatch ?? "";
-          row.getCell(attendRightStartCol + 5).value = d.over_work ?? "";
-          row.getCell(attendRightStartCol + 6).value = d.non_work ?? "";
-          row.getCell(attendRightStartCol + 7).value = d.note ?? "";
-
-          styleAttendRightDataRow(wsAttend, rowNum);
-          rightEmployeeRowCursor += 1;
-        });
       }
 
       Array.from(allDispatchRows.values()).forEach((d) => {
@@ -2204,15 +2135,67 @@ function RecordSheet() {
         styleDataRow(wsDispatch, lastRowNum);
       });
 
-      // ✅ 출근현황 우측 파출 요약을 파출정보 시트 오른쪽으로 이동
-      const ensureDispatchRightRow = (rowNum) => {
-        while (wsDispatch.rowCount < rowNum) {
-          wsDispatch.addRow([]);
-          styleDataRow(wsDispatch, wsDispatch.lastRow.number);
-        }
-      };
+      wsAttend.views = [{ state: "frozen", xSplit: 0, ySplit: 0 }];
+      wsDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
 
-      let rightDispatchRowCursor = dispatchHeaderRowNum + 1;
+      // ✅ 기존 우측 테이블을 별도 요약 시트로 분리
+      wsAttendSummary.columns = attendRightWidths.map((w) => ({ width: w }));
+      addSectionTitle(wsAttendSummary, `■ 출근현황요약 / ${rangeLabel}`, attendRightHeader.length);
+      wsAttendSummary.addRow(attendRightHeader);
+      styleHeaderRow(wsAttendSummary, wsAttendSummary.lastRow.number);
+
+      employeeRightRowsAll.forEach((d) => {
+        const workingDayNum = toNumberMaybe(d.working_day);
+        const overWorkNum = toNumberMaybe(d.over_work);
+        const nonWorkNum = toNumberMaybe(d.non_work);
+        wsAttendSummary.addRow([
+          d.account_name || "",
+          d.name || "",
+          d.position || "",
+          workingDayNum === "" ? "" : workingDayNum,
+          d.employ_dispatch ?? "",
+          overWorkNum === "" ? "" : overWorkNum,
+          nonWorkNum === "" ? "" : nonWorkNum,
+          d.note ?? "",
+        ]);
+        const rowNum = wsAttendSummary.lastRow.number;
+        styleDataRow(wsAttendSummary, rowNum);
+        const workingDayCell = wsAttendSummary.getCell(rowNum, 4);
+        if (typeof workingDayCell.value === "number") workingDayCell.numFmt = "#,##0";
+        const overWorkCell = wsAttendSummary.getCell(rowNum, 6);
+        if (typeof overWorkCell.value === "number") overWorkCell.numFmt = "#,##0";
+        const nonWorkCell = wsAttendSummary.getCell(rowNum, 7);
+        if (typeof nonWorkCell.value === "number") nonWorkCell.numFmt = "#,##0";
+        for (let c = 1; c <= attendRightHeader.length; c++) {
+          const cell = wsAttendSummary.getCell(rowNum, c);
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: c === attendRightHeader.length ? "left" : "center",
+            wrapText: true,
+          };
+        }
+      });
+      wsAttendSummary.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
+
+      wsDispatchSummary.columns = dispatchRightWidths.map((w) => ({ width: w }));
+      addSectionTitle(wsDispatchSummary, `■ 파출정보 요약 / ${rangeLabel}`, dispatchRightHeader.length);
+      wsDispatchSummary.addRow(dispatchRightHeader);
+      styleHeaderRow(wsDispatchSummary, wsDispatchSummary.lastRow.number);
+
+      wsDispatchSummary.addRow(["합계", "", "", "", "", globalDispatchTotal || 0, "", ""]);
+      const dispatchSummaryTotalRowNum = wsDispatchSummary.lastRow.number;
+      styleDataRow(wsDispatchSummary, dispatchSummaryTotalRowNum);
+      const dispatchSummaryTotalCell = wsDispatchSummary.getCell(dispatchSummaryTotalRowNum, 6);
+      dispatchSummaryTotalCell.numFmt = "#,##0";
+      for (let c = 1; c <= dispatchRightHeader.length; c++) {
+        const cell = wsDispatchSummary.getCell(dispatchSummaryTotalRowNum, c);
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: c === dispatchRightHeader.length ? "left" : "center",
+          wrapText: true,
+        };
+      }
+
       dispatchRightRowsAll.forEach((d) => {
         const payLines = d.dispatchPays || [];
         const totalLine = d.dispatchTotal || "";
@@ -2220,21 +2203,34 @@ function RecordSheet() {
         const payFlags = Array.isArray(d.dispatchPayFlags) ? d.dispatchPayFlags : [];
 
         for (let iLine = 0; iLine < totalRows; iLine++) {
-          const rowNum = rightDispatchRowCursor;
-          ensureDispatchRightRow(rowNum);
-          const row = wsDispatch.getRow(rowNum);
+          const amountVal = toNumberMaybe(payLines[iLine] ?? "");
+          const isLastRow = iLine === totalRows - 1;
+          const countVal = iLine === 0 ? toNumberMaybe(d.dispatchCount || 0) : "";
+          const totalVal = isLastRow && totalLine !== "" && totalLine != null ? toNumberMaybe(totalLine) : "";
+          const hasBaro =
+            String(d.rrn ?? "").includes("바로인력") ||
+            String(d.account_number ?? "").includes("바로인력");
+          const remarkParts = [];
+          if (d.hasEmployeeDispatch) remarkParts.push("직원파출");
+          if (hasBaro) remarkParts.push("바로인력");
 
-          if (iLine === 0) {
-            row.getCell(dispatchRightStartCol + 0).value = d.account_name || "";
-            row.getCell(dispatchRightStartCol + 1).value = d.name;
-            row.getCell(dispatchRightStartCol + 2).value = d.rrn;
-            row.getCell(dispatchRightStartCol + 3).value = d.account_number;
-            row.getCell(dispatchRightStartCol + 4).value = d.dispatchCount || 0;
-          }
+          wsDispatchSummary.addRow([
+            iLine === 0 ? d.account_name || "" : "",
+            iLine === 0 ? d.name : "",
+            iLine === 0 ? d.rrn : "",
+            iLine === 0 ? d.account_number : "",
+            countVal === "" ? "" : countVal,
+            amountVal === "" ? "" : amountVal,
+            totalVal === "" ? "" : totalVal,
+            iLine === 0 ? remarkParts.join(", ") : "",
+          ]);
 
-          const amountVal = payLines[iLine] ?? "";
-          const amountCell = row.getCell(dispatchRightStartCol + 5);
-          amountCell.value = amountVal === "" || amountVal == null ? "" : amountVal;
+          const rowNum = wsDispatchSummary.lastRow.number;
+          styleDataRow(wsDispatchSummary, rowNum);
+
+          const countCell = wsDispatchSummary.getCell(rowNum, 5);
+          if (typeof countCell.value === "number") countCell.numFmt = "#,##0";
+          const amountCell = wsDispatchSummary.getCell(rowNum, 6);
           if (typeof amountCell.value === "number") amountCell.numFmt = "#,##0";
           if (payFlags[iLine] && amountCell.value !== "") {
             amountCell.fill = {
@@ -2244,46 +2240,20 @@ function RecordSheet() {
             };
           }
 
-          const isLastRow = iLine === totalRows - 1;
-          const totalCell = row.getCell(dispatchRightStartCol + 6);
-          if (isLastRow && totalLine !== "" && totalLine != null) {
-            totalCell.value = totalLine;
-            if (typeof totalCell.value === "number") totalCell.numFmt = "#,##0";
-          } else {
-            totalCell.value = "";
-          }
+          const totalCell = wsDispatchSummary.getCell(rowNum, 7);
+          if (typeof totalCell.value === "number") totalCell.numFmt = "#,##0";
 
-          const hasBaro =
-            String(d.rrn ?? "").includes("바로인력") ||
-            String(d.account_number ?? "").includes("바로인력");
-          const remarkParts = [];
-          if (d.hasEmployeeDispatch) remarkParts.push("직원파출");
-          if (hasBaro) remarkParts.push("바로인력");
-          row.getCell(dispatchRightStartCol + 7).value = iLine === 0 ? remarkParts.join(", ") : "";
-
-          for (let c = dispatchRightStartCol; c <= dispatchRightEndCol; c++) {
-            const cell = wsDispatch.getCell(rowNum, c);
-            cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-            cell.border = {
-              top: { style: "thin" },
-              left: { style: "thin" },
-              bottom: { style: "thin" },
-              right: { style: "thin" },
+          for (let c = 1; c <= dispatchRightHeader.length; c++) {
+            const cell = wsDispatchSummary.getCell(rowNum, c);
+            cell.alignment = {
+              vertical: "middle",
+              horizontal: c === dispatchRightHeader.length ? "left" : "center",
+              wrapText: true,
             };
           }
-
-          rightDispatchRowCursor += 1;
         }
       });
-
-      wsAttend.views = [{ state: "frozen", xSplit: 0, ySplit: 0 }];
-      wsDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
-
-      if (rightDispatchTotalCellRef) {
-        rightDispatchTotalCellRef.value = globalDispatchTotal || 0;
-        rightDispatchTotalCellRef.numFmt = "#,##0";
-        rightDispatchTotalCellRef.alignment = { vertical: "middle", horizontal: "center" };
-      }
+      wsDispatchSummary.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
 
       if (employeeDispatchSheetRowsAll.length > 0) {
         const wsEmployeeDispatch = wb.addWorksheet("직원파출정보");
@@ -2302,16 +2272,21 @@ function RecordSheet() {
         styleHeaderRow(wsEmployeeDispatch, wsEmployeeDispatch.lastRow.number);
 
         employeeDispatchSheetRowsAll.forEach((d) => {
-          const countText = d.count > 0 ? `${d.count}회` : "-";
-          const amountText = d.amount ? `${formatMoneyLike(d.amount)}원` : "-";
+          const countNum = toNumberMaybe(d.count);
+          const amountNum = toNumberMaybe(d.amount);
           wsEmployeeDispatch.addRow([
             d.name || "-",
             d.origin || "-",
             d.dispatch || "-",
-            countText,
-            amountText,
+            countNum === "" ? "" : countNum,
+            amountNum === "" ? "" : amountNum,
           ]);
-          styleDataRow(wsEmployeeDispatch, wsEmployeeDispatch.lastRow.number);
+          const rowNum = wsEmployeeDispatch.lastRow.number;
+          styleDataRow(wsEmployeeDispatch, rowNum);
+          const countCell = wsEmployeeDispatch.getCell(rowNum, 4);
+          if (typeof countCell.value === "number") countCell.numFmt = "#,##0";
+          const amountCell = wsEmployeeDispatch.getCell(rowNum, 5);
+          if (typeof amountCell.value === "number") amountCell.numFmt = "#,##0";
         });
 
         wsEmployeeDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
@@ -2333,7 +2308,7 @@ function RecordSheet() {
   };
 
   // ✅ "출근한 사람" 카운트 타입
-  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]);
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8", "19"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
     if (!t || t === "0") return false;
@@ -2797,6 +2772,7 @@ function RecordSheet() {
                 { value: "5", label: "파출" },
                 { value: "6", label: "직원파출" },
                 { value: "7", label: "유틸" },
+                { value: "19", label: "통합" },
                 { value: "8", label: "대체근무" },
                 { value: "9", label: "연차" },
                 { value: "10", label: "반차" },
@@ -2857,6 +2833,7 @@ function RecordSheet() {
         );
       },
       getOrgTimes: (row) => getOrgTimes(row, defaultTimes),
+      isCellLocked: (row, columnId) => isCellLockedByActJoin(row, columnId),
     },
   });
 
@@ -3709,9 +3686,14 @@ function RecordSheet() {
                           memberDelYnMap.get(safeTrim(row.original?.name ?? "", "")) ||
                           "N";
                         const isRetired = rowDelYn === "Y" || fallbackDelYn === "Y";
+                        const isJoinLocked =
+                          cell.column.id.startsWith("day_") &&
+                          isCellLockedByActJoin(row.original, cell.column.id);
                         let bg = "";
                         if (isRetired && cell.column.id === "name") {
                           bg = "#ffe5e5";
+                        } else if (isJoinLocked) {
+                          bg = "#e0e0e0";
                         } else if (cell.column.id.startsWith("day_")) {
                           const v = cell.getValue();
                           bg = typeColors[v?.type || ""] || "";
@@ -3722,6 +3704,8 @@ function RecordSheet() {
                             style={{
                               width: cell.column.columnDef.size,
                               backgroundColor: bg,
+                              pointerEvents: isJoinLocked ? "none" : "auto",
+                              userSelect: isJoinLocked ? "none" : "auto",
                             }}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

@@ -24,6 +24,13 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 
 function AccountMemberSheet() {
+
+  // =========================
+  // ✅ 통합이면 account_id=1 강제
+  // =========================
+  const INTEGRATION_POSITION = "7";
+  const INTEGRATION_ACCOUNT_ID = "1";
+
   // =========================
   // ✅ 유틸이면 account_id=2 강제
   // =========================
@@ -65,9 +72,19 @@ function AccountMemberSheet() {
         const pos = String(r?.position_type ?? "");
         const acc = r?.account_id;
 
+        // ✅ 통합이면 무조건 1
+        if (pos === INTEGRATION_POSITION) {
+          return { ...r, account_id: INTEGRATION_ACCOUNT_ID };
+        }
+
         // ✅ 유틸이면 무조건 2
         if (pos === UTIL_POSITION) {
           return { ...r, account_id: UTIL_ACCOUNT_ID };
+        }
+
+        // ✅ 통합이 아닌데 account_id가 1로 남아있으면 선택 거래처로 복구(원하면 제거 가능)
+        if (String(acc ?? "") === INTEGRATION_ACCOUNT_ID) {
+          return { ...r, account_id: selectedAccountId || (accountList?.[0]?.account_id ?? "") };
         }
 
         // ✅ 유틸이 아닌데 account_id가 2로 남아있으면 선택 거래처로 복구(원하면 제거 가능)
@@ -78,7 +95,7 @@ function AccountMemberSheet() {
         return r;
       });
     },
-    [UTIL_POSITION, UTIL_ACCOUNT_ID, selectedAccountId, accountList]
+    [INTEGRATION_POSITION, INTEGRATION_ACCOUNT_ID, UTIL_POSITION, UTIL_ACCOUNT_ID, selectedAccountId, accountList]
   );
 
   // =========================
@@ -327,6 +344,7 @@ function AccountMemberSheet() {
     { value: "4", label: "조리사" },
     { value: "5", label: "조리원" },
     { value: "6", label: "유틸" },
+    { value: "7", label: "통합" },
   ];
 
   const contractOptions = [
@@ -389,7 +407,7 @@ function AccountMemberSheet() {
   const buildExcelRows = (rows) =>
     (rows || []).map((r) => ({
       ...r,
-      salary: formatNumber(parseNumber(r.salary)),
+      salary: parseNumber(r.salary),
       cor_type: mapLabel(corOptions, r.cor_type),
       contract_type: mapLabel(contractOptions, r.contract_type),
       position_type: mapLabel(positionOptions, r.position_type),
@@ -408,12 +426,14 @@ function AccountMemberSheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      const res = await api.get("/Operate/AccountMemberAllList", {
+      // ✅ 전체 거래처 엑셀 전용 API 사용 (일반 조회 API와 분리)
+      const res = await api.get("/Operate/AccountMemberAllListExcel", {
         params: { del_yn: activeStatus },
       });
       const rows = buildExcelRows(
         (res.data || []).map((item) => ({
           account_id: item.account_id,
+          account_name: item.account_name,
           member_id: item.member_id,
           name: item.name,
           rrn: item.rrn,
@@ -524,7 +544,8 @@ function AccountMemberSheet() {
 
       const rowsWithAccount = rows.map((r) => {
         const accId = String(r.account_id ?? "");
-        const accName = accNameMap.get(accId);
+        // ✅ 엑셀 전용 API에서 내려준 account_name 우선 사용
+        const accName = String(r.account_name ?? "").trim() || accNameMap.get(accId);
         const accountLabel = accName || "";
         return { ...r, account_label: accountLabel };
       });
@@ -538,15 +559,34 @@ function AccountMemberSheet() {
       styleHeaderRow(ws.lastRow.number);
       header.forEach((h, i) => autoWidthValues[i].push(h));
 
+      const salaryColIndex = excelCols.findIndex((c) => c.key === "salary") + 1;
+
       rowsWithAccount.forEach((r) => {
         const row = {};
         excelCols.forEach((c) => {
+          if (c.key === "salary") {
+            row[c.key] = parseNumber(r[c.key]);
+            return;
+          }
           row[c.key] = r[c.key] ?? "";
         });
         ws.addRow(row);
-        ws.getRow(ws.lastRow.number).height = 23;
-        styleDataRow(ws.lastRow.number);
-        excelCols.forEach((c, i) => autoWidthValues[i].push(row[c.key]));
+        const rowNum = ws.lastRow.number;
+        ws.getRow(rowNum).height = 23;
+        styleDataRow(rowNum);
+
+        if (salaryColIndex > 0) {
+          const salaryCell = ws.getRow(rowNum).getCell(salaryColIndex);
+          if (typeof salaryCell.value === "number") {
+            salaryCell.numFmt = "#,##0";
+            salaryCell.alignment = { vertical: "top", horizontal: "right", wrapText: true };
+          }
+        }
+
+        excelCols.forEach((c, i) => {
+          const value = row[c.key];
+          autoWidthValues[i].push(c.key === "salary" ? formatNumber(parseNumber(value)) : value);
+        });
       });
 
       const calcWidth = (values, min = 15, max = 80) => {
@@ -714,8 +754,9 @@ function AccountMemberSheet() {
 
       const processedFixed = applyUtilAccountId(processed);
 
+      // ✅ integration/util account_id 보정값을 실제 저장 payload에도 반영
       const res = await api.post("/Operate/AccountMembersSave", {
-        data: processed,
+        data: processedFixed,
       });
 
       if (res.data.code === 200) {
@@ -805,7 +846,7 @@ function AccountMemberSheet() {
   };
 
   // =========================
-  // ✅ 유틸관리 모달 로직 (추가)
+  // ✅ 통합/유틸 관리 모달 로직 (추가)
   // =========================
   const [utilOpen, setUtilOpen] = useState(false);
 
@@ -889,7 +930,7 @@ function AccountMemberSheet() {
 
   const handleAddMappingFromRight = () => {
     if (!utilSelectedMember?.member_id) {
-      Swal.fire("안내", "왼쪽에서 유틸 직원을 먼저 선택해주세요.", "info");
+      Swal.fire("안내", "왼쪽에서 통합/유틸 직원을 먼저 선택해주세요.", "info");
       return;
     }
     if (!utilSelectedAccount?.account_id) {
@@ -924,7 +965,7 @@ function AccountMemberSheet() {
 
   const handleUtilSave = async () => {
     if (!utilSelectedMember?.member_id) {
-      Swal.fire("안내", "왼쪽에서 유틸 직원을 먼저 선택해주세요.", "info");
+      Swal.fire("안내", "왼쪽에서 통합/유틸 직원을 먼저 선택해주세요.", "info");
       return;
     }
 
@@ -943,7 +984,7 @@ function AccountMemberSheet() {
         return;
       }
 
-      Swal.fire("저장 완료", "유틸 매핑이 저장되었습니다.", "success");
+      Swal.fire("저장 완료", "통합/유틸 매핑이 저장되었습니다.", "success");
 
       // 저장 후 가운데 재조회
       const latest = await fetchUtilMappingList(utilSelectedMember.member_id);
@@ -955,7 +996,7 @@ function AccountMemberSheet() {
   };
 
   // =========================
-  // ✅ 직원파출관리 모달 로직 (유틸관리 복제 → "파견일자"로 변경)
+  // ✅ 직원파출관리 모달 로직 (통합/유틸 관리 복제 → "파견일자"로 변경)
   // =========================
   const DISPATCH_TYPE = 6;
 
@@ -1002,7 +1043,7 @@ function AccountMemberSheet() {
     );
   };
 
-  // ✅ (중요) API는 유틸관리와 동일하게 호출하되, year/month를 params에 포함
+  // ✅ (중요) API는 통합/유틸 관리와 동일하게 호출하되, year/month를 params에 포함
   //    서버가 year/month를 아직 안 받더라도 무시될 수 있으니 안전함
   // ✅ 왼쪽: 직원 목록 (/Operate/AccountMemberAllList)
   // params: account_id, del_yn='N'
@@ -1092,9 +1133,9 @@ function AccountMemberSheet() {
           x.record_date ||
           (x.record_year && x.record_month && x.record_day
             ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
-                2,
-                "0"
-              )}-${String(x.record_day).padStart(2, "0")}`
+              2,
+              "0"
+            )}-${String(x.record_day).padStart(2, "0")}`
             : "");
 
         return {
@@ -1233,9 +1274,9 @@ function AccountMemberSheet() {
           x.record_date ||
           (x.record_year && x.record_month && x.record_day
             ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
-                2,
-                "0"
-              )}-${String(x.record_day).padStart(2, "0")}`
+              2,
+              "0"
+            )}-${String(x.record_day).padStart(2, "0")}`
             : "");
 
         return {
@@ -1280,9 +1321,9 @@ function AccountMemberSheet() {
               x.record_date ||
               (x.record_year && x.record_month && x.record_day
                 ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
-                    2,
-                    "0"
-                  )}-${String(x.record_day).padStart(2, "0")}`
+                  2,
+                  "0"
+                )}-${String(x.record_day).padStart(2, "0")}`
                 : "");
 
             return {
@@ -1335,7 +1376,11 @@ function AccountMemberSheet() {
 
     const defaultPositionType = "1"; // ✅ 문자열로 통일
     const initAccountId =
-      defaultPositionType === UTIL_POSITION ? UTIL_ACCOUNT_ID : String(defaultAccountId);
+      defaultPositionType === UTIL_POSITION
+        ? UTIL_ACCOUNT_ID
+        : defaultPositionType === INTEGRATION_POSITION
+          ? INTEGRATION_ACCOUNT_ID
+          : String(defaultAccountId);
 
     const newRow = {
       name: "",
@@ -1535,14 +1580,14 @@ function AccountMemberSheet() {
                       ? "__FILE__"
                       : String(currentValue ?? "")
                     : isNumeric
-                    ? Number(currentValue ?? 0)
-                    : String(currentValue ?? "");
+                      ? Number(currentValue ?? 0)
+                      : String(currentValue ?? "");
 
                   const normOriginal = isImage
                     ? String(originalValue ?? "")
                     : isNumeric
-                    ? Number(originalValue ?? 0)
-                    : String(originalValue ?? "");
+                      ? Number(originalValue ?? 0)
+                      : String(originalValue ?? "");
 
                   const isChanged = normCurrent !== normOriginal;
 
@@ -1554,16 +1599,23 @@ function AccountMemberSheet() {
                     const updatedRows = rows.map((r, idx) => {
                       if (idx !== rowIndex) return r;
 
-                      // ✅ position_type 변경 시: 유틸(6)면 account_id = null 처리
+                      // ✅ position_type 변경 시:
+                      // - 유틸(6)  -> account_id=2
+                      // - 통합(7)  -> account_id=1
+                      // - 일반직 전환 시 기존 1/2 값이면 선택 거래처로 복구
                       if (colKey === "position_type") {
                         const nextPos = String(newValue);
 
                         const nextAccount =
                           nextPos === UTIL_POSITION
                             ? UTIL_ACCOUNT_ID
-                            : String(r.account_id ?? "") === UTIL_ACCOUNT_ID
-                            ? selectedAccountId || (accountList?.[0]?.account_id ?? "")
-                            : r.account_id;
+                            : nextPos === INTEGRATION_POSITION
+                              ? INTEGRATION_ACCOUNT_ID
+                              : [UTIL_ACCOUNT_ID, INTEGRATION_ACCOUNT_ID].includes(
+                                String(r.account_id ?? "")
+                              )
+                                ? (selectedAccountId || (accountList?.[0]?.account_id ?? ""))
+                                : String(r.account_id ?? "");
 
                         return {
                           ...r,
@@ -1746,8 +1798,8 @@ function AccountMemberSheet() {
                         ].includes(colKey)
                           ? "center"
                           : colKey === "salary"
-                          ? "right"
-                          : "left",
+                            ? "right"
+                            : "left",
                       }}
                       contentEditable={isEditable && !isSelect && !isDate}
                       suppressContentEditableWarning
@@ -1755,14 +1807,14 @@ function AccountMemberSheet() {
                       onBlur={
                         isEditable && !isSelect && !isDate
                           ? (e) => {
-                              let newValue = e.target.innerText.trim();
-                              if (isNumeric) newValue = parseNumber(newValue);
-                              handleCellChange(newValue);
+                            let newValue = e.target.innerText.trim();
+                            if (isNumeric) newValue = parseNumber(newValue);
+                            handleCellChange(newValue);
 
-                              if (isNumeric) {
-                                e.currentTarget.innerText = formatNumber(newValue);
-                              }
+                            if (isNumeric) {
+                              e.currentTarget.innerText = formatNumber(newValue);
                             }
+                          }
                           : undefined
                       }
                     >
@@ -1996,7 +2048,7 @@ function AccountMemberSheet() {
     );
   };
 
-  // 유틸관리 모달에서 업장명 표시용 맵
+  // 통합/유틸 관리 모달에서 업장명 표시용 맵
   const utilAccountNameMap = useMemo(() => {
     const m = new Map();
     (utilAccountRows || []).forEach((a) => {
@@ -2102,9 +2154,9 @@ function AccountMemberSheet() {
           근무형태 관리
         </MDButton>
 
-        {/* ✅ 유틸관리 버튼 추가 */}
+        {/* ✅ 통합/유틸 관리 버튼 추가 */}
         <MDButton variant="gradient" color="warning" onClick={openUtilModal}>
-          유틸관리
+          통합/유틸 관리
         </MDButton>
 
         <MDButton variant="gradient" color="warning" onClick={openDispatchModal}>
@@ -2303,7 +2355,7 @@ function AccountMemberSheet() {
       </Modal>
 
       {/* =========================
-          ✅ 유틸관리 모달 (추가)
+          ✅ 통합/유틸 관리 모달 (추가)
          ========================= */}
       <Modal open={utilOpen} onClose={closeUtilModal}>
         <Box
@@ -2338,7 +2390,7 @@ function AccountMemberSheet() {
               boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
             }}
           >
-            <MDTypography variant="h6">유틸관리</MDTypography>
+            <MDTypography variant="h6">통합/유틸 관리</MDTypography>
 
             <MDBox display="flex" gap={1}>
               <MDButton variant="gradient" color="info" onClick={handleUtilSave}>
@@ -2374,7 +2426,7 @@ function AccountMemberSheet() {
             >
               <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
                 <MDTypography variant="button" fontWeight="bold">
-                  유틸 직원 목록
+                  통합/유틸 직원 목록
                 </MDTypography>
                 <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
                   행 클릭 → 가운데 매핑 조회
@@ -2453,7 +2505,7 @@ function AccountMemberSheet() {
                   매핑 목록 (가운데)
                 </MDTypography>
                 <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
-                  선택된 유틸:{" "}
+                  선택된 통합/유틸:{" "}
                   <b>{utilSelectedMember?.member_id ? utilSelectedMember.member_id : "-"}</b>
                 </MDTypography>
               </MDBox>
@@ -2621,7 +2673,7 @@ function AccountMemberSheet() {
       </Modal>
 
       {/* =========================
-      ✅ 직원파출관리 모달 (유틸관리 복제 + 연/월 선택)
+      ✅ 직원파출관리 모달 (통합/유틸 관리 복제 + 연/월 선택)
       ========================= */}
       <Modal open={dispatchOpen} onClose={closeDispatchModal}>
         <Box

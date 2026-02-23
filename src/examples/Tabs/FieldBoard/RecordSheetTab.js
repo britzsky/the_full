@@ -35,6 +35,7 @@ const typeColors = {
   4: "#f9d9d9",
   5: "#ffe6cc",
   6: "#cce6ff",
+  19: "#d9f2e6",
   16: "#DDAED3",
   17: "#9F8383",
 };
@@ -58,7 +59,8 @@ const TYPE_LABEL = {
   14: "육아휴직",
   15: "하계휴가",
   16: "업장휴무",
-  17: "경조사",
+  18: "경조사",
+  19: "통합",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
@@ -218,6 +220,8 @@ const AttendanceCell = React.memo(function AttendanceCell({
   table,
   typeOptions,
 }) {
+  // ✅ 실입사일 이전 날짜는 입력 잠금(조회는 가능)
+  const isJoinLocked = Boolean(table.options.meta?.isCellLocked?.(row.original, column.id));
   const val = getValue() || { type: "", start: "", end: "", salary: "", note: "" };
 
   const times = [];
@@ -238,6 +242,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
   };
 
   const handleChange = (field, newVal) => {
+    if (isJoinLocked) return;
     const dayKey = column.id;
 
     const rowGubun = safeTrim(row.original?.gubun, "nor");
@@ -309,12 +314,16 @@ const AttendanceCell = React.memo(function AttendanceCell({
         flexDirection: "column",
         gap: "2px",
         backgroundColor: bgColor,
+        ...(isJoinLocked ? { backgroundColor: "#e0e0e0" } : {}),
+        // ✅ 잠금 셀은 내부 컨트롤 이벤트를 막고, 셀(td) 클릭으로만 안내 모달을 띄움
+        pointerEvents: isJoinLocked ? "none" : "auto",
         padding: "2px",
         borderRadius: "4px",
         width: "100%",
       }}
     >
       <select
+        disabled={isJoinLocked}
         value={val.type}
         onChange={(e) => handleChange("type", e.target.value)}
         style={{
@@ -334,9 +343,10 @@ const AttendanceCell = React.memo(function AttendanceCell({
         ))}
       </select>
 
-      {["1", "2", "3", "5", "6", "7", "8", "17"].includes(val.type) && (
+      {["1", "2", "3", "5", "6", "7", "8", "17", "19"].includes(val.type) && (
         <>
           <select
+            disabled={isJoinLocked}
             value={val.start}
             onChange={(e) => handleChange("start", e.target.value)}
             style={{
@@ -356,6 +366,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
             ))}
           </select>
           <select
+            disabled={isJoinLocked}
             value={val.end}
             onChange={(e) => handleChange("end", e.target.value)}
             style={{
@@ -379,6 +390,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
 
       {["5", "6"].includes(val.type) && (
         <input
+          disabled={isJoinLocked}
           type="text"
           placeholder="급여"
           value={val.salary != null && val.salary !== "" ? Number(val.salary).toLocaleString() : ""}
@@ -398,6 +410,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
 
       {["3", "11", "17"].includes(val.type) && (
         <input
+          disabled={isJoinLocked}
           type="text"
           placeholder={val.type === "3" ? "초과" : val.type === "17" ? "조기퇴근" : "대체휴무"}
           value={val.note ?? ""}
@@ -564,6 +577,48 @@ function RecordSheet() {
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
     useRecordsheetData(selectedAccountId, year, month);
 
+  // ✅ rec 인원은 실입사일(act_join_dt) 이전 날짜를 잠금 처리
+  const isCellLockedByActJoin = useCallback(
+    (row, columnId) => {
+      if (!row || !String(columnId || "").startsWith("day_")) return false;
+      const gubun = safeTrim(row?.gubun ?? "", "").toLowerCase();
+      if (gubun !== "rec") return false;
+
+      const joinRaw = safeTrim(row?.act_join_dt ?? "", "");
+      if (!joinRaw) return false;
+
+      const joinDate = dayjs(joinRaw);
+      if (!joinDate.isValid()) return false;
+
+      const dayNum = Number(String(columnId).replace("day_", ""));
+      if (!Number.isFinite(dayNum)) return false;
+
+      const joinYear = joinDate.year();
+      const joinMonth = joinDate.month() + 1;
+      const joinDay = joinDate.date();
+
+      if (year < joinYear || (year === joinYear && month < joinMonth)) return true;
+      if (year > joinYear || (year === joinYear && month > joinMonth)) return false;
+      return dayNum < joinDay;
+    },
+    [year, month]
+  );
+
+  // ✅ 잠금(회색) 셀 클릭 시 실입사일 안내
+  const openJoinLockInfoModal = useCallback((row) => {
+    const raw = safeTrim(row?.act_join_dt ?? "", "");
+    const d = dayjs(raw);
+    const joinText = d.isValid() ? d.format("YYYY-MM-DD") : raw || "미등록";
+    const name = safeTrim(row?.name ?? "", "");
+
+    Swal.fire({
+      title: "입력 불가",
+      text: `${name ? `${name} : ` : ""}실입사일은 ${joinText} 입니다.`,
+      icon: "info",
+      confirmButtonText: "확인",
+    });
+  }, []);
+
   const selectAccountByInput = useCallback(() => {
     if (isAccountLocked) return;
     const q = String(accountInput || "").trim();
@@ -714,6 +769,8 @@ function RecordSheet() {
           member_id: r.member_id,
           position: r.position || "",
           del_yn: r.del_yn ?? "",
+          // ✅ 실입사일 잠금 계산용(행 단위 유지)
+          act_join_dt: safeTrim(r.act_join_dt ?? "", ""),
           gubun: r.gubun ?? "nor",
           position_type: r.position_type ?? "",
           day_default: r.day_default || null,
@@ -801,6 +858,8 @@ function RecordSheet() {
         if (!target.position && item.position) target.position = item.position;
         if (!target.position_type && item.position_type) target.position_type = item.position_type;
         if (!target.gubun && item.gubun) target.gubun = item.gubun;
+        // ✅ 중복 병합 시 실입사일도 유지
+        if (!target.act_join_dt && item.act_join_dt) target.act_join_dt = item.act_join_dt;
       });
 
       return [...map.values(), ...passthrough];
@@ -818,6 +877,8 @@ function RecordSheet() {
         member_id: item.member_id,
         position: item.position || member?.position || "",
         del_yn: item.del_yn ?? member?.del_yn ?? "",
+        // ✅ 화면 행에서 바로 잠금 판단 가능하도록 보존
+        act_join_dt: safeTrim(item.act_join_dt ?? member?.act_join_dt ?? "", ""),
         gubun: baseGubun,
         position_type: basePt,
         day_default: item.day_default || null,
@@ -1133,7 +1194,7 @@ function RecordSheet() {
   };
 
   // ✅ "출근한 사람" 카운트 타입
-  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8"]);
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8", "19"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
     if (!t || t === "0") return false;
@@ -1599,6 +1660,7 @@ function RecordSheet() {
                 { value: "5", label: "파출" },
                 { value: "6", label: "직원파출" },
                 { value: "7", label: "유틸" },
+                { value: "19", label: "통합" },
                 { value: "8", label: "대체근무" },
                 { value: "9", label: "연차" },
                 { value: "10", label: "반차" },
@@ -1645,6 +1707,7 @@ function RecordSheet() {
         );
       },
       getOrgTimes: (row) => getOrgTimes(row, defaultTimes),
+      isCellLocked: (row, columnId) => isCellLockedByActJoin(row, columnId),
     },
   });
 
@@ -1989,6 +2052,8 @@ function RecordSheet() {
         .forEach(([key, val]) => {
           const dayNum = parseInt(key.replace("day_", ""), 10);
           if (Number.isNaN(dayNum) || dayNum === 0) return;
+          // ✅ 잠금된 날짜(실입사일 이전)는 저장 대상에서 제외
+          if (isCellLockedByActJoin(row, key)) return;
 
           const originalVal = useDiffMode && originalRow ? originalRow[key] : null;
 
@@ -2300,9 +2365,14 @@ function RecordSheet() {
                       {row.getVisibleCells().map((cell) => {
                         const isRetired =
                           String(row.original?.del_yn ?? "").toUpperCase() === "Y";
+                        const isJoinLocked =
+                          cell.column.id.startsWith("day_") &&
+                          isCellLockedByActJoin(row.original, cell.column.id);
                         let bg = "";
                         if (isRetired) {
                           bg = "#f7f0f0";
+                        } else if (isJoinLocked) {
+                          bg = "#e0e0e0";
                         } else if (cell.column.id.startsWith("day_")) {
                           const v = cell.getValue();
                           bg = typeColors[v?.type || ""] || "";
@@ -2310,9 +2380,20 @@ function RecordSheet() {
                         return (
                           <td
                             key={cell.id}
+                            // ✅ 회색(잠금) 셀 클릭 시 실입사일 안내 모달 표시
+                            onClick={
+                              isJoinLocked
+                                ? () => {
+                                    openJoinLockInfoModal(row.original);
+                                  }
+                                : undefined
+                            }
                             style={{
                               width: cell.column.columnDef.size,
                               backgroundColor: bg,
+                              pointerEvents: "auto",
+                              userSelect: isJoinLocked ? "none" : "auto",
+                              cursor: isJoinLocked ? "not-allowed" : "auto",
                             }}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

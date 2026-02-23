@@ -95,6 +95,7 @@ export default function useRecordsheetData(account_id, year, month) {
             account_id: item.account_id || "",
             position: item.position || "",
             del_yn: item.del_yn ?? "",
+            act_join_dt: safeTrim(item.act_join_dt, ""),
             // ✅ row-level 고정값(없으면 나중에 days에서 다시 추론)
             gubun: safeTrim(item.gubun, ""),
             position_type: safeTrim(item.position_type, ""),
@@ -138,6 +139,12 @@ export default function useRecordsheetData(account_id, year, month) {
           safeTrim(anyDay.position_type, "") ||
           "";
 
+        const rowActJoinDt =
+          safeTrim(g.act_join_dt, "") ||
+          safeTrim(dayValues.day_default?.act_join_dt, "") ||
+          safeTrim(anyDay.act_join_dt, "") ||
+          "";
+
         // ✅ flatDays 생성: 각 day에 start/end를 추가 + gubun/position_type fallback 적용
         const flatDays = Object.fromEntries(
           Object.entries(dayValues)
@@ -171,6 +178,7 @@ export default function useRecordsheetData(account_id, year, month) {
           member_id: g.member_id,
           position: g.position,
           del_yn: g.del_yn ?? "",
+          act_join_dt: rowActJoinDt,
           // ✅ row-level 확정값 (저장 fallback용)
           gubun: rowGubun,
           position_type: rowPt,

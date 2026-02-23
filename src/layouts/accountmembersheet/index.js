@@ -88,6 +88,7 @@ function AccountMemberSheet() {
     { value: "4", label: "조리사" },
     { value: "5", label: "조리원" },
     { value: "6", label: "유틸" },
+    { value: "7", label: "통합" },
   ];
 
   const contractOptions = [

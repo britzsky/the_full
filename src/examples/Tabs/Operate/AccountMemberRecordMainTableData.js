@@ -67,6 +67,8 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
         fri: item.fri,
         sat: item.sat,
         sun: item.sun,
+        sido_code: item.sido_code,
+        sigungu_code: item.sigungu_code,
       }));
 
       // ✅ workSystemList가 이미 있으면 work_system을 idx로 매핑해서 저장

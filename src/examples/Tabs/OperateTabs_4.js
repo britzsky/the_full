@@ -4,7 +4,7 @@ import MDBox from "components/MDBox";
 
 // 탭용 서브 컴포넌트 import
 import AccountMemberRecordMainTableTab from "./Operate/AccountMemberRecordMainTableTab";
-import AccountMemberRecSheetTab from "./Operate/AccountMemberRecSheetTab";
+import AccountRootTab from "./Operate/AccountRootTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
@@ -60,7 +60,7 @@ function OperateTabs_2() {
   const tabConfig = [
     {
       key: "fieldstaff",
-      label: "👥 현장 직원목록",
+      label: "👥 고객사별 인력관리",
       iconIndex: 0,
       component: <AccountMemberRecordMainTableTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
@@ -69,9 +69,9 @@ function OperateTabs_2() {
     },
     {
       key: "property",
-      label: "📦 현장 채용현황",
+      label: "🗺️ 근무가능지역 관리",
       iconIndex: 1,
-      component: <AccountMemberRecSheetTab />,
+      component: <AccountRootTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",

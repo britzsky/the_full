@@ -42,6 +42,12 @@ function AccountMemberRecordMainTableTab() {
   const [selectedAccountId, setSelectedAccountId] = useState(""); // ✅ 기본: 전체
   const [accountInput, setAccountInput] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
+  const [sidoOptions, setSidoOptions] = useState([]); // [{value,label}]
+  const [sigunguOptions, setSigunguOptions] = useState([]); // [{value,label}]
+  const [selectedSidoCode, setSelectedSidoCode] = useState("");
+  const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
+  const [originalSidoCode, setOriginalSidoCode] = useState("");
+  const [originalSigunguCode, setOriginalSigunguCode] = useState("");
 
   const tableContainerRef = useRef(null);
   const theme = useTheme();
@@ -113,19 +119,76 @@ function AccountMemberRecordMainTableTab() {
     [makeEmptySchedule, scheduleKeySet]
   );
 
-  // ✅ 거래처 옵션(Autocomplete) - "전체" 추가
   const accountOptions = useMemo(() => {
-    const base = (accountList || []).map((a) => ({
+    return (accountList || []).map((a) => ({
       value: String(a.account_id),
       label: a.account_name,
     }));
-    return [{ value: "", label: "전체" }, ...base];
   }, [accountList]);
+
+  // 첫 거래처 자동 선택 (전체 없음)
+  useEffect(() => {
+    if (!selectedAccountId && accountOptions.length > 0) {
+      setSelectedAccountId(accountOptions[0].value);
+      setAccountInput(accountOptions[0].label);
+    }
+  }, [accountOptions.length]);
 
   const selectedAccountOption = useMemo(() => {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const fetchSidoOptions = useCallback(async () => {
+    try {
+      const res = await api.get("/Operate/SidoList");
+      const opts = (res.data || []).map((x) => ({
+        value: String(x.sido_code),
+        label: x.sido_name,
+      }));
+      setSidoOptions(opts);
+
+      // 첫 시도 자동 선택
+      if (!selectedSidoCode && opts.length > 0) {
+        setSelectedSidoCode(opts[0].value);
+      }
+    } catch (e) {
+      console.error(e);
+      setSidoOptions([]);
+    }
+  }, [selectedSidoCode]);
+
+  const fetchSigunguOptions = useCallback(async (sido_code) => {
+    if (!sido_code) {
+      setSigunguOptions([]);
+      setSelectedSigunguCode("");
+      return;
+    }
+
+    try {
+      const res = await api.get("/Operate/SigunguList", { params: { sido_code } });
+      const opts = (res.data || []).map((x) => ({
+        value: String(x.sigungu_code),
+        label: x.sigungu_name,
+      }));
+      setSigunguOptions(opts);
+
+      // 첫 시군구 자동 선택
+      setSelectedSigunguCode(opts[0]?.value || "");
+    } catch (e) {
+      console.error(e);
+      setSigunguOptions([]);
+      setSelectedSigunguCode("");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSidoOptions();
+  }, [fetchSidoOptions]);
+
+  useEffect(() => {
+    fetchSigunguOptions(selectedSidoCode);
+  }, [selectedSidoCode, fetchSigunguOptions]);
 
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
@@ -161,10 +224,29 @@ function AccountMemberRecordMainTableTab() {
       const updated = activeRows.map((row) => hydrateSchedule(row));
       setActiveRows(updated);
       setOriginalRows(updated);
+
+      // ✅ 조회 결과에서 sido/sigungu 대표값 뽑기 (첫 행 기준)
+      const first = updated[0] || {};
+      const nextSido = first.sido_code != null ? String(first.sido_code) : "";
+      const nextSigungu = first.sigungu_code != null ? String(first.sigungu_code) : "";
+
+      // ✅ 시도/시군구 옵션 로드된 후에 값 세팅이 안전
+      if (nextSido) {
+        setSelectedSidoCode(nextSido);
+        setOriginalSidoCode(nextSido);
+      }
+      if (nextSigungu) {
+        setSelectedSigunguCode(nextSigungu);
+        setOriginalSigunguCode(nextSigungu);
+      }
     } else {
       setOriginalRows([]);
     }
   }, [activeRows?.length]);
+
+  const isSidoChanged = String(selectedSidoCode ?? "") !== String(originalSidoCode ?? "");
+  const isSigunguChanged = String(selectedSigunguCode ?? "") !== String(originalSigunguCode ?? "");
+  const isRegionChanged = isSidoChanged || isSigunguChanged;
 
   const columns = useMemo(
     () => [
@@ -194,11 +276,16 @@ function AccountMemberRecordMainTableTab() {
       );
     });
 
-    if (changedRows.length === 0) {
+    const isSidoChanged = String(selectedSidoCode ?? "") !== String(originalSidoCode ?? "");
+    const isSigunguChanged =
+      String(selectedSigunguCode ?? "") !== String(originalSigunguCode ?? "");
+    const isRegionChanged = isSidoChanged || isSigunguChanged;
+
+    // ✅ row 변경도 없고, 지역 변경도 없으면 저장 안 함
+    if (changedRows.length === 0 && !isRegionChanged) {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
       return;
     }
-
     try {
       const userId = localStorage.getItem("user_id");
 
@@ -210,10 +297,19 @@ function AccountMemberRecordMainTableTab() {
         return newRow;
       };
 
-      const processed = changedRows.map((row) => {
+      // ✅ region 변경만 있는 경우도 저장되어야 하므로,
+      // changedRows가 0이면 "전체 rows"에 region을 붙여서 보냄(또는 서버 정책에 맞게 최소 1개만 보내도 됨)
+      const targetRows = changedRows.length > 0 ? changedRows : activeRows || [];
+
+      const processed = targetRows.map((row) => {
         const hydrated = hydrateSchedule(row);
         const newRow = cleanRow(hydrated);
-        return { ...newRow, user_id: userId };
+        return {
+          ...newRow,
+          user_id: userId,
+          sido_code: selectedSidoCode ? Number(selectedSidoCode) : null,
+          sigungu_code: selectedSigunguCode ? Number(selectedSigunguCode) : null,
+        };
       });
 
       const res = await api.post("/Operate/AccountRecordStandardSave", {
@@ -225,6 +321,10 @@ function AccountMemberRecordMainTableTab() {
 
         const snapshot = (activeRows || []).map((r) => hydrateSchedule(r));
         setOriginalRows(snapshot);
+
+        // ✅ 지역 select 원본도 갱신 (빨간색 해제)
+        setOriginalSidoCode(String(selectedSidoCode ?? ""));
+        setOriginalSigunguCode(String(selectedSigunguCode ?? ""));
 
         await fetchAccountMembersAllList();
       } else {
@@ -244,7 +344,7 @@ function AccountMemberRecordMainTableTab() {
         : String(firstRealAccount?.value ?? "");
 
     const newRow = {
-      account_id: "",
+      account_id: defaultAccountId, // ✅ 첫 거래처
       cor_type: "1",
       position_type: "4", // ✅ 기본 직책: 조리사
       start_time: startTimes?.[0] ?? "5:30",
@@ -598,6 +698,59 @@ function AccountMemberRecordMainTableTab() {
           <option value="N">재직자</option>
           <option value="Y">퇴사자</option>
         </TextField> */}
+
+        <TextField
+          select
+          size="small"
+          label="시도"
+          value={selectedSidoCode}
+          onChange={(e) => setSelectedSidoCode(e.target.value)}
+          sx={{
+            minWidth: 140,
+            "& select": {
+              color: isSidoChanged ? "#d32f2f" : "inherit",
+              fontWeight: isSidoChanged ? 700 : 400,
+            },
+            "& label": {
+              color: isSidoChanged ? "#d32f2f" : "inherit",
+              fontWeight: isSidoChanged ? 700 : 400,
+            },
+          }}
+          SelectProps={{ native: true }}
+        >
+          {(sidoOptions || []).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </TextField>
+
+        <TextField
+          select
+          size="small"
+          label="시군구"
+          value={selectedSigunguCode}
+          onChange={(e) => setSelectedSigunguCode(e.target.value)}
+          sx={{
+            minWidth: 160,
+            "& select": {
+              color: isSigunguChanged ? "#d32f2f" : "inherit",
+              fontWeight: isSigunguChanged ? 700 : 400,
+            },
+            "& label": {
+              color: isSigunguChanged ? "#d32f2f" : "inherit",
+              fontWeight: isSigunguChanged ? 700 : 400,
+            },
+          }}
+          SelectProps={{ native: true }}
+          disabled={!selectedSidoCode || (sigunguOptions || []).length === 0}
+        >
+          {(sigunguOptions || []).map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </TextField>
 
         <Autocomplete
           size="small"

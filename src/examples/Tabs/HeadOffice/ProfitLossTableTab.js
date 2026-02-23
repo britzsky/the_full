@@ -154,6 +154,7 @@ export default function ProfitLossTableTab() {
     "20250819193620",
     "20250819193632",
     "20250819193622",
+    "20250819193615",
     "ALL",
   ]);
 

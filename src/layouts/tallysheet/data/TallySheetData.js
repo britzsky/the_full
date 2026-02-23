@@ -15,7 +15,6 @@ const formatNumber = (value) => {
 
 // ✅ 이전월 안전 계산 (1월 -> 전년도 12월)
 const getPrevYearMonth = (year, month) => {
-  // year/month가 비정상일 때 방어
   const safeYear = Number(year) || dayjs().year();
   const safeMonth = Number(month) || dayjs().month() + 1; // 1~12
 
@@ -33,7 +32,6 @@ const pickBudgetGrant = (resData) => {
   const list = Array.isArray(resData) ? resData : resData?.data || [];
   if (!Array.isArray(list) || list.length === 0) return 0;
 
-  // budget_grant 필드가 있는 첫 항목 사용(필요시 조건 추가 가능)
   const first = list.find((x) => x && x.budget_grant != null) || list[0];
   return parseNumber(first?.budget_grant);
 };
@@ -46,6 +44,8 @@ export default function useTallysheetData(account_id, year, month) {
   const [countMonth, setCountMonth] = useState("");
   const [count2Month, setCount2Month] = useState("");
   const [accountList, setAccountList] = useState([]);
+  const [pointList, setPointList] = useState([]);
+  const [useList, setUseList] = useState([]);
 
   // ✅ 예산(현재월/전월)
   const [budgetGrant, setBudgetGrant] = useState(0);
@@ -54,8 +54,6 @@ export default function useTallysheetData(account_id, year, month) {
   const [loading, setLoading] = useState(false);
 
   const MIN_LOADING_TIME = 1000; // 최소 로딩 시간 1초
-
-  // ✅ 로딩 중복 호출(동시 fetch) 안전 처리
   const loadingCountRef = useRef(0);
 
   const runWithMinLoading = useCallback(async (fn) => {
@@ -83,11 +81,10 @@ export default function useTallysheetData(account_id, year, month) {
     }
   }, []);
 
-  // ✅ 이번 달 데이터 조회 (필요하면 override 파라미터도 가능)
+  // ✅ 이번 달 데이터 조회
   const fetchDataRows = useCallback(
     async (overrideAccountId, overrideYear, overrideMonth) => {
       return runWithMinLoading(async () => {
-        // ✅ 조회 시작 시 기존 비교 기준 초기화
         setOriginalRows([]);
 
         const a = overrideAccountId ?? account_id;
@@ -138,11 +135,10 @@ export default function useTallysheetData(account_id, year, month) {
     [account_id, year, month, runWithMinLoading]
   );
 
-  // ✅ 지난 달 데이터 조회 (month-1 제거, dayjs로 이전월 계산)
+  // ✅ 지난 달 데이터 조회
   const fetchData2Rows = useCallback(
     async (overrideAccountId, overrideYear, overrideMonth) => {
       return runWithMinLoading(async () => {
-        // ✅ 조회 시작 시 기존 비교 기준 초기화
         setOriginal2Rows([]);
 
         const a = overrideAccountId ?? account_id;
@@ -154,8 +150,6 @@ export default function useTallysheetData(account_id, year, month) {
         try {
           const params = {};
           if (a) params.account_id = a;
-
-          // ✅ 이전월의 year/month를 정확히 넣는다 (1월이면 prevYear=전년도)
           params.year = prevYear;
           params.month = prevMonth;
 
@@ -197,7 +191,7 @@ export default function useTallysheetData(account_id, year, month) {
     [account_id, year, month, runWithMinLoading]
   );
 
-  // ✅ 예산(현재월) 조회: /Operate/BudgetManageMentList?account_id&year&month
+  // ✅ 예산(현재월) 조회
   const fetchBudgetGrant = useCallback(
     async (overrideAccountId, overrideYear, overrideMonth) => {
       return runWithMinLoading(async () => {
@@ -261,7 +255,165 @@ export default function useTallysheetData(account_id, year, month) {
     [account_id, year, month, runWithMinLoading]
   );
 
-  // ✅ 두 달 데이터 + 두 달 예산 동시 조회
+  // ✅ 포인트(현재월 + 전월) 조회: /Operate/TallySheetPointList?account_id&year&month
+  const fetchPointList = useCallback(
+    async (overrideAccountId, overrideYear, overrideMonth) => {
+      return runWithMinLoading(async () => {
+        const a = overrideAccountId ?? account_id;
+        const y = overrideYear ?? year;
+        const m = overrideMonth ?? month;
+
+        // year/month는 필수
+        if (!y || !m) {
+          setPointList([]);
+          return [];
+        }
+
+        const { prevYear, prevMonth } = getPrevYearMonth(y, m);
+
+        // 공통 row 매핑
+        const mapRows = (resData) =>
+          (resData || []).map((item) => ({
+            idx: item.idx,
+            count_year: item.count_year,
+            count_month: item.count_month,
+            count_date: item.count_date,
+            account_id: item.account_id,
+            type: item.type,
+            gubun: item.gubun,
+          }));
+
+        // 단일 월 조회 함수
+        const fetchOne = async (yy, mm) => {
+          const params = { year: yy, month: mm };
+          if (a) params.account_id = a;
+          const res = await api.get("/Operate/TallySheetPointList", { params });
+          return mapRows(res.data);
+        };
+
+        try {
+          // ✅ 현재월 + 전월 동시 조회
+          const [currentRows, prevRows] = await Promise.all([
+            fetchOne(y, m),
+            fetchOne(prevYear, prevMonth),
+          ]);
+
+          // ✅ 합치고 중복 제거(안전)
+          const merged = [...currentRows, ...prevRows];
+          const uniq = Array.from(
+            new Map(
+              merged.map((r) => {
+                // idx가 항상 유니크면 idx만 써도 되지만, 혹시 몰라 복합키로 안전하게
+                const key = `${r.idx ?? ""}|${r.count_year}-${r.count_month}-${r.count_date}|${
+                  r.account_id
+                }|${r.type}|${r.gubun}`;
+                return [key, r];
+              })
+            ).values()
+          );
+
+          // ✅ 정렬(원하면 제거 가능): 최신년/월/일 먼저
+          uniq.sort((a1, a2) => {
+            const d1 = `${a1.count_year}-${String(a1.count_month).padStart(2, "0")}-${String(
+              a1.count_date
+            ).padStart(2, "0")}`;
+            const d2 = `${a2.count_year}-${String(a2.count_month).padStart(2, "0")}-${String(
+              a2.count_date
+            ).padStart(2, "0")}`;
+            return d2.localeCompare(d1);
+          });
+
+          setPointList(uniq);
+          return uniq;
+        } catch (err) {
+          console.error("데이터 조회 실패 (TallySheetPointList):", err);
+          setPointList([]);
+          return [];
+        }
+      });
+    },
+    [account_id, year, month, runWithMinLoading]
+  );
+
+  // ✅ 포인트(현재월 + 전월) 조회: /Operate/TallySheetPointList?account_id&year&month
+  const fetchUseList = useCallback(
+    async (overrideAccountId, overrideYear, overrideMonth) => {
+      return runWithMinLoading(async () => {
+        const a = overrideAccountId ?? account_id;
+        const y = overrideYear ?? year;
+        const m = overrideMonth ?? month;
+
+        // year/month는 필수
+        if (!y || !m) {
+          setUseList([]);
+          return [];
+        }
+
+        const { prevYear, prevMonth } = getPrevYearMonth(y, m);
+
+        // 공통 row 매핑
+        const mapRows = (resData) =>
+          (resData || []).map((item) => ({
+            count_year: item.count_year,
+            count_month: item.count_month,
+            account_id: item.account_id,
+            type: item.type,
+            input_yn: item.input_yn,
+          }));
+
+        // 단일 월 조회 함수
+        const fetchOne = async (yy, mm) => {
+          const params = { year: yy, month: mm };
+          if (a) params.account_id = a;
+          const res = await api.get("/Operate/TallySheetUseList", { params });
+          return mapRows(res.data);
+        };
+
+        try {
+          // ✅ 현재월 + 전월 동시 조회
+          const [currentRows, prevRows] = await Promise.all([
+            fetchOne(y, m),
+            fetchOne(prevYear, prevMonth),
+          ]);
+
+          // ✅ 합치고 중복 제거(안전)
+          const merged = [...currentRows, ...prevRows];
+          const uniq = Array.from(
+            new Map(
+              merged.map((r) => {
+                // idx가 항상 유니크면 idx만 써도 되지만, 혹시 몰라 복합키로 안전하게
+                const key = `${r.idx ?? ""}|${r.count_year}-${r.count_month}-${r.count_date}|${
+                  r.account_id
+                }|${r.type}|${r.gubun}`;
+                return [key, r];
+              })
+            ).values()
+          );
+
+          // ✅ 정렬(원하면 제거 가능): 최신년/월/일 먼저
+          uniq.sort((a1, a2) => {
+            const d1 = `${a1.count_year}-${String(a1.count_month).padStart(2, "0")}-${String(
+              a1.count_date
+            ).padStart(2, "0")}`;
+            const d2 = `${a2.count_year}-${String(a2.count_month).padStart(2, "0")}-${String(
+              a2.count_date
+            ).padStart(2, "0")}`;
+            return d2.localeCompare(d1);
+          });
+
+          setUseList(uniq);
+          return uniq;
+        } catch (err) {
+          console.error("데이터 조회 실패 (TallySheetPointList):", err);
+          setUseList([]);
+          return [];
+        }
+      });
+    },
+    [account_id, year, month, runWithMinLoading]
+  );
+
+  // ✅ 두 달 데이터 + 두 달 예산 + 포인트(전월) 동시 조회
   useEffect(() => {
     const fetchAll = async () => {
       await Promise.all([
@@ -269,10 +421,19 @@ export default function useTallysheetData(account_id, year, month) {
         fetchData2Rows(),
         fetchBudgetGrant(),
         fetchBudget2Grant(),
+        fetchPointList(), // ✅ 추가
+        fetchUseList(), // ✅ 추가
       ]);
     };
     fetchAll();
-  }, [fetchDataRows, fetchData2Rows, fetchBudgetGrant, fetchBudget2Grant]);
+  }, [
+    fetchDataRows,
+    fetchData2Rows,
+    fetchBudgetGrant,
+    fetchBudget2Grant,
+    fetchPointList,
+    fetchUseList,
+  ]);
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
@@ -287,7 +448,7 @@ export default function useTallysheetData(account_id, year, month) {
         }));
         setAccountList(rows);
       })
-      .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
+      .catch((err) => console.error("데이터 조회 실패 (AccountListV2):", err));
   }, []);
 
   return {
@@ -298,6 +459,10 @@ export default function useTallysheetData(account_id, year, month) {
     originalRows,
     original2Rows,
     accountList,
+    pointList,
+    fetchPointList, // ✅ 반환에 포함
+    useList,
+    fetchUseList, // ✅ 반환에 포함
     countMonth,
     count2Month,
     loading,
@@ -311,6 +476,7 @@ export default function useTallysheetData(account_id, year, month) {
     fetchData2Rows,
     fetchBudgetGrant,
     fetchBudget2Grant,
+    fetchPointList, // ✅ 외부에서 필요하면 재조회 가능
   };
 }
 

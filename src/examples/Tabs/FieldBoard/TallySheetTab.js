@@ -1,3 +1,6 @@
+// ==============================
+// Part 1 / 2
+// ==============================
 /* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import ReactDOM from "react-dom";
@@ -5,6 +8,7 @@ import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-tabl
 import {
   Modal,
   Box,
+  Menu,
   Select,
   MenuItem,
   Typography,
@@ -430,7 +434,7 @@ YourSelectableTable.propTypes = {
 };
 
 // ======================== 메인 집계표 컴포넌트 ========================
-function TallySheetTab() {
+function TallySheet() {
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
   const localUserId = useMemo(() => localStorage.getItem("user_id") || "", []);
   const isAccountLocked = useMemo(() => !!localAccountId, [localAccountId]);
@@ -459,6 +463,10 @@ function TallySheetTab() {
     data2Rows,
     setData2Rows,
     accountList,
+    pointList,
+    fetchPointList, // ✅ 추가
+    useList,
+    fetchUseList, // ✅ 추가
     countMonth,
     count2Month,
     loading,
@@ -507,28 +515,11 @@ function TallySheetTab() {
     );
   }, [filteredAccountList, selectedAccountId]);
 
-  // ✅ localStorage account_id가 있으면: accountList 로딩 후 거래처명까지 자동 매핑 + 선택 고정
   useEffect(() => {
-    if (!localAccountId) return;
-
-    const match = (accountList || []).find((a) => String(a.account_id) === String(localAccountId));
-
-    // account_id는 무조건 고정
-    if (String(selectedAccountId) !== String(localAccountId)) {
-      setSelectedAccountId(String(localAccountId));
-    }
-
-    // 화면에 보이는 텍스트(거래처명)도 고정
-    if (match?.account_name) {
-      if (accountInput !== String(match.account_name)) {
-        setAccountInput(String(match.account_name));
-      }
-    } else {
-      // 혹시 목록에서 못 찾는 경우(비정상)에는 입력값은 비워둠
-      // (원하면 localAccountId 표시로 바꿔도 됨)
-      if (accountInput !== "") setAccountInput("");
-    }
-  }, [localAccountId, accountList, selectedAccountId, accountInput]);
+    if (!selectedAccountId) return;
+    fetchUseList?.(selectedAccountId, year, month);
+    fetchUseList?.(selectedAccountId, prevYear, prevMonth);
+  }, [selectedAccountId, year, month, prevYear, prevMonth, fetchUseList]);
 
   // ✅ 검색: 엔터 입력 시 텍스트로 거래처 선택 (정확 일치 우선, 없으면 부분 일치)
   const selectAccountByInput = () => {
@@ -576,19 +567,11 @@ function TallySheetTab() {
 
   useEffect(() => {
     if (localAccountId) {
-      setSelectedAccountId(String(localAccountId));
-
-      const match = (accountList || []).find(
-        (a) => String(a.account_id) === String(localAccountId)
-      );
-      if (match?.account_name) setAccountInput(String(match.account_name));
-
+      setSelectedAccountId(localAccountId);
       return;
     }
-
     if ((accountList || []).length > 0 && !selectedAccountId) {
       setSelectedAccountId(accountList[0].account_id);
-      setAccountInput(String(accountList[0].account_name || ""));
     }
   }, [accountList, selectedAccountId, localAccountId]);
 
@@ -1789,10 +1772,11 @@ function TallySheetTab() {
     selectOtherRowForInlineEdit(first, rowKey);
   }, [otherListOpen, otherRows, otherSelectedRow]);
 
+  // ✅ 직접 입력은 type=1만 허용
   // ✅ 직접 입력 허용 타입 (1~4)
   const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
 
-  // ✅ 1002/1003 은 클릭 무시
+  // ======================== ✅ "type != 1 직접입력 불가" + "1002/1003 모달 제외" 라우팅 ========================
   const shouldBlockModalByType = useCallback((typeValue) => {
     const t = String(typeValue ?? "");
     return t === "1002" || t === "1003";
@@ -1912,6 +1896,13 @@ function TallySheetTab() {
     const row = rows?.[rowIndex];
     if (!row || row.name === "총합" || colKey === "name" || colKey === "total") return;
 
+    // ✅ FIX: y, m 정의 (현재월/전월 기준)
+    const y = isSecond ? prevYear : year;
+    const m = isSecond ? prevMonth : month;
+
+    // ✅ 추가: input_yn=1이면 입력 차단
+    if (isTypeLocked(y, m, String(row.type ?? ""))) return;
+
     if (!INLINE_EDIT_TYPES.has(String(row.type ?? ""))) return;
 
     const setter = isSecond ? setData2Rows : setDataRows;
@@ -1923,6 +1914,7 @@ function TallySheetTab() {
     if (dayIndex >= daysInMonthNow) {
       return Swal.fire("경고", "해당 월의 날짜 범위를 초과했습니다.", "info");
     }
+
     const typeForDay = receiptType[dayIndex];
     if (!typeForDay) return Swal.fire("경고", "영수증 유형을 선택하세요.", "info");
 
@@ -2017,8 +2009,12 @@ function TallySheetTab() {
       return Swal.fire("정보", "변경된 내용이 없습니다.", "info");
     }
 
+    // ✅ 여기서 row마다 user_id 주입
+    const nowList = changedNow.map((r) => ({ ...r, user_id: localUserId }));
+    const beforeList = changedBefore.map((r) => ({ ...r, user_id: localUserId }));
+
     try {
-      const payload = { user_id: localUserId, nowList: changedNow, beforeList: changedBefore };
+      const payload = { user_id: localUserId, nowList: nowList, beforeList: beforeList };
       const res = await api.post("/Operate/TallySheetSave", payload);
 
       if (res.data?.code === 200) {
@@ -2054,6 +2050,9 @@ function TallySheetTab() {
       await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
       await fetchBudgetGrant?.(selectedAccountId, year, month);
       await fetchBudget2Grant?.(selectedAccountId, year, month);
+      // ✅ 추가
+      await fetchUseList?.(selectedAccountId, year, month);
+      await fetchUseList?.(selectedAccountId, prevYear, prevMonth);
       setOriginalRows([]);
       setOriginal2Rows([]);
       setImages(Array(daysInMonthNow).fill(null));
@@ -2170,6 +2169,7 @@ function TallySheetTab() {
     biz_image: null,
     add_yn: "N",
     add_name: "",
+    account_type: 0,
   };
 
   const [formData, setFormData] = useState(initialForm);
@@ -2258,6 +2258,7 @@ function TallySheetTab() {
       "bank_no",
       "bank_image",
       "biz_image",
+      "account_type",
     ];
 
     const missing = requiredFields.filter((key) => !formData[key]);
@@ -2365,6 +2366,293 @@ function TallySheetTab() {
   const getCellStyleByCompare = (origVal, newVal) =>
     isDiff(origVal, newVal) ? { color: "red" } : { color: "black" };
 
+  // ======================== ✅ 우클릭 포인트(색상) 기능 ========================
+  const POINT_GUBUN = [
+    { gubun: 1, color: "#FF5F00", label: "날짜오기입" },
+    { gubun: 2, color: "#0046FF", label: "금액오기입" },
+    { gubun: 3, color: "#f8fbfe", label: "완료" },
+  ];
+
+  // ✅ 거래처 검색 왼쪽에 표시할 범례(동그라미 + 의미)
+  const PointLegend = () => (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 1,
+        flexWrap: "wrap",
+        mr: 1,
+        userSelect: "none",
+      }}
+    >
+      {POINT_GUBUN.map((it) => (
+        <Box
+          key={it.gubun}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.6,
+            px: 0.8,
+            py: 0.3,
+            borderRadius: 999,
+            bgcolor: "rgba(0,0,0,0.03)",
+            border: "1px solid rgba(0,0,0,0.08)",
+          }}
+        >
+          <Box
+            sx={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              bgcolor: it.color,
+              border: "1px solid rgba(0,0,0,0.25)",
+              boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
+            }}
+          />
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: "#333" }}>{it.label}</Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+
+  const getPointColorByGubun = (g) => {
+    const n = Number(g);
+    return POINT_GUBUN.find((x) => x.gubun === n)?.color || null;
+  };
+
+  const buildPointKey = (y, m, type, day) =>
+    `${Number(y)}-${Number(m)}-${String(type)}-${Number(day)}`;
+
+  // ======================== ✅ useList 기반 "입력불가(input_yn=1)" 처리 ========================
+  const buildUseKey = (y, m, type) => `${Number(y)}-${Number(m)}-${String(type)}`;
+
+  // useList -> (year,month,type) 단위로 input_yn lookup 맵
+  const useLockMap = useMemo(() => {
+    const map = new Map();
+    (useList || []).forEach((u) => {
+      if (selectedAccountId && String(u.account_id) !== String(selectedAccountId)) return;
+
+      const y = Number(u.count_year);
+      const m = Number(u.count_month);
+      const t = String(u.type ?? "");
+      if (!y || !m || !t) return;
+
+      map.set(buildUseKey(y, m, t), Number(u.input_yn || 0)); // 0/1
+    });
+    return map;
+  }, [useList, selectedAccountId]);
+
+  const isTypeLocked = useCallback(
+    (y, m, type) => useLockMap.get(buildUseKey(y, m, type)) === 1,
+    [useLockMap]
+  );
+
+  // ✅ pointList -> (year,month,type,day) 단위로 색상 lookup 맵
+  const pointColorMap = useMemo(() => {
+    const map = new Map();
+    (pointList || []).forEach((p) => {
+      // account_id 매칭(선택 거래처 기준)
+      if (selectedAccountId && String(p.account_id) !== String(selectedAccountId)) return;
+
+      const y = Number(p.count_year ?? p.year);
+      const m = Number(p.count_month ?? p.month);
+      const d = Number(p.count_date ?? p.date);
+      const t = String(p.type ?? "");
+      if (!y || !m || !d || !t) return;
+
+      const color = getPointColorByGubun(p.gubun);
+      if (!color) return;
+
+      map.set(buildPointKey(y, m, t, d), color);
+    });
+    return map;
+  }, [pointList, selectedAccountId]);
+
+  // ✅ 우클릭 메뉴 상태(마우스 좌표 + 타겟 셀 정보)
+  const [pointMenu, setPointMenu] = useState({
+    open: false,
+    mouseX: null,
+    mouseY: null,
+    target: null, // { year, month, day, type }
+  });
+
+  const closePointMenu = useCallback(() => {
+    setPointMenu({ open: false, mouseX: null, mouseY: null, target: null });
+  }, []);
+
+  // ✅ 특정 월(= 저장한 year/month)의 포인트를 다시 조회해서 pointList 갱신
+  // 현재 fetchPointList가 "전월 기준 조회"라서, (targetYear,targetMonth)의 포인트를 가져오려면
+  // base = (targetYear,targetMonth) + 1개월을 넣어서 prevYearMonth가 target이 되도록 만듭니다.
+  const refetchPointForExactMonth = useCallback(
+    async (targetYear, targetMonth) => {
+      if (!fetchPointList) return;
+      const base = dayjs(`${targetYear}-${String(targetMonth).padStart(2, "0")}-01`).add(
+        1,
+        "month"
+      );
+
+      await fetchPointList(selectedAccountId, base.year(), base.month() + 1);
+    },
+    [fetchPointList, selectedAccountId]
+  );
+
+  // ✅ 우클릭 메뉴 오픈
+  const openPointMenu = useCallback(
+    (e, rowOriginal, colKey, isSecond) => {
+      if (!selectedAccountId) {
+        Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
+        return;
+      }
+
+      // day_# 컬럼만 대상
+      const dayNo = Number(String(colKey).replace("day_", ""));
+      if (!dayNo || Number.isNaN(dayNo)) return;
+
+      const t = String(rowOriginal?.type ?? "");
+      if (!t) return;
+
+      const y = isSecond ? prevYear : year;
+      const m = isSecond ? prevMonth : month;
+
+      setPointMenu({
+        open: true,
+        mouseX: e.clientX - 2,
+        mouseY: e.clientY - 4,
+        target: { year: y, month: m, day: dayNo, type: t },
+      });
+    },
+    [selectedAccountId, year, month, prevYear, prevMonth]
+  );
+
+  // ✅ 저장(즉시 저장)
+  const savePointGubun = useCallback(
+    async (gubun) => {
+      const t = pointMenu.target;
+      if (!t) return;
+
+      const localUserId = localStorage.getItem("user_id");
+
+      const payload = {
+        account_id: selectedAccountId,
+        year: t.year,
+        month: t.month,
+        type: t.type,
+        gubun: Number(gubun),
+        user_id: localUserId,
+
+        // 서버에서 어떤 키를 받는지 불확실할 수 있어서 안전하게 둘 다 보냅니다.
+        count_date: Number(t.day),
+        date: Number(t.day),
+      };
+
+      try {
+        const res = await api.post("/Operate/TallySheetPointSave", payload, {
+          validateStatus: () => true,
+        });
+
+        const ok = res?.data?.code === 200 || res?.status === 200;
+        if (!ok) {
+          throw new Error(res?.data?.message || `저장 실패 (code: ${res?.status})`);
+        }
+
+        closePointMenu();
+
+        Swal.fire({
+          toast: true,
+          position: "top-end",
+          icon: "success",
+          title: "포인트 저장 완료",
+          showConfirmButton: false,
+          timer: 900,
+        });
+
+        // ✅ 저장한 월 기준으로 pointList 재조회
+        await refetchPointForExactMonth(t.year, t.month);
+      } catch (err) {
+        closePointMenu();
+        Swal.fire("오류", err.message || "포인트 저장 중 오류", "error");
+      }
+    },
+    [pointMenu.target, selectedAccountId, closePointMenu, refetchPointForExactMonth]
+  );
+
+  // ======================== ✅ "구분(업체명)" 우클릭 입력가능/불가 메뉴 ========================
+  const [useMenu, setUseMenu] = useState({
+    open: false,
+    mouseX: null,
+    mouseY: null,
+    target: null, // { year, month, type }
+  });
+
+  const closeUseMenu = useCallback(() => {
+    setUseMenu({ open: false, mouseX: null, mouseY: null, target: null });
+  }, []);
+
+  const openUseMenu = useCallback(
+    (e, rowOriginal, isSecond) => {
+      if (!selectedAccountId) {
+        Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
+        return;
+      }
+      const t = String(rowOriginal?.type ?? "");
+      if (!t) return;
+      if (rowOriginal?.name === "총합") return;
+
+      const y = isSecond ? prevYear : year;
+      const m = isSecond ? prevMonth : month;
+
+      setUseMenu({
+        open: true,
+        mouseX: e.clientX - 2,
+        mouseY: e.clientY - 4,
+        target: { year: y, month: m, type: t },
+      });
+    },
+    [selectedAccountId, year, month, prevYear, prevMonth]
+  );
+
+  const saveUseInputYn = useCallback(
+    async (inputYn) => {
+      const t = useMenu.target;
+      if (!t) return;
+
+      const payload = {
+        year: Number(t.year),
+        month: Number(t.month),
+        account_id: selectedAccountId,
+        type: String(t.type),
+        input_yn: Number(inputYn), // 0 or 1
+      };
+
+      try {
+        const res = await api.post("/Operate/TallySheetUseSave", payload, {
+          validateStatus: () => true,
+        });
+
+        const ok = res?.data?.code === 200 || res?.status === 200;
+        if (!ok) throw new Error(res?.data?.message || `저장 실패 (code: ${res?.status})`);
+
+        closeUseMenu();
+
+        Swal.fire({
+          toast: true,
+          position: "top-end",
+          icon: "success",
+          title: "입력상태 저장 완료",
+          showConfirmButton: false,
+          timer: 900,
+        });
+
+        // ✅ 저장한 월/년 기준으로 다시 조회
+        await fetchUseList?.(selectedAccountId, t.year, t.month);
+      } catch (err) {
+        closeUseMenu();
+        Swal.fire("오류", err.message || "입력상태 저장 중 오류", "error");
+      }
+    },
+    [useMenu.target, selectedAccountId, closeUseMenu, fetchUseList]
+  );
+
   if (loading) return <LoadingScreen />;
 
   const renderTable = (
@@ -2430,7 +2718,22 @@ function TallySheetTab() {
                 const isBaseCell = colKey !== "name" && colKey !== "total" && !isTotalRow;
 
                 const rowType = String(row.original.type ?? "");
-                const canInlineEdit = INLINE_EDIT_TYPES.has(rowType);
+
+                const yForRow = isSecond ? prevYear : year;
+                const mForRow = isSecond ? prevMonth : month;
+                const rowLocked = !isTotalRow && isTypeLocked(yForRow, mForRow, rowType);
+
+                // ✅ 포인트 색상 계산(여기서!)
+                const dayNo = isBaseCell ? Number(String(colKey).replace("day_", "")) : null;
+                const cellYear = isSecond ? prevYear : year;
+                const cellMonth = isSecond ? prevMonth : month;
+
+                const pointColor =
+                  isBaseCell && dayNo
+                    ? pointColorMap.get(buildPointKey(cellYear, cellMonth, rowType, dayNo))
+                    : null;
+
+                const canInlineEdit = INLINE_EDIT_TYPES.has(rowType) && !rowLocked;
                 const isEditable = isBaseCell && canInlineEdit;
 
                 const currVal = parseNumber(dataState?.[rIdx]?.[colKey]);
@@ -2449,8 +2752,27 @@ function TallySheetTab() {
                 const baseBg =
                   !canInlineEdit && isBaseCell && !isTotalRow ? "rgba(25,118,210,0.03)" : "";
 
+                const nameLockedBg = colKey === "name" && rowLocked ? "rgba(0,0,0,0.06)" : "";
+
                 const activeRowBg = isActiveRow ? "rgba(255, 244, 179, 0.55)" : "";
                 const activeCellBg = isActiveThisCell ? "rgba(255, 213, 79, 0.60)" : "";
+                const isLightPoint =
+                  pointColor &&
+                  ["#f8fbfe", "#fff", "#ffffff"].includes(String(pointColor).toLowerCase());
+
+                // ✅ activeCell/activeRow + pointColor가 같이 있을 때 섞어서 보여주기
+                const mergedBg = (() => {
+                  // 활성 셀 배경이 있으면 그걸 최우선으로
+                  if (activeCellBg)
+                    return pointColor ? overlayOn(activeCellBg, pointColor) : activeCellBg;
+
+                  // 포인트색이 있는 셀인데, 활성행이면 노랑을 위에 오버레이
+                  if (pointColor)
+                    return isActiveRow ? overlayOn(activeRowBg, pointColor) : pointColor;
+
+                  // 포인트색 없으면 기존대로
+                  return activeRowBg || nameLockedBg || baseBg || "";
+                })();
 
                 return (
                   <td
@@ -2458,35 +2780,70 @@ function TallySheetTab() {
                     contentEditable={isEditable}
                     suppressContentEditableWarning
                     style={{
-                      color: isChanged ? "#d32f2f" : "black",
+                      color: isChanged
+                        ? "#d32f2f"
+                        : pointColor
+                        ? isLightPoint
+                          ? "black"
+                          : "#fff"
+                        : "black",
                       width: "80px",
                       cursor: !isBaseCell
                         ? "default"
+                        : rowLocked
+                        ? "not-allowed"
                         : canInlineEdit
                         ? "text"
                         : shouldBlockModalByType(rowType)
                         ? "not-allowed"
                         : "pointer",
-                      background: activeCellBg || activeRowBg || baseBg || "",
+                      // ✅ 우선순위: 활성셀 > 포인트색 > 활성행 > 기본BG
+                      background: mergedBg,
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
+                    }}
+                    onContextMenu={(e) => {
+                      // ✅ 1) 구분(업체명) 우클릭 -> 입력가능/불가 메뉴
+                      if (colKey === "name" && !isTotalRow) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        //openUseMenu(e, row.original, isSecond);
+                        return;
+                      }
+
+                      // ✅ 2) day 셀 우클릭 -> 포인트 메뉴(기존)
+                      if (!isBaseCell || isTotalRow) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      //openPointMenu(e, row.original, colKey, isSecond);
                     }}
                     onMouseDown={
                       isEditable
                         ? undefined
                         : (e) => {
+                            if (e.button !== 0) return;
+                            if (rowLocked) return; // ✅ 추가: 입력불가면 클릭 무시
+
                             e.preventDefault();
                             handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
                           }
                     }
                     onClick={
                       isEditable
-                        ? () => handleSpecialCellClick(row.original, rIdx, colKey, isSecond)
+                        ? (e) => {
+                            if (e.button !== 0) return;
+                            if (rowLocked) return; // ✅ 추가
+
+                            handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
+                          }
                         : undefined
                     }
                     onBlur={
                       isEditable
-                        ? (e) => handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond)
+                        ? (e) => {
+                            if (rowLocked) return; // ✅ 안전장치
+                            handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond);
+                          }
                         : undefined
                     }
                   >
@@ -2501,6 +2858,9 @@ function TallySheetTab() {
     </MDBox>
   );
 
+  // ==============================
+  // Part 2 / 2  (Part 1 바로 아래에 이어붙이세요)
+  // ==============================
   return (
     <>
       <FloatingImagePreview
@@ -2509,139 +2869,155 @@ function TallySheetTab() {
         title={floatingPreview.title}
         onClose={closeFloatingPreview}
       />
+
       <MDBox
-        pt={1}
-        pb={1}
         sx={{
-          display: "flex",
-          flexWrap: isMobile ? "wrap" : "nowrap",
-          justifyContent: isMobile ? "flex-start" : "flex-end",
-          alignItems: "center",
-          gap: isMobile ? 1 : 2,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          backgroundColor: "#ffffff",
+          borderBottom: "1px solid #eee",
         }}
       >
-        <Autocomplete
-          size="small"
-          sx={{ minWidth: 200 }}
-          options={filteredAccountList || []}
-          value={selectedAccountOption}
-          onChange={(_, newValue) => {
-            if (isAccountLocked) return;
-            setSelectedAccountId(newValue ? newValue.account_id : "");
-            setAccountInput(newValue?.account_name || "");
+        <MDBox
+          pt={1}
+          pb={1}
+          sx={{
+            display: "flex",
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            justifyContent: isMobile ? "flex-start" : "flex-end",
+            alignItems: "center",
+            gap: isMobile ? 1 : 2,
           }}
-          inputValue={accountInput}
-          onInputChange={(_, newValue) => {
-            if (isAccountLocked) return;
-            setAccountInput(newValue);
-          }}
-          getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
-          isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
-          disableClearable={isAccountLocked}
-          disabled={isAccountLocked}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="거래처 검색"
-              placeholder="거래처명을 입력"
-              inputProps={{
-                ...params.inputProps,
-                readOnly: isAccountLocked, // ✅ 잠금 시 커서/입력 완전 차단(표시만)
+        >
+          {/* ✅ 범례 + 거래처검색을 한 덩어리로 묶어서 "거래처 검색" 왼쪽에 범례 표시 */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <PointLegend />
+
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 200 }}
+              options={filteredAccountList || []}
+              value={selectedAccountOption}
+              onChange={(_, newValue) => {
+                if (isAccountLocked) return;
+                if (!newValue) return;
+                setSelectedAccountId(newValue.account_id);
+                setAccountInput(newValue?.account_name || "");
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  selectAccountByInput();
-                }
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => {
+                if (isAccountLocked) return;
+                setAccountInput(newValue);
               }}
-              sx={{
-                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
-              }}
+              getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
+              isOptionEqualToValue={(opt, val) =>
+                String(opt?.account_id) === String(val?.account_id)
+              }
+              disableClearable={isAccountLocked}
+              disabled={isAccountLocked}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  // ✅ 검색: 엔터로 바로 선택되도록 처리
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
+                  sx={{
+                    "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
             />
-          )}
-        />
+          </Box>
+          <TextField
+            select
+            size="small"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </TextField>
 
-        <TextField
-          select
-          size="small"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-            <option key={y} value={y}>
-              {y}년
-            </option>
-          ))}
-        </TextField>
+          <TextField
+            select
+            size="small"
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m}월
+              </option>
+            ))}
+          </TextField>
 
-        <TextField
-          select
-          size="small"
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>
-              {m}월
-            </option>
-          ))}
-        </TextField>
+          {/* <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleModalOpen2}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 90 : 110,
+              px: isMobile ? 1 : 2,
+            }}
+          >
+            거래처 등록
+          </MDButton>
 
-        {/* <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleModalOpen2}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 90 : 110,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          거래처 등록
-        </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleModalOpen}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 90 : 110,
+              px: isMobile ? 1 : 2,
+            }}
+          >
+            거래처 연결
+          </MDButton> */}
 
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleModalOpen}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 90 : 110,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          거래처 연결
-        </MDButton> */}
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleRefresh}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 70 : 90,
+              px: isMobile ? 1 : 2,
+            }}
+          >
+            새로고침
+          </MDButton>
 
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleRefresh}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 70 : 90,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          새로고침
-        </MDButton>
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleSave}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 70 : 90,
-            px: isMobile ? 1 : 2,
-          }}
-        >
-          저장
-        </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleSave}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 70 : 90,
+              px: isMobile ? 1 : 2,
+            }}
+          >
+            저장
+          </MDButton>
+        </MDBox>
       </MDBox>
 
       <MDBox pt={3} pb={3}>
@@ -2685,8 +3061,6 @@ function TallySheetTab() {
                 indicatorColor="secondary"
                 variant={isMobile ? "scrollable" : "standard"}
                 sx={{
-                  position: "relative",
-                  zIndex: 1,
                   minHeight: 36,
                   "& .MuiTab-root": {
                     minHeight: 36,
@@ -2711,6 +3085,67 @@ function TallySheetTab() {
           </MDBox>
         </Card>
       </MDBox>
+
+      {/* ======================== ✅ 우클릭 포인트 메뉴 ======================== */}
+      <Menu
+        open={pointMenu.open}
+        onClose={closePointMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={
+          pointMenu.open ? { top: pointMenu.mouseY, left: pointMenu.mouseX } : undefined
+        }
+      >
+        {POINT_GUBUN.map((it) => (
+          <MenuItem
+            key={it.gubun}
+            onClick={() => savePointGubun(it.gubun)}
+            sx={{ fontSize: 13, display: "flex", alignItems: "center", gap: 1 }}
+          >
+            <Box
+              sx={{
+                width: 14,
+                height: 14,
+                borderRadius: "50%", // ✅ 동그라미로 변경
+                bgcolor: it.color,
+                border: "1px solid rgba(0,0,0,0.15)",
+              }}
+            />
+            {it.label}
+          </MenuItem>
+        ))}
+      </Menu>
+
+      {/* ======================== ✅ 우클릭 입력가능/불가 메뉴(구분 셀) ======================== */}
+      <Menu
+        open={useMenu.open}
+        onClose={closeUseMenu}
+        anchorReference="anchorPosition"
+        anchorPosition={useMenu.open ? { top: useMenu.mouseY, left: useMenu.mouseX } : undefined}
+      >
+        {(() => {
+          const t = useMenu.target;
+          const cur = t ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type)) || 0) : 0;
+
+          return (
+            <>
+              <MenuItem
+                selected={cur === 0}
+                onClick={() => saveUseInputYn(0)}
+                sx={{ fontSize: 13 }}
+              >
+                입력가능 (0)
+              </MenuItem>
+              <MenuItem
+                selected={cur === 1}
+                onClick={() => saveUseInputYn(1)}
+                sx={{ fontSize: 13 }}
+              >
+                입력불가 (1)
+              </MenuItem>
+            </>
+          );
+        })()}
+      </Menu>
 
       {/* ================= 거래처 연결 모달(open) ================= */}
       <Modal open={open} onClose={() => setOpen(false)}>
@@ -2830,7 +3265,7 @@ function TallySheetTab() {
               </Box>
             </Grid>
 
-            <Grid item xs={8} sm={9}>
+            <Grid item xs={4} sm={4}>
               <TextField
                 fullWidth
                 margin="none"
@@ -2843,6 +3278,28 @@ function TallySheetTab() {
                 placeholder="약식사용 체크 시 입력"
                 size="small"
               />
+            </Grid>
+
+            <Grid item xs={4} sm={2}>
+              <Typography sx={{ fontSize: "0.8rem", mb: 0.5 }}>유형 (필수)</Typography>
+            </Grid>
+            <Grid item xs={4} sm={3}>
+              <Select
+                fullWidth
+                size="small"
+                value={formData.account_type ?? 0} // ✅ 기본 0
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    account_type: Number(e.target.value), // ✅ 0/1/2 숫자로 저장
+                  }))
+                }
+                sx={{ fontSize: "0.85rem", height: "40px" }}
+              >
+                <MenuItem value={0}>식재료</MenuItem>
+                <MenuItem value={1}>소모품</MenuItem>
+                <MenuItem value={2}>복합</MenuItem>
+              </Select>
             </Grid>
           </Grid>
 
@@ -2900,7 +3357,7 @@ function TallySheetTab() {
               }
               onChange={handleBankSelect}
               displayEmpty
-              sx={{ fontSize: "0.85rem" }}
+              sx={{ fontSize: "0.85rem", height: "40px" }}
             >
               <MenuItem value="">
                 <em>은행 선택</em>
@@ -3285,7 +3742,7 @@ function TallySheetTab() {
                           <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
+                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
                         </Select>
                       </td>
@@ -3748,7 +4205,7 @@ function TallySheetTab() {
                           <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                           <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          {/* <MenuItem value="COUPANG_CARD">쿠팡</MenuItem> */}
+                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
                           <MenuItem value="COUPANG_APP">배달앱</MenuItem>
                         </Select>
                       </td>
@@ -4068,9 +4525,9 @@ function TallySheetTab() {
                           </MenuItem>
                           <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                          {/*  <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                          <MenuItem value="COUPANG_APP">배달앱</MenuItem> */}
+                          <MenuItem value="CONVENIENCE">편의점</MenuItem>
+                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
+                          <MenuItem value="COUPANG_APP">배달앱</MenuItem>
                         </Select>
                       </td>
 
@@ -4349,7 +4806,7 @@ function TallySheetTab() {
                 <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem> */}
+                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
               </Select>
             </Grid>
@@ -4536,7 +4993,7 @@ function TallySheetTab() {
                 <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
                 <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
+                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
                 <MenuItem value="COUPANG_APP">배달앱</MenuItem>
               </Select>
             </Grid>
@@ -4740,4 +5197,4 @@ function TallySheetTab() {
   );
 }
 
-export default TallySheetTab;
+export default TallySheet;

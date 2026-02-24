@@ -594,7 +594,9 @@ function AccountMemberSheet() {
         return Math.min(Math.max(longest + 2, min), max);
       };
       autoWidthValues.forEach((vals, i) => {
-        ws.getColumn(i + 1).width = calcWidth(vals);
+        const key = excelCols[i]?.key;
+        const minWidth = key === "display_yn" ? 22 : 15;
+        ws.getColumn(i + 1).width = calcWidth(vals, minWidth);
       });
 
       const buffer = await wb.xlsx.writeBuffer();

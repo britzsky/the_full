@@ -56,6 +56,12 @@ const POSITION_OPTIONS = [
   { value: "8", label: "영양사" },
 ];
 
+// 통합/유틸 인력 전용 직책(position_type) 옵션
+const UTIL_MEMBER_TYPE_OPTIONS = [
+  { value: "7", label: "통합" },
+  { value: "6", label: "유틸" },
+];
+
 const PROFILE_TRACK_FIELDS = [
   "user_name",
   "password",
@@ -68,6 +74,7 @@ const PROFILE_TRACK_FIELDS = [
   "address",
   "address_detail",
   "user_type",
+  "util_member_type",
 ];
 
 const asText = (value) => (value == null ? "" : String(value));
@@ -92,10 +99,17 @@ const inferUserType = (row) => {
 };
 
 const toComparableValue = (field, value) => {
-  if (["department", "account_id", "position", "user_type"].includes(field)) {
+  if (["department", "account_id", "position", "user_type", "util_member_type"].includes(field)) {
     return normalizeCode(value);
   }
   return asText(value);
+};
+
+const getUtilMemberLabel = (positionType) => {
+  const normalized = normalizeCode(positionType);
+  if (normalized === "7") return "통합";
+  if (normalized === "6") return "유틸";
+  return "-";
 };
 
 const isCeo = (row) => normalizeCode(row.position) === "0";
@@ -122,7 +136,7 @@ const TABLE_FONT_SIZE = 12;
 const CELL_HEIGHT = 33;
 const CELL_INNER_HEIGHT = 23;
 const MIN_LOADING_MODAL_MS = 420;
-const PAGE_SIZE_OPTIONS = [10, 15, 20, 25];
+const PAGE_SIZE = 20;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -156,17 +170,20 @@ const parseApiCode = (data) => {
 const buildUserSavePayload = (row) => {
   const userTypeCode = normalizeCode(row.user_type) || inferUserType(row);
   const accountId = asText(row.account_id).trim();
-
-  return {
+  const normalizedDepartment = userTypeCode === "4" ? 7 : toNullableNumber(row.department);
+  const utilMemberType = normalizeCode(row.util_member_type);
+  const payload = {
+    is_update: true,
     info: {
       user_id: asText(row.user_id).trim(),
       user_name: asText(row.user_name).trim(),
       password: asText(row.password),
       user_type: toNullableNumber(userTypeCode),
       join_dt: toNullableDate(row.join_dt),
-      department: toNullableNumber(row.department),
-      position: toNullableNumber(row.position),
+      department: normalizedDepartment,
+      position: userTypeCode === "4" ? null : toNullableNumber(row.position),
       account_id: accountId || null,
+      util_member_type: userTypeCode === "4" ? utilMemberType || null : null,
     },
     detail: {
       user_id: asText(row.user_id).trim(),
@@ -177,6 +194,15 @@ const buildUserSavePayload = (row) => {
       birth_date: toNullableDate(row.birth_date),
     },
   };
+
+  // 원래 /User/UserRgt 저장 로직을 유지하면서 통합/유틸(account_members) 생성까지 동일 경로로 태움
+  if (userTypeCode === "4" && (utilMemberType === "6" || utilMemberType === "7")) {
+    payload.account_member = {
+      position_type: Number(utilMemberType), // 7: 통합, 6: 유틸
+    };
+  }
+
+  return payload;
 };
 
 const readSingleRow = (data) => {
@@ -241,7 +267,6 @@ function UserManagement() {
   const [saving, setSaving] = useState(false);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [editingAccountUserId, setEditingAccountUserId] = useState("");
-  const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
   const deferredSearchKeyword = useDeferredValue(searchKeyword);
   const rowsRef = useRef(rows);
@@ -270,9 +295,16 @@ function UserManagement() {
     const account_name = asText(item.account_name);
     const position = normalizeCode(item.position);
     const user_type = normalizeCode(item.user_type);
+    const util_member_type_raw = normalizeCode(item.util_member_type);
+    const util_member_type =
+      util_member_type_raw || (position === "6" || position === "7" ? position : "");
     const normalizedUserType =
-      user_type || (account_id ? "3" : position === "0" ? "1" : "2");
+      user_type || (util_member_type ? "4" : account_id ? "3" : position === "0" ? "1" : "2");
     const del_yn = asText(item.del_yn || "N").toUpperCase();
+    const positionLabel =
+      normalizedUserType === "4"
+        ? getUtilMemberLabel(util_member_type)
+        : POSITION_LABELS[position] ?? position ?? "-";
 
     const mappedRow = {
       ui_index: index + 1,
@@ -283,8 +315,9 @@ function UserManagement() {
       account_id,
       account_name,
       position,
+      util_member_type,
       user_type: normalizedUserType,
-      position_label: POSITION_LABELS[position] ?? position ?? "-",
+      position_label: positionLabel,
       join_dt: asText(item.join_dt),
       birth_date: asText(item.birth_date),
       phone: asText(item.phone),
@@ -496,19 +529,6 @@ function UserManagement() {
     },
   };
 
-  const paginationSelectSx = {
-    minWidth: 88,
-    height: 30,
-    "& .MuiOutlinedInput-notchedOutline": {
-      borderColor: "#d0d7de",
-    },
-    "& .MuiSelect-select": {
-      fontSize: 12,
-      py: "5px",
-      textAlign: "center",
-    },
-  };
-
   // 행 변경 시 원본 대비 diff를 계산해 "화면 저장 대상"으로 적재
   const syncPendingProfileByRow = (userId, nextRow) => {
     const original = originalRowsById[userId];
@@ -549,6 +569,7 @@ function UserManagement() {
           account_id: asText(next.account_id).trim(),
           account_name: asText(next.account_name),
           position: normalizeCode(next.position),
+          util_member_type: normalizeCode(next.util_member_type),
           user_type: inferUserType(next),
           user_name: asText(next.user_name),
           password: asText(next.password),
@@ -561,7 +582,9 @@ function UserManagement() {
         };
 
         normalized.position_label =
-          POSITION_LABELS[normalized.position] ?? normalized.position ?? "-";
+          normalized.user_type === "4"
+            ? getUtilMemberLabel(normalized.util_member_type)
+            : POSITION_LABELS[normalized.position] ?? normalized.position ?? "-";
         normalized.dept_or_account =
           normalized.account_name ||
           (normalized.account_id
@@ -611,6 +634,19 @@ function UserManagement() {
   // 직책 변경
   const handlePositionChange = (userId, nextPosition) => {
     applyRowPatch(userId, { position: normalizeCode(nextPosition) });
+  };
+
+  // 통합/유틸 직책(position_type) 변경
+  const handleUtilMemberTypeChange = (userId, nextType) => {
+    const normalizedType = normalizeCode(nextType);
+    applyRowPatch(userId, {
+      user_type: "4",
+      department: "7",
+      util_member_type: normalizedType,
+      position: "",
+      account_id: "",
+      account_name: "",
+    });
   };
 
   // 퇴사여부 변경
@@ -767,8 +803,22 @@ function UserManagement() {
             normalizeCode(row.user_type) ||
             normalizeCode(backup?.user_type) ||
             inferUserType(row),
+          util_member_type:
+            normalizeCode(row.util_member_type) ||
+            normalizeCode(backup?.util_member_type) ||
+            (normalizeCode(row.position) === "6" || normalizeCode(row.position) === "7"
+              ? normalizeCode(row.position)
+              : normalizeCode(backup?.position)),
           zipcode: asText(row.zipcode).trim() || asText(backup?.zipcode).trim(),
         };
+
+        // 통합/유틸 사용자 저장 시 position_type(6/7)가 비어 있으면 안내 후 중단
+        if (
+          normalizeCode(mergedRow.user_type) === "4" &&
+          !["6", "7"].includes(normalizeCode(mergedRow.util_member_type))
+        ) {
+          throw new Error(`통합/유틸 구분값을 선택해주세요. (${userId})`);
+        }
 
         const payload = buildUserSavePayload(mergedRow);
         const res = await api.post("/User/UserRgt", payload);
@@ -868,6 +918,25 @@ function UserManagement() {
 
     // 4) 부서/거래처 클릭 편집 셀
     if (columnKey === "dept_or_account") {
+      if (normalizeCode(row.user_type) === "4") {
+        return (
+          <div style={controlCellWrapStyle}>
+            <Select
+              size="small"
+              value="현장"
+              disabled
+              sx={{
+                ...compactSelectSx,
+                minWidth: 112,
+                width: "100%",
+              }}
+            >
+              <MenuItem value="현장">현장</MenuItem>
+            </Select>
+          </div>
+        );
+      }
+
       if (isCeo(row)) {
         return (
           <div style={controlCellWrapStyle}>
@@ -1061,6 +1130,31 @@ function UserManagement() {
 
     // 5) 직책 클릭 편집 셀
     if (columnKey === "position_label") {
+      if (normalizeCode(row.user_type) === "4") {
+        return (
+          <div style={controlCellWrapStyle}>
+            <Select
+              size="small"
+              value={normalizeCode(row.util_member_type)}
+              onChange={(e) => {
+                handleUtilMemberTypeChange(row.user_id, e.target.value);
+              }}
+            sx={{
+                ...compactSelectSx,
+                minWidth: 88,
+                width: "100%",
+              }}
+            >
+              {UTIL_MEMBER_TYPE_OPTIONS.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  {option.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </div>
+        );
+      }
+
       if (isCeo(row)) {
         return (
           <div style={controlCellWrapStyle}>
@@ -1146,13 +1240,13 @@ function UserManagement() {
   }, [rows, deferredSearchKeyword]);
 
   const totalFilteredRows = filteredRows.length;
-  const totalPages = Math.max(1, Math.ceil(totalFilteredRows / pageSize));
+  const totalPages = Math.max(1, Math.ceil(totalFilteredRows / PAGE_SIZE));
   const maxPageButtons = 5;
 
   const pagedRows = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, currentPage, pageSize]);
+    const start = (currentPage - 1) * PAGE_SIZE;
+    return filteredRows.slice(start, start + PAGE_SIZE);
+  }, [filteredRows, currentPage]);
 
   const visiblePageNumbers = useMemo(() => {
     if (totalPages <= maxPageButtons) {
@@ -1178,7 +1272,7 @@ function UserManagement() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [deferredSearchKeyword, pageSize]);
+  }, [deferredSearchKeyword]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1355,25 +1449,7 @@ function UserManagement() {
                 gap: 1,
               }}
             >
-              <MDTypography variant="caption" color="text">
-                총 {totalFilteredRows}건 · {currentPage}/{totalPages} 페이지
-              </MDTypography>
               <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                <MDTypography variant="caption" color="text">
-                  페이지당
-                </MDTypography>
-                <Select
-                  size="small"
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                  sx={paginationSelectSx}
-                >
-                  {PAGE_SIZE_OPTIONS.map((size) => (
-                    <MenuItem key={size} value={size}>
-                      {size}개
-                    </MenuItem>
-                  ))}
-                </Select>
                 <MDBox
                   sx={{
                     display: "grid",
@@ -1419,6 +1495,9 @@ function UserManagement() {
                   </MDButton>
                 </MDBox>
               </MDBox>
+              <MDTypography variant="caption" color="text">
+                총 {totalFilteredRows}건 - {currentPage}/{totalPages}페이지
+              </MDTypography>
             </MDBox>
           </Card>
         </Grid>

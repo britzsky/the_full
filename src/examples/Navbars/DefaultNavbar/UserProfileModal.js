@@ -42,6 +42,7 @@ function UserProfileModal({ open, onClose }) {
     user_id: "",
     password: "",
     user_type: "",
+    util_member_type: "",
     phone: "",
     address: "",
     address_detail: "",
@@ -101,9 +102,22 @@ function UserProfileModal({ open, onClose }) {
       { label: "ceo", labelKo: "ceo", code: "1" },
       { label: "본사", labelKo: "본사", code: "2" },
       { label: "영양사", labelKo: "영양사", code: "3" },
+      { label: "통합/유틸", labelKo: "통합/유틸", code: "4" },
     ],
     []
   );
+
+  const resolveUtilMemberType = (row) => {
+    const fromMember = row?.util_member_type;
+    if (fromMember !== undefined && fromMember !== null && String(fromMember).trim() !== "") {
+      return String(fromMember);
+    }
+
+    const fromPosition = String(row?.position ?? "").trim();
+    if (fromPosition === "6" || fromPosition === "7") return fromPosition;
+
+    return "";
+  };
 
   const handleInputChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -125,6 +139,7 @@ function UserProfileModal({ open, onClose }) {
       setForm((prev) => ({
         ...prev,
         user_type: code,
+        util_member_type: "",
         department: "0",
         position: "0",
         account_id: "",
@@ -133,6 +148,7 @@ function UserProfileModal({ open, onClose }) {
       setForm((prev) => ({
         ...prev,
         user_type: code,
+        util_member_type: "",
         department: prev.department ?? "",
         position: prev.position ?? "",
         account_id: "",
@@ -141,11 +157,21 @@ function UserProfileModal({ open, onClose }) {
       setForm((prev) => ({
         ...prev,
         user_type: code,
+        util_member_type: "",
         department: "7",
         position: "8",
         account_id: prev.account_id ?? "",
       }));
       fetchAccountList();
+    } else if (code === "4") {
+      setForm((prev) => ({
+        ...prev,
+        user_type: code,
+        util_member_type: "",
+        department: "7", // 통합/유틸은 현장(7) 고정
+        position: "",
+        account_id: "",
+      }));
     } else {
       setForm((prev) => ({ ...prev, user_type: code }));
     }
@@ -153,6 +179,7 @@ function UserProfileModal({ open, onClose }) {
     setErrors((prev) => ({
       ...prev,
       user_type: "",
+      util_member_type: "",
       department: "",
       position: "",
       account_id: "",
@@ -220,6 +247,7 @@ function UserProfileModal({ open, onClose }) {
           user_id: row.user_id ?? user_id,
           password: row.password ?? "",
           user_type: row.user_type != null ? String(row.user_type) : "",
+          util_member_type: resolveUtilMemberType(row),
           phone: row.phone ?? "",
           address: row.address ?? "",
           address_detail: row.address_detail ?? "",
@@ -274,6 +302,7 @@ function UserProfileModal({ open, onClose }) {
 
     if (form.user_type === "2") requiredFields.push("department", "position");
     if (form.user_type === "3") requiredFields.push("account_id");
+    if (form.user_type === "4") requiredFields.push("util_member_type");
 
     const newErrors = {};
     let hasError = false;
@@ -298,6 +327,7 @@ function UserProfileModal({ open, onClose }) {
       user_name: form.user_name,
       password: form.password,
       user_type: form.user_type,
+      util_member_type: form.util_member_type || null,
       join_dt: form.join_dt,
       department: form.department !== "" ? Number(form.department) : null,
       position: form.position !== "" ? Number(form.position) : null,
@@ -316,11 +346,21 @@ function UserProfileModal({ open, onClose }) {
       birth_date: form.birth_date || null,
     };
 
-    const payload = { info, detail };
+    const payload = { info, detail, is_update: true };
+    if (form.user_type === "4") {
+      payload.account_member = {
+        position_type: Number(form.util_member_type), // 유틸:6, 통합:7
+      };
+    }
 
     try {
       setLoading(true);
       const res = await api.post("/User/UserRgt", payload);
+      const ok = res?.status === 200 && (res?.data?.code === 200 || res?.data?.code === undefined);
+
+      if (!ok) {
+        throw new Error(res?.data?.message || "저장에 실패했습니다.");
+      }
 
       Swal.fire({
         icon: "success",
@@ -339,6 +379,7 @@ function UserProfileModal({ open, onClose }) {
             user_name: row.user_name ?? prev.user_name,
             password: row.password ?? prev.password,
             user_type: row.user_type != null ? String(row.user_type) : prev.user_type,
+            util_member_type: resolveUtilMemberType(row),
             phone: row.phone ?? prev.phone,
             address: row.address ?? prev.address,
             address_detail: row.address_detail ?? prev.address_detail,
@@ -356,7 +397,7 @@ function UserProfileModal({ open, onClose }) {
       Swal.fire({
         icon: "error",
         title: "저장 실패",
-        text: err?.response?.data?.message || "서버에 문제가 발생했습니다.",
+        text: err?.response?.data?.message || err?.message || "서버에 문제가 발생했습니다.",
       });
     } finally {
       setLoading(false);
@@ -560,6 +601,27 @@ function UserProfileModal({ open, onClose }) {
                       {errors.account_id && (
                         <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
                           {errors.account_id}
+                        </MDTypography>
+                      )}
+                    </FormControl>
+                  </MDBox>
+                )}
+
+                {form.user_type === "4" && (
+                  <MDBox mb={2}>
+                    <FormControl fullWidth error={!!errors.util_member_type} sx={selectSx}>
+                      <InputLabel sx={selectLabelSx}>통합/유틸</InputLabel>
+                      <Select
+                        label="통합/유틸"
+                        value={form.util_member_type}
+                        onChange={(e) => handleInputChange("util_member_type", e.target.value)}
+                      >
+                        <MenuItem value="7">통합</MenuItem>
+                        <MenuItem value="6">유틸</MenuItem>
+                      </Select>
+                      {errors.util_member_type && (
+                        <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
+                          {errors.util_member_type}
                         </MDTypography>
                       )}
                     </FormControl>

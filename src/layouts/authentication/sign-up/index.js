@@ -41,6 +41,7 @@ function SignUp() {
     user_id: "",
     password: "",
     user_type: "",
+    util_member_type: "", // "6"(유틸) | "7"(통합)
     phone: "",
     address: "",
     address_detail: "",
@@ -116,6 +117,7 @@ function SignUp() {
     { label: "ceo", labelKo: "ceo", code: "1" },       // 필요하면 labelKo를 한글로 써도 됨
     { label: "본사", labelKo: "본사", code: "2" },
     { label: "영양사", labelKo: "영양사", code: "3" },
+    { label: "통합/유틸", labelKo: "통합/유틸", code: "4" },
   ];
 
   const handleInputChange = (field, value) => {
@@ -166,6 +168,16 @@ function SignUp() {
         account_id: "",
       }));
       fetchAccountList(); // 거래처 목록 조회
+    } else if (code === "4") {
+      // 통합/유틸
+      setForm((prev) => ({
+        ...prev,
+        user_type: code,
+        util_member_type: "",
+        department: "7", // 통합/유틸은 현장(7) 고정
+        position: "",
+        account_id: "",
+      }));
     } else {
       setForm((prev) => ({ ...prev, user_type: code }));
     }
@@ -173,6 +185,7 @@ function SignUp() {
     setErrors((prev) => ({
       ...prev,
       user_type: "",
+      util_member_type: "",
       department: "",
       position: "",
       account_id: "",
@@ -222,7 +235,7 @@ function SignUp() {
     setOpenPostcode(false);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const requiredFields = [
       "user_name",
       "user_id",
@@ -242,6 +255,10 @@ function SignUp() {
     // 영양사일 때 account_id 필수
     if (form.user_type === "3") {
       requiredFields.push("account_id");
+    }
+    // 통합/유틸 선택 시 타입 필수
+    if (form.user_type === "4") {
+      requiredFields.push("util_member_type");
     }
 
     const newErrors = {};
@@ -271,6 +288,7 @@ function SignUp() {
       user_name: form.user_name,
       password: form.password,
       user_type: form.user_type,
+      util_member_type: form.util_member_type || null,
       join_dt: form.join_dt,
       department: form.department !== "" ? Number(form.department) : null,
       position: form.position !== "" ? Number(form.position) : null,
@@ -291,27 +309,36 @@ function SignUp() {
     };
 
     const payload = { info, detail };
+    if (form.user_type === "4") {
+      payload.account_member = {
+        position_type: Number(form.util_member_type), // 유틸:6, 통합:7
+      };
+    }
 
-    api
-      .post("/User/UserRgt", payload)
-      .then((res) => {
-        Swal.fire({
-          icon: "success",
-          title: "사용자 등록 완료!",
-          html: `<div style="white-space:pre-line;">
+    try {
+      const res = await api.post("/User/UserRgt", payload);
+      const ok = res?.status === 200 && (res?.data?.code === 200 || res?.data?.code === undefined);
+
+      if (!ok) {
+        throw new Error(res?.data?.message || "사용자 등록에 실패했습니다.");
+      }
+
+      Swal.fire({
+        icon: "success",
+        title: "사용자 등록 완료!",
+        html: `<div style="white-space:pre-line;">
                 관리자 승인 후 로그인이 가능합니다.
                 관리자에게 문의해주세요.
                 </div>`
-        }).then(() => navigate("/authentication/sign-in"));
-      })
-      .catch((err) => {
-        console.error(err);
-        Swal.fire({
-          icon: "error",
-          title: "사용자 등록 실패",
-          text: "서버에 문제가 발생했습니다.",
-        });
+      }).then(() => navigate("/authentication/sign-in"));
+    } catch (err) {
+      console.error(err);
+      Swal.fire({
+        icon: "error",
+        title: "사용자 등록 실패",
+        text: err?.response?.data?.message || err?.message || "서버에 문제가 발생했습니다.",
       });
+    }
   };
 
   return (
@@ -530,6 +557,28 @@ function SignUp() {
                   {errors.account_id && (
                     <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
                       {errors.account_id}
+                    </MDTypography>
+                  )}
+                </FormControl>
+              </MDBox>
+            )}
+
+            {/* 통합/유틸 선택 시 타입 선택 */}
+            {form.user_type === "4" && (
+              <MDBox mb={2}>
+                <FormControl fullWidth error={!!errors.util_member_type} sx={selectSx}>
+                  <InputLabel sx={selectLabelSx}>통합/유틸</InputLabel>
+                  <Select
+                    label="통합/유틸"
+                    value={form.util_member_type}
+                    onChange={(e) => handleInputChange("util_member_type", e.target.value)}
+                  >
+                    <MenuItem value="7">통합</MenuItem>
+                    <MenuItem value="6">유틸</MenuItem>
+                  </Select>
+                  {errors.util_member_type && (
+                    <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>
+                      {errors.util_member_type}
                     </MDTypography>
                   )}
                 </FormControl>

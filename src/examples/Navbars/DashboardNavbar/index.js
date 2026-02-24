@@ -92,6 +92,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     4: "영업팀",
     5: "운영팀",
     6: "개발팀",
+    7: "현장",
   };
 
   const getUserTypeText = (v) => {
@@ -99,6 +100,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     if (t === "1") return "ceo";
     if (t === "2") return "본사";
     if (t === "3") return "현장";
+    if (t === "4") return "통합/유틸";
     return t;
   };
 
@@ -150,17 +152,23 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
         const accId = pick(r, "account_id", "ACCOUNT_ID", "accountId");
         const accName = pick(r, "account_name", "ACCOUNT_NAME", "accountName");
         const position = pick(r, "position", "POSITION", "pos");
+        const utilMemberType = pick(r, "util_member_type", "UTIL_MEMBER_TYPE", "utilMemberType");
         const useYn = String(pick(r, "use_yn", "USE_YN", "useYn") || "N").trim().toUpperCase();
 
+        const utilLabel =
+          String(utilMemberType) === "7" ? "통합" : String(utilMemberType) === "6" ? "유틸" : "통합/유틸";
+
         const userTypeName =
-          pick(r, "user_type_name", "USER_TYPE_NAME", "userTypeName") || getUserTypeText(userType);
+          pick(r, "user_type_name", "USER_TYPE_NAME", "userTypeName") ||
+          (String(userType) === "4" ? utilLabel : getUserTypeText(userType));
 
         const deptOrAccountName =
           pick(r, "dept_or_account_name", "DEPT_OR_ACCOUNT_NAME", "deptOrAccountName") ||
           (accName || getDeptOrAccountText({ account_id: accId, department: dept }));
 
         const positionName =
-          pick(r, "position_name", "POSITION_NAME", "positionName") || getPositionText(position);
+          pick(r, "position_name", "POSITION_NAME", "positionName") ||
+          (String(userType) === "4" ? utilLabel : getPositionText(position));
 
         return {
           ...r,
@@ -171,6 +179,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           account_id: accId,
           account_name: accName,
           position,
+          util_member_type: utilMemberType,
           use_yn: useYn,
           user_type_name: userTypeName,
           dept_or_account_name: deptOrAccountName,

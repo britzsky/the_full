@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import dayjs from "dayjs";
 import api from "api/api";
+import { fetchFieldBoardAccountList } from "./fieldBoardAccountFilter";
 
 const parseNumber = (value) => {
   if (value === null || value === undefined || value === "") return 0;
@@ -416,6 +417,21 @@ export default function useTallysheetData(account_id, year, month) {
   // ✅ 두 달 데이터 + 두 달 예산 + 포인트(전월) 동시 조회
   useEffect(() => {
     const fetchAll = async () => {
+      // 거래처가 선택되지 않으면 전체 조회를 막고 화면 데이터만 초기화
+      if (!account_id || String(account_id).trim() === "") {
+        setDataRows([]);
+        setData2Rows([]);
+        setOriginalRows([]);
+        setOriginal2Rows([]);
+        setPointList([]);
+        setUseList([]);
+        setBudgetGrant(0);
+        setBudget2Grant(0);
+        setCountMonth("");
+        setCount2Month("");
+        return;
+      }
+
       await Promise.all([
         fetchDataRows(),
         fetchData2Rows(),
@@ -427,6 +443,7 @@ export default function useTallysheetData(account_id, year, month) {
     };
     fetchAll();
   }, [
+    account_id,
     fetchDataRows,
     fetchData2Rows,
     fetchBudgetGrant,
@@ -437,18 +454,18 @@ export default function useTallysheetData(account_id, year, month) {
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
-    api
-      .get("/Account/AccountListV2", {
-        params: { account_type: "0" },
-      })
-      .then((res) => {
-        const rows = (res.data || []).map((item) => ({
+    fetchFieldBoardAccountList({ endpoint: "/Account/AccountListV2", accountType: "0" })
+      .then((list) => {
+        const rows = (list || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
         }));
         setAccountList(rows);
       })
-      .catch((err) => console.error("데이터 조회 실패 (AccountListV2):", err));
+      .catch((err) => {
+        console.error("데이터 조회 실패 (AccountListV2):", err);
+        setAccountList([]);
+      });
   }, []);
 
   return {

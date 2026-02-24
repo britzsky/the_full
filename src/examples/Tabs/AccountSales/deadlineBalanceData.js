@@ -61,16 +61,34 @@ export default function useDeadlineBalanceData(year, month) {
         params: { account_id, year, month },
       });
 
-      const rows = (res.data || []).map((item) => ({
-        account_id: item.account_id,
-        type: item.type,
-        input_dt: item.input_dt,
-        balance_dt: item.balance_dt,
-        difference_price: parseNumber(item.difference_price),
-        input_price: parseNumber(item.input_price),
-        deposit_amount: parseNumber(item.deposit_amount),
-        note: item.note || "",
-      }));
+      const rows = (res.data || []).map((item) => {
+        const note = item.note || "";
+        const rawType = String(item.type || "").trim();
+        const isRefund = rawType === "6" || rawType === "환불" || note.includes("[환불]");
+
+        return {
+          account_id: item.account_id,
+          // ✅ 미수기준일 계산용 history year/month 원본값 유지
+          year: item.year,
+          month: item.month,
+          // ✅ 백엔드 라벨이 '미수잔액'으로 내려와도 환불 태그가 있으면 환불로 표기
+          type: isRefund ? "환불" : rawType,
+          input_dt: item.input_dt,
+          balance_dt: item.balance_dt,
+          difference_price: parseNumber(item.difference_price),
+          input_price: parseNumber(item.input_price),
+          deposit_amount: parseNumber(item.deposit_amount),
+          note,
+        };
+      });
+      // 미수기준일(연/월) 오름차순 -> 입금일자 오름차순
+      rows.sort((a, b) => {
+        const yearDiff = Number(a?.year || 0) - Number(b?.year || 0);
+        if (yearDiff !== 0) return yearDiff;
+        const monthDiff = Number(a?.month || 0) - Number(b?.month || 0);
+        if (monthDiff !== 0) return monthDiff;
+        return String(a?.input_dt || "").localeCompare(String(b?.input_dt || ""));
+      });
       setDepositRows(rows);
     } catch (err) {
       console.error("DepositHistoryList 조회 실패:", err);

@@ -71,7 +71,11 @@ export default function DeadlineBalanceTab() {
     account_id: "",
     input_dt: dayjs().format("YYYY-MM-DD"),
     balance_dt: dayjs().format("YYYY-MM"),
-    type: 0,
+    // ✅ 입금 모달에서 직접 선택한 미수 기준 연/월
+    base_year: year,
+    base_month: month,
+    type: "",
+    refund_target: "1",
     deposit_amount: "",
     input_price: "",
     difference_price: "",
@@ -79,6 +83,14 @@ export default function DeadlineBalanceTab() {
     balance_price: "",
     before_price: "",
   });
+  const AUTO_DEPOSIT_TYPES = new Set(["1", "2", "3", "4", "5", "6"]);
+  const API_BASED_TYPES = new Set(["1", "2", "3", "4", "5"]);
+  const REFUND_TARGET_LABEL_BY_CODE = {
+    1: "생계비",
+    2: "일반식대",
+    3: "직원식대",
+    5: "보전",
+  };
 
   // ✅ balanceRows가 갱신된 뒤 자동으로 다시 선택
   useEffect(() => {
@@ -203,7 +215,11 @@ export default function DeadlineBalanceTab() {
     account_id: "",
     input_dt: dayjs().format("YYYY-MM-DD"),
     balance_dt: dayjs().format("YYYY-MM"),
-    type: 0,
+    // ✅ 기본값은 현재 조회 연/월로 세팅
+    base_year: year,
+    base_month: month,
+    type: "",
+    refund_target: "1",
     deposit_amount: "",
     input_price: "",
     difference_price: "",
@@ -233,15 +249,14 @@ export default function DeadlineBalanceTab() {
       return;
     }
 
-    if (parseNumber(latestCustomer.balance_price) === 0) {
-      Swal.fire("잔액이 0원 입니다.", "", "warning");
-      return;
-    }
-
     setDepositForm({
       ...depositForm,
       customer_name: latestCustomer.account_name,
       account_id: latestCustomer.account_id,
+      // ✅ 미수 기준은 항상 현재 조회 연/월 기준으로 시작
+      base_year: year,
+      base_month: month,
+      refund_target: "1",
       balance_price: latestCustomer.balance_price,
       before_price: parseNumber(latestCustomer.balance_price),
     });
@@ -255,7 +270,11 @@ export default function DeadlineBalanceTab() {
       account_id: selectedCustomer?.account_id || "",
       input_dt: dayjs().format("YYYY-MM-DD"),
       balance_dt: "",
-      type: 0,
+      // ✅ 모달 재오픈 시에도 현재 조회 연/월을 기본값으로 유지
+      base_year: year,
+      base_month: month,
+      type: "",
+      refund_target: "1",
       deposit_amount: "",
       input_price: "",
       difference_price: "",
@@ -264,6 +283,162 @@ export default function DeadlineBalanceTab() {
       before_price: "",
     });
     setModalOpen(false);
+  };
+
+  // ✅ 현재 폼 값으로 차액(입금금액 - 실입금액) 계산
+  const applyDifferencePrice = (form) => {
+    const dep = parseNumber(form.deposit_amount);
+    const act = parseNumber(form.input_price);
+    return {
+      ...form,
+      difference_price: formatNumber(dep - act),
+    };
+  };
+
+  const isDepositTypeSelected = (formState) => {
+    const selectedType = String(formState?.type || "").trim();
+    return AUTO_DEPOSIT_TYPES.has(selectedType);
+  };
+
+  const isInputPriceLockedByMissingType = (formState) => !isDepositTypeSelected(formState);
+
+  const isInputPriceLockedByZeroBalance = (formState) => {
+    const selectedType = String(formState?.type || "");
+    if (!AUTO_DEPOSIT_TYPES.has(selectedType) || selectedType === "6") return false;
+    return parseNumber(formState.deposit_amount) === 0;
+  };
+
+  const isInputPriceLockedInModal = (formState) =>
+    isInputPriceLockedByMissingType(formState) || isInputPriceLockedByZeroBalance(formState);
+
+  const handleInputPriceMouseDown = (e) => {
+    if (!canEdit) return;
+    if (isInputPriceLockedByMissingType(depositForm)) {
+      e.preventDefault();
+      Swal.fire("입금항목 확인", "입금항목을 선택하세요.", "warning");
+      return;
+    }
+    if (!isInputPriceLockedByZeroBalance(depositForm)) return;
+    e.preventDefault();
+    Swal.fire({
+      title: "잔액이 0원 입니다.",
+      icon: "warning",
+      confirmButtonText: "확인",
+    });
+  };
+
+  // ✅ 미수기준 연/월 + 타입 기준 차액 조회(월값 2자리/1자리 모두 시도)
+  const fetchDifferenceByBaseYm = async (accountId, targetYear, targetMonth, targetType) => {
+    const monthCandidates = Array.from(
+      new Set([String(targetMonth), String(targetMonth).padStart(2, "0")])
+    );
+    for (const monthKey of monthCandidates) {
+      // eslint-disable-next-line no-await-in-loop
+      const found = await fetchAccountDeadlineDifferencePriceSearch(
+        accountId,
+        targetYear,
+        monthKey,
+        targetType
+      );
+      if (found !== null) return found;
+    }
+    return null;
+  };
+
+  // ✅ 타입 + 미수기준 연/월 기준으로 입금금액 재계산
+  const resolveDepositAmountByType = async (formState, typeValue) => {
+    if (!selectedCustomer) return "";
+
+    const normalizedType = String(typeValue || "");
+    if (!AUTO_DEPOSIT_TYPES.has(normalizedType)) return "";
+    if (normalizedType === "6") return formatNumber(0);
+    // ✅ 미수잔액(4)은 항상 좌측 총 미수잔액을 표시
+    if (normalizedType === "4") return formatNumber(parseNumber(selectedCustomer?.balance_price));
+
+    if (!API_BASED_TYPES.has(normalizedType)) return "";
+
+    const targetYear = Number(formState.base_year || year);
+    const targetMonth = Number(formState.base_month || month);
+    const isCurrentBaseYm = targetYear === Number(year) && targetMonth === Number(month);
+
+    // ✅ 1/2/3/4/5 모두 선택한 미수기준 연/월의 차액조회 API를 우선 사용
+    const found = await fetchDifferenceByBaseYm(
+      selectedCustomer.account_id,
+      targetYear,
+      targetMonth,
+      normalizedType
+    );
+    if (found !== null) return formatNumber(Math.max(0, found));
+
+    // ✅ 해당 기준 연/월 이력이 아직 없을 때 현재 조회 연/월이면 화면 값으로 보정
+    if (isCurrentBaseYm) {
+      const fallbackByType = {
+        1: parseNumber(selectedCustomer?.living_cost),
+        2: parseNumber(selectedCustomer?.basic_cost),
+        3: parseNumber(selectedCustomer?.employ_cost),
+        5: parseNumber(selectedCustomer?.integrity_cost),
+        4: parseNumber(selectedCustomer?.balance_price),
+      };
+      return formatNumber(Number(fallbackByType[normalizedType] || 0));
+    }
+
+    return formatNumber(0);
+  };
+
+  const buildRefundBaseNote = (targetCode) => {
+    const label = REFUND_TARGET_LABEL_BY_CODE[String(targetCode || "1")] || "생계비";
+    return `${label} 환불`;
+  };
+
+  const normalizeRefundNote = (noteValue, targetCode) => {
+    const refundBaseNote = buildRefundBaseNote(targetCode);
+    const cleanedNote = String(noteValue || "")
+      .replace(/^\[환불\]\s*/u, "")
+      .trim();
+
+    if (!cleanedNote) return refundBaseNote;
+
+    const oldPrefixMatch = cleanedNote.match(/^(생계비|일반식대|직원식대|보전)\s+환불(?:\s+(.*))?$/u);
+    if (oldPrefixMatch) {
+      const suffix = String(oldPrefixMatch[2] || "").trim();
+      return suffix ? `${refundBaseNote} ${suffix}` : refundBaseNote;
+    }
+
+    return `${refundBaseNote} ${cleanedNote}`;
+  };
+
+  const normalizeDepositTypeCode = (rawType) => {
+    const typeValue = String(rawType || "").trim();
+    if (!typeValue) return "";
+    if (["1", "2", "3", "4", "5", "6"].includes(typeValue)) return typeValue;
+
+    const codeByLabel = {
+      생계비: "1",
+      일반식대: "2",
+      직원식대: "3",
+      미수잔액: "4",
+      보전: "5",
+      환불: "6",
+    };
+    return codeByLabel[typeValue] || "";
+  };
+
+  const hasRefundBaseDepositHistory = (formState) => {
+    const targetYear = Number(formState?.base_year || 0);
+    const targetMonth = Number(formState?.base_month || 0);
+    const targetTypeCode = String(formState?.refund_target || "1");
+
+    return depositRows.some((row) => {
+      if (Number(row?.year || 0) !== targetYear || Number(row?.month || 0) !== targetMonth) {
+        return false;
+      }
+
+      const rowTypeCode = normalizeDepositTypeCode(row?.type);
+      if (rowTypeCode === "6") return false;
+      if (rowTypeCode && rowTypeCode !== targetTypeCode) return false;
+
+      return parseNumber(row?.input_price) > 0;
+    });
   };
 
   // 🔹 입금 폼 변경
@@ -280,49 +455,101 @@ export default function DeadlineBalanceTab() {
       updated[name] = value;
     }
 
-    // ✅ 차액 자동 계산
-    if (["deposit_amount", "input_price"].includes(name)) {
-      const dep = parseNumber(updated.deposit_amount);
-      const act = parseNumber(updated.input_price);
-      updated.difference_price = formatNumber(dep - act);
+    if (name === "input_price" && isInputPriceLockedInModal(updated)) {
+      return;
     }
 
-    // ✅ 입금 항목 선택 시 API 기반 금액 자동 세팅
+    // ✅ 타입 변경 시 기본값 정리
     if (name === "type") {
       updated.type = value;
-      updated.deposit_amount = "";
       updated.balance_dt = dayjs().format("YYYY-MM-DD");
-
-      if (selectedCustomer && ["1", "2", "3", "5"].includes(value)) {
-        const mm = String(month).padStart(2, "0"); // 1 -> "01", 10 -> "10"
-
-        const diff = await fetchAccountDeadlineDifferencePriceSearch(
-          selectedCustomer.account_id,
-          year,
-          mm,
-          value
-        );
-
-        if (diff !== null) {
-          updated.deposit_amount = formatNumber(diff);
-        } else {
-          if (value === "1")
-            updated.deposit_amount = formatNumber(selectedCustomer.living_cost) || "";
-          else if (value === "2")
-            updated.deposit_amount = formatNumber(selectedCustomer.basic_cost) || "";
-          else if (value === "3")
-            updated.deposit_amount = formatNumber(selectedCustomer.employ_cost) || "";
-          else if (value === "5")
-            updated.deposit_amount = formatNumber(selectedCustomer.integrity_cost) || "";
-        }
-      } else if (value === "4") {
-        updated.deposit_amount = formatNumber(selectedCustomer.balance_price) || "";
+      if (String(value) === "6") {
+        updated.deposit_amount = formatNumber(0);
+        if (!updated.refund_target) updated.refund_target = "1";
+        // ✅ 환불 선택 시 비고 기본값 즉시 표시
+        updated.note = normalizeRefundNote(updated.note, updated.refund_target);
       } else {
-        updated.deposit_amount = "";
+        // ✅ 환불 -> 일반 항목 전환 시 환불 전용 비고 자동 제거
+        const removedTag = String(updated.note || "").replace(/^\[환불\]\s*/u, "").trim();
+        updated.note = removedTag
+          .replace(/^(생계비|일반식대|직원식대|보전)\s+환불(?:\s+)?/u, "")
+          .trim();
       }
     }
 
-    setDepositForm(updated);
+    if (name === "refund_target" && String(updated.type || "") === "6") {
+      // ✅ 환불대상 변경 시 비고의 항목명도 동기화
+      updated.note = normalizeRefundNote(updated.note, updated.refund_target);
+    }
+
+    // ✅ 타입/미수기준 연/월 변경 시 입금금액 재계산
+    if (["type", "base_year", "base_month"].includes(name)) {
+      const currentType = String(updated.type || "");
+      updated.deposit_amount = await resolveDepositAmountByType(updated, currentType);
+      if (isInputPriceLockedInModal(updated)) {
+        updated.input_price = "";
+      }
+    }
+
+    // ✅ 어떤 항목이 바뀌든 최종 차액은 항상 최신 입금금액/실입금액 기준으로 계산
+    setDepositForm(applyDifferencePrice(updated));
+  };
+
+  // ✅ 환불 저장 시 좌측 항목 금액만 감액, 총 미수잔액은 유지
+  const applyRefundAdjustmentToDeadline = async (refundAmount) => {
+    const targetByCode = {
+      1: { key: "living_cost", label: "생계비" },
+      2: { key: "basic_cost", label: "일반식대" },
+      3: { key: "employ_cost", label: "직원식대" },
+      5: { key: "integrity_cost", label: "보전" },
+    };
+    const targetInfo = targetByCode[String(depositForm.refund_target || "1")] || targetByCode[1];
+
+    const currentRow =
+      editableRows.find((row) => String(row.account_id) === String(selectedCustomer?.account_id || "")) ||
+      balanceRows.find((row) => String(row.account_id) === String(selectedCustomer?.account_id || ""));
+
+    if (!currentRow) {
+      throw new Error("환불 대상 거래처 데이터를 찾을 수 없습니다.");
+    }
+
+    const currentTarget = parseNumber(currentRow[targetInfo.key]);
+    const appliedAmount = Math.min(Math.max(refundAmount, 0), Math.max(currentTarget, 0));
+
+    const nextRow = {
+      ...currentRow,
+      [targetInfo.key]: currentTarget - appliedAmount,
+      balance_price: parseNumber(currentRow.balance_price),
+    };
+
+    const rowPayload = {
+      account_id: nextRow.account_id,
+      account_name: nextRow.account_name,
+      living_cost: parseNumber(nextRow.living_cost),
+      basic_cost: parseNumber(nextRow.basic_cost),
+      employ_cost: parseNumber(nextRow.employ_cost),
+      integrity_cost: parseNumber(nextRow.integrity_cost),
+      balance_price: parseNumber(nextRow.balance_price),
+      before_price: parseNumber(nextRow.before_price),
+      input_exp: nextRow.input_exp ?? "",
+      year: Number(year),
+      month: Number(month),
+    };
+
+    await api.post("/Account/AccountDeadlineBalanceSave", { rows: [rowPayload] });
+    setEditableRows((prev) =>
+      prev.map((row) =>
+        String(row.account_id) === String(nextRow.account_id)
+          ? {
+            ...row,
+            [targetInfo.key]: parseNumber(nextRow[targetInfo.key]),
+            balance_price: parseNumber(nextRow.balance_price),
+          }
+          : row
+      )
+    );
+
+    return { targetLabel: targetInfo.label, appliedAmount };
   };
 
   const handleSaveDeposit = async () => {
@@ -332,57 +559,101 @@ export default function DeadlineBalanceTab() {
       return;
     }
 
-    if (depositForm.type == 1) {
+    const selectedType = String(depositForm.type || "").trim();
+    if (!AUTO_DEPOSIT_TYPES.has(selectedType)) {
+      Swal.fire("입금항목 확인", "입금항목을 선택하세요.", "warning");
+      return;
+    }
+
+    const isRefundType = selectedType === "6";
+
+    if (isRefundType) {
+      if (Number(depositForm.base_year) !== Number(year) || Number(depositForm.base_month) !== Number(month)) {
+        Swal.fire("환불 기준 확인", "환불은 현재 조회 중인 연/월 기준에서만 처리할 수 있습니다.", "warning");
+        return;
+      }
+      if (!hasRefundBaseDepositHistory(depositForm)) {
+        Swal.fire("미수기준일 입금이 없습니다.", "", "warning");
+        return;
+      }
+      if (parseNumber(depositForm.input_price) <= 0) {
+        Swal.fire("환불금액 확인", "환불금액(실입금액)을 0보다 크게 입력하세요.", "warning");
+        return;
+      }
+    }
+
+    // ✅ 일반 입금은 실입금액 입력이 없으면 저장 차단
+    if (!isRefundType && parseNumber(depositForm.input_price) <= 0) {
+      Swal.fire("실입금액 확인", "실입금액을 입력하세요.", "warning");
+      return;
+    }
+
+    if (!isRefundType && selectedType === "1") {
       if (parseNumber(depositForm.deposit_amount) === 0) {
         Swal.fire("생계비 잔액이 0원 입니다.", "", "success");
         return;
       }
     }
 
-    if (depositForm.type == 2) {
+    if (!isRefundType && selectedType === "2") {
       if (parseNumber(depositForm.deposit_amount) === 0) {
         Swal.fire("일반식대 잔액이 0원 입니다.", "", "success");
         return;
       }
     }
 
-    if (depositForm.type == 3) {
+    if (!isRefundType && selectedType === "3") {
       if (parseNumber(depositForm.deposit_amount) === 0) {
         Swal.fire("직원식대 잔액이 0원 입니다.", "", "success");
         return;
       }
     }
 
-    if (depositForm.type == 5) {
+    if (!isRefundType && selectedType === "5") {
       if (parseNumber(depositForm.deposit_amount) === 0) {
         Swal.fire("보전 잔액이 0원 입니다.", "", "success");
         return;
       }
     }
 
-    if (parseNumber(depositForm.balance_price) === 0) {
+    if (!isRefundType && parseNumber(depositForm.balance_price) === 0) {
       Swal.fire("잔액이 0원 입니다.", "", "success");
       return;
     }
 
     try {
+      const normalizedNote = String(depositForm.note || "").trim();
+      const refundHumanNote = normalizeRefundNote(normalizedNote, depositForm.refund_target);
+      const noteWithRefundTag =
+        isRefundType ? `[환불] ${refundHumanNote}` : normalizedNote;
+
       const payload = {
         ...depositForm,
+        note: noteWithRefundTag,
         // ✅ 숫자형 정리
-        deposit_amount: parseNumber(depositForm.deposit_amount),
+        deposit_amount: isRefundType ? 0 : parseNumber(depositForm.deposit_amount),
         input_price: parseNumber(depositForm.input_price),
         difference_price: parseNumber(depositForm.difference_price),
 
         // ✅ 저장 시점 balance_price 계산
         balance_price:
-          parseNumber(depositForm.balance_price) - parseNumber(depositForm.input_price),
+          isRefundType
+            ? parseNumber(depositForm.balance_price)
+            : parseNumber(depositForm.balance_price) - parseNumber(depositForm.input_price),
 
-        year,
-        month,
+        // ✅ tb_account_deposit_history의 year/month는 모달 미수 기준값으로 저장
+        year: Number(depositForm.base_year || 0),
+        month: Number(depositForm.base_month || 0),
       };
 
       await api.post("/Account/AccountDepositHistorySave", payload);
-      Swal.fire("입금 내역이 저장되었습니다.", "", "success");
+      let refundMessage = "";
+      if (isRefundType) {
+        const result = await applyRefundAdjustmentToDeadline(parseNumber(depositForm.input_price));
+        refundMessage = `\n(${result.targetLabel} ${formatNumber(result.appliedAmount)}원 감액, 총 미수잔액 유지)`;
+      }
+
+      Swal.fire("입금 내역이 저장되었습니다.", refundMessage, "success");
       await fetchDeadlineBalanceList();
       await fetchDepositHistoryList(selectedCustomer.account_id, year);
       setRefetchTrigger(true);
@@ -468,6 +739,8 @@ export default function DeadlineBalanceTab() {
   const columns2 = useMemo(
     () => [
       { header: "입금일자", accessorKey: "input_dt" },
+      // ✅ history year-month(0000-00 형식) 표시용 컬럼
+      { header: "미수기준일", accessorKey: "base_ym" },
       { header: "입금항목", accessorKey: "type" },
       { header: "입금금액", accessorKey: "deposit_amount" },
       { header: "실 입금액", accessorKey: "input_price" },
@@ -476,6 +749,7 @@ export default function DeadlineBalanceTab() {
     ],
     []
   );
+
 
   // ✅ 반응형 테이블 스타일
   const tableSx = useMemo(
@@ -514,6 +788,8 @@ export default function DeadlineBalanceTab() {
     }),
     [isMobile]
   );
+
+  const isInputPriceLocked = isInputPriceLockedInModal(depositForm);
 
   // ✅ 초기 로딩만 전체 로딩 화면 표시 (행 클릭 시 스크롤 튐 방지)
   const isInitialLoading = loading && balanceRows.length === 0;
@@ -725,8 +1001,8 @@ export default function DeadlineBalanceTab() {
                               backgroundColor: isSelected
                                 ? "#ffe4e1"
                                 : key === "before_price2"
-                                ? "#FDE7B3"
-                                : "transparent",
+                                  ? "#FDE7B3"
+                                  : "transparent",
                               fontWeight: "bold",
                             }}
                           >
@@ -778,12 +1054,30 @@ export default function DeadlineBalanceTab() {
                       {columns2.map((col) => {
                         const key = col.accessorKey;
                         const value = row[key];
+
+                        if (key === "base_ym") {
+                          // ✅ 미수기준일은 history(year/month) 기준으로만 표시
+                          const y = Number(row?.year || 0);
+                          const m = Number(row?.month || 0);
+                          return (
+                            <td key={key}>
+                              {y > 0 && m > 0
+                                ? `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`
+                                : "0000-00"}
+                            </td>
+                          );
+                        }
+
                         if (["deposit_amount", "input_price", "difference_price"].includes(key)) {
                           return (
                             <td key={key} align="right">
                               {formatNumber(value)}
                             </td>
                           );
+                        }
+                        if (key === "note") {
+                          const viewNote = String(value || "").replace(/^\[환불\]\s*/u, "");
+                          return <td key={key}>{viewNote}</td>;
                         }
                         return <td key={key}>{value}</td>;
                       })}
@@ -810,6 +1104,10 @@ export default function DeadlineBalanceTab() {
             borderRadius: 2,
             boxShadow: 24,
             p: isMobile ? 3 : 5,
+            // ✅ 모달 내 입력/드롭박스 폰트 크기 통일(비고 입력 기준)
+            "& .MuiInputBase-input, & .MuiSelect-select, & .MuiNativeSelect-select": {
+              fontSize: "0.85rem",
+            },
           }}
         >
           <MDTypography variant="h6" mb={2} sx={{ fontSize: isMobile ? "15px" : "18px" }}>
@@ -825,7 +1123,7 @@ export default function DeadlineBalanceTab() {
 
           <Box display="flex" gap={1} mb={2} flexDirection={isMobile ? "column" : "row"}>
             <TextField
-              margin="normal"
+              margin="dense"
               label="입금일자"
               type="date"
               name="input_dt"
@@ -838,11 +1136,13 @@ export default function DeadlineBalanceTab() {
             <TextField
               select
               fullWidth
-              margin="normal"
+              margin="dense"
+              label="입금항목"
               name="type"
               value={depositForm.type}
               SelectProps={{ native: true }}
               onChange={handleDepositChange}
+              InputLabelProps={{ shrink: true }}
               disabled={!canEdit}
             >
               <option value="">선택</option>
@@ -851,6 +1151,82 @@ export default function DeadlineBalanceTab() {
               <option value="3">직원식대</option>
               <option value="5">보전</option>
               <option value="4">미수잔액</option>
+              <option value="6">환불</option>
+            </TextField>
+          </Box>
+
+          {String(depositForm.type || "") === "6" && (
+            <Box display="flex" gap={1} mb={2} flexDirection={isMobile ? "column" : "row"}>
+              <TextField
+                select
+                margin="dense"
+                label="환불대상"
+                name="refund_target"
+                value={depositForm.refund_target || "1"}
+                onChange={handleDepositChange}
+                fullWidth
+                SelectProps={{ native: true }}
+                InputLabelProps={{ shrink: true }}
+                disabled={!canEdit}
+              >
+                <option value="1">생계비</option>
+                <option value="2">일반식대</option>
+                <option value="3">직원식대</option>
+                <option value="5">보전</option>
+              </TextField>
+            </Box>
+          )}
+
+          <Box display="flex" gap={1} mb={2} flexDirection={isMobile ? "column" : "row"}>
+            {/* 입금일자 입력 박스와 동일한 형태/크기로 미수 기준 필드를 표시 */}
+            <TextField
+              select
+              margin="dense"
+              label="미수기준연도"
+              name="base_year"
+              value={depositForm.base_year}
+              onChange={handleDepositChange}
+              fullWidth
+              SelectProps={{ native: true }}
+              InputLabelProps={{
+                shrink: true,
+                sx: {
+                  color: "#d32f2f",
+                  "&.Mui-focused": { color: "#d32f2f" },
+                },
+              }}
+              disabled={!canEdit}
+            >
+              {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+                <option key={y} value={y}>
+                  {y}년
+                </option>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              margin="dense"
+              label="미수기준달"
+              name="base_month"
+              value={depositForm.base_month}
+              onChange={handleDepositChange}
+              fullWidth
+              SelectProps={{ native: true }}
+              InputLabelProps={{
+                shrink: true,
+                sx: {
+                  color: "#d32f2f",
+                  "&.Mui-focused": { color: "#d32f2f" },
+                },
+              }}
+              disabled={!canEdit}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {m}월
+                </option>
+              ))}
             </TextField>
           </Box>
 
@@ -860,16 +1236,29 @@ export default function DeadlineBalanceTab() {
             value={depositForm.deposit_amount}
             fullWidth
             margin="dense"
+            InputLabelProps={{ shrink: true }}
             disabled
           />
           <TextField
-            label="실입금액"
+            label={String(depositForm.type || "") === "6" ? "환불금액" : "실입금액"}
             name="input_price"
             value={depositForm.input_price}
             onChange={handleDepositChange}
+            onMouseDown={handleInputPriceMouseDown}
             fullWidth
             margin="dense"
+            InputLabelProps={{ shrink: true }}
             disabled={!canEdit}
+            InputProps={{ readOnly: isInputPriceLocked }}
+            sx={
+              isInputPriceLocked
+                ? {
+                  "& .MuiInputBase-input.MuiInputBase-readOnly": {
+                    cursor: "not-allowed",
+                  },
+                }
+                : undefined
+            }
           />
           <TextField
             label="차액"
@@ -877,6 +1266,7 @@ export default function DeadlineBalanceTab() {
             value={depositForm.difference_price}
             fullWidth
             margin="dense"
+            InputLabelProps={{ shrink: true }}
             disabled
           />
           <TextField
@@ -886,11 +1276,12 @@ export default function DeadlineBalanceTab() {
             onChange={handleDepositChange}
             fullWidth
             margin="dense"
+            InputLabelProps={{ shrink: true }}
             disabled={!canEdit}
           />
 
           <Box display="flex" justifyContent="flex-end" gap={1} mt={2}>
-            <Button variant="contained" onClick={handleDepositModalClose}>
+            <Button variant="contained" onClick={handleDepositModalClose} sx={{ color: "#fff" }}>
               취소
             </Button>
             <Button
@@ -898,6 +1289,7 @@ export default function DeadlineBalanceTab() {
               color="primary"
               onClick={handleSaveDeposit}
               disabled={!canEdit}
+              sx={{ color: "#fff" }}
             >
               저장
             </Button>

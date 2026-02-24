@@ -588,10 +588,18 @@ function TallySheet() {
       setSelectedAccountId(localAccountId);
       return;
     }
-    if ((accountList || []).length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+
+    const list = filteredAccountList || [];
+    if (list.length === 0) {
+      if (selectedAccountId) setSelectedAccountId("");
+      return;
     }
-  }, [accountList, selectedAccountId, localAccountId]);
+
+    const hasSelected = list.some((row) => String(row.account_id) === String(selectedAccountId));
+    if (!hasSelected) {
+      setSelectedAccountId(String(list[0].account_id));
+    }
+  }, [filteredAccountList, selectedAccountId, localAccountId]);
 
   // ======================== ✅ Floating Preview 상태 ========================
   const [floatingPreview, setFloatingPreview] = useState({

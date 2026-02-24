@@ -93,6 +93,8 @@ export default function useRecordsheetData(account_id, year, month) {
           type: item.type != null ? String(item.type) : "",
           salary: item.salary || "",
           note: item.note || "",
+          // ✅ 실입사일 잠금 판단을 위해 day 데이터에도 보관
+          act_join_dt: item.act_join_dt || "",
 
           member_id: item.member_id || "",
           account_id: item.account_id || "",
@@ -139,6 +141,8 @@ export default function useRecordsheetData(account_id, year, month) {
           member_id: firstItem.member_id || "",
           position: firstItem.position || "",
           del_yn: firstItem.del_yn ?? "",
+          // ✅ row 단위로 실입사일을 올려서 탭에서 잠금/안내 모달에 사용
+          act_join_dt: String(dayValues.day_default?.act_join_dt ?? firstItem.act_join_dt ?? "").trim(),
 
           // ✅ row 기본값
           gubun: baseGubun,

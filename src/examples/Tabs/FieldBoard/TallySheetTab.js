@@ -515,6 +515,24 @@ function TallySheet() {
     );
   }, [filteredAccountList, selectedAccountId]);
 
+  // ✅ localStorage account_id가 있으면: 선택값 + 표시 텍스트까지 강제 세팅
+  useEffect(() => {
+    if (!localAccountId) return;
+
+    // 선택값 고정
+    if (String(selectedAccountId) !== String(localAccountId)) {
+      setSelectedAccountId(localAccountId);
+    }
+
+    // 표시 텍스트(accountInput)도 거래처명으로 맞춰주기 (accountList 로딩 후)
+    const matched =
+      (accountList || []).find((a) => String(a.account_id) === String(localAccountId)) || null;
+
+    if (matched) {
+      setAccountInput(matched.account_name || "");
+    }
+  }, [localAccountId, selectedAccountId, accountList]);
+
   useEffect(() => {
     if (!selectedAccountId) return;
     fetchUseList?.(selectedAccountId, year, month);
@@ -2760,6 +2778,9 @@ function TallySheet() {
                   pointColor &&
                   ["#f8fbfe", "#fff", "#ffffff"].includes(String(pointColor).toLowerCase());
 
+                const overlayOn = (overlay, base) =>
+                  `linear-gradient(${overlay}, ${overlay}), ${base}`;
+
                 // ✅ activeCell/activeRow + pointColor가 같이 있을 때 섞어서 보여주기
                 const mergedBg = (() => {
                   // 활성 셀 배경이 있으면 그걸 최우선으로
@@ -2899,34 +2920,43 @@ function TallySheet() {
               sx={{ minWidth: 200 }}
               options={filteredAccountList || []}
               value={selectedAccountOption}
+              readOnly={isAccountLocked} // ✅ MUI Autocomplete readOnly
+              open={isAccountLocked ? false : undefined} // ✅ 잠김이면 드롭다운 자체가 안 열리게
+              onOpen={isAccountLocked ? undefined : undefined}
               onChange={(_, newValue) => {
-                if (isAccountLocked) return;
+                if (isAccountLocked) return; // ✅ 잠김이면 변경 불가
                 if (!newValue) return;
                 setSelectedAccountId(newValue.account_id);
                 setAccountInput(newValue?.account_name || "");
               }}
               inputValue={accountInput}
               onInputChange={(_, newValue) => {
-                if (isAccountLocked) return;
+                if (isAccountLocked) return; // ✅ 잠김이면 검색/입력 불가
                 setAccountInput(newValue);
               }}
               getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
               isOptionEqualToValue={(opt, val) =>
                 String(opt?.account_id) === String(val?.account_id)
               }
-              disableClearable={isAccountLocked}
-              disabled={isAccountLocked}
+              disableClearable // ✅ X로 지우기 방지(항상)
               renderInput={(params) => (
                 <TextField
                   {...params}
                   label="거래처 검색"
                   placeholder="거래처명을 입력"
-                  // ✅ 검색: 엔터로 바로 선택되도록 처리
                   onKeyDown={(e) => {
+                    if (isAccountLocked) {
+                      e.preventDefault(); // ✅ 엔터/타이핑 자체 차단
+                      return;
+                    }
                     if (e.key === "Enter") {
                       e.preventDefault();
                       selectAccountByInput();
                     }
+                  }}
+                  InputProps={{
+                    ...params.InputProps,
+                    readOnly: isAccountLocked, // ✅ input 자체 readOnly
                   }}
                   sx={{
                     "& .MuiInputBase-root": { height: 35, fontSize: 12 },

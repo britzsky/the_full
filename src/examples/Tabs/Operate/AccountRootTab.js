@@ -22,6 +22,7 @@ function AccountRootTab() {
     sigunguRows,
     eupmyeondongRows,
     loading,
+    rootLoading,
     fetchRootList,
     fetchSidoList,
     fetchSigunguList,
@@ -43,14 +44,17 @@ function AccountRootTab() {
   // ✅ 조회 원본 스냅샷 (빨간 표시용)
   const [originalRootRows, setOriginalRootRows] = useState([]);
   const needOriginalSyncRef = useRef(true);
+  const originalReadyRef = useRef(false);
 
   // =========================================
   // 초기 로딩
   // =========================================
   useEffect(() => {
     const init = async () => {
-      needOriginalSyncRef.current = true;
-      await Promise.all([fetchRootList(), fetchSidoList()]);
+      originalReadyRef.current = false;
+      const [rows] = await Promise.all([fetchRootList(), fetchSidoList()]);
+      setOriginalRootRows((rows || []).map((r) => ({ ...r })));
+      originalReadyRef.current = true;
       setSelectedSido(null);
       setSelectedSigungu(null);
       setSelectedEmd(null);
@@ -61,17 +65,10 @@ function AccountRootTab() {
     init();
   }, []);
 
-  // ✅ rootRows가 "조회 완료 시점"에만 original 저장
-  useEffect(() => {
-    if (!needOriginalSyncRef.current) return;
-    // fetchRootList 후 rootRows가 채워지는 시점
-    setOriginalRootRows((rootRows || []).map((r) => ({ ...r })));
-    needOriginalSyncRef.current = false;
-  }, [rootRows]);
-
   const handleRefresh = async () => {
-    needOriginalSyncRef.current = true;
-    await fetchRootList();
+    const rows = await fetchRootList();
+    setOriginalRootRows((rows || []).map((r) => ({ ...r })));
+    originalReadyRef.current = true;
     setSelectedSido(null);
     setSelectedSigungu(null);
     setSelectedEmd(null);
@@ -83,15 +80,6 @@ function AccountRootTab() {
   // =========================================
   // 저장
   // =========================================
-  // 숫자 변환(빈값은 "" 유지)
-  const toNumOrEmpty = (v) => {
-    if (v === null || v === undefined) return "";
-    const s = String(v).trim();
-    if (s === "") return "";
-    const n = Number(s);
-    return Number.isNaN(n) ? "" : n;
-  };
-
   // 문자열 변환(빈값은 "" 유지)
   const toStrOrEmpty = (v) => {
     if (v === null || v === undefined) return "";
@@ -330,6 +318,7 @@ function AccountRootTab() {
 
   const getCellStyle = useCallback(
     (rowIndex, key, value) => {
+      if (!originalReadyRef.current) return {};
       const origRow = originalRootRows?.[rowIndex];
 
       // 신규 행(조회 원본에 없음)

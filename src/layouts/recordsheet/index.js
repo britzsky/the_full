@@ -168,7 +168,9 @@ const parseEmployeeDispatchInfo = (v) => {
 
   let origin = "";
   let dispatch = "";
-  const originMatch = s.match(/원\s*소\s*속\s*[:：]?\s*([^,\/>→]+?)(?=\s*(파견|직원파출|\d+\s*회|\d|$))/);
+  const originMatch = s.match(
+    /원\s*소\s*속\s*[:：]?\s*([^,\/>→]+?)(?=\s*(파견|직원파출|\d+\s*회|\d|$))/
+  );
   if (originMatch) origin = originMatch[1].trim();
   const dispatchMatch = s.match(/파견(?:업장)?\s*[:：]?\s*([^,\/>→]+?)(?=\s*(\d+\s*회|\d|$))/);
   if (dispatchMatch) dispatch = dispatchMatch[1].trim();
@@ -905,8 +907,8 @@ function RecordSheet() {
         const toDay = endInMonth
           ? realEnd.date()
           : realEnd.isBefore(monthStart)
-            ? null
-            : daysInThisMonth;
+          ? null
+          : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -975,8 +977,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                  ? "미지급"
-                  : "부분"
+                ? "미지급"
+                : "부분"
               : "-";
 
           return {
@@ -1052,13 +1054,13 @@ function RecordSheet() {
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-      src?.record_type ??
-      src?.work_type ??
-      src?.recordType ??
-      src?.workType ??
-      src?.work_kind ??
-      src?.work_cd ??
-      "",
+        src?.record_type ??
+        src?.work_type ??
+        src?.recordType ??
+        src?.workType ??
+        src?.work_kind ??
+        src?.work_cd ??
+        "",
       ""
     );
 
@@ -1290,33 +1292,33 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-            ...source,
-            type: t,
-            gubun: safeTrim(source.gubun, baseGubun),
-            position_type: safeTrim(source.position_type, basePt),
-            start: source.start_time || source.start || "",
-            end: source.end_time || source.end || "",
-            start_time: source.start_time || "",
-            end_time: source.end_time || "",
-            salary: source.salary || "",
-            note: source.note ?? source.note ?? "",
-            pay_yn:
-              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
-          }
+              ...source,
+              type: t,
+              gubun: safeTrim(source.gubun, baseGubun),
+              position_type: safeTrim(source.position_type, basePt),
+              start: source.start_time || source.start || "",
+              end: source.end_time || source.end || "",
+              start_time: source.start_time || "",
+              end_time: source.end_time || "",
+              salary: source.salary || "",
+              note: source.note ?? source.note ?? "",
+              pay_yn:
+                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+            }
           : {
-            account_id: item.account_id,
-            member_id: item.member_id,
-            gubun: baseGubun,
-            position_type: basePt,
-            type: "",
-            start: "",
-            end: "",
-            start_time: "",
-            end_time: "",
-            salary: "",
-            note: "",
-            pay_yn: "N",
-          };
+              account_id: item.account_id,
+              member_id: item.member_id,
+              gubun: baseGubun,
+              position_type: basePt,
+              type: "",
+              start: "",
+              end: "",
+              start_time: "",
+              end_time: "",
+              salary: "",
+              note: "",
+              pay_yn: "N",
+            };
       }
 
       return { ...base, ...dayEntries };
@@ -1783,8 +1785,8 @@ function RecordSheet() {
           const toDay = endInMonth
             ? realEnd.date()
             : realEnd.isBefore(monthStart)
-              ? null
-              : daysInThisMonth;
+            ? null
+            : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -1966,27 +1968,30 @@ function RecordSheet() {
             }
 
             const originId = safeTrim(row?.account_id ?? row?.origin_account_id ?? "", "");
-            const dispatchId = safeTrim(row?.dispatch_account_id ?? row?.dispatchAccountId ?? "", "");
+            const dispatchId = safeTrim(
+              row?.dispatch_account_id ?? row?.dispatchAccountId ?? "",
+              ""
+            );
             if (dispatchId && dispatchId !== String(accId)) return;
 
             const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
             const origin = safeTrim(
               row?.origin_account_name ??
-              row?.origin_account ??
-              accountNameMap.get(originId) ??
-              info.origin ??
-              "",
+                row?.origin_account ??
+                accountNameMap.get(originId) ??
+                info.origin ??
+                "",
               ""
             );
             const dispatch = safeTrim(
               row?.dispatch_account_name ??
-              row?.dispatch_account ??
-              row?.dispatch_account_nm ??
-              row?.dispatch_accountName ??
-              accountNameMap.get(dispatchId) ??
-              info.dispatch ??
-              accName ??
-              "",
+                row?.dispatch_account ??
+                row?.dispatch_account_nm ??
+                row?.dispatch_accountName ??
+                accountNameMap.get(dispatchId) ??
+                info.dispatch ??
+                accName ??
+                "",
               ""
             );
             const name = safeTrim(row?.name ?? row?.member_name ?? stat?.name ?? "", "");
@@ -2110,8 +2115,9 @@ function RecordSheet() {
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
           totalCnt > 0
-            ? `${paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
-            }(${paidCnt}/${totalCnt})`
+            ? `${
+                paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
+              }(${paidCnt}/${totalCnt})`
             : "";
 
         wsDispatch.addRow([
@@ -2178,7 +2184,11 @@ function RecordSheet() {
       wsAttendSummary.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
 
       wsDispatchSummary.columns = dispatchRightWidths.map((w) => ({ width: w }));
-      addSectionTitle(wsDispatchSummary, `■ 파출정보 요약 / ${rangeLabel}`, dispatchRightHeader.length);
+      addSectionTitle(
+        wsDispatchSummary,
+        `■ 파출정보 요약 / ${rangeLabel}`,
+        dispatchRightHeader.length
+      );
       wsDispatchSummary.addRow(dispatchRightHeader);
       styleHeaderRow(wsDispatchSummary, wsDispatchSummary.lastRow.number);
 
@@ -2206,7 +2216,8 @@ function RecordSheet() {
           const amountVal = toNumberMaybe(payLines[iLine] ?? "");
           const isLastRow = iLine === totalRows - 1;
           const countVal = iLine === 0 ? toNumberMaybe(d.dispatchCount || 0) : "";
-          const totalVal = isLastRow && totalLine !== "" && totalLine != null ? toNumberMaybe(totalLine) : "";
+          const totalVal =
+            isLastRow && totalLine !== "" && totalLine != null ? toNumberMaybe(totalLine) : "";
           const hasBaro =
             String(d.rrn ?? "").includes("바로인력") ||
             String(d.account_number ?? "").includes("바로인력");
@@ -2267,7 +2278,11 @@ function RecordSheet() {
           { width: 16 },
         ];
 
-        addSectionTitle(wsEmployeeDispatch, `■ 직원파출정보 / ${rangeLabel}`, employeeDispatchHeader.length);
+        addSectionTitle(
+          wsEmployeeDispatch,
+          `■ 직원파출정보 / ${rangeLabel}`,
+          employeeDispatchHeader.length
+        );
         wsEmployeeDispatch.addRow(employeeDispatchHeader);
         styleHeaderRow(wsEmployeeDispatch, wsEmployeeDispatch.lastRow.number);
 
@@ -2335,6 +2350,7 @@ function RecordSheet() {
     phone: "",
     rrn: "",
     account_number: "",
+    position_type: "4", // ✅ 추가: 기본값(조리사)
     dispatch_account: "",
     note: "",
   });
@@ -2346,6 +2362,7 @@ function RecordSheet() {
       phone: "",
       rrn: "",
       account_number: "",
+      position_type: "4", // ✅ 추가
       dispatch_account: "",
       note: "",
     });
@@ -3056,21 +3073,21 @@ function RecordSheet() {
 
       const origin = safeTrim(
         row?.origin_account_name ??
-        row?.origin_account ??
-        accNameMap.get(originId) ??
-        info.origin ??
-        "",
+          row?.origin_account ??
+          accNameMap.get(originId) ??
+          info.origin ??
+          "",
         ""
       );
 
       const dispatch = safeTrim(
         row?.dispatch_account_name ??
-        row?.dispatch_account ??
-        row?.dispatch_account_nm ??
-        row?.dispatch_accountName ??
-        accNameMap.get(dispatchId) ??
-        info.dispatch ??
-        "",
+          row?.dispatch_account ??
+          row?.dispatch_account_nm ??
+          row?.dispatch_accountName ??
+          accNameMap.get(dispatchId) ??
+          info.dispatch ??
+          "",
         ""
       );
 
@@ -4015,6 +4032,18 @@ function RecordSheet() {
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             onChange={handleChange}
           />
+          <Select
+            fullWidth
+            size="small"
+            name="position_type" // ✅ 중요
+            value={formData.position_type || "4"}
+            onChange={handleChange} // ✅ 중요 (공용 handleChange 사용)
+            displayEmpty
+            sx={{ mt: 2, height: 40 }}
+          >
+            <MenuItem value="4">조리사</MenuItem>
+            <MenuItem value="5">조리원</MenuItem>
+          </Select>
           <TextField
             fullWidth
             margin="normal"

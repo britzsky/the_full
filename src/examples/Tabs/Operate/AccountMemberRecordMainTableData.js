@@ -12,89 +12,154 @@ const formatNumber = (value) => {
   return Number(value).toLocaleString();
 };
 
-// ✅ "06:00" -> "6:00" 처럼 옵션 포맷과 맞추기
 const normalizeTime = (t) => {
   if (!t) return "";
   const s = String(t).trim();
-  // 06:00, 06:30 같은 형태면 앞의 0 제거
   return s.replace(/^0(\d):/, "$1:");
 };
 
 export default function useAccountMembersheetData(account_id, activeStatus, memberName) {
   const [activeRows, setActiveRows] = useState([]);
+  const [simulationRows, setSimulationRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
 
-  // ✅ 근무형태 리스트 + 스냅샷
   const [workSystemList, setWorkSystemList] = useState([]);
   const [originalWorkSystemList, setOriginalWorkSystemList] = useState([]);
 
   const [loading, setLoading] = useState(false);
 
-  // ✅ work_system(조회값)이 idx인지, 문자열인지 둘 다 지원해서 idx로 정규화
-  const toWorkSystemIdx = (ws) => {
-    if (ws === null || ws === undefined || ws === "") return "";
-    const n = Number(ws);
-    if (!Number.isNaN(n) && String(ws).trim() !== "") return String(n); // 숫자/숫자문자열
-    const found = workSystemList.find((x) => String(x.work_system) === String(ws));
-    return found ? String(found.idx) : "";
-  };
+  const toWorkSystemIdx = useCallback(
+    (ws) => {
+      if (ws === null || ws === undefined || ws === "") return "";
+      const n = Number(ws);
+      if (!Number.isNaN(n) && String(ws).trim() !== "") return String(n);
 
-  const fetchAccountMembersAllList = async (opts = { snapshot: true }) => {
-    const params = {};
-    const name = String(memberName ?? "").trim();
-    if (name) params.name = name;
-    else if (account_id) params.account_id = account_id;
-    if (activeStatus) params.del_yn = activeStatus;
+      const found = (workSystemList || []).find((x) => String(x.work_system) === String(ws));
+      return found ? String(found.idx) : "";
+    },
+    [workSystemList]
+  );
 
-    setLoading(true);
-    const start = Date.now();
+  // ✅ 표준(편집) 테이블 조회
+  const fetchAccountStandardList = useCallback(
+    async (opts = { snapshot: true }) => {
+      const params = {};
+      const name = String(memberName ?? "").trim();
 
-    try {
-      const res = await api.get("/Operate/AccountRecordStandardList", { params });
+      if (name) params.name = name;
+      else if (account_id) params.account_id = account_id;
 
-      const rows = (res.data || []).map((item) => ({
-        master_idx: item.master_idx,
-        account_id: item.account_id,
-        work_system: item.work_system,
-        position_type: item.position_type,
-        start_time: item.start_time,
-        end_time: item.end_time,
-        mon: item.mon,
-        tue: item.tue,
-        wed: item.wed,
-        thu: item.thu,
-        fri: item.fri,
-        sat: item.sat,
-        sun: item.sun,
-        sido_code: item.sido_code,
-        sigungu_code: item.sigungu_code,
-      }));
+      if (activeStatus) params.del_yn = activeStatus;
 
-      // ✅ workSystemList가 이미 있으면 work_system을 idx로 매핑해서 저장
-      const mappedRows =
-        workSystemList.length > 0
-          ? rows.map((r) => ({
-              ...r,
-              work_system: toWorkSystemIdx(r.work_system),
-            }))
-          : rows;
+      setLoading(true);
+      const start = Date.now();
 
-      setActiveRows(mappedRows);
-      if (opts.snapshot) setOriginalRows(mappedRows);
+      try {
+        const res = await api.get("/Operate/AccountRecordStandardList", { params });
 
-      return mappedRows;
-    } catch (err) {
-      console.error("AccountMemberAllList 조회 실패:", err);
-      setActiveRows([]);
-      if (opts.snapshot) setOriginalRows([]);
-      return [];
-    } finally {
-      const elapsed = Date.now() - start;
-      const remain = Math.max(0, 1000 - elapsed);
-      setTimeout(() => setLoading(false), remain);
-    }
-  };
+        const rows = (res.data || []).map((item) => ({
+          master_idx: item.master_idx,
+          account_id: item.account_id,
+          work_system: item.work_system,
+          position_type: item.position_type,
+          start_time: item.start_time,
+          end_time: item.end_time,
+          mon: item.mon,
+          tue: item.tue,
+          wed: item.wed,
+          thu: item.thu,
+          fri: item.fri,
+          sat: item.sat,
+          sun: item.sun,
+          sido_code: item.sido_code,
+          sigungu_code: item.sigungu_code,
+        }));
+
+        const mappedRows =
+          (workSystemList || []).length > 0
+            ? rows.map((r) => ({ ...r, work_system: toWorkSystemIdx(r.work_system) }))
+            : rows;
+
+        setActiveRows(mappedRows);
+        if (opts?.snapshot) setOriginalRows(mappedRows);
+
+        return mappedRows;
+      } catch (err) {
+        console.error("AccountRecordStandardList 조회 실패:", err);
+        setActiveRows([]);
+        if (opts?.snapshot) setOriginalRows([]);
+        return [];
+      } finally {
+        const elapsed = Date.now() - start;
+        const remain = Math.max(0, 200 - elapsed); // 굳이 1초 딜레이 필요 없으면 줄임
+        setTimeout(() => setLoading(false), remain);
+      }
+    },
+    [account_id, activeStatus, memberName, workSystemList, toWorkSystemIdx]
+  );
+
+  // ✅ RecordSituationList(조회전용) 테이블 조회
+  // ✅ 여기서 year/month를 "opts"로 반드시 받아서 params에 넣어야 함
+  const fetchAccountRecordSituationList = useCallback(
+    async (opts = {}) => {
+      // opts 우선, 없으면 훅의 account_id 사용
+      const aid = opts.account_id ?? account_id;
+      const y = opts.year;
+      const m = opts.month;
+
+      // 필수 조건 체크 (원하면 완화 가능)
+      if (!aid || !y || !m) {
+        // 조건이 없으면 비우고 종료
+        setSimulationRows([]);
+        return [];
+      }
+
+      setLoading(true);
+      const start = Date.now();
+
+      try {
+        const res = await api.get("/Operate/RecordSituationList", {
+          params: {
+            account_id: aid,
+            year: y,
+            month: m,
+            // 서버에서 del_yn을 받는다면 같이 보낼 수 있음 (필요 없으면 제거)
+            // del_yn: activeStatus,
+          },
+        });
+
+        const rows = (res.data || []).map((item) => ({
+          week_number: item.week_number,
+          position_type: item.position_type,
+          mon: item.mon,
+          tue: item.tue,
+          wed: item.wed,
+          thu: item.thu,
+          fri: item.fri,
+          sat: item.sat,
+          sun: item.sun,
+        }));
+
+        const mappedRows =
+          (workSystemList || []).length > 0
+            ? rows.map((r) => ({ ...r, work_system: toWorkSystemIdx(r.work_system) }))
+            : rows;
+
+        setSimulationRows(mappedRows);
+        return mappedRows;
+      } catch (err) {
+        console.error("RecordSituationList 조회 실패:", err);
+        setSimulationRows([]);
+        return [];
+      } finally {
+        const elapsed = Date.now() - start;
+        const remain = Math.max(0, 200 - elapsed);
+        setTimeout(() => setLoading(false), remain);
+      }
+    },
+    [account_id, workSystemList, toWorkSystemIdx]
+  );
 
   // ✅ 업장 목록
   useEffect(() => {
@@ -110,9 +175,7 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
       .catch((err) => console.error("AccountList 조회 실패:", err));
   }, []);
 
-  // =========================
-  // 3) 근무형태 리스트 (재조회 가능하도록 함수화)
-  // =========================
+  // ✅ 근무형태 리스트
   const fetchWorkSystemList = useCallback(async (opts = { snapshot: true }) => {
     try {
       const res = await api.get("/Operate/AccountMemberWorkSystemList", {
@@ -127,12 +190,12 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
       }));
 
       setWorkSystemList(rows);
-      if (opts.snapshot) setOriginalWorkSystemList(rows);
+      if (opts?.snapshot) setOriginalWorkSystemList(rows);
       return rows;
     } catch (err) {
       console.error("WorkSystemList 조회 실패:", err);
       setWorkSystemList([]);
-      if (opts.snapshot) setOriginalWorkSystemList([]);
+      if (opts?.snapshot) setOriginalWorkSystemList([]);
       return [];
     }
   }, []);
@@ -141,12 +204,7 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
     fetchWorkSystemList({ snapshot: true });
   }, [fetchWorkSystemList]);
 
-  // =========================
-  // 4) 근무형태 저장 (user_id 포함)
-  // =========================
   const saveWorkSystemList = async (rowsToSave) => {
-    // ✅ 여기 URL은 실제 서버에 맞게 바꾸면 됨
-    // ex) "/Operate/AccountMemberWorkSystemSave"
     const userId = localStorage.getItem("user_id");
 
     const cleanRow = (row) => {
@@ -181,6 +239,9 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
     originalRows,
     setOriginalRows,
 
+    simulationRows,
+    setSimulationRows,
+
     accountList,
 
     workSystemList,
@@ -192,7 +253,8 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
     saveWorkSystemList,
 
     saveData,
-    fetchAccountMembersAllList,
+    fetchAccountStandardList,
+    fetchAccountRecordSituationList,
     loading,
   };
 }

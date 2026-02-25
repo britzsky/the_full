@@ -15,6 +15,7 @@ const formatNumber = (value) => {
 };
 
 export default function useAccountRootData() {
+  const [personRows, setPersonRows] = useState([]);
   const [rootRows, setRootRows] = useState([]);
   const [sidoRows, setSidoRows] = useState([]);
   const [sigunguRows, setSigunguRows] = useState([]);
@@ -26,6 +27,34 @@ export default function useAccountRootData() {
 
   const startLoading = () => setLoadingCount((c) => c + 1);
   const endLoading = () => setLoadingCount((c) => Math.max(0, c - 1));
+
+  // ✅ 인력조회 조회
+  const fetchFieldPersonList = async () => {
+    startLoading();
+    setRootLoading(true);
+    try {
+      const res = await api.get("/Operate/FieldPersonMasterList");
+      const rows = (res.data || []).map((item) => ({
+        idx: item.idx,
+        name: item.name,
+        position_type: item.position_type,
+        salary: item.salary,
+        car_yn: item.car_yn,
+        note: item.note,
+        status: item.status,
+        manpower_type: item.manpower_type,
+      }));
+      setPersonRows(rows);
+      return rows; // ✅ 추가
+    } catch (err) {
+      console.error("FieldPersonMasterList 조회 실패:", err);
+      setPersonRows([]);
+      return []; // ✅ 추가
+    } finally {
+      setRootLoading(false);
+      endLoading();
+    }
+  };
 
   // ✅ Root 조회
   const fetchRootList = async () => {
@@ -124,16 +153,19 @@ export default function useAccountRootData() {
   };
 
   return {
+    personRows,
     rootRows,
     sidoRows,
     sigunguRows,
     eupmyeondongRows,
     loading,
     rootLoading,
+    fetchFieldPersonList,
     fetchRootList,
     fetchSidoList,
     fetchSigunguList,
     fetchEupmyeondongList,
+    setPersonRows,
     setRootRows,
     setSidoRows,
     setSigunguRows,

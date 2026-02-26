@@ -1,6 +1,13 @@
 import api from "api/api";
 
 const toSafeString = (value) => String(value ?? "").trim();
+const sortByAccountName = (rows = []) =>
+  [...rows].sort((a, b) =>
+    toSafeString(a?.account_name).localeCompare(toSafeString(b?.account_name), "ko", {
+      sensitivity: "base",
+      numeric: true,
+    })
+  );
 
 // FieldBoard 공통: 로그인 사용자 기준으로 접근 가능한 거래처만 반환
 export const fetchFieldBoardAccountList = async ({
@@ -14,7 +21,7 @@ export const fetchFieldBoardAccountList = async ({
   const accountRes = await api.get(endpoint, {
     params: { account_type: accountType },
   });
-  const baseRows = Array.isArray(accountRes?.data) ? accountRes.data : [];
+  const baseRows = sortByAccountName(Array.isArray(accountRes?.data) ? accountRes.data : []);
 
   // 영양사/고정계정은 기존처럼 account_id 단건 고정
   if (localAccountId) {
@@ -47,4 +54,3 @@ export const fetchFieldBoardAccountList = async ({
     return [];
   }
 };
-

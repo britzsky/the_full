@@ -1,6 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
 import api from "api/api";
+import { sortAccountRows } from "utils/accountSort";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -44,7 +45,10 @@ export default function useDeadlineFilesData(year, month) {
         grouped[account_id][`month_${month}`] = deadline_file;
       });
 
-      setDeadlineFilesRows(Object.values(grouped));
+      // ✅ 거래처 행은 기본적으로 거래처명 기준으로 정렬해서 화면 일관성 유지
+      setDeadlineFilesRows(
+        sortAccountRows(Object.values(grouped), { sortKey: "account_name", keepAllOnTop: true })
+      );
     } catch (err) {
       console.error("DeadlineFilesList 조회 실패:", err);
       setDeadlineFilesRows([]);

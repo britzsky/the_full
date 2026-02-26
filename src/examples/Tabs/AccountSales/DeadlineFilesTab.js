@@ -10,6 +10,7 @@ import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { Download, Trash2 } from "lucide-react"; // 🔹 아이콘
 import { API_BASE_URL } from "config";
+import { sortAccountRows } from "utils/accountSort";
 
 // 🔹 데이터 훅 import
 import useDeadlineFilesData, { formatNumber } from "./deadlineFilesData";
@@ -19,6 +20,8 @@ export default function DeadlineFilesTab() {
   const [year, setYear] = useState(today.year());
   const [editableRows, setEditableRows] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
+  const [accountSortKey, setAccountSortKey] = useState("account_name");
   const { deadlineFilesRows, loading, fetchDeadlineFilesList } = useDeadlineFilesData(year);
 
   useEffect(() => {
@@ -46,6 +49,12 @@ export default function DeadlineFilesTab() {
     }));
     return [...base, ...months];
   }, []);
+
+  // ✅ 화면 표시 순서만 정렬(업로드/삭제 로직은 기존 유지)
+  const sortedEditableRows = useMemo(
+    () => sortAccountRows(editableRows, { sortKey: accountSortKey, keepAllOnTop: true }),
+    [editableRows, accountSortKey]
+  );
 
   // ✅ 파일 업로드
   const handleFileUpload = async (account_id, monthKey, file) => {
@@ -145,6 +154,14 @@ export default function DeadlineFilesTab() {
     <>
       {/* 상단 필터 */}
       <MDBox pt={1} pb={1} sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+        <Select
+          value={accountSortKey}
+          onChange={(e) => setAccountSortKey(String(e.target.value))}
+          size="small"
+        >
+          <MenuItem value="account_name">거래처명 정렬</MenuItem>
+          <MenuItem value="account_id">거래처ID 정렬</MenuItem>
+        </Select>
         <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small">
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
             <MenuItem key={y} value={y}>
@@ -188,8 +205,8 @@ export default function DeadlineFilesTab() {
                 </tr>
               </thead>
               <tbody>
-                {editableRows.map((row, i) => (
-                  <tr key={i}>
+                {sortedEditableRows.map((row, i) => (
+                  <tr key={row.account_id || i}>
                     {columns.map((col) => {
                       const key = col.accessorKey;
                       const value = row[key];

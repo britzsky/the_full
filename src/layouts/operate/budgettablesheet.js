@@ -11,6 +11,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import useBudgetTableData, { formatNumber } from "./data/BudgetTableData";
 import Swal from "sweetalert2";
 import api from "api/api";
+import { sortAccountRows } from "utils/accountSort";
 
 export default function BudgetTableTab() {
   const today = dayjs();
@@ -20,6 +21,8 @@ export default function BudgetTableTab() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
+  // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
+  const [accountSortKey, setAccountSortKey] = useState("account_name");
 
   // ✅ 예산 테이블 데이터 훅 (연/월 기준 전체 조회)
   const {
@@ -38,8 +41,10 @@ export default function BudgetTableTab() {
   // ✅ 데이터 원본 저장
   useEffect(() => {
     if (budgetTableRows && budgetTableRows.length > 0) {
-      const cloned = budgetTableRows.map((row) => ({
+      const cloned = budgetTableRows.map((row, idx) => ({
         ...row,
+        // ✅ 정렬/편집 시에도 행 식별이 안정적이도록 고유 키 부여
+        _rowKey: `${row.account_id ?? ""}_${row.month ?? ""}_${row.account_type_name ?? ""}_${row.meal_type_name ?? ""}_${idx}`,
         _original: { ...row },
       }));
       setEditRows(cloned);
@@ -47,6 +52,12 @@ export default function BudgetTableTab() {
       setEditRows([]);
     }
   }, [budgetTableRows]);
+
+  // ✅ 화면 표시 순서만 정렬(저장 로직은 기존 editRows 기준 유지)
+  const sortedEditRows = sortAccountRows(editRows, {
+    sortKey: accountSortKey,
+    keepAllOnTop: true,
+  });
 
   // ✅ 직접 입력 가능한 항목만 지정
   const editableFields = ["budget_grant", "note"];
@@ -147,18 +158,20 @@ export default function BudgetTableTab() {
   };
 
   // ✅ 입력 핸들러 (budget_grant: 숫자, note: 문자열)
-  const handleInputChange = (rowIdx, field, value) => {
+  const handleInputChange = (rowKey, field, value) => {
     const newRows = [...editRows];
+    const targetIdx = newRows.findIndex((row) => row._rowKey === rowKey);
+    if (targetIdx < 0) return;
 
     if (field === "budget_grant") {
       const numericValue =
         value === "" || value === null
           ? null
           : Number(String(value).replace(/,/g, ""));
-      newRows[rowIdx][field] = numericValue;
+      newRows[targetIdx][field] = numericValue;
     } else {
       // note 등 문자열
-      newRows[rowIdx][field] = value;
+      newRows[targetIdx][field] = value;
     }
 
     setEditRows(newRows);
@@ -320,6 +333,17 @@ export default function BudgetTableTab() {
                     </option>
                   ))}
                 </TextField>
+                <TextField
+                  select
+                  size="small"
+                  value={accountSortKey}
+                  onChange={(e) => setAccountSortKey(String(e.target.value))}
+                  sx={{ minWidth: isMobile ? 140 : 150 }}
+                  SelectProps={{ native: true }}
+                >
+                  <option value="account_name">거래처명 정렬</option>
+                  <option value="account_id">거래처ID 정렬</option>
+                </TextField>
 
                 <MDButton
                   variant="contained"
@@ -395,8 +419,8 @@ export default function BudgetTableTab() {
                       </tr>
                     </thead>
                     <tbody>
-                      {editRows.map((row, rowIdx) => (
-                        <tr key={`${row.account_id}_${row.month}_${rowIdx}`}>
+                      {sortedEditRows.map((row, rowIdx) => (
+                        <tr key={row._rowKey || `${row.account_id}_${row.month}_${rowIdx}`}>
                           {columns.map((col) => {
                             const field = col.key;
                             const baseCellStyle = {
@@ -505,7 +529,7 @@ export default function BudgetTableTab() {
                                     }}
                                     onChange={(e) =>
                                       handleInputChange(
-                                        rowIdx,
+                                        row._rowKey,
                                         field,
                                         e.target.value
                                       )
@@ -537,7 +561,7 @@ export default function BudgetTableTab() {
                                   }}
                                   onChange={(e) =>
                                     handleInputChange(
-                                      rowIdx,
+                                      row._rowKey,
                                       field,
                                       e.target.value
                                     )

@@ -13,6 +13,7 @@ import FileSaver from "file-saver";
 export default function HandoverSheetTab() {
   // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
+  const isAccountLocked = !!localAccountId;
 
   const [form, setForm] = useState({});
   const [originalForm, setOriginalForm] = useState({});
@@ -390,14 +391,16 @@ export default function HandoverSheetTab() {
           <TextField
             select
             size="small"
+            label={isAccountLocked ? "거래처(고정)" : "거래처"}
             value={selectedAccountId}
             onChange={onSearchList}
             sx={{
               minWidth: isMobile ? 160 : 200,
               fontSize: isMobile ? "12px" : "14px",
             }}
+            InputLabelProps={{ shrink: true }}
             SelectProps={{ native: true }}
-            disabled={!!localAccountId} // ✅ localStorage로 고정이면 변경 불가 (원하면 제거)
+            disabled={isAccountLocked} // ✅ localStorage로 고정이면 변경 불가 (원하면 제거)
           >
             {(filteredAccountList || []).map((row) => (
               <option key={row.account_id} value={row.account_id}>

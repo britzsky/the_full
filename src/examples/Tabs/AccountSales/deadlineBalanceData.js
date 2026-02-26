@@ -1,6 +1,8 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
 import api from "api/api";
+import { sortAccountRows } from "utils/accountSort";
+import { fetchAccountListByName } from "api/accountQueryApi";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -44,7 +46,8 @@ export default function useDeadlineBalanceData(year, month) {
         before_price2: parseNumber(item.before_price2),
       }));
 
-      setBalanceRows(rows);
+      // ✅ 거래처 행은 기본적으로 거래처명 기준으로 정렬해서 화면 일관성 유지
+      setBalanceRows(sortAccountRows(rows, { sortKey: "account_name", keepAllOnTop: true }));
     } catch (err) {
       console.error("DeadlineBalanceList 조회 실패:", err);
       setBalanceRows([]);
@@ -101,10 +104,9 @@ export default function useDeadlineBalanceData(year, month) {
   // ✅ 계정 목록 조회
   const fetchAccountList = async () => {
     try {
-      const res = await api.get("/Account/AccountList", {
-        params: { account_type: 0 },
-      });
-      setAccountList(res.data || []);
+      // ✅ 공통 조회 API: 거래처명 기준 정렬이 적용된 목록 반환
+      const rows = await fetchAccountListByName({ accountType: "0" });
+      setAccountList(rows);
     } catch (err) {
       console.error("AccountList 조회 실패:", err);
       setAccountList([]);

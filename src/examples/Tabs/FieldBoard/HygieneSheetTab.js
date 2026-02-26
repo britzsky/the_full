@@ -3,7 +3,14 @@ import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
+import {
+  TextField,
+  useTheme,
+  useMediaQuery,
+  IconButton,
+  Tooltip,
+  Autocomplete,
+} from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -20,6 +27,8 @@ function HygieneSheetTab() {
   // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+  const [accountInput, setAccountInput] = useState("");
+  const isAccountLocked = !!localAccountId;
 
   const { hygieneListRows, accountList, loading, fetcHygieneList } = useHygienesheetData();
 
@@ -42,6 +51,36 @@ function HygieneSheetTab() {
   });
 
   const imageCols = ["problem_image", "clean_image"];
+
+  // ✅ 거래처 옵션(Autocomplete)
+  const accountOptions = useMemo(
+    () =>
+      (filteredAccountList || []).map((acc) => ({
+        value: String(acc.account_id),
+        label: acc.account_name,
+      })),
+    [filteredAccountList]
+  );
+
+  const selectedAccountOption = useMemo(() => {
+    const v = String(selectedAccountId ?? "");
+    return accountOptions.find((o) => o.value === v) || null;
+  }, [accountOptions, selectedAccountId]);
+
+  const selectAccountByInput = useCallback(() => {
+    if (isAccountLocked) return;
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountOptions || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
+    const partial =
+      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(partial.value);
+      setAccountInput(partial.label || q);
+    }
+  }, [accountInput, accountOptions, isAccountLocked]);
 
   // 거래처 변경 시 데이터 조회
   useEffect(() => {
@@ -76,8 +115,6 @@ function HygieneSheetTab() {
     setRows(deepCopy);
     setOriginalRows(deepCopy);
   }, [hygieneListRows]);
-
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   // cell 값 변경 처리
   const handleCellChange = (rowIndex, key, value) => {
@@ -437,24 +474,47 @@ function HygieneSheetTab() {
         }}
       >
         {(filteredAccountList || []).length > 0 && (
-          <TextField
-            select
+          <Autocomplete
             size="small"
-            value={selectedAccountId}
-            onChange={onSearchList}
-            sx={{
-              minWidth: isMobile ? 150 : 180,
-              fontSize: isMobile ? "12px" : "14px",
+            sx={{ minWidth: isMobile ? 180 : 220 }}
+            options={accountOptions}
+            value={selectedAccountOption}
+            disabled={isAccountLocked}
+            onChange={(_, opt) => {
+              if (isAccountLocked) return;
+              setSelectedAccountId(opt ? opt.value : "");
             }}
-            SelectProps={{ native: true }}
-            disabled={!!localAccountId}
-          >
-            {(filteredAccountList || []).map((row) => (
-              <option key={row.account_id} value={row.account_id}>
-                {row.account_name}
-              </option>
-            ))}
-          </TextField>
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => {
+              if (isAccountLocked) return;
+              setAccountInput(newValue);
+            }}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+            filterOptions={(options, state) => {
+              const q = (state.inputValue ?? "").trim().toLowerCase();
+              if (!q) return options;
+              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label={isAccountLocked ? "거래처(고정)" : "거래처"}
+                placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
+                onKeyDown={(e) => {
+                  if (isAccountLocked) return;
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
         )}
 
         <MDButton

@@ -2231,7 +2231,7 @@ function RecordSheet() {
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label={isAccountLocked ? "거래처(고정)" : "거래처 검색"}
+                  label={isAccountLocked ? "거래처(고정)" : "거래처"}
                   placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {

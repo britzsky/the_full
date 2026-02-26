@@ -10,6 +10,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import useAccountIssueData, { formatNumber } from "./data/AccountIssueData";
+import { sortAccountRows } from "utils/accountSort";
 
 export default function AccountIssueSheet() {
   const today = dayjs();
@@ -18,6 +19,8 @@ export default function AccountIssueSheet() {
   const [originalRows, setOriginalRows] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [page, setPage] = useState(1);
+  // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
+  const [accountSortKey, setAccountSortKey] = useState("account_name");
   const rowsPerPage = 10;
 
   const { accountIssueRows, loading, fetchAccountIssueList } = useAccountIssueData(year);
@@ -71,6 +74,21 @@ export default function AccountIssueSheet() {
     }));
     return [...base, ...months];
   }, []);
+
+  // ✅ 화면 표시 순서만 정렬(저장 payload 생성 로직은 기존 유지)
+  const sortedRows = useMemo(
+    () => sortAccountRows(editableRows, { sortKey: accountSortKey, keepAllOnTop: true }),
+    [editableRows, accountSortKey]
+  );
+
+  // ✅ 정렬 후에도 원본 비교가 깨지지 않도록 account_id 기준 맵 사용
+  const originalRowByAccountId = useMemo(() => {
+    const map = new Map();
+    (originalRows || []).forEach((row) => {
+      map.set(String(row?.account_id || ""), row);
+    });
+    return map;
+  }, [originalRows]);
 
   /**
    * ✅ 입력 변경
@@ -151,8 +169,8 @@ export default function AccountIssueSheet() {
   };
 
   // ✅ 페이징
-  const totalPages = Math.ceil(editableRows.length / rowsPerPage);
-  const paginatedRows = editableRows.slice((page - 1) * rowsPerPage, page * rowsPerPage);
+  const totalPages = Math.ceil(sortedRows.length / rowsPerPage);
+  const paginatedRows = sortedRows.slice((page - 1) * rowsPerPage, page * rowsPerPage);
 
   // ✅ 셀 크게 + 내부 3필드 보기 좋게
   const tableSx = {
@@ -229,6 +247,14 @@ export default function AccountIssueSheet() {
           <Card>
             <MDBox pt={1} pb={1} sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
               <Box sx={{ display: "flex", gap: 1 }}>
+                <Select
+                  value={accountSortKey}
+                  onChange={(e) => setAccountSortKey(String(e.target.value))}
+                  size="small"
+                >
+                  <MenuItem value="account_name">거래처명 정렬</MenuItem>
+                  <MenuItem value="account_id">거래처ID 정렬</MenuItem>
+                </Select>
                 <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small">
                   {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
                     <MenuItem key={y} value={y}>
@@ -256,7 +282,7 @@ export default function AccountIssueSheet() {
 
                     <tbody>
                       {paginatedRows.map((row, i) => {
-                        const origRow = originalRows[(page - 1) * rowsPerPage + i];
+                        const origRow = originalRowByAccountId.get(String(row?.account_id || ""));
 
                         return (
                           <tr key={row.account_id || i}>

@@ -550,6 +550,32 @@ function AccountMemberSheet() {
         return { ...r, account_label: accountLabel };
       });
 
+      // ✅ 엑셀 정렬 우선순위: 유틸/통합 -> 거래처명 -> 성명
+      const getUtilIntegrationPriority = (row) => {
+        const pos = String(row?.position_type ?? "").trim();
+        if (pos === "유틸" || pos === "6") return 0;
+        if (pos === "통합" || pos === "7") return 1;
+        return 2;
+      };
+
+      const rowsForExcel = [...rowsWithAccount].sort((a, b) => {
+        const pa = getUtilIntegrationPriority(a);
+        const pb = getUtilIntegrationPriority(b);
+        if (pa !== pb) return pa - pb;
+
+        const accountCompare = String(a?.account_label ?? "").localeCompare(
+          String(b?.account_label ?? ""),
+          "ko",
+          { sensitivity: "base", numeric: true }
+        );
+        if (accountCompare !== 0) return accountCompare;
+
+        return String(a?.name ?? "").localeCompare(String(b?.name ?? ""), "ko", {
+          sensitivity: "base",
+          numeric: true,
+        });
+      });
+
       const header = excelCols.map((c) => c.header);
       const autoWidthValues = excelCols.map(() => []);
 
@@ -561,7 +587,7 @@ function AccountMemberSheet() {
 
       const salaryColIndex = excelCols.findIndex((c) => c.key === "salary") + 1;
 
-      rowsWithAccount.forEach((r) => {
+      rowsForExcel.forEach((r) => {
         const row = {};
         excelCols.forEach((c) => {
           if (c.key === "salary") {

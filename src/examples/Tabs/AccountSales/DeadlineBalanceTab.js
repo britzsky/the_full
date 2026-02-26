@@ -18,6 +18,7 @@ import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
 import api from "api/api";
+import { sortAccountRows } from "utils/accountSort";
 
 // 🔹 데이터 훅 import
 import useDeadlineBalanceData, { parseNumber, formatNumber } from "./deadlineBalanceData";
@@ -29,6 +30,8 @@ export default function DeadlineBalanceTab() {
   const [month, setMonth] = useState(today.month() + 1);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editableRows, setEditableRows] = useState([]);
+  // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
+  const [accountSortKey, setAccountSortKey] = useState("account_name");
 
   // ✅ 반응형용 훅
   const theme = useTheme();
@@ -121,6 +124,12 @@ export default function DeadlineBalanceTab() {
       }))
     );
   }, [balanceRows]);
+
+  // ✅ 화면 표시 순서만 정렬(조회/저장 로직은 기존 유지)
+  const sortedEditableRows = useMemo(
+    () => sortAccountRows(editableRows, { sortKey: accountSortKey, keepAllOnTop: true }),
+    [editableRows, accountSortKey]
+  );
 
   // ✅ 거래처 선택(행 클릭): 스크롤 위치 저장/복원 + 우측 입금내역 조회
   const handleSelectCustomer = async (row) => {
@@ -852,6 +861,18 @@ export default function DeadlineBalanceTab() {
               </option>
             ))}
           </TextField>
+
+          <TextField
+            select
+            size="small"
+            value={accountSortKey}
+            onChange={(e) => setAccountSortKey(String(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+          >
+            <option value="account_name">거래처명 정렬</option>
+            <option value="account_id">거래처ID 정렬</option>
+          </TextField>
         </MDBox>
 
         <MDBox
@@ -912,11 +933,11 @@ export default function DeadlineBalanceTab() {
                 </tr>
               </thead>
               <tbody>
-                {editableRows.map((row, i) => {
+                {sortedEditableRows.map((row, i) => {
                   const isSelected = selectedCustomer?.account_id === row.account_id;
 
                   return (
-                    <tr key={i}>
+                    <tr key={row.account_id || i}>
                       {columns.map((col) => {
                         const key = col.accessorKey;
                         const value = row[key];

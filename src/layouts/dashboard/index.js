@@ -270,6 +270,9 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
       {items.map((it, idx) => {
         const typeLabel = getTypeLabelByDepartment(it.type, it.department);
         const color = getTypeColorByDepartment(it.type, it.department);
+        // ✅ 요청 포맷: "내용 / 이름 [직책]"
+        const positionText = it.position_name ? ` [${it.position_name}]` : "";
+        const scheduleText = `${it.content || ""}${it.user_name ? ` / ${it.user_name}${positionText}` : ""}`;
 
         return (
           <MDBox
@@ -289,33 +292,19 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
               variant="caption"
               color="dark"
               sx={{
-                fontWeight: 800,
-                fontSize: 11,
-                whiteSpace: "nowrap",
-                minWidth: 86,
-                flex: "0 0 auto",
-              }}
-            >
-              {typeLabel ? `[${typeLabel}] ` : ""}
-              {it.content}
-            </MDTypography>
-
-            <MDTypography
-              variant="caption"
-              color="dark"
-              sx={{
                 fontWeight: 600,
                 fontSize: 11,
                 flex: "1 1 auto",
                 minWidth: 0,
+                // ✅ 긴 한글 문장은 자연스럽게 다음 줄로 줄바꿈되도록 처리
                 whiteSpace: "normal",
-                wordBreak: "break-word",
-                overflowWrap: "anywhere",
+                wordBreak: "keep-all",
+                overflowWrap: "break-word",
                 lineHeight: 1.3,
               }}
             >
-              {it.user_name}
-              {it.position_name ? ` [${it.position_name}]` : ""}
+              {typeLabel ? `[${typeLabel}] ` : ""}
+              {scheduleText}
             </MDTypography>
           </MDBox>
         );

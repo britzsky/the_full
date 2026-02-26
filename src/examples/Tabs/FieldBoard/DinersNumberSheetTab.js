@@ -643,6 +643,7 @@ const getTableStructure = (
 function DinersNumberSheet() {
   // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
+  const isAccountLocked = !!localAccountId;
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
@@ -679,7 +680,7 @@ function DinersNumberSheet() {
   }, [filteredAccountList]);
 
   const selectAccountByInput = useCallback(() => {
-    if (localAccountId) return;
+    if (isAccountLocked) return;
     const q = String(accountInput || "").trim();
     if (!q) return;
     const list = accountOptions || [];
@@ -691,7 +692,7 @@ function DinersNumberSheet() {
       setSelectedAccountId(partial.value);
       setAccountInput(partial.label || q);
     }
-  }, [accountInput, accountOptions, localAccountId]);
+  }, [accountInput, accountOptions, isAccountLocked]);
 
   // ✅ extraDietCols 레퍼런스 변동으로 originalRows가 덮이는 문제 방지
   const extraDietSignature = useMemo(() => {
@@ -1084,20 +1085,24 @@ function DinersNumberSheet() {
               return accountOptions.find((o) => o.value === v) || null;
             })()}
             onChange={(_, opt) => {
-              if (localAccountId) return; // ✅ localStorage로 고정이면 변경 불가
+              if (isAccountLocked) return; // ✅ localStorage로 고정이면 변경 불가
               setSelectedAccountId(opt ? opt.value : "");
             }}
             inputValue={accountInput}
-            onInputChange={(_, newValue) => setAccountInput(newValue)}
+            onInputChange={(_, newValue) => {
+              if (isAccountLocked) return;
+              setAccountInput(newValue);
+            }}
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt.value === val.value}
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="거래처"
-                placeholder="거래처 검색"
+                label={isAccountLocked ? "거래처(고정)" : "거래처"}
+                placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
                 size="small"
                 onKeyDown={(e) => {
+                  if (isAccountLocked) return;
                   if (e.key === "Enter") {
                     e.preventDefault();
                     selectAccountByInput();
@@ -1106,7 +1111,7 @@ function DinersNumberSheet() {
               />
             )}
             sx={{ minWidth: isMobile ? 220 : 260 }}
-            disabled={!!localAccountId} // ✅ localStorage 고정이면 Autocomplete 자체 비활성
+            disabled={isAccountLocked} // ✅ localStorage 고정이면 Autocomplete 자체 비활성
             ListboxProps={{ style: { fontSize: "12px" } }}
           />
         )}

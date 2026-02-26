@@ -1,6 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState } from "react";
 import api from "api/api";
+import { sortAccountRows } from "utils/accountSort";
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -52,8 +53,10 @@ export default function usePeopleCountingData(year, month) {
         grouped[account_id][`day_${day}`] = total;
       });
 
-      // ✅ 최종 행 배열 세팅
-      setPeopleCountingRows(Object.values(grouped));
+      // ✅ 최종 행 배열 세팅(거래처명 기본 정렬)
+      setPeopleCountingRows(
+        sortAccountRows(Object.values(grouped), { sortKey: "account_name", keepAllOnTop: true })
+      );
     } catch (err) {
       console.error("PeopleCountingList 조회 실패:", err);
       setPeopleCountingRows([]);

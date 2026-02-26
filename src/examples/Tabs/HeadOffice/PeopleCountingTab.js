@@ -7,11 +7,14 @@ import MDButton from "components/MDButton";
 import MDTypography from "components/MDTypography";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import usePeopleCountingData, { formatNumber } from "./peopleCountingData";
+import { sortAccountRows } from "utils/accountSort";
 
 export default function PeopleCountingTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1); // ✅ 현재 월
+  // ✅ 거래처 검색이 없는 화면이라 정렬 기준 선택 제공(기본: 거래처명)
+  const [accountSortKey, setAccountSortKey] = useState("account_name");
 
   const { peopleCountingRows, loading, fetchPeopleCountingList } =
     usePeopleCountingData(year, month);
@@ -32,6 +35,12 @@ export default function PeopleCountingTab() {
     }));
     return [...base, ...days];
   }, [year, month]);
+
+  // ✅ 화면 표시 순서만 정렬(기존 계산/조회 로직은 유지)
+  const sortedPeopleCountingRows = useMemo(
+    () => sortAccountRows(peopleCountingRows, { sortKey: accountSortKey, keepAllOnTop: true }),
+    [peopleCountingRows, accountSortKey]
+  );
 
   // ✅ 테이블 스타일
   const tableWrapperSx = {
@@ -97,6 +106,14 @@ export default function PeopleCountingTab() {
             <MenuItem key={m} value={m}>{m}월</MenuItem>
           ))}
         </Select>
+        <Select
+          value={accountSortKey}
+          onChange={(e) => setAccountSortKey(String(e.target.value))}
+          size="small"
+        >
+          <MenuItem value="account_name">거래처명 정렬</MenuItem>
+          <MenuItem value="account_id">거래처ID 정렬</MenuItem>
+        </Select>
       </MDBox>
 
       {/* 메인 테이블 */}
@@ -132,7 +149,7 @@ export default function PeopleCountingTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {peopleCountingRows.map((row, i) => (
+                  {sortedPeopleCountingRows.map((row, i) => (
                     <React.Fragment key={i}>
                       {/* 첫 번째 줄 - 인원 */}
                       <tr>

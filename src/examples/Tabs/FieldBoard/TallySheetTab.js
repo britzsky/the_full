@@ -36,6 +36,8 @@ import api from "api/api";
 import PropTypes from "prop-types";
 import Draggable from "react-draggable";
 import { API_BASE_URL } from "config";
+import ExcelJS from "exceljs";
+import DownloadIcon from "@mui/icons-material/Download";
 
 /**
  * ✅✅ IMPORTANT
@@ -2102,6 +2104,236 @@ function TallySheet() {
     );
   }, [daysInMonthPrev]);
 
+  // ✅ 엑셀 컬럼명(A, B, ... AA) 변환
+  const toExcelColName = useCallback((index) => {
+    let col = "";
+    let n = Number(index);
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      col = String.fromCharCode(65 + rem) + col;
+      n = Math.floor((n - 1) / 26);
+    }
+    return col || "A";
+  }, []);
+
+  // ✅ 집계표 엑셀 시트 생성 (현재월/전월 공용)
+  const buildTallyExcelSheet = useCallback(
+    (
+      workbook,
+      { sheetName, accountName, reportDateLabel, budget, used, ratioData, tableRows, daysCount }
+    ) => {
+      const ws = workbook.addWorksheet(sheetName);
+      const totalCols = daysCount + 2; // 구분 + (일자들) + 합계
+      const endCol = toExcelColName(totalCols);
+
+      const borderThin = {
+        top: { style: "thin", color: { argb: "FF686D76" } },
+        left: { style: "thin", color: { argb: "FF686D76" } },
+        bottom: { style: "thin", color: { argb: "FF686D76" } },
+        right: { style: "thin", color: { argb: "FF686D76" } },
+      };
+
+      const budgetNum = parseNumber(budget);
+      const usedNum = parseNumber(used);
+      const ratioNum = budgetNum > 0 ? (usedNum / budgetNum) * 100 : 0;
+      const ratioText = `${ratioNum.toFixed(2)}%`;
+
+      // ✅ 제목: ■ {업장명} / {조회날짜}
+      ws.getCell("A1").value = `■ ${accountName} / ${reportDateLabel}`;
+      ws.mergeCells(`A1:${endCol}1`);
+      ws.getCell("A1").font = { bold: true, size: 12 };
+      ws.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
+      ws.getRow(1).height = 24;
+
+      // ✅ 요약(가로): A2~F2 고정 배치
+      const summaryRow = [
+        "식자재 월 예산",
+        budgetNum,
+        "사용 금액",
+        usedNum,
+        "예산대비 퍼센트",
+        ratioText,
+      ];
+      ws.getRow(2).values = summaryRow;
+      for (let c = 1; c <= Math.min(6, totalCols); c++) {
+        const cell = ws.getCell(`${toExcelColName(c)}2`);
+        cell.border = borderThin;
+        cell.alignment = { vertical: "middle", horizontal: [2, 4, 6].includes(c) ? "right" : "center" };
+        if ([1, 3, 5].includes(c)) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+          cell.font = { bold: true };
+        }
+      }
+      ws.getCell("B2").numFmt = "#,##0";
+      ws.getCell("D2").numFmt = "#,##0";
+
+      // ✅ 조회년월 행 제거 후 표를 1행 위로 이동
+      const ratioRowNo = 4;
+      const headerRowNo = 5;
+      const dataStartRowNo = 6;
+
+      // ✅ 일 사용기준 % 행
+      ws.getCell(`A${ratioRowNo}`).value = "일 사용기준 %";
+      ratioData.forEach((val, idx) => {
+        ws.getCell(`${toExcelColName(idx + 2)}${ratioRowNo}`).value = val;
+      });
+      ws.getCell(`${endCol}${ratioRowNo}`).value = "";
+
+      // ✅ 헤더 행 (구분 + 일자 + 합계)
+      ws.getCell(`A${headerRowNo}`).value = "구분";
+      for (let d = 1; d <= daysCount; d++) {
+        ws.getCell(`${toExcelColName(d + 1)}${headerRowNo}`).value = `${d}일`;
+      }
+      ws.getCell(`${endCol}${headerRowNo}`).value = "합계";
+
+      // ✅ 본문 데이터 행
+      (tableRows || []).forEach((row, rowIdx) => {
+        const r = dataStartRowNo + rowIdx;
+        ws.getCell(`A${r}`).value = row?.name ?? "";
+        for (let d = 1; d <= daysCount; d++) {
+          const num = parseNumber(row?.[`day_${d}`]);
+          const cell = ws.getCell(`${toExcelColName(d + 1)}${r}`);
+          cell.value = num;
+          cell.numFmt = "#,##0";
+        }
+        const totalCell = ws.getCell(`${endCol}${r}`);
+        totalCell.value = parseNumber(row?.total);
+        totalCell.numFmt = "#,##0";
+      });
+
+      const dataEndRowNo = dataStartRowNo + Math.max((tableRows || []).length - 1, 0);
+
+      // ✅ 공통 테두리/정렬 적용
+      for (let r = ratioRowNo; r <= dataEndRowNo; r++) {
+        for (let c = 1; c <= totalCols; c++) {
+          const cell = ws.getCell(`${toExcelColName(c)}${r}`);
+          cell.border = borderThin;
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        }
+      }
+
+      // ✅ 색상/강조 스타일
+      for (let c = 1; c <= totalCols; c++) {
+        ws.getCell(`${toExcelColName(c)}${ratioRowNo}`).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFFE3A9" },
+        };
+        const headerCell = ws.getCell(`${toExcelColName(c)}${headerRowNo}`);
+        headerCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+        headerCell.font = { bold: true };
+      }
+
+      const totalRowOffset = (tableRows || []).findIndex((r) => String(r?.name) === "총합");
+      if (totalRowOffset >= 0) {
+        const totalRowNo = dataStartRowNo + totalRowOffset;
+        for (let c = 1; c <= totalCols; c++) {
+          const cell = ws.getCell(`${toExcelColName(c)}${totalRowNo}`);
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE3A9" } };
+          cell.font = { bold: true };
+        }
+      }
+
+      // ✅ 컬럼 폭 조정: 전체 +1, E열(예산대비 퍼센트)은 추가 확대
+      ws.getColumn(1).width = 19;
+      for (let c = 2; c <= totalCols - 1; c++) {
+        ws.getColumn(c).width = 11;
+      }
+      ws.getColumn(totalCols).width = 12; // ✅ 합계열 폭 고정
+      if (totalCols >= 5) {
+        ws.getColumn(5).width = 18;
+      }
+      // ✅ 요청 반영: B, D 열도 조금 더 확대
+      if (totalCols >= 2) ws.getColumn(2).width = 12;
+      if (totalCols >= 4) ws.getColumn(4).width = 12;
+    },
+    [toExcelColName]
+  );
+
+  // ✅ 집계표 엑셀 다운로드 (현재월/전월 전체)
+  const handleExcelDownload = useCallback(async () => {
+    if (!selectedAccountId) {
+      Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
+      return;
+    }
+
+    const hasNow = Array.isArray(tableData) && tableData.length > 0;
+    const hasPrev = Array.isArray(table2Data) && table2Data.length > 0;
+    if (!hasNow && !hasPrev) {
+      Swal.fire("안내", "다운로드할 데이터가 없습니다.", "info");
+      return;
+    }
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "the_full";
+      workbook.created = new Date();
+
+      const accountName = String(selectedAccountOption?.account_name || selectedAccountId || "업장");
+      const reportDateLabel = dayjs().format("YYYY-MM");
+
+      if (hasNow) {
+        buildTallyExcelSheet(workbook, {
+          sheetName: `${year}-${String(month).padStart(2, "0")}`,
+          accountName,
+          reportDateLabel,
+          budget: budgetGrant,
+          used: usedTotalNow,
+          ratioData: ratioDataNow,
+          tableRows: tableData,
+          daysCount: daysInMonthNow,
+        });
+      }
+
+      if (hasPrev) {
+        buildTallyExcelSheet(workbook, {
+          sheetName: `${prevYear}-${String(prevMonth).padStart(2, "0")}`,
+          accountName,
+          reportDateLabel,
+          budget: budget2Grant,
+          used: usedTotalPrev,
+          ratioData: ratioDataPrev,
+          tableRows: table2Data,
+          daysCount: daysInMonthPrev,
+        });
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const safeAccountName = accountName.replace(/[\\/:*?"<>|]/g, "_");
+      a.href = url;
+      a.download = `집계표_${safeAccountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    }
+  }, [
+    selectedAccountId,
+    selectedAccountOption,
+    tableData,
+    table2Data,
+    year,
+    month,
+    prevYear,
+    prevMonth,
+    budgetGrant,
+    budget2Grant,
+    usedTotalNow,
+    usedTotalPrev,
+    ratioDataNow,
+    ratioDataPrev,
+    daysInMonthNow,
+    daysInMonthPrev,
+    buildTallyExcelSheet,
+  ]);
+
   // ======================== 거래처 연결/등록 ========================
   const [open, setOpen] = useState(false);
   const [open2, setOpen2] = useState(false);
@@ -2929,6 +3161,7 @@ function TallySheet() {
               options={filteredAccountList || []}
               value={selectedAccountOption}
               readOnly={isAccountLocked} // ✅ MUI Autocomplete readOnly
+              disabled={isAccountLocked} // ✅ 잠김이면 컴포넌트 비활성화
               open={isAccountLocked ? false : undefined} // ✅ 잠김이면 드롭다운 자체가 안 열리게
               onOpen={isAccountLocked ? undefined : undefined}
               onChange={(_, newValue) => {
@@ -2950,8 +3183,8 @@ function TallySheet() {
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="거래처 검색"
-                  placeholder="거래처명을 입력"
+                  label={isAccountLocked ? "거래처(고정)" : "거래처"}
+                  placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
                   onKeyDown={(e) => {
                     if (isAccountLocked) {
                       e.preventDefault(); // ✅ 엔터/타이핑 자체 차단
@@ -3041,6 +3274,21 @@ function TallySheet() {
             }}
           >
             새로고침
+          </MDButton>
+
+          {/* ✅ 집계표 전체 엑셀 다운로드 버튼 */}
+          <MDButton
+            variant="gradient"
+            color="success"
+            startIcon={<DownloadIcon />}
+            onClick={handleExcelDownload}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 70 : 90,
+              px: isMobile ? 1 : 2,
+            }}
+          >
+            엑셀다운로드
           </MDButton>
 
           <MDButton

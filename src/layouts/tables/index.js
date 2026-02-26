@@ -27,6 +27,10 @@ import "./tables.css";
 
 export default function Tables() {
   const [selectedType, setSelectedType] = useState("0");
+  // ✅ 고객사 목록 정렬 기준(기본: 거래처명)
+  const [accountSortKey, setAccountSortKey] = useState("account_name");
+  // ✅ 정렬 변경 시 로딩 화면 노출용 상태
+  const [sortLoading, setSortLoading] = useState(false);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 22 });
 
   const [open, setOpen] = useState(false);
@@ -157,6 +161,73 @@ export default function Tables() {
   }, [selectedType]);
 
   const onSearchList = (e) => setSelectedType(e.target.value);
+
+  // ✅ 정렬 변경 시 로딩 화면을 먼저 보여주고 정렬 반영
+  const handleSortChange = (e) => {
+    const nextKey = String(e.target.value);
+    if (nextKey === accountSortKey) return;
+
+    setSortLoading(true);
+    setTimeout(() => {
+      setAccountSortKey(nextKey);
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+      setTimeout(() => setSortLoading(false), 0);
+    }, 0);
+  };
+
+  // ✅ 화면 표시 순서만 정렬(원본 localRows/저장 로직은 유지)
+  const sortedLocalRows = useMemo(() => {
+    const copied = Array.isArray(localRows) ? [...localRows] : [];
+
+    const textCompare = (a, b) =>
+      String(a ?? "").localeCompare(String(b ?? ""), "ko-KR", {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+    copied.sort((a, b) => {
+      // ✅ "전체" 옵션이 있을 경우 항상 상단 고정
+      const isAllA =
+        String(a?.account_id ?? "").trim().toUpperCase() === "ALL" ||
+        String(toPlainText(a?.account_name) ?? "").trim() === "전체";
+      const isAllB =
+        String(b?.account_id ?? "").trim().toUpperCase() === "ALL" ||
+        String(toPlainText(b?.account_name) ?? "").trim() === "전체";
+      if (isAllA && !isAllB) return -1;
+      if (!isAllA && isAllB) return 1;
+
+      const keyA =
+        accountSortKey === "account_id"
+          ? String(a?.account_id ?? "").trim()
+          : String(toPlainText(a?.account_name) ?? "").trim();
+      const keyB =
+        accountSortKey === "account_id"
+          ? String(b?.account_id ?? "").trim()
+          : String(toPlainText(b?.account_name) ?? "").trim();
+
+      if (keyA && keyB) {
+        const byKey = textCompare(keyA, keyB);
+        if (byKey !== 0) return byKey;
+      } else if (keyA && !keyB) {
+        return -1;
+      } else if (!keyA && keyB) {
+        return 1;
+      }
+
+      // ✅ 동순위 fallback: 거래처명 -> account_id
+      const nameA = String(toPlainText(a?.account_name) ?? "").trim();
+      const nameB = String(toPlainText(b?.account_name) ?? "").trim();
+      const byName = textCompare(nameA, nameB);
+      if (byName !== 0) return byName;
+
+      return textCompare(
+        String(a?.account_id ?? "").trim(),
+        String(b?.account_id ?? "").trim()
+      );
+    });
+
+    return copied;
+  }, [localRows, accountSortKey, toPlainText]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -539,7 +610,7 @@ export default function Tables() {
   // ✅ 테이블 생성
   // =========================
   const table = useReactTable({
-    data: localRows,
+    data: sortedLocalRows,
     columns: tableColumns,
     state: { pagination },
     onPaginationChange: setPagination,
@@ -550,7 +621,7 @@ export default function Tables() {
     autoResetPageIndex: false,
   });
 
-  if (loading) return <LoadingScreen />;
+  if (loading || sortLoading) return <LoadingScreen />;
 
   return (
     <DashboardLayout>
@@ -580,6 +651,18 @@ export default function Tables() {
                 <option value="1">요양원</option>
                 <option value="4">산업체</option>
                 <option value="5">학교</option>
+              </TextField>
+
+              <TextField
+                select
+                size="small"
+                value={accountSortKey}
+                onChange={handleSortChange}
+                sx={{ minWidth: 150 }}
+                SelectProps={{ native: true }}
+              >
+                <option value="account_name">거래처명 정렬</option>
+                <option value="account_id">거래처ID 정렬</option>
               </TextField>
 
               {/* ✅ 전체 저장 버튼 */}

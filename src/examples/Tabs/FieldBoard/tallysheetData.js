@@ -37,6 +37,30 @@ const pickBudgetGrant = (resData) => {
   return parseNumber(first?.budget_grant);
 };
 
+// ✅ UseList 중복 시 최신 레코드 선별(idx > mod_dt > reg_dt 순)
+const parseUseRowVersion = (row) => {
+  const idx = Number(row?.idx ?? 0);
+  if (Number.isFinite(idx) && idx > 0) return { rank: 3, value: idx };
+
+  const modTs = Date.parse(String(row?.mod_dt ?? "").trim());
+  if (Number.isFinite(modTs)) return { rank: 2, value: modTs };
+
+  const regTs = Date.parse(String(row?.reg_dt ?? "").trim());
+  if (Number.isFinite(regTs)) return { rank: 1, value: regTs };
+
+  return { rank: 0, value: 0 };
+};
+
+const pickLatestUseRow = (prev, curr) => {
+  if (!prev) return curr;
+  const a = parseUseRowVersion(prev);
+  const b = parseUseRowVersion(curr);
+
+  if (a.rank !== b.rank) return b.rank > a.rank ? curr : prev;
+  if (a.value !== b.value) return b.value > a.value ? curr : prev;
+  return curr;
+};
+
 export default function useTallysheetData(account_id, year, month) {
   const [dataRows, setDataRows] = useState([]);
   const [data2Rows, setData2Rows] = useState([]);
@@ -344,8 +368,8 @@ export default function useTallysheetData(account_id, year, month) {
         const y = overrideYear ?? year;
         const m = overrideMonth ?? month;
 
-        // year/month는 필수
-        if (!y || !m) {
+        // account/year/month는 필수
+        if (!a || !y || !m) {
           setUseList([]);
           return [];
         }
@@ -355,17 +379,19 @@ export default function useTallysheetData(account_id, year, month) {
         // 공통 row 매핑
         const mapRows = (resData) =>
           (resData || []).map((item) => ({
-            count_year: item.count_year,
-            count_month: item.count_month,
-            account_id: item.account_id,
-            type: item.type,
-            input_yn: item.input_yn,
+            idx: item.idx,
+            count_year: item.count_year ?? item.year,
+            count_month: item.count_month ?? item.month,
+            account_id: item.account_id ?? item.row_account_id,
+            type: item.type ?? item.use_type ?? item.gubun,
+            input_yn: item.input_yn ?? item.use_yn ?? item.lock_yn,
+            reg_dt: item.reg_dt,
+            mod_dt: item.mod_dt,
           }));
 
         // 단일 월 조회 함수
         const fetchOne = async (yy, mm) => {
-          const params = { year: yy, month: mm };
-          if (a) params.account_id = a;
+          const params = { account_id: a, year: yy, month: mm };
           const res = await api.get("/Operate/TallySheetUseList", { params });
           return mapRows(res.data);
         };
@@ -379,33 +405,26 @@ export default function useTallysheetData(account_id, year, month) {
 
           // ✅ 합치고 중복 제거(안전)
           const merged = [...currentRows, ...prevRows];
-          const uniq = Array.from(
-            new Map(
-              merged.map((r) => {
-                // idx가 항상 유니크면 idx만 써도 되지만, 혹시 몰라 복합키로 안전하게
-                const key = `${r.idx ?? ""}|${r.count_year}-${r.count_month}-${r.count_date}|${
-                  r.account_id
-                }|${r.type}|${r.gubun}`;
-                return [key, r];
-              })
-            ).values()
-          );
+          const uniqMap = new Map();
+          merged.forEach((r) => {
+            const key = `${r.count_year}-${r.count_month}|${r.account_id}|${r.type}`;
+            const prev = uniqMap.get(key);
+            uniqMap.set(key, pickLatestUseRow(prev, r));
+          });
+          const uniq = Array.from(uniqMap.values());
 
-          // ✅ 정렬(원하면 제거 가능): 최신년/월/일 먼저
+          // ✅ 정렬: 최신 년/월 우선
           uniq.sort((a1, a2) => {
-            const d1 = `${a1.count_year}-${String(a1.count_month).padStart(2, "0")}-${String(
-              a1.count_date
-            ).padStart(2, "0")}`;
-            const d2 = `${a2.count_year}-${String(a2.count_month).padStart(2, "0")}-${String(
-              a2.count_date
-            ).padStart(2, "0")}`;
-            return d2.localeCompare(d1);
+            const ym1 = Number(a1.count_year) * 100 + Number(a1.count_month);
+            const ym2 = Number(a2.count_year) * 100 + Number(a2.count_month);
+            if (ym1 !== ym2) return ym2 - ym1;
+            return String(a1.type ?? "").localeCompare(String(a2.type ?? ""));
           });
 
           setUseList(uniq);
           return uniq;
         } catch (err) {
-          console.error("데이터 조회 실패 (TallySheetPointList):", err);
+          console.error("데이터 조회 실패 (TallySheetUseList):", err);
           setUseList([]);
           return [];
         }

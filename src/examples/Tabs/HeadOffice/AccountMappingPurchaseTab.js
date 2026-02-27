@@ -1,6 +1,16 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useMemo, useState } from "react";
-import { Grid, Box, Select, MenuItem, TextField } from "@mui/material";
+import {
+  Grid,
+  Box,
+  Select,
+  MenuItem,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from "@mui/material";
 import dayjs from "dayjs";
 import {
   ResponsiveContainer,
@@ -75,6 +85,7 @@ export default function PeopleCountingTab() {
     maxCell,
     heatColor,
     buildLineData,
+    fetchMonthAccountBreakdown,
   } = useAccountMappingPurchaseYearData(year);
 
   const [search, setSearch] = useState("");
@@ -83,6 +94,11 @@ export default function PeopleCountingTab() {
   const [topN, setTopN] = useState(30); // 기본 30개, 전체는 999
 
   const [selectedVendor, setSelectedVendor] = useState(null);
+  const [monthDetailOpen, setMonthDetailOpen] = useState(false);
+  const [monthDetailVendor, setMonthDetailVendor] = useState(null);
+  const [monthDetailMonth, setMonthDetailMonth] = useState(1);
+  const [monthDetailRows, setMonthDetailRows] = useState([]);
+  const [monthDetailLoading, setMonthDetailLoading] = useState(false);
 
   const HM_BORDER = "1px solid #e0e0e0";
 
@@ -95,7 +111,11 @@ export default function PeopleCountingTab() {
 
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      rows = rows.filter((r) => String(r.name).toLowerCase().includes(q));
+      rows = rows.filter((r) => {
+        const name = String(r.name ?? "").toLowerCase();
+        const type = String(r.type ?? "").toLowerCase();
+        return name.includes(q) || type.includes(q);
+      });
     }
 
     // 정렬
@@ -113,6 +133,32 @@ export default function PeopleCountingTab() {
   }, [matrixRows, search, sortKey, sortMonth, topN]);
 
   const selectedLineData = useMemo(() => buildLineData(selectedVendor), [selectedVendor]);
+  const getVendorLabel = (row) => {
+    return row?.name ?? "";
+  };
+
+  const monthDetailTotal = useMemo(
+    () => monthDetailRows.reduce((acc, row) => acc + (Number(row?.total) || 0), 0),
+    [monthDetailRows]
+  );
+
+  // 월 셀 클릭 시 거래처+월 기준 업장별 상세 모달을 연다.
+  const openMonthDetail = async (vendorRow, monthNumber) => {
+    setSelectedVendor(vendorRow);
+    setMonthDetailVendor(vendorRow);
+    setMonthDetailMonth(monthNumber);
+    setMonthDetailRows([]);
+    setMonthDetailLoading(true);
+    setMonthDetailOpen(true);
+
+    const rows = await fetchMonthAccountBreakdown(vendorRow, monthNumber);
+    setMonthDetailRows(rows);
+    setMonthDetailLoading(false);
+  };
+
+  const closeMonthDetail = () => {
+    setMonthDetailOpen(false);
+  };
 
   const loading = mode === "MONTH_COMPARE" ? monthLoading : yearLoading;
   if (loading) return <LoadingScreen />;
@@ -286,7 +332,7 @@ export default function PeopleCountingTab() {
               </Select>
 
               <MDTypography variant="caption" color="text">
-                (행 클릭하면 아래에 월별 추이 표시)
+                (행 클릭: 아래 월별 추이 / 월 금액 클릭: 업장별 상세)
               </MDTypography>
             </Box>
           </Grid>
@@ -298,7 +344,7 @@ export default function PeopleCountingTab() {
               <Box
                 sx={{
                   display: "grid",
-                  gridTemplateColumns: "260px repeat(12, 84px) 110px",
+                  gridTemplateColumns: "260px repeat(12, 96px) 110px",
                   fontSize: 12,
                   position: "sticky",
                   top: 0,
@@ -328,11 +374,11 @@ export default function PeopleCountingTab() {
               <Box sx={{ maxHeight: "30vh", overflowY: "auto" }}>
                 {filteredRows.map((r, rowIdx) => (
                   <Box
-                    key={r.name}
+                    key={r.vendor_key ?? `${r.name}-${r.type ?? "-"}`}
                     onClick={() => setSelectedVendor(r)}
                     sx={{
                       display: "grid",
-                      gridTemplateColumns: "260px repeat(12, 84px) 110px",
+                      gridTemplateColumns: "260px repeat(12, 96px) 110px",
                       fontSize: 12,
                       cursor: "pointer",
                       borderBottom: rowIdx === filteredRows.length - 1 ? "none" : HM_BORDER,
@@ -348,11 +394,11 @@ export default function PeopleCountingTab() {
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         borderRight: HM_BORDER,
-                        background: selectedVendor?.name === r.name ? "#fff3e6" : "#fff",
+                        background: selectedVendor?.vendor_key === r.vendor_key ? "#fff3e6" : "#fff",
                       }}
-                      title={r.name}
+                      title={getVendorLabel(r)}
                     >
-                      {r.name}
+                      {getVendorLabel(r)}
                     </Box>
 
                     {/* 1~12월 */}
@@ -363,14 +409,19 @@ export default function PeopleCountingTab() {
                       return (
                         <Box
                           key={m}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openMonthDetail(r, m);
+                          }}
                           sx={{
                             p: 1,
                             textAlign: "right",
                             borderRight: HM_BORDER,
                             background: heatColor(v, maxCell),
                             color: v > 0 ? "#111" : "#777",
+                            cursor: "pointer",
                           }}
-                          title={`${r.name} / ${m}월: ${formatNumber(v)}`}
+                          title={`${getVendorLabel(r)} / ${m}월: ${formatNumber(v)} (클릭: 업장별 상세)`}
                         >
                           {v ? formatNumber(v) : ""}
                         </Box>
@@ -386,7 +437,7 @@ export default function PeopleCountingTab() {
                         background: heatColor(r.sum ?? 0, maxCell), // ✅ 합계도 색상(원하면 maxSum으로 바꿔도 됨)
                         color: (r.sum ?? 0) > 0 ? "#111" : "#777",
                       }}
-                      title={`${r.name} 합계: ${formatNumber(r.sum)}`}
+                      title={`${getVendorLabel(r)} 합계: ${formatNumber(r.sum)}`}
                     >
                       {r.sum ? formatNumber(r.sum) : ""}
                     </Box>
@@ -400,14 +451,14 @@ export default function PeopleCountingTab() {
           <Grid item xs={12}>
             <Box sx={{ border: "1px solid #e0e0e0", borderRadius: 2, p: 1, height: 280, fontSize: 12 }}>
               <MDTypography variant="h6" sx={{ mb: 1 }}>
-                {selectedVendor ? `${selectedVendor.name} 월별 매출 추이 (${year}년)` : "거래처를 클릭하면 월별 추이가 표시됩니다"}
+                {selectedVendor ? `${getVendorLabel(selectedVendor)} 월별 매출 추이 (${year}년)` : "거래처를 클릭하면 월별 추이가 표시됩니다"}
               </MDTypography>
 
               <ResponsiveContainer width="100%" height="80%">
-                <LineChart data={selectedLineData}>
+                <LineChart data={selectedLineData} margin={{ top: 8, right: 8, left: 18, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={(v) => formatNumber(v)} />
+                  <XAxis dataKey="month" tick={{ fontSize: 12, dy: 6 }} />
+                  <YAxis width={72} tick={{ fontSize: 12, dy: 8 }} tickFormatter={(v) => formatNumber(v)} />
                   <Tooltip formatter={(v) => formatNumber(v)} />
                   <Legend />
                   <Line type="monotone" dataKey="total" name="매출" dot={false} stroke="#FF5F00" />
@@ -417,6 +468,131 @@ export default function PeopleCountingTab() {
           </Grid>
         </Grid>
       )}
+
+      <Dialog
+        open={monthDetailOpen}
+        onClose={closeMonthDetail}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {monthDetailVendor
+            ? `${getVendorLabel(monthDetailVendor)} / ${monthDetailMonth}월 업장별 금액`
+            : "업장별 금액"}
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {monthDetailLoading ? (
+            <MDTypography variant="body2" color="text">
+              업장별 상세를 조회 중입니다.
+            </MDTypography>
+          ) : monthDetailRows.length === 0 ? (
+            <MDTypography variant="body2" color="text">
+              업장별 상세 데이터가 없습니다.
+            </MDTypography>
+          ) : (
+            <Box sx={{ border: "1px solid #e0e0e0", borderRadius: 1, overflow: "hidden" }}>
+              {/* 헤더/바디/합계를 같은 테이블로 렌더링해서 열/줄 정렬을 맞춘다. */}
+              <Box sx={{ maxHeight: 520, overflowY: "auto" }}>
+                <Box
+                  component="table"
+                  sx={{
+                    width: "100%",
+                    tableLayout: "fixed",
+                    borderCollapse: "collapse",
+                    fontSize: 12,
+                  }}
+                >
+                  <colgroup>
+                    <col style={{ width: "130px" }} />
+                    <col />
+                    <col style={{ width: "140px" }} />
+                  </colgroup>
+
+                  <Box component="thead">
+                    <Box component="tr" sx={{ background: "#f7f7f7" }}>
+                      <Box component="th" sx={{ p: 1, textAlign: "left", borderRight: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", fontWeight: 700 }}>
+                        업장ID
+                      </Box>
+                      <Box component="th" sx={{ p: 1, textAlign: "left", borderRight: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", fontWeight: 700 }}>
+                        업장명
+                      </Box>
+                      <Box component="th" sx={{ p: 1, textAlign: "right", borderBottom: "1px solid #e0e0e0", fontWeight: 700 }}>
+                        금액
+                      </Box>
+                    </Box>
+                  </Box>
+
+                  <Box component="tbody">
+                    {monthDetailRows.map((row, idx) => (
+                      <Box component="tr" key={`${row.account_id || row.account_name}-${idx}`}>
+                        <Box
+                          component="td"
+                          sx={{
+                            p: 1,
+                            borderRight: "1px solid #f0f0f0",
+                            borderBottom: "1px solid #f0f0f0",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={row.account_id || "-"}
+                        >
+                          {row.account_id || "-"}
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            p: 1,
+                            borderRight: "1px solid #f0f0f0",
+                            borderBottom: "1px solid #f0f0f0",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={row.account_name || "-"}
+                        >
+                          {row.account_name || "-"}
+                        </Box>
+                        <Box
+                          component="td"
+                          sx={{
+                            p: 1,
+                            textAlign: "right",
+                            borderBottom: "1px solid #f0f0f0",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {formatNumber(row.total)}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+
+                  <Box component="tfoot">
+                    <Box component="tr" sx={{ background: "#fff8f1" }}>
+                      <Box component="td" sx={{ p: 1, borderRight: "1px solid #e0e0e0", fontWeight: 700 }}>
+                        합계
+                      </Box>
+                      <Box component="td" sx={{ p: 1, borderRight: "1px solid #e0e0e0" }} />
+                      <Box component="td" sx={{ p: 1, textAlign: "right", fontWeight: 700 }}>
+                        {formatNumber(monthDetailTotal)}
+                      </Box>
+                    </Box>
+                  </Box>
+                </Box>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <MDButton variant="outlined" color="secondary" onClick={closeMonthDetail}>
+            닫기
+          </MDButton>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

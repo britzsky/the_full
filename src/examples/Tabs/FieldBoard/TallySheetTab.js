@@ -456,6 +456,7 @@ function TallySheet() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [tabValue, setTabValue] = useState(0);
+  const [directUseRows, setDirectUseRows] = useState([]);
 
   const hook = useTallysheetData(selectedAccountId, year, month);
 
@@ -538,8 +539,39 @@ function TallySheet() {
   useEffect(() => {
     if (!selectedAccountId) return;
     fetchUseList?.(selectedAccountId, year, month);
-    fetchUseList?.(selectedAccountId, prevYear, prevMonth);
-  }, [selectedAccountId, year, month, prevYear, prevMonth, fetchUseList]);
+  }, [selectedAccountId, year, month, fetchUseList]);
+
+  // FieldBoard는 DB 잠금값을 직접 한 번 더 조회해서 화면 잠금 상태를 확정한다.
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchDirectUseRows = async () => {
+      if (!selectedAccountId) {
+        if (!cancelled) setDirectUseRows([]);
+        return;
+      }
+
+      try {
+        const nowParams = { account_id: selectedAccountId, year, month };
+        const prevParams = { account_id: selectedAccountId, year: prevYear, month: prevMonth };
+        const [nowRes, prevRes] = await Promise.all([
+          api.get("/Operate/TallySheetUseList", { params: nowParams }),
+          api.get("/Operate/TallySheetUseList", { params: prevParams }),
+        ]);
+
+        const nowRows = Array.isArray(nowRes?.data) ? nowRes.data : [];
+        const prevRows = Array.isArray(prevRes?.data) ? prevRes.data : [];
+        if (!cancelled) setDirectUseRows([...nowRows, ...prevRows]);
+      } catch (err) {
+        if (!cancelled) setDirectUseRows([]);
+      }
+    };
+
+    fetchDirectUseRows();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAccountId, year, month, prevYear, prevMonth]);
 
   // ✅ 검색: 엔터 입력 시 텍스트로 거래처 선택 (정확 일치 우선, 없으면 부분 일치)
   const selectAccountByInput = () => {
@@ -2080,7 +2112,6 @@ function TallySheet() {
       await fetchBudget2Grant?.(selectedAccountId, year, month);
       // ✅ 추가
       await fetchUseList?.(selectedAccountId, year, month);
-      await fetchUseList?.(selectedAccountId, prevYear, prevMonth);
       setOriginalRows([]);
       setOriginal2Rows([]);
       setImages(Array(daysInMonthNow).fill(null));
@@ -2684,24 +2715,56 @@ function TallySheet() {
   // ======================== ✅ useList 기반 "입력불가(input_yn=1)" 처리 ========================
   const buildUseKey = (y, m, type) => `${Number(y)}-${Number(m)}-${String(type)}`;
 
+  const parseInputYn = (value) => {
+    const s = String(value ?? "")
+      .trim()
+      .toUpperCase();
+    if (!s) return 0;
+    if (s === "1" || s === "Y" || s === "YES" || s === "TRUE") return 1;
+    if (s === "0" || s === "N" || s === "NO" || s === "FALSE") return 0;
+    const n = Number(s);
+    return Number.isFinite(n) && n === 1 ? 1 : 0;
+  };
+
+  const parseUseVersion = (row) => {
+    const idx = Number(row?.idx ?? 0);
+    if (Number.isFinite(idx) && idx > 0) return idx;
+    const modTs = Date.parse(String(row?.mod_dt ?? "").trim());
+    if (Number.isFinite(modTs)) return modTs;
+    const regTs = Date.parse(String(row?.reg_dt ?? "").trim());
+    if (Number.isFinite(regTs)) return regTs;
+    return 0;
+  };
+
   // useList -> (year,month,type) 단위로 input_yn lookup 맵
   const useLockMap = useMemo(() => {
     const map = new Map();
-    (useList || []).forEach((u) => {
-      if (selectedAccountId && String(u.account_id) !== String(selectedAccountId)) return;
+    const sourceRows =
+      Array.isArray(directUseRows) && directUseRows.length > 0 ? directUseRows : useList || [];
 
-      const y = Number(u.count_year);
-      const m = Number(u.count_month);
-      const t = String(u.type ?? "");
+    sourceRows.forEach((u) => {
+      const rowAccountId = String(u.account_id ?? u.row_account_id ?? "").trim();
+      if (selectedAccountId && rowAccountId && rowAccountId !== String(selectedAccountId)) return;
+
+      const y = Number(u.count_year ?? u.year);
+      const m = Number(u.count_month ?? u.month);
+      const t = String(u.type ?? u.use_type ?? u.gubun ?? "").trim();
       if (!y || !m || !t) return;
 
-      map.set(buildUseKey(y, m, t), Number(u.input_yn || 0)); // 0/1
+      const key = buildUseKey(y, m, t);
+      const lock = parseInputYn(u.input_yn ?? u.use_yn ?? u.lock_yn);
+      const version = parseUseVersion(u);
+      const prev = map.get(key);
+
+      if (!prev || version >= prev.version) {
+        map.set(key, { lock, version }); // 최신 버전만 유지
+      }
     });
     return map;
-  }, [useList, selectedAccountId]);
+  }, [directUseRows, useList, selectedAccountId]);
 
   const isTypeLocked = useCallback(
-    (y, m, type) => useLockMap.get(buildUseKey(y, m, type)) === 1,
+    (y, m, type) => (useLockMap.get(buildUseKey(y, m, type))?.lock ?? 0) === 1,
     [useLockMap]
   );
 
@@ -2887,11 +2950,38 @@ function TallySheet() {
           validateStatus: () => true,
         });
 
-        const ok = res?.data?.code === 200 || res?.status === 200;
-        if (!ok) throw new Error(res?.data?.message || `저장 실패 (code: ${res?.status})`);
+        const responseCode = Number(res?.data?.code);
+        const ok = responseCode === 200;
+        if (!ok) {
+          throw new Error(
+            res?.data?.message || res?.data?.msg || `저장 실패 (code: ${res?.data?.code ?? "N/A"})`
+          );
+        }
+
+        // ✅ 저장한 월/년 기준으로 다시 조회 + 값 검증
+        const refreshed = (await fetchUseList?.(selectedAccountId, year, month)) || [];
+        const matched = refreshed.find(
+          (r) => {
+            const rowYear = Number(r?.count_year ?? r?.year);
+            const rowMonth = Number(r?.count_month ?? r?.month);
+            const rowType = String(r?.type ?? r?.use_type ?? r?.gubun ?? "").trim();
+            const rowAccountId = String(r?.account_id ?? r?.row_account_id ?? "").trim();
+            const accountMatch = !rowAccountId || rowAccountId === String(selectedAccountId ?? "");
+
+            return (
+              rowYear === Number(t.year) &&
+              rowMonth === Number(t.month) &&
+              rowType === String(t.type) &&
+              accountMatch
+            );
+          }
+        );
+        const nextInputYn = matched ? parseInputYn(matched.input_yn ?? matched.use_yn) : 0;
+        if (nextInputYn !== Number(inputYn)) {
+          throw new Error("저장 후 재조회 값이 반영되지 않았습니다.");
+        }
 
         closeUseMenu();
-
         Swal.fire({
           toast: true,
           position: "top-end",
@@ -2900,9 +2990,6 @@ function TallySheet() {
           showConfirmButton: false,
           timer: 900,
         });
-
-        // ✅ 저장한 월/년 기준으로 다시 조회
-        await fetchUseList?.(selectedAccountId, t.year, t.month);
       } catch (err) {
         closeUseMenu();
         Swal.fire("오류", err.message || "입력상태 저장 중 오류", "error");
@@ -3014,6 +3101,7 @@ function TallySheet() {
 
                 const activeRowBg = isActiveRow ? "rgba(255, 244, 179, 0.55)" : "";
                 const activeCellBg = isActiveThisCell ? "rgba(255, 213, 79, 0.60)" : "";
+                const lockedRowBg = rowLocked ? "rgba(158, 158, 158, 0.28)" : "";
                 const isLightPoint =
                   pointColor &&
                   ["#f8fbfe", "#fff", "#ffffff"].includes(String(pointColor).toLowerCase());
@@ -3023,6 +3111,9 @@ function TallySheet() {
 
                 // ✅ activeCell/activeRow + pointColor가 같이 있을 때 섞어서 보여주기
                 const mergedBg = (() => {
+                  // 입력불가 행은 전체를 회색으로 표시
+                  if (lockedRowBg) return lockedRowBg;
+
                   // 활성 셀 배경이 있으면 그걸 최우선으로
                   if (activeCellBg)
                     return pointColor ? overlayOn(activeCellBg, pointColor) : activeCellBg;
@@ -3410,7 +3501,7 @@ function TallySheet() {
       >
         {(() => {
           const t = useMenu.target;
-          const cur = t ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type)) || 0) : 0;
+          const cur = t ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0) : 0;
 
           return (
             <>

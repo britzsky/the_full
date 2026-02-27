@@ -13,6 +13,8 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import api from "api/api";
 import { useParams } from "react-router-dom";
+import ExcelJS from "exceljs";
+import DownloadIcon from "@mui/icons-material/Download";
 
 // 🔹 데이케어 컬럼이 보이는 account_id 목록 (기본 레이아웃용)
 const DAYCARE_ACCOUNT_IDS = [
@@ -711,6 +713,11 @@ function DinersNumberSheet() {
 
   const selectedAccount = (accountList || []).find((acc) => acc.account_id === selectedAccountId);
   const selectedAccountType = selectedAccount?.account_type;
+  const actionButtonSx = {
+    fontSize: isMobile ? "11px" : "13px",
+    minWidth: isMobile ? 70 : 90,
+    px: isMobile ? 1 : 2,
+  };
 
   const isWorkingDayVisible = selectedAccountType === "학교" || selectedAccountType === "산업체";
 
@@ -969,6 +976,13 @@ function DinersNumberSheet() {
     return origNorm !== currNorm ? { color: "red" } : { color: "black" };
   };
 
+  const { headerRows, visibleColumns } = getTableStructure(
+    selectedAccountId,
+    isDaycareVisible,
+    stableExtraDietCols,
+    selectedAccountType
+  );
+
   // ✅ 저장 처리
   const handleSave = async () => {
     if (!originalRows || originalRows.length === 0) {
@@ -1018,16 +1032,131 @@ function DinersNumberSheet() {
     }
   };
 
+  const handleExcelDownload = async () => {
+    if (!selectedAccountId) {
+      Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
+      return;
+    }
+
+    if (!Array.isArray(activeRows) || activeRows.length === 0) {
+      Swal.fire("안내", "다운로드할 데이터가 없습니다.", "info");
+      return;
+    }
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "dinersnumbersheet";
+      workbook.created = new Date();
+
+      const ws = workbook.addWorksheet("식수관리");
+      const totalCols = 1 + visibleColumns.length;
+      const accountName = String(selectedAccount?.account_name || selectedAccountId || "거래처");
+      const reportDateLabel = `${year}-${String(month).padStart(2, "0")}`;
+      const workingDayNumber = parseNumber(workingDay ?? 0) || 0;
+      const workingDayText = isWorkingDayVisible ? ` / 근무일수 ${workingDayNumber}` : "";
+
+      const borderThin = {
+        top: { style: "thin", color: { argb: "FF686D76" } },
+        left: { style: "thin", color: { argb: "FF686D76" } },
+        bottom: { style: "thin", color: { argb: "FF686D76" } },
+        right: { style: "thin", color: { argb: "FF686D76" } },
+      };
+
+      // ✅ 제목: ■ {거래처명} / {년-월}
+      ws.getCell(1, 1).value = `■ ${accountName} / ${reportDateLabel}${workingDayText}`;
+      ws.mergeCells(1, 1, 1, totalCols);
+      ws.getCell(1, 1).font = { bold: true, size: 12 };
+      ws.getCell(1, 1).alignment = { vertical: "middle", horizontal: "left" };
+      ws.getRow(1).height = 24;
+
+      // ✅ 헤더(rowSpan/colSpan) 구조를 화면과 동일하게 생성
+      const headerStartRow = 2;
+      const occupied = new Set();
+
+      headerRows.forEach((row, rowIdx) => {
+        const rowNo = headerStartRow + rowIdx;
+        let colCursor = 1;
+
+        row.forEach((cell) => {
+          while (occupied.has(`${rowNo}:${colCursor}`)) colCursor += 1;
+
+          const rowSpan = Number(cell?.rowSpan) || 1;
+          const colSpan = Number(cell?.colSpan) || 1;
+          const endRow = rowNo + rowSpan - 1;
+          const endCol = colCursor + colSpan - 1;
+
+          ws.getCell(rowNo, colCursor).value = cell?.label ?? "";
+          if (rowSpan > 1 || colSpan > 1) {
+            ws.mergeCells(rowNo, colCursor, endRow, endCol);
+          }
+
+          for (let r = rowNo; r <= endRow; r += 1) {
+            for (let c = colCursor; c <= endCol; c += 1) {
+              occupied.add(`${r}:${c}`);
+              const hCell = ws.getCell(r, c);
+              hCell.border = borderThin;
+              hCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+              hCell.font = { bold: true };
+              hCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+            }
+          }
+
+          colCursor = endCol + 1;
+        });
+      });
+
+      // ✅ 본문 데이터
+      const dataStartRow = headerStartRow + headerRows.length;
+      activeRows.forEach((row, rowIdx) => {
+        const excelRow = dataStartRow + rowIdx;
+
+        ws.getCell(excelRow, 1).value = dayjs(row?.diner_date).format("YYYY-MM-DD");
+        ws.getCell(excelRow, 1).border = borderThin;
+        ws.getCell(excelRow, 1).alignment = { vertical: "middle", horizontal: "center" };
+
+        visibleColumns.forEach((key, colIdx) => {
+          const colNo = colIdx + 2;
+          const cell = ws.getCell(excelRow, colNo);
+
+          if (numericCols.includes(key)) {
+            cell.value = parseNumber(row?.[key]);
+            cell.numFmt = "#,##0";
+          } else {
+            cell.value = row?.[key] ?? "";
+          }
+
+          cell.border = borderThin;
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        });
+      });
+
+      ws.getColumn(1).width = 14;
+      visibleColumns.forEach((key, colIdx) => {
+        const colNo = colIdx + 2;
+        ws.getColumn(colNo).width = key === "note" ? 70 : 11;
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const safeAccountName = accountName.replace(/[\\/:*?"<>|]/g, "_");
+      a.href = url;
+      a.download = `식수관리_${safeAccountName}_${reportDateLabel}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    }
+  };
+
   if (loading && (!activeRows || activeRows.length === 0)) {
     return <LoadingScreen />;
   }
-
-  const { headerRows, visibleColumns } = getTableStructure(
-    selectedAccountId,
-    isDaycareVisible,
-    stableExtraDietCols,
-    selectedAccountType
-  );
 
   if (loading) return <LoadingScreen />;
 
@@ -1146,7 +1275,17 @@ function DinersNumberSheet() {
           ))}
         </TextField>
 
-        <MDButton variant="gradient" color="info" onClick={handleSave}>
+        <MDButton
+          variant="contained"
+          color="success"
+          startIcon={<DownloadIcon />}
+          onClick={handleExcelDownload}
+          sx={actionButtonSx}
+        >
+          엑셀다운로드
+        </MDButton>
+
+        <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
           저장
         </MDButton>
       </MDBox>

@@ -54,6 +54,7 @@ export default function useAccountMappingPurchaseYearData(year) {
   const [maxCell, setMaxCell] = useState(0);
 
   const ENDPOINT = "/HeadOffice/AccountMappingPurchaseList";
+  const DETAIL_ENDPOINT = "/HeadOffice/AccountMappingPurchaseDetailList";
 
   const fetchYear = useCallback(async () => {
     setLoading(true);
@@ -129,6 +130,54 @@ export default function useAccountMappingPurchaseYearData(year) {
     });
   }, []);
 
+  // 월 셀 클릭 시 거래처+월 기준 업장별 금액 조회
+  const fetchMonthAccountBreakdown = useCallback(
+    async (vendorRow, month) => {
+      const monthNumber = Number(month);
+      if (!vendorRow || monthNumber < 1 || monthNumber > 12) return [];
+
+      const targetName = String(vendorRow?.name ?? "").trim();
+      if (!targetName) return [];
+
+      try {
+        const res = await api.get(DETAIL_ENDPOINT, {
+          params: {
+            year,
+            month: pad2(monthNumber),
+            name: targetName,
+          },
+        });
+
+        const rows = Array.isArray(res?.data) ? res.data : [];
+        const grouped = new Map();
+
+        rows.forEach((r) => {
+          const accountId = String(r?.account_id ?? "").trim();
+          const accountName = String(r?.account_name ?? "").trim();
+          if (!accountId && !accountName) return;
+
+          const key = accountId || accountName;
+          const total = toNumber(r?.total);
+
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              account_id: accountId,
+              account_name: accountName || accountId,
+              total: 0,
+            });
+          }
+          grouped.get(key).total += total;
+        });
+
+        return Array.from(grouped.values()).sort((a, b) => b.total - a.total);
+      } catch (e) {
+        console.error("업장별 상세 조회 실패:", e);
+        return [];
+      }
+    },
+    [year]
+  );
+
   return {
     loading,
     fetchYear,
@@ -137,5 +186,6 @@ export default function useAccountMappingPurchaseYearData(year) {
     maxCell,
     heatColor,
     buildLineData,
+    fetchMonthAccountBreakdown,
   };
 }

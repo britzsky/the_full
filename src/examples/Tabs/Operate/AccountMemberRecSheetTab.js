@@ -43,8 +43,8 @@ function AccountMemberRecSheet() {
 
   const [loading, setLoading] = useState(true);
 
-  // ✅ 정렬 상태 (실입사일)
-  const [sorting, setSorting] = useState([]);
+  // ✅ 정렬 상태 (실입사일 -> 업장명)
+  const [sorting, setSorting] = useState([{ id: "act_join_dt", desc: false }]);
 
   // ✅ 스냅샷 갱신 트리거 (재조회/저장 성공 시 올려줌)
   const [snapshotTick, setSnapshotTick] = useState(0);
@@ -180,65 +180,79 @@ function AccountMemberRecSheet() {
   };
 
   const columns = useMemo(
-    () => [
-      { header: "구분", accessorKey: "cor_type", size: 50 },
-      { header: "성명", accessorKey: "name", size: 50 },
-      { header: "주민번호", accessorKey: "rrn", size: 100 },
-      { header: "업장명", accessorKey: "account_id", size: 150 },
-      { header: "직책", accessorKey: "position_type", size: 65 },
-      { header: "계좌번호", accessorKey: "account_number", size: 160 },
-      { header: "연락처", accessorKey: "phone", size: 100 },
-      { header: "주소", accessorKey: "address", size: 150 },
-      { header: "계약형태", accessorKey: "contract_type", size: 50 },
+    () => {
+      const accountNameMap = new Map(
+        (accountList || []).map((acc) => [String(acc.account_id ?? ""), String(acc.account_name ?? "")])
+      );
+      const getAccountName = (accountId) => {
+        const key = String(accountId ?? "");
+        return accountNameMap.get(key) || key;
+      };
 
-      {
-        accessorKey: "act_join_dt",
-        size: 80,
-        enableSorting: true,
-        sortingFn: (rowA, rowB, columnId) => {
-          const a = toDateMs(rowA.getValue(columnId));
-          const b = toDateMs(rowB.getValue(columnId));
-          return a === b ? 0 : a > b ? 1 : -1;
-        },
-        header: ({ column }) => {
-          const sorted = column.getIsSorted();
-          return (
-            <div
-              onClick={column.getToggleSortingHandler()}
-              style={{
-                cursor: "pointer",
-                userSelect: "none",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-              }}
-              title="정렬"
-            >
-              실입사일
-              <span style={{ fontSize: 11 }}>
-                {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : ""}
-              </span>
-            </div>
-          );
-        },
-      },
+      return [
+        { header: "구분", accessorKey: "cor_type", size: 50 },
+        { header: "성명", accessorKey: "name", size: 50 },
+        { header: "주민번호", accessorKey: "rrn", size: 100 },
+        { header: "업장명", accessorKey: "account_id", size: 150 },
+        { header: "직책", accessorKey: "position_type", size: 65 },
+        { header: "계좌번호", accessorKey: "account_number", size: 160 },
+        { header: "연락처", accessorKey: "phone", size: 100 },
+        { header: "주소", accessorKey: "address", size: 150 },
+        { header: "계약형태", accessorKey: "contract_type", size: 50 },
 
-      {
-        header: "급여(월)",
-        accessorKey: "salary",
-        size: 80,
-        cell: (info) => formatNumber(info.getValue()),
-      },
-      { header: "근무형태", accessorKey: "idx", size: 180 },
-      { header: "시작", accessorKey: "start_time", size: 60 },
-      { header: "마감", accessorKey: "end_time", size: 60 },
-      { header: "채용여부", accessorKey: "use_yn", size: 60 },
-      { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
-      { header: "근로계약서", accessorKey: "employment_contract", size: 90 },
-      { header: "신분증", accessorKey: "id", size: 80 },
-      { header: "통장사본", accessorKey: "bankbook", size: 80 },
-    ],
-    []
+        {
+          accessorKey: "act_join_dt",
+          size: 80,
+          enableSorting: true,
+          sortingFn: (rowA, rowB, columnId) => {
+            const a = toDateMs(rowA.getValue(columnId));
+            const b = toDateMs(rowB.getValue(columnId));
+            if (a !== b) return a > b ? 1 : -1;
+
+            const accountNameA = getAccountName(rowA.original?.account_id);
+            const accountNameB = getAccountName(rowB.original?.account_id);
+            return accountNameA.localeCompare(accountNameB, "ko");
+          },
+          header: ({ column }) => {
+            const sorted = column.getIsSorted();
+            return (
+              <div
+                onClick={column.getToggleSortingHandler()}
+                style={{
+                  cursor: "pointer",
+                  userSelect: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                title="정렬"
+              >
+                실입사일
+                <span style={{ fontSize: 11 }}>
+                  {sorted === "asc" ? "▲" : sorted === "desc" ? "▼" : ""}
+                </span>
+              </div>
+            );
+          },
+        },
+
+        {
+          header: "급여(월)",
+          accessorKey: "salary",
+          size: 80,
+          cell: (info) => formatNumber(info.getValue()),
+        },
+        { header: "근무형태", accessorKey: "idx", size: 180 },
+        { header: "시작", accessorKey: "start_time", size: 60 },
+        { header: "마감", accessorKey: "end_time", size: 60 },
+        { header: "채용여부", accessorKey: "use_yn", size: 60 },
+        { header: "비고", accessorKey: "note", minWidth: 80, maxWidth: 150 },
+        { header: "근로계약서", accessorKey: "employment_contract", size: 90 },
+        { header: "신분증", accessorKey: "id", size: 80 },
+        { header: "통장사본", accessorKey: "bankbook", size: 80 },
+      ];
+    },
+    [accountList]
   );
 
   const accountOptions = useMemo(
@@ -669,14 +683,14 @@ function AccountMemberRecSheet() {
                         ? "__FILE__"
                         : String(currentValue ?? "")
                       : isNumeric
-                      ? Number(currentValue ?? 0)
-                      : String(currentValue ?? "");
+                        ? Number(currentValue ?? 0)
+                        : String(currentValue ?? "");
 
                     const normOriginal = isImage
                       ? String(originalValue ?? "")
                       : isNumeric
-                      ? Number(originalValue ?? 0)
-                      : String(originalValue ?? "");
+                        ? Number(originalValue ?? 0)
+                        : String(originalValue ?? "");
 
                     const isChanged = normCurrent !== normOriginal;
 
@@ -827,8 +841,8 @@ function AccountMemberRecSheet() {
                           ].includes(colKey)
                             ? "center"
                             : colKey === "salary"
-                            ? "right"
-                            : "left",
+                              ? "right"
+                              : "left",
                         }}
                         contentEditable={isEditable && !isSelect && !isDate}
                         suppressContentEditableWarning
@@ -836,11 +850,11 @@ function AccountMemberRecSheet() {
                         onBlur={
                           isEditable && !isSelect && !isDate
                             ? (e) => {
-                                let newValue = e.target.innerText.trim();
-                                if (isNumeric) newValue = parseNumber(newValue);
-                                handleCellChange(newValue);
-                                if (isNumeric) e.currentTarget.innerText = formatNumber(newValue);
-                              }
+                              let newValue = e.target.innerText.trim();
+                              if (isNumeric) newValue = parseNumber(newValue);
+                              handleCellChange(newValue);
+                              if (isNumeric) e.currentTarget.innerText = formatNumber(newValue);
+                            }
                             : undefined
                         }
                       >

@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 import { useState, useEffect } from "react";
 import api from "api/api";
-import { fetchFieldBoardAccountList } from "./fieldBoardAccountFilter";
+import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
 
 const parseNumber = (value) => {
   if (!value) return 0;

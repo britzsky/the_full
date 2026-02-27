@@ -545,7 +545,65 @@ function RecordSheet() {
   const [month, setMonth] = useState(today.month() + 1);
 
   // ✅ localStorage에 account_id가 있으면 거래처 선택 잠금
-  const [lockedAccountId] = useState(() => String(localStorage.getItem("account_id") || ""));
+  const [lockedAccountId, setLockedAccountId] = useState(() =>
+    String(localStorage.getItem("account_id") || "").trim()
+  );
+  const localUserType = String(localStorage.getItem("user_type") || "").trim();
+  const needsSingleAccountLock = localUserType !== "4";
+  const [recoveringLockedAccount, setRecoveringLockedAccount] = useState(false);
+
+  // ✅ 보강 분기: account_id 누락(로컬스토리지 실패) 서버 재조회 처리
+  // ✅ 기존 로직 유지: 잠금/선택 순서 유지, 잠금 account_id 복구 주입
+  useEffect(() => {
+    if (!needsSingleAccountLock) return;
+    if (lockedAccountId) return;
+
+    let cancelled = false;
+
+    const recoverLockedAccountId = async () => {
+      setRecoveringLockedAccount(true);
+      try {
+        const fallbackUserId = String(
+          localStorage.getItem("user_id") || sessionStorage.getItem("login_user_id") || ""
+        ).trim();
+
+        if (!fallbackUserId) return;
+
+        const res = await api.get("/User/SelectUserInfo", {
+          params: { user_id: fallbackUserId },
+        });
+        const row = Array.isArray(res?.data) ? res.data[0] : res?.data;
+        const serverAccountId = String(row?.account_id ?? "").trim();
+        const serverUserId = String(row?.user_id ?? fallbackUserId).trim();
+
+        if (serverUserId && !String(localStorage.getItem("user_id") || "").trim()) {
+          localStorage.setItem("user_id", serverUserId);
+        }
+        if (serverAccountId) {
+          localStorage.setItem("account_id", serverAccountId);
+        }
+
+        if (!cancelled) {
+          setLockedAccountId(serverAccountId);
+        }
+      } catch (err) {
+        console.error("RecordSheet account_id 서버 재조회 실패:", err);
+      } finally {
+        if (!cancelled) {
+          setRecoveringLockedAccount(false);
+        }
+      }
+    };
+
+    recoverLockedAccountId();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [needsSingleAccountLock, lockedAccountId]);
+
+  // ✅ 보안 보강: 단건 잠금 대상 account_id 누락 시 화면/목록 조회 일시 중단
+  const shouldSuspendByMissingLockedAccount = needsSingleAccountLock && !lockedAccountId;
   const isAccountLocked = !!lockedAccountId;
 
   const [attendanceRows, setAttendanceRows] = useState([]);
@@ -575,7 +633,7 @@ function RecordSheet() {
 
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
-    useRecordsheetData(selectedAccountId, year, month);
+    useRecordsheetData(selectedAccountId, year, month, shouldSuspendByMissingLockedAccount);
 
   // ✅ rec 인원은 실입사일(act_join_dt) 이전 날짜를 잠금 처리
   const isCellLockedByActJoin = useCallback(
@@ -1565,6 +1623,8 @@ function RecordSheet() {
   ]);
 
   useEffect(() => {
+    // ✅ 보강 분기: account_id 복구 전 기존 선택 로직(1~3순위) 미진입
+    if (shouldSuspendByMissingLockedAccount) return;
     if (!accountList || accountList.length === 0) return;
 
     // ✅ 1순위: localStorage account_id (잠금)
@@ -1595,7 +1655,7 @@ function RecordSheet() {
 
     // ✅ 3순위: 첫 거래처
     setSelectedAccountId(String(accountList[0].account_id));
-  }, [accountList, account_id, lockedAccountId]);
+  }, [accountList, account_id, lockedAccountId, shouldSuspendByMissingLockedAccount]);
 
   useEffect(() => {
     setFormData((prev) => ({ ...prev, account_id: selectedAccountId }));
@@ -2174,6 +2234,8 @@ function RecordSheet() {
     }
   };
 
+  // ✅ 보강 분기: localStorage account_id 누락 복구 중 화면 비노출 유지
+  if (shouldSuspendByMissingLockedAccount || recoveringLockedAccount) return null;
   if (loading) return <LoadingScreen />;
 
   return (
@@ -2384,8 +2446,8 @@ function RecordSheet() {
                             onClick={
                               isJoinLocked
                                 ? () => {
-                                    openJoinLockInfoModal(row.original);
-                                  }
+                                  openJoinLockInfoModal(row.original);
+                                }
                                 : undefined
                             }
                             style={{

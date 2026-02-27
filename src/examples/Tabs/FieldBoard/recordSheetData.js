@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import api from "api/api";
-import { fetchFieldBoardAccountList } from "./fieldBoardAccountFilter";
+import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
 
-export default function useRecordsheetData(account_id, year, month) {
+export default function useRecordsheetData(account_id, year, month, suspendAccountListFetch = false) {
   const [memberRows, setMemberRows] = useState([]);
   const [dispatchRows, setDispatchRows] = useState([]);
   const [sheetRows, setSheetRows] = useState([]);
@@ -163,8 +163,14 @@ export default function useRecordsheetData(account_id, year, month) {
     }
   };
 
-  // ✅ 계정 목록 최초 1회 조회
+  // ✅ 계정 목록 조회
+  // ✅ 보강 분기: 상위(RecordSheetTab) account_id 복구 중 목록 조회 일시 중단
   useEffect(() => {
+    if (suspendAccountListFetch) {
+      setAccountList([]);
+      return;
+    }
+
     fetchFieldBoardAccountList({ endpoint: "/Account/AccountList", accountType: "0" })
       .then((list) => {
         const rows = (list || []).map((item) => ({
@@ -177,7 +183,7 @@ export default function useRecordsheetData(account_id, year, month) {
         console.error("데이터 조회 실패 (AccountList):", err);
         setAccountList([]);
       });
-  }, []);
+  }, [suspendAccountListFetch]);
 
   // ✅ account_id, year, month 변경 시 자동 조회
   useEffect(() => {

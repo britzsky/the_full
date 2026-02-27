@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import dayjs from "dayjs";
 import api from "api/api";
-import { fetchFieldBoardAccountList } from "./fieldBoardAccountFilter";
+import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
 
 const parseNumber = (value) => {
   if (value === null || value === undefined || value === "") return 0;

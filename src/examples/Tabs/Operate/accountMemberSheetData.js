@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "api/api";
 
+// 인사 -> 현장관리 -> 현장 직원관리
 const parseNumber = (value) => {
   if (!value) return 0;
   return Number(String(value).replace(/,/g, "")) || 0;
@@ -97,9 +98,9 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
       const mappedRows =
         workSystemList.length > 0
           ? rows.map((r) => ({
-              ...r,
-              work_system: toWorkSystemIdx(r.work_system),
-            }))
+            ...r,
+            work_system: toWorkSystemIdx(r.work_system),
+          }))
           : rows;
 
       setActiveRows(mappedRows);

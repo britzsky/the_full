@@ -264,6 +264,20 @@ function AccountMemberSheet() {
     }
   };
 
+  const insuranceDateFieldKeys = [
+    "national_pension",
+    "health_insurance",
+    "industrial_insurance",
+    "employment_insurance",
+  ];
+
+  const getInsuranceStatus = (val) => {
+    const raw = String(val ?? "").trim();
+    if (!raw) return "";
+    if (raw === "미해당" || raw.toUpperCase() === "N") return "N";
+    return formatDateForInput(raw) ? "Y" : "N";
+  };
+
   // ✅ 거래처 옵션(Autocomplete)
   const accountOptions = useMemo(
     () =>
@@ -699,11 +713,8 @@ function AccountMemberSheet() {
       "ret_set_dt",
       "loss_major_insurances",
       "del_dt",
-      "national_pension",
-      "health_insurance",
-      "industrial_insurance",
-      "employment_insurance",
     ]);
+    const insuranceDateFields = new Set(insuranceDateFieldKeys);
 
     const selectFields = new Set([
       "position_type",
@@ -857,6 +868,7 @@ function AccountMemberSheet() {
                   const isEditable = !nonEditableCols.has(colKey);
                   const isSelect = selectFields.has(colKey);
                   const isDate = dateFields.has(colKey);
+                  const isInsuranceDate = insuranceDateFields.has(colKey);
 
                   const handleCellChange = (newValue) => {
                     const updatedRows = rows.map((r, idx) => {
@@ -1060,11 +1072,11 @@ function AccountMemberSheet() {
                             ? "right"
                             : "left",
                       }}
-                      contentEditable={isEditable && !isSelect && !isDate}
+                      contentEditable={isEditable && !isSelect && !isDate && !isInsuranceDate}
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
                       onBlur={
-                        isEditable && !isSelect && !isDate
+                        isEditable && !isSelect && !isDate && !isInsuranceDate
                           ? (e) => {
                             let newValue = e.target.innerText.trim();
                             if (isNumeric) newValue = parseNumber(newValue);
@@ -1077,7 +1089,53 @@ function AccountMemberSheet() {
                           : undefined
                       }
                     >
-                      {isSelect ? (
+                      {isInsuranceDate ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <select
+                            value={getInsuranceStatus(currentValue)}
+                            onChange={(e) => {
+                              const next = e.target.value;
+                              if (next === "N") {
+                                handleCellChange("미해당");
+                                return;
+                              }
+                              if (next === "Y") {
+                                const existingDate = formatDateForInput(currentValue);
+                                handleCellChange(existingDate || dayjs().format("YYYY-MM-DD"));
+                                return;
+                              }
+                              handleCellChange("");
+                            }}
+                            className={isChanged ? "edited-cell" : ""}
+                            style={{
+                              minWidth: 68,
+                              border: "none",
+                              background: "transparent",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <option value="">선택</option>
+                            <option value="Y">해당</option>
+                            <option value="N">미해당</option>
+                          </select>
+
+                          {getInsuranceStatus(currentValue) === "Y" && (
+                            <input
+                              type="date"
+                              value={formatDateForInput(currentValue)}
+                              onChange={(e) => handleCellChange(e.target.value)}
+                              className={isChanged ? "edited-cell" : ""}
+                            />
+                          )}
+                        </div>
+                      ) : isSelect ? (
                         colKey === "idx" ? (
                           <Autocomplete
                             size="small"

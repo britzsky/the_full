@@ -56,7 +56,7 @@ export default function usePeopleCountingData(year, month) {
 
   const fetchMonth = async (y, mNumber) => {
     const m = pad2(mNumber); // ✅ 2자리로
-    const res = await api.get(ENDPOINT, { params: { year: y, month: m } });
+    const res = await api.get(ENDPOINT, { params: { year: y, month: m, limit: 10 } });
     return res.data || [];
   };
 

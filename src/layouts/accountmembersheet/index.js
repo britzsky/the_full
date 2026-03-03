@@ -3,7 +3,6 @@ import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-tabl
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
 import MDBox from "components/MDBox";
-import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
 import { TextField } from "@mui/material";
 import Swal from "sweetalert2";

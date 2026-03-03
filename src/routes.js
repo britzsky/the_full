@@ -41,7 +41,6 @@ import HomeSwitcher from "layouts/dashboard/HomeSwitcher";
 import Tables from "layouts/tables";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
-import AccountMemberSheet from "layouts/accountmembersheet";
 // 본사
 import PeopleCountingManager from "layouts/headoffice/headofficetab";
 import WeekMenuManager from "layouts/weekmenusheet";
@@ -61,12 +60,11 @@ import AccountIssueManager2 from "layouts/operate/accountissuesheet2";
 import BudgetManager from "layouts/operate/budgettablesheet";
 // 회계
 import AccountSales from "layouts/accountsales/accountsales";
-import PurchaseTally from "layouts/accounting/accountpurchasetally";
+import PurchaseDeadLineTally from "examples/Tabs/Accounting/AccountPurchaseDeadlineTab";
+import PurchaseTally from "examples/Tabs/Accounting/AccountPurchaseTallyTab";
 import HeadOfficeCorporateCardManager from "layouts/accounting/corporatecardsheet";
 import AccountCorporateCardManager from "layouts/accounting/accountcorporatecardsheet";
 import AccountPersonPurchaseManager from "layouts/accounting/accountpersonpurchasesheet";
-
-import PurchaseDeadLineManager from "layouts/accounting/accountpurchasetally";
 
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
@@ -119,14 +117,13 @@ const routes = [
 
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
         allowUserIds: [
-
           "jr1", // 김주람 파트장
 
           "mh3", // 이미희 매니저
           "dh2", // 민다희 매니저
 
           "sy7", // 이수연 파트장
-          "ys",  // 박이슬 매니저
+          "ys", // 박이슬 매니저
           "db1", // 송다빈 매니저
           "sm2", // 나선민 매니저
 
@@ -353,11 +350,11 @@ const routes = [
     collapse: [
       {
         type: "collapse",
-        name: "📦 매입",
-        key: "accounting",
+        name: "📦 매입마감",
+        key: "purchaseDeadLineTally",
         //icon: <Icon fontSize="small">*</Icon>,
-        route: "/purchaseDeadLineManager/purchasetally",
-        component: <PurchaseDeadLineManager />,
+        route: "/purchaseDeadLineTally/purchasetally",
+        component: <PurchaseDeadLineTally />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
         accessMode: "OR",
       },
@@ -388,6 +385,16 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/accountpersonpurchase",
         component: <AccountPersonPurchaseManager />,
+        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        accessMode: "OR",
+      },
+      {
+        type: "collapse",
+        name: "📦 매입집계",
+        key: "purchaseTally",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/purchaseTally/purchasetally",
+        component: <PurchaseTally />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
         accessMode: "OR",
       },

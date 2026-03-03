@@ -143,6 +143,7 @@ const FILE_TYPES = [
   { key: "kitchen_drawing", label: "주방도면" },
   { key: "nutritionist_room_img", label: "영양사실" },
   { key: "chef_lounge_img", label: "휴게실" },
+  { key: "meal_service_contract", label: "위탁급식계약서" },
 ];
 
 function AccountInfoSheet() {
@@ -179,7 +180,12 @@ function AccountInfoSheet() {
     const qLower = q.toLowerCase();
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((a) =>
+        String(a?.account_name || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.account_id);
       setAccountInput(partial.account_name || q);
@@ -221,6 +227,7 @@ function AccountInfoSheet() {
     kitchen_drawing: null,
     nutritionist_room_img: null,
     chef_lounge_img: null,
+    meal_service_contract: null,
   });
 
   // ✅ "{k=v, k2=v2}" 형태 문자열 파싱
@@ -563,6 +570,7 @@ function AccountInfoSheet() {
         "kitchen_drawing",
         "nutritionist_room_img",
         "chef_lounge_img",
+        "meal_service_contract",
       ];
 
       const next = {};
@@ -665,6 +673,7 @@ function AccountInfoSheet() {
       "kitchen_drawing",
       "nutritionist_room_img",
       "chef_lounge_img",
+      "meal_service_contract",
     ];
 
     // 서버에서 내려온 row

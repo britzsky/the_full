@@ -22,6 +22,8 @@ import dayjs from "dayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import "dayjs/locale/ko";
 import { koKR } from "@mui/x-date-pickers/locales";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -30,11 +32,6 @@ import CloseIcon from "@mui/icons-material/Close";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
@@ -1398,7 +1395,9 @@ function AccountPurchaseDeadlineTab() {
       adapterLocale="ko"
       localeText={koKR.components.MuiLocalizationProvider.defaultProps.localeText}
     >
-      <>
+      <DashboardLayout>
+        {/* 🔹 공통 헤더 사용 */}
+        <DashboardNavbar title="💰 매입마감" />
         <MDBox
           pt={1}
           pb={1}
@@ -1557,7 +1556,7 @@ function AccountPurchaseDeadlineTab() {
         {/* =========================
           ✅ 상단(집계) 테이블
          ========================= */}
-        <MDBox pt={0} pb={2} sx={tableSx}>
+        <MDBox pt={4.5} pb={2} sx={tableSx}>
           <MDBox
             py={1}
             px={1}
@@ -2507,7 +2506,7 @@ function AccountPurchaseDeadlineTab() {
             </Box>,
             document.body
           )}
-      </>
+      </DashboardLayout>
     </LocalizationProvider>
   );
 }

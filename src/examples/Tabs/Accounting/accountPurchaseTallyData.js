@@ -1,5 +1,6 @@
 /* eslint-disable react/function-component-definition */
-import { useState, useEffect } from "react";
+// src/layouts/account/accountPurchaseTallyData.js
+import { useState } from "react";
 import api from "api/api";
 
 // 숫자 파싱
@@ -15,53 +16,48 @@ const formatNumber = (value) => {
 };
 
 export default function useAccountPurchaseTallyData() {
-  // 🔹 매입 집계 테이블 데이터
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
 
-  // 🔹 조회 조건에서 쓸 거래처 리스트 (필요시 사용)
   const [partnerList, setPartnerList] = useState([]);
+  const [mappingRows, setMappingRows] = useState([]);
 
   const [loading, setLoading] = useState(false);
 
   /**
    * 매입 집계 조회
-   * @param {Object} filters - { bizType, type, fromDate, toDate, account_id, payType, ... }
+   * @param {Object} filters - { type, saleDate(YYYY-MM), account_id, payType, ... }
    */
   const fetchPurchaseList = async (filters) => {
     setLoading(true);
     try {
-      // ✅ GET 파라미터는 반드시 params 로 감싸기
-      const res = await api.get("/Account/AccountPurchaseAnalysisList", {
+      const res = await api.get("/Account/AccountPurchaseTallyV2List", {
         params: filters,
       });
 
       let list = [];
 
-      // ✅ 1) 백엔드가 배열로 바로 주는 경우 (지금 너가 보여준 형태)
       if (Array.isArray(res.data)) {
         list = res.data;
-      }
-      // ✅ 2) 혹시 나중에 { code: 200, rows: [...] } 구조로 바꾸더라도 대응
-      else if (res.data && res.data.code === 200) {
+      } else if (res.data && res.data.code === 200) {
         list = res.data.rows || [];
         setPartnerList(res.data.partners || []);
       }
 
-      // 숫자 포맷 등 프론트에서 가공하고 싶다면 여기서 처리
+      // ✅ 여기서 type은 "구매처 select value"로 쓰일 값(요청사항)
       const mapped = (list || []).map((item) => ({
         account_id: item.account_id,
         sale_id: item.sale_id,
-        item_id: item.item_id,
-        account_name: item.account_name || "",
+        type: item.type, // ✅ 구매처 매핑 키
         saleDate: item.saleDate || "",
-        name: item.name || "",
-        qty: formatNumber(item.qty),
-        unitPrice: formatNumber(item.unitPrice),
-        amount: formatNumber(item.amount),
-        taxType: item.taxType,
-        itemType: item.itemType,
-        receipt_image: item.receipt_image,
+        expen_tax: formatNumber(item.expen_tax),
+        expen_vat: formatNumber(item.expen_vat),
+        expen_taxFree: formatNumber(item.expen_taxFree),
+        expen_total: formatNumber(item.expen_total),
+        food_tax: formatNumber(item.food_tax),
+        food_vat: formatNumber(item.food_vat),
+        food_taxFree: formatNumber(item.food_taxFree),
+        food_total: formatNumber(item.food_total),
         note: item.note,
       }));
 
@@ -77,13 +73,44 @@ export default function useAccountPurchaseTallyData() {
     }
   };
 
+  /**
+   * ✅ 구매처 매핑 리스트
+   * - 이 값이 구매처 select 구성값이 됨
+   * - [{type, name}, ...]
+   */
+  const fetchMappingList = async (filters) => {
+    setLoading(true);
+    try {
+      const res = await api.get("/Operate/AccountMappingV2List", {
+        params: filters,
+      });
+
+      // ✅ 여기 원본 코드에 list 변수가 없어서 res.data를 list로 잡아야 함
+      const list = Array.isArray(res.data) ? res.data : res.data?.rows || res.data?.data || [];
+
+      const mapped = (list || []).map((item) => ({
+        type: item.type,
+        name: item.name,
+      }));
+
+      setMappingRows(mapped.map((r) => ({ ...r })));
+    } catch (err) {
+      console.error("AccountMappingList 조회 실패:", err);
+      setMappingRows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     rows,
     setRows,
     originalRows,
+    mappingRows,
     partnerList,
     loading,
     fetchPurchaseList,
+    fetchMappingList,
   };
 }
 

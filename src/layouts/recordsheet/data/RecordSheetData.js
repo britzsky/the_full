@@ -44,9 +44,10 @@ export default function useRecordsheetData(account_id, year, month) {
       // ✅ 직원정보
       setMemberRows(
         (memberRes.data || []).map((item) => ({
-          member_id: item.member_id,
+          member_id: safeTrim(item.member_id ?? item.memberId ?? "", ""),
           name: item.name,
           position: item.position,
+          cor_type: safeTrim(item.cor_type ?? item.corType ?? "", ""),
           del_yn: item.del_yn ?? "",
           working_day: item.working_day,
           employ_dispatch: item.employ_dispatch || "",

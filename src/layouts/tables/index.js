@@ -1,5 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   useReactTable,
   getCoreRowModel,
@@ -26,7 +27,14 @@ import useTableData from "layouts/tables/data/authorsTableData";
 import "./tables.css";
 
 export default function Tables() {
+  const navigate = useNavigate();
   const [selectedType, setSelectedType] = useState("0");
+  // ✅ 삭제여부 조회값 (기본 N)
+  const [selectedDelYn, setSelectedDelYn] = useState("N");
+  // ✅ 삭제여부 Y 전용 조회 결과
+  const [delYnRows, setDelYnRows] = useState([]);
+  // ✅ 삭제여부 Y 조회 로딩 상태
+  const [delYnLoading, setDelYnLoading] = useState(false);
   // ✅ 고객사 목록 정렬 기준(기본: 거래처명)
   const [accountSortKey, setAccountSortKey] = useState("account_name");
   // ✅ 정렬 변경 시 로딩 화면 노출용 상태
@@ -51,6 +59,121 @@ export default function Tables() {
 
   // ✅ 데이터 조회 Hook
   const { columns, rows, loading } = useTableData(selectedType, refreshKey);
+
+  // ✅ authorsTableData 수정 없이 index.js에서만 삭제여부 Y 조회용 매핑
+  const mapAccountRowsForDelYn = useCallback(
+    (list) =>
+      (Array.isArray(list) ? list : []).map((item) => {
+        const to = (path, color, text) => (
+          <MDTypography
+            component="a"
+            onClick={(e) => {
+              e.preventDefault();
+              navigate(path);
+            }}
+            variant="caption"
+            sx={{ color, cursor: "pointer" }}
+            fontWeight="medium"
+          >
+            {text}
+          </MDTypography>
+        );
+
+        return {
+          account_id: item.account_id,
+          meal_type: item.meal_type,
+          del_yn: item.del_yn,
+          account_name: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {item.account_name}
+            </MDTypography>
+          ),
+          account_address: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {item.account_address || "-"}
+            </MDTypography>
+          ),
+          account_type: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {item.account_type || "-"}
+            </MDTypography>
+          ),
+          account_rqd_member: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {item.account_rqd_member ?? "-"}
+            </MDTypography>
+          ),
+          account_headcount: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {item.account_headcount ?? "-"}
+            </MDTypography>
+          ),
+          info: to(
+            `/accountinfosheet/${item.account_id}?name=${item.account_name}`,
+            "#896C6C",
+            "상세보기"
+          ),
+          members: to(`/membersheet/${item.account_id}?name=${item.account_name}`, "#FF6600", "확인"),
+          record: to(`/recordsheet/${item.account_id}?name=${item.account_name}`, "#FFC107", "확인"),
+          ceremony: to(
+            `/ceremonysheet/${item.account_id}?name=${item.account_name}`,
+            "#36BA98",
+            "확인"
+          ),
+          dinners: to(
+            `/dinersnumbersheet/${item.account_id}?name=${item.account_name}`,
+            "#0D92F4",
+            "확인"
+          ),
+          wares: to(`/propertysheet/${item.account_id}?name=${item.account_name}`, "#125B9A", "확인"),
+          inventory: to(
+            `/inventorysheet/${item.account_id}?name=${item.account_name}`,
+            "#9112BC",
+            "확인"
+          ),
+          tally: to(`/tallysheet/${item.account_id}?name=${item.account_name}`, "#0D92F4", "확인"),
+        };
+      }),
+    [navigate]
+  );
+
+  // ✅ 삭제여부 조회
+  useEffect(() => {
+    let active = true;
+
+    const fetchDelYnRows = async () => {
+      if (selectedDelYn !== "Y") {
+        setDelYnRows([]);
+        setDelYnLoading(false);
+        return;
+      }
+
+      setDelYnLoading(true);
+      try {
+        const res = await api.get("/Account/AccountList", {
+          params: {
+            account_type: selectedType || "0",
+            del_yn: "Y",
+          },
+        });
+        if (!active) return;
+        setDelYnRows(mapAccountRowsForDelYn(res?.data || []));
+      } catch (error) {
+        console.error("삭제여부 Y 조회 실패:", error);
+        if (active) setDelYnRows([]);
+      } finally {
+        if (active) setDelYnLoading(false);
+      }
+    };
+
+    fetchDelYnRows();
+    return () => {
+      active = false;
+    };
+  }, [selectedDelYn, selectedType, refreshKey, mapAccountRowsForDelYn]);
+
+  // ✅ 기본(N)은 기존 훅 rows를 사용하고, Y는 index.js 직접조회 결과를 사용
+  const rowsByDelYn = selectedDelYn === "Y" ? delYnRows : rows;
 
   // =========================
   // ✅ 값 정리 유틸 (rows에 ReactElement가 섞여있을 수 있어서)
@@ -120,7 +243,7 @@ export default function Tables() {
   const [originalMap, setOriginalMap] = useState({});
 
   useEffect(() => {
-    const base = Array.isArray(rows) ? rows : [];
+    const base = Array.isArray(rowsByDelYn) ? rowsByDelYn : [];
     const next = base.map((r, idx) => {
       const accountId = r?.account_id;
       const rowKey =
@@ -151,7 +274,7 @@ export default function Tables() {
 
     // ✅ 서버 rows가 바뀌었을 때(필터/조회 변경)는 페이지 0
     setPagination((p) => ({ ...p, pageIndex: 0 }));
-  }, [rows, toPlainText, toNumberString]);
+  }, [rowsByDelYn, toPlainText, toNumberString]);
 
   // ✅ 수정된 값만 따로 (rowKey 기준)
   const [editedMap, setEditedMap] = useState({});
@@ -161,6 +284,19 @@ export default function Tables() {
   }, [selectedType]);
 
   const onSearchList = (e) => setSelectedType(e.target.value);
+
+  // ✅ 삭제여부(N/Y) 조회 셀렉트 변경
+  const handledelynChange = (e) => {
+    const nextDelYn = String(e.target.value || "N").trim().toUpperCase();
+    if (nextDelYn === selectedDelYn) return;
+
+    setSortLoading(true);
+    setTimeout(() => {
+      setSelectedDelYn(nextDelYn);
+      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+      setTimeout(() => setSortLoading(false), 0);
+    }, 0);
+  };
 
   // ✅ 정렬 변경 시 로딩 화면을 먼저 보여주고 정렬 반영
   const handleSortChange = (e) => {
@@ -178,6 +314,12 @@ export default function Tables() {
   // ✅ 화면 표시 순서만 정렬(원본 localRows/저장 로직은 유지)
   const sortedLocalRows = useMemo(() => {
     const copied = Array.isArray(localRows) ? [...localRows] : [];
+    // ✅ 삭제여부(N/Y) 1차 필터
+    const filtered = copied.filter(
+      (row) =>
+        String(row?.del_yn ?? "N").trim().toUpperCase() ===
+        String(selectedDelYn ?? "N").trim().toUpperCase()
+    );
 
     const textCompare = (a, b) =>
       String(a ?? "").localeCompare(String(b ?? ""), "ko-KR", {
@@ -185,7 +327,7 @@ export default function Tables() {
         sensitivity: "base",
       });
 
-    copied.sort((a, b) => {
+    filtered.sort((a, b) => {
       // ✅ "전체" 옵션이 있을 경우 항상 상단 고정
       const isAllA =
         String(a?.account_id ?? "").trim().toUpperCase() === "ALL" ||
@@ -226,8 +368,8 @@ export default function Tables() {
       );
     });
 
-    return copied;
-  }, [localRows, accountSortKey, toPlainText]);
+    return filtered;
+  }, [localRows, accountSortKey, selectedDelYn, toPlainText]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -621,7 +763,7 @@ export default function Tables() {
     autoResetPageIndex: false,
   });
 
-  if (loading || sortLoading) return <LoadingScreen />;
+  if (loading || sortLoading || (selectedDelYn === "Y" && delYnLoading)) return <LoadingScreen />;
 
   return (
     <DashboardLayout>
@@ -639,6 +781,19 @@ export default function Tables() {
               my={1}
               mx={1}
             >
+              <TextField
+                select
+                size="small"
+                value={selectedDelYn}
+                onChange={handledelynChange}
+                sx={{ minWidth: 150 }}
+                SelectProps={{ native: true }}
+              >
+                {/* ✅ 삭제여부 조회 (기본 N) */}
+                <option value="N">삭제여부 N</option>
+                <option value="Y">삭제여부 Y</option>
+              </TextField>
+
               <TextField
                 select
                 size="small"

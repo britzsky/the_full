@@ -18,7 +18,7 @@ import MDButton from "components/MDButton";
 import BasicLayout from "layouts/authentication/components/BasicLayout";
 
 // Images
-import bgImage2 from "assets/images/thefull-Photoroom.png";
+import bgImage2 from "assets/images/thefull_sign_1.png";
 import Swal from "sweetalert2";
 
 function Basic() {
@@ -140,13 +140,19 @@ function Basic() {
 
   return (
     <BasicLayout>
-      <Card>
+      <Card
+        sx={{
+          border: "1px solid #FFDCDC",
+          boxShadow:
+            "0rem 1.25rem 1.575rem -0.025rem #FFDCDC, 0rem 0.125rem 0.25rem -0.0625rem rgba(0, 0, 0, 0.06);",
+        }}
+      >
         <MDBox pt={6} pb={3} px={6} textAlign="center">
           <img src={bgImage2} alt="logo" />
           <MDBox component="form" role="form" onSubmit={handleSubmit}>
             <MDBox mb={2}>
               <MDInput
-                type="text"      // ID 입력이므로 text 타입 사용
+                type="text" // ID 입력이므로 text 타입 사용
                 label="ID"
                 value={userId}
                 onChange={(e) => setUserId(e.target.value)}
@@ -179,10 +185,10 @@ function Basic() {
 
             <MDBox mt={4} mb={1}>
               <MDButton
-                type="submit"              // 🔥 엔터/클릭 모두 submit로 처리
+                type="submit" // 🔥 엔터/클릭 모두 submit로 처리
                 variant="gradient"
-                color="info"
                 fullWidth
+                sx={{ bgcolor: "#FFC107", color: "#fff" }}
               >
                 Log In
               </MDButton>

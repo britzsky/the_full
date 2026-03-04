@@ -44,10 +44,15 @@ function AccountMemberRecordMainTableTab() {
 
   const [sidoOptions, setSidoOptions] = useState([NONE_OPTION]);
   const [sigunguOptions, setSigunguOptions] = useState([NONE_OPTION]);
+  const [eupmyeondongOptions, setEupmyeondongOptions] = useState([NONE_OPTION]);
+
   const [selectedSidoCode, setSelectedSidoCode] = useState("");
   const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
+  const [selectedEmdCode, setSelectedEmdCode] = useState("");
+
   const [originalSidoCode, setOriginalSidoCode] = useState("");
   const [originalSigunguCode, setOriginalSigunguCode] = useState("");
+  const [originalEmdCode, setOriginalEmdCode] = useState("");
 
   // ✅ 부족 클릭 시 오른쪽에 보여줄 응급 인력 리스트
   const [emergencyRows, setEmergencyRows] = useState([]);
@@ -153,7 +158,6 @@ function AccountMemberRecordMainTableTab() {
   const formatYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
   // 월의 week(1..n) + 요일(mon..sun) → 날짜 계산(월 기준, 주 시작=월요일)
-  // * 달력 규칙이 회사/데이터와 100% 동일하진 않을 수 있지만 “몇일인지” 확인용으로 유용
   const getDateByWeekDay = useCallback(
     (y, mm, week, dayKey) => {
       const m = Number(mm); // 1..12
@@ -201,7 +205,7 @@ function AccountMemberRecordMainTableTab() {
   }, [accountOptions, selectedAccountId]);
 
   // =========================
-  // ✅ 시도/시군구 옵션 조회
+  // ✅ 시도/시군구/읍면동 옵션 조회
   // =========================
   const fetchSidoOptions = useCallback(async () => {
     try {
@@ -234,6 +238,9 @@ function AccountMemberRecordMainTableTab() {
       if (!sido) {
         setSigunguOptions([NONE_OPTION]);
         setSelectedSigunguCode("");
+        // ✅ 시군구 없으면 읍면동도 초기화
+        setEupmyeondongOptions([NONE_OPTION]);
+        setSelectedEmdCode("");
         return;
       }
 
@@ -247,8 +254,7 @@ function AccountMemberRecordMainTableTab() {
         const merged = [NONE_OPTION, ...opts];
         setSigunguOptions(merged);
 
-        // ✅ 핵심: 기존값을 무조건 ""로 지우지 말고,
-        // 현재 선택값이 options에 있으면 유지, 없으면 ""로
+        // ✅ 현재 선택값이 options에 있으면 유지, 없으면 ""로
         setSelectedSigunguCode((prev) => {
           const v = normCode(prev);
           if (v === "") return "";
@@ -258,6 +264,47 @@ function AccountMemberRecordMainTableTab() {
         console.error(e);
         setSigunguOptions([NONE_OPTION]);
         setSelectedSigunguCode("");
+        setEupmyeondongOptions([NONE_OPTION]);
+        setSelectedEmdCode("");
+      }
+    },
+    [NONE_OPTION, isValueInOptions, normCode]
+  );
+
+  // ✅ 읍면동 옵션 조회 (시군구 기준)
+  const fetchEupmyeondongOptions = useCallback(
+    async (sigungu_code) => {
+      const sigungu = normCode(sigungu_code);
+
+      if (!sigungu) {
+        setEupmyeondongOptions([NONE_OPTION]);
+        setSelectedEmdCode("");
+        return;
+      }
+
+      try {
+        const res = await api.get("/Operate/EupmyeondongList", {
+          params: { sigungu_code: sigungu },
+        });
+
+        const opts = (res.data || []).map((x) => ({
+          value: String(x.emd_code),
+          label: x.emd_name,
+        }));
+
+        const merged = [NONE_OPTION, ...opts];
+        setEupmyeondongOptions(merged);
+
+        // ✅ 현재 선택값이 options에 있으면 유지, 없으면 ""로
+        setSelectedEmdCode((prev) => {
+          const v = normCode(prev);
+          if (v === "") return "";
+          return isValueInOptions(v, merged) ? v : "";
+        });
+      } catch (e) {
+        console.error(e);
+        setEupmyeondongOptions([NONE_OPTION]);
+        setSelectedEmdCode("");
       }
     },
     [NONE_OPTION, isValueInOptions, normCode]
@@ -270,6 +317,10 @@ function AccountMemberRecordMainTableTab() {
   useEffect(() => {
     fetchSigunguOptions(selectedSidoCode);
   }, [selectedSidoCode, fetchSigunguOptions]);
+
+  useEffect(() => {
+    fetchEupmyeondongOptions(selectedSigunguCode);
+  }, [selectedSigunguCode, fetchEupmyeondongOptions]);
 
   // =========================
   // ✅ 거래처 입력으로 선택
@@ -350,10 +401,11 @@ function AccountMemberRecordMainTableTab() {
 
       const nextSido = normCode(first.sido_code);
       const nextSigungu = normCode(first.sigungu_code);
+      const nextEmd = normCode(first.emd_code);
 
       // ✅ sido: 값이 있으면 옵션에 있는지 체크(없으면 지정안됨)
-      setSelectedSidoCode((prev) => {
-        const target = nextSido; // 서버값 우선
+      setSelectedSidoCode(() => {
+        const target = nextSido;
         if (target === "") return "";
         return isValueInOptions(target, sidoOptions) ? target : "";
       });
@@ -362,13 +414,19 @@ function AccountMemberRecordMainTableTab() {
       // ✅ sigungu: 우선 값 세팅해두고, fetchSigunguOptions에서 옵션 로딩 후 유지/초기화 판단
       setSelectedSigunguCode(nextSigungu);
       setOriginalSigunguCode(nextSigungu);
+
+      // ✅ emd: 우선 값 세팅해두고, fetchEupmyeondongOptions에서 옵션 로딩 후 유지/초기화 판단
+      setSelectedEmdCode(nextEmd);
+      setOriginalEmdCode(nextEmd);
     } else {
       setOriginalRows([]);
       // 데이터가 없을 때는 지역도 지정안됨
       setSelectedSidoCode("");
       setSelectedSigunguCode("");
+      setSelectedEmdCode("");
       setOriginalSidoCode("");
       setOriginalSigunguCode("");
+      setOriginalEmdCode("");
     }
     // length 기준 유지
   }, [
@@ -381,16 +439,28 @@ function AccountMemberRecordMainTableTab() {
     sidoOptions,
   ]);
 
-  // ✅ sido가 "지정안됨"으로 바뀌면 sigungu도 같이 지정안됨 처리
+  // ✅ sido가 "지정안됨"으로 바뀌면 sigungu/emd도 같이 지정안됨 처리
   useEffect(() => {
     if (!String(selectedSidoCode ?? "").trim()) {
       setSigunguOptions([NONE_OPTION]);
       setSelectedSigunguCode("");
+
+      setEupmyeondongOptions([NONE_OPTION]);
+      setSelectedEmdCode("");
     }
   }, [selectedSidoCode, NONE_OPTION]);
 
+  // ✅ sigungu가 "지정안됨"으로 바뀌면 emd도 같이 지정안됨 처리
+  useEffect(() => {
+    if (!String(selectedSigunguCode ?? "").trim()) {
+      setEupmyeondongOptions([NONE_OPTION]);
+      setSelectedEmdCode("");
+    }
+  }, [selectedSigunguCode, NONE_OPTION]);
+
   const isSidoChanged = String(selectedSidoCode ?? "") !== String(originalSidoCode ?? "");
   const isSigunguChanged = String(selectedSigunguCode ?? "") !== String(originalSigunguCode ?? "");
+  const isEmdChanged = String(selectedEmdCode ?? "") !== String(originalEmdCode ?? "");
 
   // =========================
   // ✅ 테이블 정의
@@ -487,7 +557,8 @@ function AccountMemberRecordMainTableTab() {
     const _isSidoChanged = String(selectedSidoCode ?? "") !== String(originalSidoCode ?? "");
     const _isSigunguChanged =
       String(selectedSigunguCode ?? "") !== String(originalSigunguCode ?? "");
-    const isRegionChanged = _isSidoChanged || _isSigunguChanged;
+    const _isEmdChanged = String(selectedEmdCode ?? "") !== String(originalEmdCode ?? "");
+    const isRegionChanged = _isSidoChanged || _isSigunguChanged || _isEmdChanged;
 
     if (changedRows.length === 0 && !isRegionChanged) {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
@@ -515,6 +586,7 @@ function AccountMemberRecordMainTableTab() {
           user_id: userId,
           sido_code: selectedSidoCode ? Number(selectedSidoCode) : null,
           sigungu_code: selectedSigunguCode ? Number(selectedSigunguCode) : null,
+          emd_code: selectedEmdCode ? Number(selectedEmdCode) : null, // ✅ 추가
         };
       });
 
@@ -528,6 +600,7 @@ function AccountMemberRecordMainTableTab() {
 
         setOriginalSidoCode(String(selectedSidoCode ?? ""));
         setOriginalSigunguCode(String(selectedSigunguCode ?? ""));
+        setOriginalEmdCode(String(selectedEmdCode ?? ""));
 
         await fetchAccountStandardList();
       } else {
@@ -999,9 +1072,9 @@ function AccountMemberRecordMainTableTab() {
         <MDBox sx={{ fontWeight: 700, mb: 0.5, fontSize: 14 }}>{emergencyTitle}</MDBox>
 
         {emergencyLoading ? (
-          <MDBox sx={{ fontSize: 12, color: "#777" }}>조회 중...</MDBox>
+          <MDBox sx={{ fontSize: 11, color: "#777" }}>조회 중...</MDBox>
         ) : (emergencyRows || []).length === 0 ? (
-          <MDBox sx={{ fontSize: 12, color: "#777" }}>조회된 인원이 없습니다.</MDBox>
+          <MDBox sx={{ fontSize: 11, color: "#777" }}>조회된 인원이 없습니다.</MDBox>
         ) : (
           <MDBox
             sx={{
@@ -1145,13 +1218,13 @@ function AccountMemberRecordMainTableTab() {
         <TextField
           select
           size="small"
-          label="시도"
           value={selectedSidoCode}
           onChange={(e) => {
             const v = e.target.value;
             setSelectedSidoCode(v);
-            // ✅ 시도 바꾸면 시군구는 지정안됨으로 리셋
+            // ✅ 시도 바꾸면 시군구/읍면동은 지정안됨으로 리셋
             setSelectedSigunguCode("");
+            setSelectedEmdCode("");
           }}
           sx={{
             minWidth: 140,
@@ -1184,9 +1257,13 @@ function AccountMemberRecordMainTableTab() {
         <TextField
           select
           size="small"
-          label="시군구"
           value={selectedSigunguCode}
-          onChange={(e) => setSelectedSigunguCode(e.target.value)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setSelectedSigunguCode(v);
+            // ✅ 시군구 바꾸면 읍면동은 지정안됨으로 리셋
+            setSelectedEmdCode("");
+          }}
           sx={{
             minWidth: 160,
             "& .MuiInputBase-root": { height: 35 },
@@ -1210,6 +1287,41 @@ function AccountMemberRecordMainTableTab() {
           disabled={!selectedSidoCode || (sigunguOptions || []).length === 0}
         >
           {(sigunguOptions || []).map((o) => (
+            <MenuItem key={o.value} value={o.value}>
+              {o.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        {/* ✅ 읍면동 select 추가 */}
+        <TextField
+          select
+          size="small"
+          value={selectedEmdCode}
+          onChange={(e) => setSelectedEmdCode(e.target.value)}
+          sx={{
+            minWidth: 180,
+            "& .MuiInputBase-root": { height: 35 },
+            "& .MuiSelect-select": {
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              paddingTop: 0,
+              paddingBottom: 0,
+              color: isEmdChanged ? "#d32f2f" : "inherit",
+              fontWeight: isEmdChanged ? 700 : 400,
+            },
+            "& .MuiInputLabel-root": {
+              top: -2,
+              color: isEmdChanged ? "#d32f2f" : "inherit",
+              fontWeight: isEmdChanged ? 700 : 400,
+            },
+            "& .MuiInputLabel-shrink": { top: 0 },
+          }}
+          SelectProps={{ displayEmpty: true }}
+          disabled={!selectedSigunguCode || (eupmyeondongOptions || []).length === 0}
+        >
+          {(eupmyeondongOptions || []).map((o) => (
             <MenuItem key={o.value} value={o.value}>
               {o.label}
             </MenuItem>
@@ -1352,7 +1464,7 @@ function AccountMemberRecordMainTableTab() {
                                               onClick={() =>
                                                 handleClickShortageItem({
                                                   week,
-                                                  dayKey, // ✅ 날짜 계산용
+                                                  dayKey,
                                                   dayLabel: DAY_LABELS[idx],
                                                   position_type: it.position_type,
                                                   posLabel: it.posLabel,

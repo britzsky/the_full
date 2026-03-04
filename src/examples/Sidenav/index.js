@@ -15,7 +15,7 @@ import SidenavCollapse from "examples/Sidenav/SidenavCollapse";
 import SidenavRoot from "examples/Sidenav/SidenavRoot";
 import sidenavLogoLabel from "examples/Sidenav/styles/sidenav";
 
-import logoImage3 from "assets/images/the-full-logo2.png";
+import logoImage3 from "assets/images/the-full-logo4.png";
 
 import {
   useMaterialUIController,
@@ -78,7 +78,13 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
     routesArray.map(({ type, name, icon, key, href, route, collapse }) => {
       if (type === "collapse") {
         const collapseComponent = href ? (
-          <Link href={href} key={key} target="_blank" rel="noreferrer" sx={{ textDecoration: "none" }}>
+          <Link
+            href={href}
+            key={key}
+            target="_blank"
+            rel="noreferrer"
+            sx={{ textDecoration: "none" }}
+          >
             <SidenavCollapse
               name={name}
               icon={icon}
@@ -179,7 +185,10 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           </MDBox>
 
           <MDBox component={NavLink} to="/dashboard" display="flex" alignItems="center">
-            <MDBox width={!brandName && "100%"} sx={(theme) => sidenavLogoLabel(theme, { miniSidenav })}>
+            <MDBox
+              width={!brandName && "100%"}
+              sx={(theme) => sidenavLogoLabel(theme, { miniSidenav })}
+            >
               <MDTypography component="h6" variant="button" fontWeight="medium" color={textColor}>
                 <img src={logoImage3} alt="logo" />
               </MDTypography>

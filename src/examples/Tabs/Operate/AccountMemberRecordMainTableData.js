@@ -164,7 +164,7 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
   // ✅ 업장 목록
   useEffect(() => {
     api
-      .get("/Account/AccountList", { params: { account_type: "0" } })
+      .get("/Account/AccountList", { params: { account_type: 0 } })
       .then((res) => {
         const rows = (res.data || []).map((item) => ({
           account_id: item.account_id,

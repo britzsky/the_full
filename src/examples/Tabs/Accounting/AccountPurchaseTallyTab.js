@@ -257,7 +257,7 @@ function AccountPurchaseTallyTab() {
   // ✅ 최초 로딩
   useEffect(() => {
     api
-      .get("/Account/AccountList", { params: { account_type: "0" } })
+      .get("/Account/AccountListV2", { params: { account_type: "0" } })
       .then((res) => {
         const list = (res.data || []).map((item) => ({
           account_id: item.account_id,

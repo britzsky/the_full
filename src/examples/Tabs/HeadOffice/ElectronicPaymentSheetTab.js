@@ -8,7 +8,7 @@ import Swal from "sweetalert2";
 import dayjs from "dayjs";
 import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import logo from "assets/images/the-full-logo2.png";
+import logo from "assets/images/the-full-logo4.png";
 import useElectronicPaymentSheetData from "./electronicPaymentSheetData";
 import PropTypes from "prop-types";
 

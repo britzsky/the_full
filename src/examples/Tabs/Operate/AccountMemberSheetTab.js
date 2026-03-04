@@ -43,6 +43,8 @@ function AccountMemberSheet() {
   const [memberSearchName, setMemberSearchName] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
   const accountInitRef = useRef(false);
+  // ✅ 직원 검색 직후 거래처 Autocomplete의 자동 reset 재입력을 막기 위한 플래그
+  const suppressAccountResetRef = useRef(false);
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -444,43 +446,42 @@ function AccountMemberSheet() {
       const res = await api.get("/Operate/AccountMemberAllListExcel", {
         params: { del_yn: activeStatus },
       });
-      const rows = buildExcelRows(
-        (res.data || []).map((item) => ({
-          account_id: item.account_id,
-          account_name: item.account_name,
-          member_id: item.member_id,
-          name: item.name,
-          rrn: item.rrn,
-          position_type: item.position_type,
-          account_number: item.account_number,
-          phone: item.phone,
-          address: item.address,
-          contract_type: item.contract_type,
-          join_dt: item.join_dt,
-          act_join_dt: item.act_join_dt,
-          ret_set_dt: item.ret_set_dt,
-          loss_major_insurances: item.loss_major_insurances,
-          del_yn: item.del_yn,
-          display_yn: item.display_yn ?? "Y",
-          del_dt: item.del_dt,
-          del_note: item.del_note,
-          salary: parseNumber(item.salary),
-          idx: item.idx,
-          start_time: normalizeTime(item.start_time),
-          end_time: normalizeTime(item.end_time),
-          national_pension: item.national_pension,
-          health_insurance: item.health_insurance,
-          industrial_insurance: item.industrial_insurance,
-          employment_insurance: item.employment_insurance,
-          employment_contract: item.employment_contract,
-          headoffice_note: item.headoffice_note,
-          subsidy: item.subsidy,
-          note: item.note,
-          id: item.id,
-          bankbook: item.bankbook,
-          cor_type: item.cor_type,
-        }))
-      );
+      const fetchedRows = (res.data || []).map((item) => ({
+        account_id: item.account_id,
+        account_name: item.account_name,
+        member_id: item.member_id,
+        name: item.name,
+        rrn: item.rrn,
+        position_type: item.position_type,
+        account_number: item.account_number,
+        phone: item.phone,
+        address: item.address,
+        contract_type: item.contract_type,
+        join_dt: item.join_dt,
+        act_join_dt: item.act_join_dt,
+        ret_set_dt: item.ret_set_dt,
+        loss_major_insurances: item.loss_major_insurances,
+        del_yn: item.del_yn,
+        display_yn: item.display_yn ?? "Y",
+        del_dt: item.del_dt,
+        del_note: item.del_note,
+        salary: parseNumber(item.salary),
+        idx: item.idx,
+        start_time: normalizeTime(item.start_time),
+        end_time: normalizeTime(item.end_time),
+        national_pension: item.national_pension,
+        health_insurance: item.health_insurance,
+        industrial_insurance: item.industrial_insurance,
+        employment_insurance: item.employment_insurance,
+        employment_contract: item.employment_contract,
+        headoffice_note: item.headoffice_note,
+        subsidy: item.subsidy,
+        note: item.note,
+        id: item.id,
+        bankbook: item.bankbook,
+        cor_type: item.cor_type,
+      }));
+      const rows = buildExcelRows(fetchedRows);
 
       const wb = new ExcelJS.Workbook();
       wb.creator = "AccountMemberSheet";
@@ -661,6 +662,13 @@ function AccountMemberSheet() {
   }, [accountOptions, selectedAccountId]);
 
   const selectAccountByInput = useCallback(() => {
+    // ✅ 거래처 검색을 직접 수행하면 자동 reset 차단은 해제
+    suppressAccountResetRef.current = false;
+
+    // 거래처 검색이 실행되면 직원명 검색 필터는 해제
+    setMemberInput("");
+    setMemberSearchName("");
+
     const q = String(accountInput || "").trim();
     if (!q) return;
     const list = accountOptions || [];
@@ -681,6 +689,10 @@ function AccountMemberSheet() {
 
   const selectMemberByInput = useCallback(() => {
     const q = String(memberInput || "").trim();
+    // ✅ 직원 검색 직후에는 거래처 입력값 자동복원(reset)을 막음
+    suppressAccountResetRef.current = true;
+    // 직원 검색이 실행되면 거래처 검색 입력창은 비움
+    setAccountInput("");
     setMemberInput(q);
     setMemberSearchName(q);
   }, [memberInput]);
@@ -1634,6 +1646,12 @@ function AccountMemberSheet() {
                   const isSelect = selectFields.has(colKey);
                   const isDate = dateFields.has(colKey);
                   const isInsuranceDate = insuranceDateFields.has(colKey);
+                  const isRetiredRow =
+                    String(row.getValue("del_yn") ?? "")
+                      .trim()
+                      .toUpperCase() === "Y";
+                  const needsDelDateCheck =
+                    colKey === "del_dt" && isRetiredRow && !formatDateForInput(currentValue);
 
                   const handleCellChange = (newValue) => {
                     const updatedRows = rows.map((r, idx) => {
@@ -2114,12 +2132,35 @@ function AccountMemberSheet() {
                           </select>
                         )
                       ) : isDate ? (
-                        <input
-                          type="date"
-                          value={formatDateForInput(currentValue)}
-                          onChange={(e) => handleCellChange(e.target.value)}
-                          className={isChanged ? "edited-cell" : ""}
-                        />
+                        colKey === "del_dt" ? (
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <input
+                              type="date"
+                              value={formatDateForInput(currentValue)}
+                              onChange={(e) => handleCellChange(e.target.value)}
+                              className={isChanged ? "edited-cell" : ""}
+                            />
+                            {needsDelDateCheck && (
+                              <span style={{ color: "#d32f2f", fontWeight: 600, fontSize: 11 }}>
+                                퇴사일 확인
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            type="date"
+                            value={formatDateForInput(currentValue)}
+                            onChange={(e) => handleCellChange(e.target.value)}
+                            className={isChanged ? "edited-cell" : ""}
+                          />
+                        )
                       ) : (
                         (isNumeric ? formatNumber(currentValue) : currentValue) ?? ""
                       )}
@@ -2205,11 +2246,22 @@ function AccountMemberSheet() {
           value={selectedAccountOption}
           onChange={(_, opt) => {
             if (!opt) return;
+            // ✅ 거래처를 직접 선택하면 자동 reset 차단은 해제
+            suppressAccountResetRef.current = false;
             setLoading(true);
+            setMemberInput("");
+            setMemberSearchName("");
             setSelectedAccountId(opt.value);
           }}
           inputValue={accountInput}
-          onInputChange={(_, newValue) => setAccountInput(newValue)}
+          onInputChange={(_, newValue, reason) => {
+            // ✅ 직원 검색 직후 발생하는 내부 reset 이벤트는 무시
+            if (reason === "reset" && suppressAccountResetRef.current) return;
+            if (reason === "input" || reason === "clear") {
+              suppressAccountResetRef.current = false;
+            }
+            setAccountInput(newValue);
+          }}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           filterOptions={(options, state) => {

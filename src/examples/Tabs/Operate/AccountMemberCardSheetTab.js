@@ -19,9 +19,18 @@ import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountM
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 
+// 운영 -> 채용관리 -> 현장 직원목록
 function AccountMemberSheet() {
+
+  // =========================
+  // ✅ 통합이면 account_id=1 강제
+  // =========================
   const INTEGRATION_POSITION = "7";
-  const INTEGRATION_ACCOUNT_ID = "1"; // ✅ 통합이면 account_id는 1로 저장/표시
+  const INTEGRATION_ACCOUNT_ID = "1";
+
+  // =========================
+  // ✅ 유틸이면 account_id=2 강제
+  // =========================
   const UTIL_POSITION = "6";
   const UTIL_ACCOUNT_ID = "2"; // ✅ 유틸이면 account_id는 2로 저장/표시
 
@@ -31,6 +40,8 @@ function AccountMemberSheet() {
   const [memberSearchName, setMemberSearchName] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
   const accountInitRef = useRef(false);
+  // ✅ 직원 검색 직후 거래처 Autocomplete의 자동 reset 재입력을 막기 위한 플래그
+  const suppressAccountResetRef = useRef(false);
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -295,6 +306,13 @@ function AccountMemberSheet() {
   }, [accountOptions, selectedAccountId]);
 
   const selectAccountByInput = useCallback(() => {
+    // ✅ 거래처 검색을 직접 수행하면 자동 reset 차단은 해제
+    suppressAccountResetRef.current = false;
+
+    // 거래처 검색이 실행되면 직원명 검색 필터는 해제
+    setMemberInput("");
+    setMemberSearchName("");
+
     const q = String(accountInput || "").trim();
     if (!q) return;
     const list = accountOptions || [];
@@ -310,6 +328,10 @@ function AccountMemberSheet() {
 
   const selectMemberByInput = useCallback(() => {
     const q = String(memberInput || "").trim();
+    // ✅ 직원 검색 직후에는 거래처 입력값 자동복원(reset)을 막음
+    suppressAccountResetRef.current = true;
+    // 직원 검색이 실행되면 거래처 검색 입력창은 비움
+    setAccountInput("");
     setMemberInput(q);
     setMemberSearchName(q);
   }, [memberInput]);
@@ -1401,11 +1423,22 @@ function AccountMemberSheet() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => {
+            // ✅ 거래처를 직접 선택하면 자동 reset 차단은 해제
+            suppressAccountResetRef.current = false;
             setLoading(true);
+            setMemberInput("");
+            setMemberSearchName("");
             setSelectedAccountId(opt ? opt.value : "");
           }}
           inputValue={accountInput}
-          onInputChange={(_, newValue) => setAccountInput(newValue)}
+          onInputChange={(_, newValue, reason) => {
+            // ✅ 직원 검색 직후 발생하는 내부 reset 이벤트는 무시
+            if (reason === "reset" && suppressAccountResetRef.current) return;
+            if (reason === "input" || reason === "clear") {
+              suppressAccountResetRef.current = false;
+            }
+            setAccountInput(newValue);
+          }}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           filterOptions={(options, state) => {

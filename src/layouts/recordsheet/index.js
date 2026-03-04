@@ -70,6 +70,22 @@ const TYPE_LABEL = {
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
 const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
+// 퇴사자 노출 규칙(엑셀):
+// 퇴사월(n) + 다음월(n+1)까지 노출, n+2월 1일부터 제외
+const shouldIncludeRetiredForExcel = (row, rangeStartDate) => {
+  const delYn = safeTrim(row?.del_yn ?? "", "").toUpperCase();
+  if (delYn !== "Y") return true;
+
+  const delDtRaw = safeTrim(row?.del_dt ?? "", "");
+  if (!delDtRaw) return true;
+
+  const delDt = dayjs(delDtRaw);
+  if (!delDt.isValid()) return true;
+
+  const hideFromMonthStart = delDt.startOf("month").add(2, "month");
+  return rangeStartDate.startOf("month").isBefore(hideFromMonthStart);
+};
+
 const isDispatchTypeValue = (v) => {
   const t = safeTrim(v, "");
   if (!t) return false;
@@ -195,6 +211,36 @@ const toNumberMaybe = (v) => {
   if (!cleaned) return "";
   const n = Number(cleaned);
   return Number.isNaN(n) ? "" : n;
+};
+
+const toFirstNumberMaybe = (v) => {
+  const s = safeTrim(v, "");
+  if (!s) return "";
+  const m = s.match(/-?\d+(?:\.\d+)?/);
+  if (!m) return "";
+  const n = Number(m[0]);
+  return Number.isNaN(n) ? "" : n;
+};
+
+const toMinutesFromHHMM = (v) => {
+  const s = safeTrim(v, "");
+  if (!s) return null;
+  const m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+};
+
+const calcDurationHours = (start, end) => {
+  const s = toMinutesFromHHMM(start);
+  const e = toMinutesFromHHMM(end);
+  if (s == null || e == null) return 0;
+  let diff = e - s;
+  if (diff < 0) diff += 24 * 60;
+  return Number((diff / 60).toFixed(2));
 };
 
 // ✅ 셀 비교용 헬퍼
@@ -544,6 +590,12 @@ function DispatchEditableCell({ getValue, row, table, field }) {
 
   return (
     <input
+      className="dispatch-centered-input"
+      ref={(el) => {
+        if (!el) return;
+        el.style.setProperty("text-align", "center", "important");
+        el.style.setProperty("text-align-last", "center", "important");
+      }}
       value={value}
       onChange={handleChange}
       style={{
@@ -553,6 +605,8 @@ function DispatchEditableCell({ getValue, row, table, field }) {
         fontSize: "0.75rem",
         lineHeight: 1.1,
         textAlign: "center",
+        textAlignLast: "center",
+        direction: "ltr",
         border: "1px solid #ccc",
         borderRadius: 3,
         padding: "0 2px",
@@ -907,8 +961,8 @@ function RecordSheet() {
         const toDay = endInMonth
           ? realEnd.date()
           : realEnd.isBefore(monthStart)
-          ? null
-          : daysInThisMonth;
+            ? null
+            : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -977,8 +1031,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                ? "미지급"
-                : "부분"
+                  ? "미지급"
+                  : "부분"
               : "-";
 
           return {
@@ -1054,13 +1108,13 @@ function RecordSheet() {
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-        src?.record_type ??
-        src?.work_type ??
-        src?.recordType ??
-        src?.workType ??
-        src?.work_kind ??
-        src?.work_cd ??
-        "",
+      src?.record_type ??
+      src?.work_type ??
+      src?.recordType ??
+      src?.workType ??
+      src?.work_kind ??
+      src?.work_cd ??
+      "",
       ""
     );
 
@@ -1159,17 +1213,18 @@ function RecordSheet() {
     const map = new Map();
 
     for (const r of arr) {
-      const mid = r.member_id;
+      const mid = safeTrim(r?.member_id ?? r?.memberId ?? "", "");
       if (!mid) continue;
 
       if (!map.has(mid)) {
         map.set(mid, {
           name: r.name,
           account_id: r.account_id,
-          member_id: r.member_id,
+          member_id: mid,
           position: r.position || "",
           del_yn: r.del_yn ?? "",
           act_join_dt: safeTrim(r.act_join_dt ?? "", ""),
+          cor_type: safeTrim(r?.cor_type ?? r?.corType ?? "", ""),
           gubun: r.gubun ?? "nor",
           position_type: r.position_type ?? "",
           day_default: r.day_default || null,
@@ -1210,10 +1265,17 @@ function RecordSheet() {
 
     const memberDispatchAmountMap = new Map();
     (memberRowsArg || []).forEach((m) => {
-      const mid = m?.member_id;
+      const mid = safeTrim(m?.member_id ?? m?.memberId ?? "", "");
       if (!mid) return;
       const amt = parseEmployDispatchAmount(m?.employ_dispatch);
       if (amt !== "") memberDispatchAmountMap.set(String(mid), amt);
+    });
+
+    const memberRowsById = new Map();
+    (memberRowsArg || []).forEach((m) => {
+      const mid = safeTrim(m?.member_id ?? m?.memberId ?? "", "");
+      if (!mid) return;
+      memberRowsById.set(mid, m);
     });
 
     // ✅ member_id 기준 중복 제거 (동명이인/중복 row 병합)
@@ -1232,14 +1294,14 @@ function RecordSheet() {
       const passthrough = [];
 
       (normalizedSheetRows || []).forEach((item) => {
-        const mid = item?.member_id;
+        const mid = safeTrim(item?.member_id ?? item?.memberId ?? "", "");
         if (!mid) {
           passthrough.push(item);
           return;
         }
 
         if (!map.has(mid)) {
-          map.set(mid, { ...item });
+          map.set(mid, { ...item, member_id: mid });
           return;
         }
 
@@ -1255,6 +1317,7 @@ function RecordSheet() {
 
         if (!target.day_default && item.day_default) target.day_default = item.day_default;
         if (!target.position && item.position) target.position = item.position;
+        if (!target.cor_type && item.cor_type) target.cor_type = item.cor_type;
         if (!target.position_type && item.position_type) target.position_type = item.position_type;
         if (!target.gubun && item.gubun) target.gubun = item.gubun;
         if (!target.act_join_dt && item.act_join_dt) target.act_join_dt = item.act_join_dt;
@@ -1264,17 +1327,24 @@ function RecordSheet() {
     })();
 
     const newAttendance = (dedupedRows || []).map((item) => {
-      const member = (memberRowsArg || []).find((m) => m.member_id === item.member_id);
+      const memberId = safeTrim(item?.member_id ?? item?.memberId ?? "", "");
+      const member = memberRowsById.get(memberId) || null;
 
       const baseGubun = safeTrim(item.gubun ?? item.day_default?.gubun, "nor");
+      const baseCorType = safeTrim(
+        item?.cor_type ?? item?.day_default?.cor_type ?? member?.cor_type ?? member?.corType ?? "",
+        ""
+      );
       const basePt = safeTrim(item.position_type ?? item.day_default?.position_type, "");
 
       const base = {
         name: item.name,
         account_id: item.account_id,
-        member_id: item.member_id,
+        member_id: memberId || item.member_id,
         position: item.position || member?.position || "",
+        cor_type: baseCorType,
         del_yn: item.del_yn ?? member?.del_yn ?? "",
+        del_dt: safeTrim(item.del_dt ?? member?.del_dt ?? "", ""),
         act_join_dt: safeTrim(item.act_join_dt ?? member?.act_join_dt ?? "", ""),
         gubun: baseGubun,
         position_type: basePt,
@@ -1292,33 +1362,35 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-              ...source,
-              type: t,
-              gubun: safeTrim(source.gubun, baseGubun),
-              position_type: safeTrim(source.position_type, basePt),
-              start: source.start_time || source.start || "",
-              end: source.end_time || source.end || "",
-              start_time: source.start_time || "",
-              end_time: source.end_time || "",
-              salary: source.salary || "",
-              note: source.note ?? source.note ?? "",
-              pay_yn:
-                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
-            }
+            ...source,
+            type: t,
+            gubun: safeTrim(source.gubun, baseGubun),
+            cor_type: safeTrim(source?.cor_type ?? source?.corType ?? baseCorType, baseCorType),
+            position_type: safeTrim(source.position_type, basePt),
+            start: source.start_time || source.start || "",
+            end: source.end_time || source.end || "",
+            start_time: source.start_time || "",
+            end_time: source.end_time || "",
+            salary: source.salary || "",
+            note: source.note ?? source.note ?? "",
+            pay_yn:
+              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+          }
           : {
-              account_id: item.account_id,
-              member_id: item.member_id,
-              gubun: baseGubun,
-              position_type: basePt,
-              type: "",
-              start: "",
-              end: "",
-              start_time: "",
-              end_time: "",
-              salary: "",
-              note: "",
-              pay_yn: "N",
-            };
+            account_id: item.account_id,
+            member_id: memberId || item.member_id,
+            gubun: baseGubun,
+            cor_type: baseCorType,
+            position_type: basePt,
+            type: "",
+            start: "",
+            end: "",
+            start_time: "",
+            end_time: "",
+            salary: "",
+            note: "",
+            pay_yn: "N",
+          };
       }
 
       return { ...base, ...dayEntries };
@@ -1351,7 +1423,11 @@ function RecordSheet() {
     const memberRes = await api.get("/Account/AccountRecordMemberList", {
       params: { account_id: accountId, year: y, month: m },
     });
-    const memberRowsArg = extractArray(memberRes.data);
+    const memberRowsArg = (extractArray(memberRes.data) || []).map((m) => ({
+      ...m,
+      member_id: safeTrim(m?.member_id ?? m?.memberId ?? "", ""),
+      cor_type: safeTrim(m?.cor_type ?? m?.corType ?? "", ""),
+    }));
 
     const timeRes = await api.get("/Account/AccountMemberRecordTime", {
       params: { account_id: accountId, year: y, month: m },
@@ -1447,7 +1523,9 @@ function RecordSheet() {
     const isDispatchType = String(t) === "5" || String(t) === "6";
     // ✅ 파출은 salary, 초과/조기퇴근/대체휴무 등은 note 값을 4번째 줄에 반영
     let bottomValue = "";
-    if (isDispatchType) {
+    if (String(t) === "4") {
+      bottomValue = 8;
+    } else if (isDispatchType) {
       bottomValue = toNumberMaybe(salaryRaw);
     } else if (noteRaw !== "") {
       bottomValue = toNumberMaybe(noteRaw);
@@ -1483,6 +1561,7 @@ function RecordSheet() {
         didOpen: () => Swal.showLoading(),
       });
 
+      // 엑셀 워크북 생성
       const wb = new ExcelJS.Workbook();
       wb.creator = "RecordSheet";
 
@@ -1507,7 +1586,9 @@ function RecordSheet() {
         (accountList || []).map((a) => [String(a.account_id), safeTrim(a.account_name ?? "", "")])
       );
 
+      // 시트 구성: 본문/검증/요약/파출
       const wsAttend = wb.addWorksheet("출근현황");
+      const wsAttendValidation = wb.addWorksheet("출근부 검증");
       const wsAttendSummary = wb.addWorksheet("출근현황요약");
       const wsDispatch = wb.addWorksheet("파출정보");
       const wsDispatchSummary = wb.addWorksheet("파출정보 요약");
@@ -1554,6 +1635,7 @@ function RecordSheet() {
         });
       };
 
+      // 다운로드 기간에 포함되는 월 목록
       const monthsInRange = [];
       let cursor = realStart.startOf("month");
       const endCursor = realEnd.startOf("month");
@@ -1562,6 +1644,7 @@ function RecordSheet() {
         cursor = cursor.add(1, "month");
       }
 
+      // 다운로드 기간의 일자 목록 (헤더/본문 공통 사용)
       const dateList = [];
       let dcur = realStart.clone();
       while (dcur.isBefore(realEnd) || dcur.isSame(realEnd, "day")) {
@@ -1569,7 +1652,7 @@ function RecordSheet() {
         dcur = dcur.add(1, "day");
       }
 
-      const attendColCount = 1 + dateList.length;
+      const attendColCount = 2 + dateList.length;
       const attendRightHeader = [
         "업장",
         "직원명",
@@ -1611,9 +1694,20 @@ function RecordSheet() {
         40, // 비고
       ];
 
+      // 거래처명은 최대 길이에 맞춰 자동 폭 계산
+      const accountNameVisualLen = (s) =>
+        Array.from(String(s || "")).reduce((sum, ch) => sum + (/[\u0000-\u007f]/.test(ch) ? 1 : 2), 0);
+      const maxAccountNameLen = Math.max(
+        accountNameVisualLen("거래처"),
+        ...(accountList || []).map((a) => accountNameVisualLen(a?.account_name || ""))
+      );
+      const accountNameWidth = maxAccountNameLen + 2;
+
+      // 출근현황 시트 기본 컬럼
       wsAttend.columns = [
+        { width: accountNameWidth },
         { width: 14 },
-        ...Array.from({ length: dateList.length }, () => ({ width: 14 })),
+        ...Array.from({ length: dateList.length }, () => ({ width: 10 })),
       ];
 
       const dispatchHeader = [
@@ -1646,11 +1740,42 @@ function RecordSheet() {
 
       const allDispatchRows = new Map();
       const dispatchRightRowsAll = [];
+      const attendValidationMap = new Map();
 
       let globalDispatchTotal = 0;
       const employeeRightRowsAll = [];
       const employeeRightRowMap = new Map();
       const employeeDispatchSheetRowsAll = [];
+
+      // 출근부 검증 시트 헤더/컬럼폭
+      const validationHeader = [
+        "거래처",
+        "이름",
+        "결근",
+        "결근시간",
+        "초과",
+        "초과시간",
+        "직원파출",
+        "직원파출 금액",
+        "파출",
+        "파출비",
+        "구분",
+      ];
+      wsAttendValidation.columns = [
+        { width: 15 }, // 거래처(아래에서 자동 재조정)
+        { width: 15 }, // 이름
+        { width: 11 }, // 결근
+        { width: 11 }, // 결근시간
+        { width: 11 }, // 초과
+        { width: 11 }, // 초과시간
+        { width: 11 }, // 직원파출
+        { width: 15 }, // 직원파출 금액
+        { width: 11 }, // 파출
+        { width: 15 }, // 파출비
+        { width: 15 }, // 구분
+      ];
+      wsAttendValidation.addRow(validationHeader);
+      styleHeaderRow(wsAttendValidation, wsAttendValidation.lastRow.number);
 
       const mergeEmployeeRow = (target, next) => {
         const keys = [
@@ -1695,10 +1820,12 @@ function RecordSheet() {
         });
       };
 
+      // 거래처별로 월 데이터를 모아 출근현황/검증/요약 시트를 구성
       for (let i = 0; i < accountList.length; i++) {
         const acc = accountList[i];
         const accId = acc.account_id;
         const accName = acc.account_name || accId;
+        const accNameOnly = safeTrim(acc.account_name ?? "", "");
 
         const employeeDispatchSummaryMap = new Map();
         let dispatchMappingRowsArg = [];
@@ -1712,15 +1839,51 @@ function RecordSheet() {
           dispatchMappingRowsArg = [];
         }
 
-        addSectionTitle(wsAttend, `■ ${accName} (${accId})  /  ${rangeLabel}`, attendColCount);
-
-        const header = ["직원명", ...dateList.map((d) => `${d.format("M/D")}`)];
+        const header = ["거래처", "직원명", ...dateList.map((d) => `${d.format("M/D")}`)];
         wsAttend.addRow(header);
         styleHeaderRow(wsAttend, wsAttend.lastRow.number);
 
         const memberMap = new Map(); // 회원 아이디 → { 이름, 셀: { [날짜키]: 셀 } }
-        const memberInfoMap = new Map(); // 회원 아이디 → { rrn, account_number, position_type }
+        const memberInfoMap = new Map(); // 회원 아이디 → { rrn, account_number, position_type, name }
+        const rrnByNameMap = new Map(); // 이름 정규키 → rrn(숫자만) Set
         const dispatchSummaryMap = new Map(); // 회원 아이디 → 요약
+        const ensureValidationRow = (memberId, name = "", corType = "", delYn = "N", delDt = "") => {
+          const key = `${accId}::${String(memberId)}`;
+          const existing = attendValidationMap.get(key);
+          if (existing) {
+            if (!existing.name && name) existing.name = name;
+            if (!existing.cor_type && corType != null && corType !== "") {
+              existing.cor_type = String(corType);
+            }
+            if (!existing.gubun && corType != null && corType !== "") {
+              existing.gubun = String(corType);
+            }
+            if (!existing.del_dt && delDt) existing.del_dt = delDt;
+            if (!existing.del_yn && delYn != null) existing.del_yn = delYn;
+            return existing;
+          }
+
+          const created = {
+            key,
+            account_name: accNameOnly,
+            name: name || "",
+            member_id: String(memberId),
+            cor_type: corType != null ? String(corType) : "",
+            gubun: corType != null ? String(corType) : "",
+            del_yn: delYn ?? "N",
+            del_dt: delDt || "",
+            non_work_count: 0,
+            non_work_hours: 0,
+            over_work_count: 0,
+            over_work_hours: 0,
+            employee_dispatch_count: 0,
+            employee_dispatch_amount: 0,
+            dispatch_count: 0,
+            dispatch_amount: 0,
+          };
+          attendValidationMap.set(key, created);
+          return created;
+        };
 
         for (let mi = 0; mi < monthsInRange.length; mi++) {
           const { y, m } = monthsInRange[mi];
@@ -1732,7 +1895,20 @@ function RecordSheet() {
           // ✅ 출근현황 우측 직원정보 수집(월별 → 중복 병합)
           collectEmployeeRows(memberRowsArg, accId, accName);
 
-          // ✅ account_members 정보(주민번호/계좌) 확보
+          // ✅ 출근부 검증 시트 기본행(인원 1명당 1행)
+          (memberRowsArg || []).forEach((m) => {
+            const mid = m?.member_id ?? m?.memberId ?? m?.id;
+            if (!mid) return;
+            ensureValidationRow(
+              mid,
+              m?.name || "",
+              m?.cor_type ?? "",
+              m?.del_yn ?? "N",
+              safeTrim(m?.del_dt ?? "", "")
+            );
+          });
+
+          // ✅ account_members 정보(주민번호/계좌/이름) 확보 + 이름별 주민번호 맵 구축
           (memberRowsArg || []).forEach((m) => {
             const mid = m?.member_id ?? m?.memberId ?? m?.id;
             if (!mid) return;
@@ -1741,13 +1917,23 @@ function RecordSheet() {
               rrn: "",
               account_number: "",
               position_type: m?.position_type ?? m?.positionType ?? "",
+              name: m?.name || "",
             };
             if (!prev.rrn) prev.rrn = m?.rrn || "";
             if (!prev.account_number) prev.account_number = m?.account_number || "";
             if (!prev.position_type) {
               prev.position_type = m?.position_type ?? m?.positionType ?? "";
             }
+            if (!prev.name) prev.name = m?.name || "";
             memberInfoMap.set(key, prev);
+
+            const nameKey = safeTrim(m?.name ?? "", "").replace(/\s+/g, "");
+            const rrnDigits = safeTrim(m?.rrn ?? "", "").replace(/\D/g, "");
+            if (nameKey && rrnDigits) {
+              const rrnSet = rrnByNameMap.get(nameKey) || new Set();
+              rrnSet.add(rrnDigits);
+              rrnByNameMap.set(nameKey, rrnSet);
+            }
           });
 
           // ✅ 파출 기본 정보(이름/주민번호/계좌) 확보
@@ -1785,8 +1971,8 @@ function RecordSheet() {
           const toDay = endInMonth
             ? realEnd.date()
             : realEnd.isBefore(monthStart)
-            ? null
-            : daysInThisMonth;
+              ? null
+              : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -1803,9 +1989,20 @@ function RecordSheet() {
             const mid = row.member_id || row.id || row.name;
             if (!mid) return;
             if (!memberMap.has(mid)) {
-              memberMap.set(mid, { name: row.name || "", cells: {} });
+              memberMap.set(mid, {
+                name: row.name || "",
+                del_yn: row.del_yn ?? "N",
+                del_dt: safeTrim(row.del_dt ?? "", ""),
+                cells: {},
+              });
             }
             const entry = memberMap.get(mid);
+            if (!entry.del_dt && safeTrim(row.del_dt ?? "", "")) {
+              entry.del_dt = safeTrim(row.del_dt ?? "", "");
+            }
+            if (!entry.del_yn && row.del_yn != null) {
+              entry.del_yn = row.del_yn;
+            }
             for (let d = 1; d <= daysInThisMonth; d++) {
               const key = `day_${d}`;
               const dateKey = dayjs(
@@ -1817,18 +2014,68 @@ function RecordSheet() {
 
           const monthPayMap = new Map();
           const monthPayStatusMap = new Map();
+          // 같은 사람이 소스별로 다른 member_id/rrn 포맷으로 내려와도 1회만 반영되도록
+          // rrn(숫자정규화) 우선, rrn이 비어있으면 이름으로 보정
+          const validationSeenByDate = new Set();
 
           (attendanceRowsBuilt || []).forEach((row) => {
             const mid = row?.member_id ?? row?.memberId ?? row?.id ?? row?.name;
             if (!mid) return;
+            const validationRow = ensureValidationRow(
+              mid,
+              row?.name || "",
+              row?.cor_type ?? "",
+              row?.del_yn ?? "N",
+              safeTrim(row?.del_dt ?? "", "")
+            );
 
             for (let d = fromDay; d <= toDay; d++) {
               const cell = row?.[`day_${d}`];
               if (!cell) continue;
               const t = safeTrim(cell?.type ?? "", "");
-              if (!isDispatchTypeValue(t)) continue;
+              if (!t || t === "0") continue;
+
+              const dedupMemberKey = safeTrim(mid, "");
+              const nameKey = safeTrim(row?.name ?? "", "").replace(/\s+/g, "");
+              const rrnRaw = safeTrim(memberInfoMap.get(dedupMemberKey)?.rrn ?? "", "");
+              let rrnKey = rrnRaw.replace(/\D/g, "");
+              if (!rrnKey && nameKey) {
+                const rrnSet = rrnByNameMap.get(nameKey);
+                if (rrnSet && rrnSet.size === 1) {
+                  rrnKey = Array.from(rrnSet)[0];
+                }
+              }
+              const personKey = rrnKey ? `rrn:${rrnKey}` : nameKey ? `name:${nameKey}` : `mid:${dedupMemberKey}`;
+              const dedupKey = `${personKey}_${y}_${m}_${d}_${t}`;
+              if (validationSeenByDate.has(dedupKey)) continue;
+              validationSeenByDate.add(dedupKey);
 
               const sal = toNumberLike(cell?.salary);
+              const noteHoursRaw = toFirstNumberMaybe(cell?.note ?? "");
+              const overHours =
+                noteHoursRaw === ""
+                  ? calcDurationHours(cell?.start_time ?? cell?.start ?? "", cell?.end_time ?? cell?.end ?? "")
+                  : Number(noteHoursRaw);
+
+              if (t === "4") {
+                validationRow.non_work_count += 1;
+                validationRow.non_work_hours += 8;
+              } else if (t === "3") {
+                validationRow.over_work_count += 1;
+                validationRow.over_work_hours += overHours;
+              } else if (t === "6" || t === "직원파출") {
+                validationRow.employee_dispatch_count += 1;
+                validationRow.employee_dispatch_amount += sal;
+              } else if (t === "5" || t === "파출") {
+                validationRow.dispatch_count += 1;
+                validationRow.dispatch_amount += sal;
+                // 파출(type 5)만 (주)더채움(=1)로 강제, 그 외는 DB cor_type 유지
+                validationRow.cor_type = "1";
+                validationRow.gubun = "1";
+              }
+
+              if (!isDispatchTypeValue(t)) continue;
+
               const isEmployeeDispatch = t === "6" || t === "직원파출";
               if (isEmployeeDispatch) {
                 const midKey = String(mid);
@@ -1977,21 +2224,21 @@ function RecordSheet() {
             const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
             const origin = safeTrim(
               row?.origin_account_name ??
-                row?.origin_account ??
-                accountNameMap.get(originId) ??
-                info.origin ??
-                "",
+              row?.origin_account ??
+              accountNameMap.get(originId) ??
+              info.origin ??
+              "",
               ""
             );
             const dispatch = safeTrim(
               row?.dispatch_account_name ??
-                row?.dispatch_account ??
-                row?.dispatch_account_nm ??
-                row?.dispatch_accountName ??
-                accountNameMap.get(dispatchId) ??
-                info.dispatch ??
-                accName ??
-                "",
+              row?.dispatch_account ??
+              row?.dispatch_account_nm ??
+              row?.dispatch_accountName ??
+              accountNameMap.get(dispatchId) ??
+              info.dispatch ??
+              accName ??
+              "",
               ""
             );
             const name = safeTrim(row?.name ?? row?.member_name ?? stat?.name ?? "", "");
@@ -2029,69 +2276,76 @@ function RecordSheet() {
           });
         }
 
-        Array.from(memberMap.values()).forEach((row) => {
-          const startRow = wsAttend.lastRow.number + 1;
+        Array.from(memberMap.values())
+          .filter((row) => shouldIncludeRetiredForExcel(row, realStart))
+          .forEach((row) => {
+            const startRow = wsAttend.lastRow.number + 1;
 
-          const r1 = [row.name || ""];
-          const r2 = [""];
-          const r3 = [""];
-          const r4 = [""];
-          const dayTypes = [];
+            const r1 = [accNameOnly, row.name || ""];
+            const r2 = ["", ""];
+            const r3 = ["", ""];
+            const r4 = ["", ""];
+            const dayTypes = [];
 
-          dateList.forEach((d) => {
-            const key = d.format("YYYY-MM-DD");
-            const cell = row.cells[key];
-            const [v1, v2, v3, v4] = splitDayCellAttend(row.cells[key]);
-            dayTypes.push(safeTrim(cell?.type ?? "", ""));
-            r1.push(v1);
-            r2.push(v2);
-            r3.push(v3);
-            r4.push(v4);
-          });
+            dateList.forEach((d) => {
+              const key = d.format("YYYY-MM-DD");
+              const cell = row.cells[key];
+              const [v1, v2, v3, v4] = splitDayCellAttend(row.cells[key]);
+              dayTypes.push(safeTrim(cell?.type ?? "", ""));
+              r1.push(v1);
+              r2.push(v2);
+              r3.push(v3);
+              r4.push(v4);
+            });
 
-          wsAttend.addRow(r1);
-          styleDataRow(wsAttend, wsAttend.lastRow.number);
-          wsAttend.addRow(r2);
-          styleDataRow(wsAttend, wsAttend.lastRow.number);
-          wsAttend.addRow(r3);
-          styleDataRow(wsAttend, wsAttend.lastRow.number);
-          wsAttend.addRow(r4);
-          styleDataRow(wsAttend, wsAttend.lastRow.number);
+            wsAttend.addRow(r1);
+            styleDataRow(wsAttend, wsAttend.lastRow.number);
+            wsAttend.addRow(r2);
+            styleDataRow(wsAttend, wsAttend.lastRow.number);
+            wsAttend.addRow(r3);
+            styleDataRow(wsAttend, wsAttend.lastRow.number);
+            wsAttend.addRow(r4);
+            styleDataRow(wsAttend, wsAttend.lastRow.number);
 
-          for (let r = startRow; r <= startRow + 3; r++) {
-            for (let c = 2; c <= attendColCount; c++) {
-              const cell = wsAttend.getCell(r, c);
-              cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-            }
-          }
-
-          // ✅ 전체 거래처 엑셀: 날짜 셀(4줄 블록) 배경색 적용
-          dayTypes.forEach((type, idx) => {
-            const argb = getExcelAttendanceFillArgb(type);
-            if (!argb) return;
-            const col = idx + 2;
             for (let r = startRow; r <= startRow + 3; r++) {
-              wsAttend.getCell(r, col).fill = {
-                type: "pattern",
-                pattern: "solid",
-                fgColor: { argb },
-              };
+              for (let c = 3; c <= attendColCount; c++) {
+                const cell = wsAttend.getCell(r, c);
+                cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+              }
             }
+
+            // ✅ 전체 거래처 엑셀: 날짜 셀(4줄 블록) 배경색 적용
+            dayTypes.forEach((type, idx) => {
+              const argb = getExcelAttendanceFillArgb(type);
+              if (!argb) return;
+              const col = idx + 3;
+              for (let r = startRow; r <= startRow + 3; r++) {
+                wsAttend.getCell(r, col).fill = {
+                  type: "pattern",
+                  pattern: "solid",
+                  fgColor: { argb },
+                };
+              }
+            });
+
+            // ✅ 급여(4번째 줄) 숫자 포맷 적용
+            const salaryRowNum = startRow + 3;
+            for (let c = 3; c <= attendColCount; c++) {
+              const cell = wsAttend.getCell(salaryRowNum, c);
+              if (typeof cell.value === "number") {
+                cell.numFmt = "#,##0";
+              }
+            }
+
+            wsAttend.mergeCells(startRow, 1, startRow + 3, 1);
+            wsAttend.mergeCells(startRow, 2, startRow + 3, 2);
+
+            const accountCell = wsAttend.getCell(startRow, 1);
+            accountCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+
+            const nameCell = wsAttend.getCell(startRow, 2);
+            nameCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
           });
-
-          // ✅ 급여(4번째 줄) 숫자 포맷 적용
-          const salaryRowNum = startRow + 3;
-          for (let c = 2; c <= attendColCount; c++) {
-            const cell = wsAttend.getCell(salaryRowNum, c);
-            if (typeof cell.value === "number") {
-              cell.numFmt = "#,##0";
-            }
-          }
-
-          wsAttend.mergeCells(startRow, 1, startRow + 3, 1);
-          const nameCell = wsAttend.getCell(startRow, 1);
-          nameCell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        });
 
         dispatchRowsForAccount.forEach((d) => {
           dispatchRightRowsAll.push({
@@ -2101,9 +2355,9 @@ function RecordSheet() {
         });
 
         wsAttend.addRow([]);
-        wsAttend.addRow([]);
       }
 
+      // 파출정보 시트 데이터 작성
       Array.from(allDispatchRows.values()).forEach((d) => {
         if (!d.period_pay || Number(d.period_pay) <= 0) return;
         const bank = extractBankName(d.account_number);
@@ -2115,9 +2369,8 @@ function RecordSheet() {
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
           totalCnt > 0
-            ? `${
-                paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
-              }(${paidCnt}/${totalCnt})`
+            ? `${paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
+            }(${paidCnt}/${totalCnt})`
             : "";
 
         wsDispatch.addRow([
@@ -2141,10 +2394,81 @@ function RecordSheet() {
         styleDataRow(wsDispatch, lastRowNum);
       });
 
-      wsAttend.views = [{ state: "frozen", xSplit: 0, ySplit: 0 }];
+      wsAttend.views = [{ state: "frozen", xSplit: 2, ySplit: 1, topLeftCell: "C2" }];
       wsDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
 
-      // ✅ 기존 우측 테이블을 별도 요약 시트로 분리
+      // 출근부 검증 시트 데이터 작성
+      const attendValidationRows = Array.from(attendValidationMap.values())
+        .filter((r) => shouldIncludeRetiredForExcel(r, realStart))
+        .sort((a, b) => {
+          const accCmp = String(a.account_name || "").localeCompare(String(b.account_name || ""), "ko", {
+            sensitivity: "base",
+            numeric: true,
+          });
+          if (accCmp !== 0) return accCmp;
+          return String(a.name || "").localeCompare(String(b.name || ""), "ko", {
+            sensitivity: "base",
+            numeric: true,
+          });
+        });
+
+      wsAttendValidation.getColumn(1).width = accountNameWidth;
+
+      attendValidationRows.forEach((r) => {
+        const nonWorkHours = Number((r.non_work_hours || 0).toFixed(2));
+        const overWorkHours = Number((r.over_work_hours || 0).toFixed(2));
+        const corType = safeTrim(r.cor_type ?? "", "");
+        const gubun = safeTrim(r.gubun ?? corType, "");
+        wsAttendValidation.addRow([
+          r.account_name || "",
+          r.name || "",
+          r.non_work_count || 0,
+          nonWorkHours,
+          r.over_work_count || 0,
+          overWorkHours,
+          r.employee_dispatch_count || 0,
+          r.employee_dispatch_amount || 0,
+          r.dispatch_count || 0,
+          r.dispatch_amount || 0,
+          gubun === "1" ? "(주)더채움" : gubun === "" ? "" : "더채움",
+        ]);
+
+        const rowNum = wsAttendValidation.lastRow.number;
+        styleDataRow(wsAttendValidation, rowNum);
+        wsAttendValidation.getCell(rowNum, 3).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 4).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 5).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 6).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 7).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 8).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 9).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 10).numFmt = "#,##0";
+        wsAttendValidation.getCell(rowNum, 1).alignment = {
+          vertical: "middle",
+          horizontal: "center",
+          wrapText: true,
+        };
+        wsAttendValidation.getCell(rowNum, 2).alignment = {
+          vertical: "middle",
+          horizontal: "center",
+          wrapText: true,
+        };
+        wsAttendValidation.getCell(rowNum, 11).alignment = {
+          vertical: "middle",
+          horizontal: "center",
+          wrapText: true,
+        };
+        for (let c = 3; c <= 10; c++) {
+          wsAttendValidation.getCell(rowNum, c).alignment = {
+            vertical: "middle",
+            horizontal: "right",
+            wrapText: true,
+          };
+        }
+      });
+      wsAttendValidation.views = [{ state: "frozen", xSplit: 0, ySplit: 1 }];
+
+      // 출근현황 우측 표를 출근현황요약 시트로 분리
       wsAttendSummary.columns = attendRightWidths.map((w) => ({ width: w }));
       addSectionTitle(wsAttendSummary, `■ 출근현황요약 / ${rangeLabel}`, attendRightHeader.length);
       wsAttendSummary.addRow(attendRightHeader);
@@ -2183,6 +2507,7 @@ function RecordSheet() {
       });
       wsAttendSummary.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
 
+      // 파출정보 요약 시트 작성
       wsDispatchSummary.columns = dispatchRightWidths.map((w) => ({ width: w }));
       addSectionTitle(
         wsDispatchSummary,
@@ -2266,6 +2591,7 @@ function RecordSheet() {
       });
       wsDispatchSummary.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
 
+      // 직원파출 집계가 있을 때만 별도 시트 생성
       if (employeeDispatchSheetRowsAll.length > 0) {
         const wsEmployeeDispatch = wb.addWorksheet("직원파출정보");
         const employeeDispatchHeader = ["직원명", "원소속", "파견업장", "횟수", "금액"];
@@ -2307,6 +2633,7 @@ function RecordSheet() {
         wsEmployeeDispatch.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
       }
 
+      // 파일 저장
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2799,6 +3126,7 @@ function RecordSheet() {
                 { value: "14", label: "육아휴직" },
                 { value: "15", label: "하계휴가" },
                 { value: "16", label: "업장휴무" },
+                { value: "18", label: "경조사" },
               ];
             })();
 
@@ -3073,21 +3401,21 @@ function RecordSheet() {
 
       const origin = safeTrim(
         row?.origin_account_name ??
-          row?.origin_account ??
-          accNameMap.get(originId) ??
-          info.origin ??
-          "",
+        row?.origin_account ??
+        accNameMap.get(originId) ??
+        info.origin ??
+        "",
         ""
       );
 
       const dispatch = safeTrim(
         row?.dispatch_account_name ??
-          row?.dispatch_account ??
-          row?.dispatch_account_nm ??
-          row?.dispatch_accountName ??
-          accNameMap.get(dispatchId) ??
-          info.dispatch ??
-          "",
+        row?.dispatch_account ??
+        row?.dispatch_account_nm ??
+        row?.dispatch_accountName ??
+        accNameMap.get(dispatchId) ??
+        info.dispatch ??
+        "",
         ""
       );
 
@@ -3293,6 +3621,11 @@ function RecordSheet() {
       whiteSpace: "nowrap",
       fontSize: "12px",
     },
+    "& .dispatch-centered-input": {
+      textAlign: "center !important",
+      textAlignLast: "center !important",
+      direction: "ltr",
+    },
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
@@ -3386,6 +3719,14 @@ function RecordSheet() {
             isEmployeeDispatchSave && selectedAccountId
               ? selectedAccountId
               : val?.account_id || row.account_id || selectedAccountId || "";
+          const isDispatchType = curType === "5" || curType === "6";
+          const isNoteType = curType === "3" || curType === "11" || curType === "17";
+          const normalizedSalary = isDispatchType
+            ? val?.salary
+              ? Number(String(val.salary).replace(/,/g, ""))
+              : 0
+            : 0;
+          const normalizedNote = isNoteType ? safeTrim(val?.note ?? "", "") || null : null;
 
           if (cleared) {
             const recordObj = {
@@ -3403,7 +3744,7 @@ function RecordSheet() {
               start_time: "",
               end_time: "",
               salary: 0,
-              note: "",
+              note: null,
               position: row.position || "",
               org_start_time,
               org_end_time,
@@ -3435,8 +3776,8 @@ function RecordSheet() {
             type: Number(curType),
             start_time: val.start || "",
             end_time: val.end || "",
-            salary: val.salary ? Number(String(val.salary).replace(/,/g, "")) : 0,
-            note: val.note || "",
+            salary: normalizedSalary,
+            note: normalizedNote,
             position: row.position || "",
             org_start_time,
             org_end_time,
@@ -3947,7 +4288,17 @@ function RecordSheet() {
                       <React.Fragment key={row.id}>
                         <tr>
                           {row.getVisibleCells().map((cell) => (
-                            <td key={cell.id} style={dispatchColStyle(cell.column.id)}>
+                            <td
+                              key={cell.id}
+                              style={{
+                                ...(dispatchColStyle(cell.column.id) || {}),
+                                ...(["phone", "rrn", "account_number", "dispatch_account"].includes(
+                                  cell.column.id
+                                )
+                                  ? { textAlign: "center" }
+                                  : {}),
+                              }}
+                            >
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </td>
                           ))}
@@ -4012,6 +4363,8 @@ function RecordSheet() {
             name="phone"
             value={formData.phone}
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            inputProps={{ style: { textAlign: "center" } }}
+            sx={{ "& .MuiInputBase-input": { textAlign: "center" } }}
             onChange={handleChange}
           />
           <TextField
@@ -4021,6 +4374,8 @@ function RecordSheet() {
             name="rrn"
             value={formData.rrn}
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            inputProps={{ style: { textAlign: "center" } }}
+            sx={{ "& .MuiInputBase-input": { textAlign: "center" } }}
             onChange={handleChange}
           />
           <TextField
@@ -4030,6 +4385,8 @@ function RecordSheet() {
             name="account_number"
             value={formData.account_number}
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            inputProps={{ style: { textAlign: "center" } }}
+            sx={{ "& .MuiInputBase-input": { textAlign: "center" } }}
             onChange={handleChange}
           />
           <Select
@@ -4051,6 +4408,8 @@ function RecordSheet() {
             name="dispatch_account"
             value={formData.dispatch_account}
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            inputProps={{ style: { textAlign: "center" } }}
+            sx={{ "& .MuiInputBase-input": { textAlign: "center" } }}
             onChange={handleChange}
           />
           <TextField

@@ -84,12 +84,16 @@ import FieldBoardTabs from "examples/Tabs/FieldBoardTabs";
    ✅ 권한 관련 유틸
 ========================================================= */
 
-// 🔹 사용자 부서/직책/아이디 코드 가져오기 (localStorage 기준)
+// 🔹 세션 사용자ID 키 호환 처리(login_user_id / user_id)
+const getSessionUserId = () =>
+  sessionStorage.getItem("user_id") || sessionStorage.getItem("login_user_id");
+
+// 🔹 사용자 부서/직책/아이디 코드 조회(local/session 기준)
 const getUserCodes = () => {
   const localSessionId = localStorage.getItem("login_session_id");
   const tabSessionId = sessionStorage.getItem("login_session_id");
   const localUserId = localStorage.getItem("user_id");
-  const tabUserId = sessionStorage.getItem("login_user_id");
+  const tabUserId = getSessionUserId();
 
   if (
     localSessionId &&
@@ -104,7 +108,8 @@ const getUserCodes = () => {
 
   const dept = localStorage.getItem("department"); // ex: "2"
   const pos = localStorage.getItem("position"); // ex: "4"
-  const userId = localStorage.getItem("user_id"); // ✅ 특정 아이디 권한용 (키가 다르면 여기만 수정)
+  const userId =
+    localStorage.getItem("user_id") || getSessionUserId(); // ✅ 특정 아이디 권한용 (키가 다르면 여기만 수정)
 
   return {
     deptCode: dept != null ? Number(dept) : null,
@@ -208,12 +213,26 @@ const ProtectedRoute = ({
   onlyUserIds,
 }) => {
   const { deptCode, posCode, userId } = getUserCodes();
-  const isLoggedIn = !!userId;
+  const localUserId = localStorage.getItem("user_id");
+  const tabUserId = getSessionUserId();
+  const hasAnyUserId = !!localUserId || !!tabUserId;
+  const [shouldRedirect, setShouldRedirect] = useState(false);
+  const [shouldMoveLogin, setShouldMoveLogin] = useState(false);
+  const noSessionPopupOpenRef = useRef(false);
 
-  // ✅ 로그인 자체가 안 되어 있으면 먼저 로그인 화면으로 이동
-  if (!isLoggedIn) {
-    return <Navigate to="/authentication/sign-in" replace />;
-  }
+  // ✅ local/session user_id가 모두 없으면 로그인 안내 후 이동
+  useEffect(() => {
+    if (hasAnyUserId || noSessionPopupOpenRef.current) return;
+    noSessionPopupOpenRef.current = true;
+
+    Swal.fire({
+      title: "알림",
+      html: "로그인 세션이 없습니다.<br/>로그인 화면으로 이동합니다.",
+      icon: "warning",
+      confirmButtonColor: "#d33",
+      confirmButtonText: "확인",
+    }).then(() => setShouldMoveLogin(true));
+  }, [hasAnyUserId]);
 
   // route 형식으로 임시 객체 만들어서 재사용
   const routeLike = {
@@ -227,20 +246,20 @@ const ProtectedRoute = ({
 
   const allowed = hasAccess(routeLike, deptCode, posCode, userId);
 
-  // ✅ Swal 무한 호출 방지: 한 번 띄우고 확인 누르면 redirect
-  const [shouldRedirect, setShouldRedirect] = useState(false);
-
   useEffect(() => {
-    if (!allowed) {
-      Swal.fire({
-        title: "권한없음",
-        text: "접근 권한이 없습니다.\n관리자에게 확인 바랍니다.",
-        icon: "error",
-        confirmButtonColor: "#d33",
-        confirmButtonText: "확인",
-      }).then(() => setShouldRedirect(true));
-    }
-  }, [allowed]);
+    if (!hasAnyUserId || allowed) return;
+    Swal.fire({
+      title: "권한없음",
+      text: "접근 권한이 없습니다.\n관리자에게 확인 바랍니다.",
+      icon: "error",
+      confirmButtonColor: "#d33",
+      confirmButtonText: "확인",
+    }).then(() => setShouldRedirect(true));
+  }, [allowed, hasAnyUserId]);
+
+  if (!hasAnyUserId) {
+    return shouldMoveLogin ? <Navigate to="/authentication/sign-in" replace /> : null;
+  }
 
   if (!allowed) {
     return shouldRedirect ? <Navigate to="/" replace /> : null;
@@ -293,7 +312,7 @@ export default function App() {
     [deptCode, posCode, userId]
   );
 
-  // Cache for the rtl
+  // RTL 캐시 생성
   useMemo(() => {
     const cacheRtl = createCache({
       key: "rtl",
@@ -303,7 +322,7 @@ export default function App() {
     setRtlCache(cacheRtl);
   }, []);
 
-  // Open sidenav when mouse enter on mini sidenav
+  // 미니 사이드바 마우스 진입 시 확장 처리
   const handleOnMouseEnter = () => {
     if (miniSidenav && !onMouseEnter) {
       setMiniSidenav(dispatch, false);
@@ -311,7 +330,7 @@ export default function App() {
     }
   };
 
-  // Close sidenav when mouse leave mini sidenav
+  // 미니 사이드바 마우스 이탈 시 축소 처리
   const handleOnMouseLeave = () => {
     if (onMouseEnter) {
       setMiniSidenav(dispatch, true);
@@ -319,20 +338,20 @@ export default function App() {
     }
   };
 
-  // Change the openConfigurator state
+  // 설정 패널 열림 상태 토글
   const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
 
   const localSessionId = localStorage.getItem("login_session_id");
   const tabSessionId = sessionStorage.getItem("login_session_id");
   const localUserId = localStorage.getItem("user_id");
-  const tabUserId = sessionStorage.getItem("login_user_id");
+  const tabUserId = getSessionUserId();
   const isSessionMatched =
     !localSessionId || !tabSessionId
       ? false
       : localSessionId === tabSessionId || (localUserId && tabUserId && localUserId === tabUserId);
-  const isAuthed = !!localStorage.getItem("user_id") && isSessionMatched;
+  const isAuthed = (!!localUserId || !!tabUserId) && (isSessionMatched || !localSessionId || !tabSessionId);
 
-  // Setting the dir attribute for the body element
+  // body dir 속성 설정
   useEffect(() => {
     document.body.setAttribute("dir", direction);
   }, [direction]);
@@ -501,7 +520,7 @@ export default function App() {
     };
   }, []);
 
-  // Setting page scroll to 0 when changing the route
+  // 라우트 변경 시 페이지 스크롤 초기화
   useEffect(() => {
     document.documentElement.scrollTop = 0;
     document.scrollingElement.scrollTop = 0;

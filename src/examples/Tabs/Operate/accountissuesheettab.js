@@ -16,7 +16,7 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import MDTypography from "components/MDTypography";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import useDeadlineIssueTab2Data from "./deadlineIssueTab2Data";
+import useAccountIssueSheetTabData from "./accountissuesheettabData";
 
 // ✅ 테이블 기본 톤(AccountMemberSheetTab 톤)
 const TABLE_STYLE = {
@@ -144,7 +144,7 @@ const getPendingDeadlineColor = (resultCode, endDate) => {
   return "";
 };
 
-export default function DeadlineIssueTab2() {
+export default function AccountIssueSheetTab() {
   // ✅ 데이터(백엔드) 훅은 Data 파일에서만 관리
   const {
     loading,
@@ -169,7 +169,7 @@ export default function DeadlineIssueTab2() {
     updateTypeRow,
     deleteTypeRow,
     saveTypeRows,
-  } = useDeadlineIssueTab2Data(2);
+  } = useAccountIssueSheetTabData(1);
 
   // ✅ 좌/우 테이블 선택 및 스크롤 상태
   const [selectedRowId, setSelectedRowId] = useState(null);
@@ -394,14 +394,14 @@ export default function DeadlineIssueTab2() {
       .filter((row) =>
         Boolean(
           row?.sub_date ||
-            row?.account_id ||
-            row?.account_name ||
-            row?.type ||
-            row?.issue ||
-            row?.result ||
-            row?.end_date ||
-            row?.solution ||
-            row?.note
+          row?.account_id ||
+          row?.account_name ||
+          row?.type ||
+          row?.issue ||
+          row?.result ||
+          row?.end_date ||
+          row?.solution ||
+          row?.note
         )
       )
       .map((row) => {
@@ -634,7 +634,7 @@ export default function DeadlineIssueTab2() {
     );
   };
 
-  // ✅ 왼쪽 입력 테이블 렌더 (분리 렌더)
+  // ✅ 왼쪽 입력 테이블 렌더
   const renderLeftTable = () => (
     <Box
       ref={leftTableScrollRef}
@@ -705,7 +705,7 @@ export default function DeadlineIssueTab2() {
                 </td>
 
                 <td style={{ ...TD_STYLE, width: leftColWidth("account_id"), whiteSpace: "normal" }}>
-                  {/* ✅ 고객사 셀은 선택 행에서만 드롭다운 편집, 비선택 행은 텍스트 표시 */}
+                  {/* ✅ 고객사 셀 */}
                   {isSelected ? (
                     <Autocomplete
                       size="small"
@@ -812,7 +812,6 @@ export default function DeadlineIssueTab2() {
                           backgroundColor: "transparent !important",
                         },
                       }}
-                      // ✅ 요청 반영: 흰 배경은 넓게, hover 회색은 좁게 보이도록 간격 분리
                       ListboxProps={{
                         style: {
                           fontSize: "12px",
@@ -909,7 +908,7 @@ export default function DeadlineIssueTab2() {
                 </td>
 
                 <td style={{ ...TD_STYLE, width: leftColWidth("issue"), whiteSpace: "normal", verticalAlign: "top" }}>
-                  {/* ✅ 텍스트 셀은 비선택 2줄 미리보기, 선택 시 5줄 고정 편집 */}
+                  {/* ✅ 텍스트 셀 */}
                   {isSelected ? (
                     <textarea
                       value={row.issue || ""}
@@ -1030,7 +1029,7 @@ export default function DeadlineIssueTab2() {
     </Box>
   );
 
-  // ✅ 오른쪽 패널은 저장 기준 데이터만 바뀔 때 렌더해 입력 랙을 줄인다.
+  // ✅ 오른쪽 패널은 저장 기준 데이터만 렌더
   const rightPanelNode = useMemo(() => {
     return (
       <Box
@@ -1306,4 +1305,3 @@ export default function DeadlineIssueTab2() {
     </>
   );
 }
-

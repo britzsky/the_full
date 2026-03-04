@@ -4,8 +4,8 @@ import { Card, Grid, Tabs, Tab, Box } from "@mui/material";
 import MDBox from "components/MDBox";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import AccountCommunicationTable from "components/AccountCommunication/AccountCommunicationTable";
-import AccountCommunicationStats from "components/AccountCommunication/AccountCommunicationStats";
+import AccountIssueSheetTab from "examples/Tabs/Operate/accountissuesheettab";
+import AccountIssueSheetStatsTab from "examples/Tabs/Operate/accountissuesheetstatstab";
 
 export default function AccountIssueSheet2() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -16,8 +16,8 @@ export default function AccountIssueSheet2() {
   // 고객사 소통 화면은 "이슈 입력/수정" + "통계" 2개 탭으로 고정
   const tabLabels = ["고객사 이슈", "고객사 이슈통계"];
   const tabComponents = [
-    <AccountCommunicationTable key="issue" teamCode={1} />,
-    <AccountCommunicationStats key="stats" teamCode={1} />,
+    <AccountIssueSheetTab key="issue" />,
+    <AccountIssueSheetStatsTab key="stats" />,
   ];
 
   return (

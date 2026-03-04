@@ -1,5 +1,5 @@
-/* eslint-disable react/function-component-definition */
-import React, { useEffect, useMemo, useState } from "react";
+﻿/* eslint-disable react/function-component-definition */
+import React, { useMemo } from "react";
 import PropTypes from "prop-types";
 import { Autocomplete, Box, Card, Grid, TextField } from "@mui/material";
 import { Pie } from "react-chartjs-2";
@@ -7,11 +7,12 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import api from "api/api";
+import useAccountIssueSheetStatsTabData from "./accountissuesheetstatstabData";
 
+// 파이 차트 컴포넌트에서 사용하는 요소 등록
 ChartJS.register(ArcElement, Tooltip, Legend);
 
-// 통계 차트 공통 색상 팔레트
+// 파이 차트 조각 색상 팔레트
 const PIE_COLORS = [
   "#5e72e4",
   "#11cdef",
@@ -25,52 +26,7 @@ const PIE_COLORS = [
   "#ff8f00",
 ];
 
-// AccountCommunicationTable 과 동일 캐시 키를 사용하여 초기 로딩 속도 개선
-const ACCOUNT_CACHE_KEY = "account_communication_account_list_v1";
-const TYPE_CACHE_KEY = (teamCode) => `account_communication_type_list_${teamCode}`;
-const ROW_CACHE_KEY = (teamCode) => `account_communication_rows_${teamCode}`;
-
-const readSessionCache = (key, fallback) => {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = window.sessionStorage.getItem(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed ?? fallback;
-  } catch (e) {
-    return fallback;
-  }
-};
-
-const writeSessionCache = (key, value) => {
-  if (typeof window === "undefined") return;
-  try {
-    window.sessionStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    // 캐시 저장 실패는 화면 동작에 영향 없도록 무시
-  }
-};
-
-const normalizeResult = (value) => {
-  const s = String(value ?? "").trim();
-  if (!s) return "";
-  if (s === "해결") return "2";
-  if (s === "보류") return "1";
-  return s;
-};
-
-const normalizeRow = (row) => ({
-  idx: row.idx ?? null,
-  account_id: row.account_id ? String(row.account_id) : "",
-  account_name: row.account_name || "",
-  type: row.type != null ? String(row.type) : "",
-  result: normalizeResult(row.result),
-  issue: row.issue || "",
-});
-
-const isResolved = (resultCode) => String(resultCode || "").trim() === "2";
-
-// 파이 조각이 너무 많아지면 하위 항목을 "기타"로 묶어서 가독성 확보
+// 항목 수가 많을 때 상위 항목 + 기타로 압축
 const compactRows = (rows, maxItems = 8) => {
   if (rows.length <= maxItems) return rows;
   const head = rows.slice(0, maxItems - 1);
@@ -79,15 +35,19 @@ const compactRows = (rows, maxItems = 8) => {
   return [...head, { label: "기타", count: etcCount }];
 };
 
+// 공통 파이 차트 카드(리스트 + 차트 동시 표시)
 function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
+  // 렌더 부하 완화를 위해 표시용 데이터는 메모이제이션
   const compacted = useMemo(() => compactRows(rows), [rows]);
   const selectable = typeof onSelectRow === "function";
-  // 좌측 목록에서 퍼센트 계산용 전체합
+
+  // 건수/비율 계산용 전체 합계
   const totalCount = useMemo(
     () => compacted.reduce((sum, row) => sum + Number(row.count || 0), 0),
     [compacted]
   );
 
+  // chart.js 입력 포맷 데이터 구성
   const chartData = useMemo(
     () => ({
       labels: compacted.map((row) => row.label),
@@ -103,6 +63,7 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
     [compacted]
   );
 
+  // 차트 클릭/툴팁 동작 설정
   const chartOptions = useMemo(
     () => ({
       responsive: true,
@@ -114,9 +75,7 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
         onSelectRow(picked);
       },
       plugins: {
-        legend: {
-          display: false,
-        },
+        legend: { display: false },
         tooltip: {
           callbacks: {
             label: (ctx) => {
@@ -155,14 +114,7 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
             {emptyText}
           </MDBox>
         ) : (
-          <Box
-            sx={{
-              display: "flex",
-              gap: 1.25,
-              height: 260,
-            }}
-          >
-            {/* 좌측: 마우스 오버 없이 항상 보이는 수치 목록 */}
+          <Box sx={{ display: "flex", gap: 1.25, height: 260 }}>
             <Box
               sx={{
                 width: "48%",
@@ -189,10 +141,12 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
                   건수(비율)
                 </MDTypography>
               </Box>
+
               {compacted.map((row, idx) => {
                 const ratio = totalCount > 0 ? ((row.count / totalCount) * 100).toFixed(1) : "0.0";
                 const isClickable = selectable && Boolean(row?.key);
                 const isSelected = Boolean(selectedRowKey) && row?.key === selectedRowKey;
+
                 return (
                   <Box
                     key={`${row.label}_${idx}`}
@@ -236,6 +190,7 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
                         {row.label}
                       </MDTypography>
                     </MDBox>
+
                     <MDTypography
                       variant="caption"
                       sx={{ fontSize: 12, fontWeight: 700, color: "#344767", ml: 1, flexShrink: 0 }}
@@ -247,7 +202,6 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
               })}
             </Box>
 
-            {/* 우측: 원형 차트 */}
             <Box sx={{ width: "52%", minWidth: 0 }}>
               <Pie data={chartData} options={chartOptions} />
             </Box>
@@ -258,6 +212,7 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
   );
 }
 
+// 공통 차트 카드 prop 타입 정의
 PieStatCard.propTypes = {
   title: PropTypes.string.isRequired,
   rows: PropTypes.arrayOf(
@@ -272,231 +227,34 @@ PieStatCard.propTypes = {
   selectedRowKey: PropTypes.string,
 };
 
+// 공통 차트 카드 기본 prop
 PieStatCard.defaultProps = {
   onSelectRow: null,
   selectedRowKey: "",
 };
 
-export default function AccountCommunicationStats({ teamCode }) {
-  // 원본 데이터
-  const [rows, setRows] = useState([]);
-  const [accountList, setAccountList] = useState([]);
-  const [typeList, setTypeList] = useState([]);
-  const [selectedAccountKey, setSelectedAccountKey] = useState("");
-  const [loading, setLoading] = useState(true);
+export default function AccountIssueSheetStatsTab() {
+  // 운영팀(team_code=1) 통계 데이터/필터 상태 훅
+  const {
+    loading,
+    selectedAccountKey,
+    setSelectedAccountKey,
+    selectedAccountName,
+    selectedAccountOption,
+    accountStats,
+    overallTypeStats,
+    overallResultStats,
+    selectedAccountStats,
+    selectedTypeStats,
+    selectedResultStats,
+  } = useAccountIssueSheetStatsTabData(1);
 
-  const accountNameById = useMemo(() => {
-    const map = new Map();
-    (accountList || []).forEach((acc) => {
-      map.set(String(acc.account_id), acc.account_name || "");
-    });
-    return map;
-  }, [accountList]);
-
-  const typeLabelById = useMemo(() => {
-    const map = new Map();
-    (typeList || []).forEach((row) => {
-      map.set(String(row.idx), row.type || "");
-    });
-    return map;
-  }, [typeList]);
-
-  /*
-    통계 집계 기준을 단일화하기 위해 각 행의 거래처 식별값을 정규화한다.
-    account_id가 있으면 id 기준, 없으면 이름 기준으로 묶는다.
-  */
-  const normalizeAccountMeta = (row) => {
-    const accountId = String(row.account_id || "").trim();
-    const rowName = String(row.account_name || "").trim();
-    const mappedName = accountNameById.get(accountId) || "";
-
-    if (accountId) {
-      return {
-        key: `id:${accountId}`,
-        accountId,
-        accountName: mappedName || rowName || accountId,
-      };
-    }
-
-    if (rowName) {
-      return {
-        key: `name:${rowName}`,
-        accountId: "",
-        accountName: rowName,
-      };
-    }
-
-    return { key: "unassigned", accountId: "", accountName: "미지정" };
-  };
-
-
-  // 상단 3개 카드(전체 업장/구분/해결)는 항상 rows 전체를 기준으로 계산
-
-  const accountStats = useMemo(() => {
-    const map = new Map();
-    (rows || []).forEach((row) => {
-      const meta = normalizeAccountMeta(row);
-      if (!map.has(meta.key)) {
-        map.set(meta.key, { ...meta, count: 0 });
-      }
-      map.get(meta.key).count += 1;
-    });
-
-    return Array.from(map.values()).sort((a, b) => {
-      if (b.count !== a.count) return b.count - a.count;
-      return String(a.accountName).localeCompare(String(b.accountName), "ko");
-    });
-  }, [rows, accountNameById]);
-
-  // 전체 구분별 통계
-  const overallTypeStats = useMemo(() => {
-    const map = new Map();
-    (rows || []).forEach((row) => {
-      const typeCode = String(row.type || "").trim();
-      const label = typeLabelById.get(typeCode) || typeCode || "미구분";
-      map.set(label, (map.get(label) || 0) + 1);
-    });
-
-    return Array.from(map.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [rows, typeLabelById]);
-
-  // 전체 해결/미해결 통계
-  const overallResultStats = useMemo(() => {
-    if (!rows.length) return [];
-    const resolved = rows.filter((row) => isResolved(row.result)).length;
-    const unresolved = rows.length - resolved;
-    return [
-      { label: "해결", count: resolved },
-      { label: "미해결", count: unresolved },
-    ];
-  }, [rows]);
-
-  /*
-    하단 선택 통계는 selectedAccountKey 기준으로만 계산한다.
-    거래처 검색/선택 또는 상단 "전체 업장별 통계" 카드 클릭으로 키가 변경된다.
-  */
-  const selectedRows = useMemo(() => {
-    if (!selectedAccountKey) return [];
-    return rows.filter((row) => normalizeAccountMeta(row).key === selectedAccountKey);
-  }, [rows, selectedAccountKey, accountNameById]);
-
-  const selectedAccountName = useMemo(() => {
-    const found = accountStats.find((row) => row.key === selectedAccountKey);
-    return found?.accountName || "";
-  }, [accountStats, selectedAccountKey]);
-
-  const selectedAccountOption = useMemo(
-    () => accountStats.find((row) => row.key === selectedAccountKey) || null,
-    [accountStats, selectedAccountKey]
-  );
-
-  // 선택 업장 구분별 통계
-  const selectedTypeStats = useMemo(() => {
-    const map = new Map();
-    selectedRows.forEach((row) => {
-      const typeCode = String(row.type || "").trim();
-      const label = typeLabelById.get(typeCode) || typeCode || "미구분";
-      map.set(label, (map.get(label) || 0) + 1);
-    });
-
-    return Array.from(map.entries())
-      .map(([label, count]) => ({ label, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [selectedRows, typeLabelById]);
-
-  // 선택 업장 해결/미해결 통계
-  const selectedResultStats = useMemo(() => {
-    if (!selectedRows.length) return [];
-    const resolved = selectedRows.filter((row) => isResolved(row.result)).length;
-    const unresolved = selectedRows.length - resolved;
-    return [
-      { label: "해결", count: resolved },
-      { label: "미해결", count: unresolved },
-    ];
-  }, [selectedRows]);
-
-  const selectedAccountStats = useMemo(() => {
-    if (!selectedAccountName || !selectedRows.length) return [];
-    return [{ label: selectedAccountName, count: selectedRows.length }];
-  }, [selectedAccountName, selectedRows]);
-
-  // 초기 렌더 시 캐시 데이터 선반영 -> 서버 재조회 순서로 동작한다.
-  useEffect(() => {
-    let mounted = true;
-
-    const cachedAccounts = readSessionCache(ACCOUNT_CACHE_KEY, []);
-    if (Array.isArray(cachedAccounts) && cachedAccounts.length) setAccountList(cachedAccounts);
-
-    const cachedTypes = readSessionCache(TYPE_CACHE_KEY(teamCode), []);
-    if (Array.isArray(cachedTypes) && cachedTypes.length) setTypeList(cachedTypes);
-
-    const cachedRows = readSessionCache(ROW_CACHE_KEY(teamCode), []);
-    if (Array.isArray(cachedRows) && cachedRows.length) {
-      setRows(cachedRows.map(normalizeRow));
-      setLoading(false);
-    } else {
-      setLoading(true);
-    }
-
-    const fetchAll = async () => {
-      try {
-        const [accountRes, typeRes, rowRes] = await Promise.all([
-          api.get("/Account/AccountList", { params: { account_type: "0" } }),
-          api.get("/Account/AccountCommunicationMappingList", { params: { team_code: teamCode } }),
-          api.get("/Account/AccountCommunicationList", { params: { team_code: teamCode } }),
-        ]);
-
-        if (!mounted) return;
-
-        const accountData = (accountRes.data || []).map((item) => ({
-          account_id: item.account_id,
-          account_name: item.account_name,
-        }));
-        const typeData = (typeRes.data || []).map((item) => ({
-          idx: item.idx,
-          team_code: item.team_code,
-          type: item.type,
-        }));
-        const rowData = (rowRes.data || []).map(normalizeRow);
-
-        setAccountList(accountData);
-        setTypeList(typeData);
-        setRows(rowData);
-
-        writeSessionCache(ACCOUNT_CACHE_KEY, accountData);
-        writeSessionCache(TYPE_CACHE_KEY(teamCode), typeData);
-        writeSessionCache(ROW_CACHE_KEY(teamCode), rowData);
-      } catch (err) {
-        console.error("AccountCommunicationStats 조회 실패:", err);
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    };
-
-    fetchAll();
-
-    return () => {
-      mounted = false;
-    };
-  }, [teamCode]);
-
-  // 업장 목록이 바뀌면 선택값이 유효한지 확인 후 기본값 보정
-  useEffect(() => {
-    if (!selectedAccountKey) return;
-    if (!accountStats.length) {
-      setSelectedAccountKey("");
-      return;
-    }
-    if (accountStats.some((row) => row.key === selectedAccountKey)) return;
-    setSelectedAccountKey("");
-  }, [accountStats, selectedAccountKey]);
-
+  // 데이터 초기 조회 전 로딩 화면
   if (loading) return <LoadingScreen />;
 
   return (
     <MDBox>
+      {/* 상단 제목 영역 */}
       <MDBox
         mb={2}
         sx={{
@@ -510,15 +268,12 @@ export default function AccountCommunicationStats({ teamCode }) {
         <MDTypography variant="h6">이슈 통계</MDTypography>
       </MDBox>
 
+      {/* 전체 기준 통계 3종(업장/구분/해결) */}
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
           <PieStatCard
             title="전체 업장별 통계"
-            rows={accountStats.map((row) => ({
-              key: row.key,
-              label: row.accountName,
-              count: row.count,
-            }))}
+            rows={accountStats.map((row) => ({ key: row.key, label: row.accountName, count: row.count }))}
             emptyText="통계 데이터가 없습니다."
             onSelectRow={(row) => setSelectedAccountKey(row?.key || "")}
             selectedRowKey={selectedAccountKey}
@@ -526,22 +281,15 @@ export default function AccountCommunicationStats({ teamCode }) {
         </Grid>
 
         <Grid item xs={12} md={4}>
-          <PieStatCard
-            title="전체 구분별 통계"
-            rows={overallTypeStats}
-            emptyText="통계 데이터가 없습니다."
-          />
+          <PieStatCard title="전체 구분별 통계" rows={overallTypeStats} emptyText="통계 데이터가 없습니다." />
         </Grid>
 
         <Grid item xs={12} md={4}>
-          <PieStatCard
-            title="전체 해결별 통계"
-            rows={overallResultStats}
-            emptyText="통계 데이터가 없습니다."
-          />
+          <PieStatCard title="전체 해결별 통계" rows={overallResultStats} emptyText="통계 데이터가 없습니다." />
         </Grid>
       </Grid>
 
+      {/* 선택 거래처 필터 + 선택 대상 제목 */}
       <MDBox
         mt={3}
         mb={2}
@@ -573,10 +321,7 @@ export default function AccountCommunicationStats({ teamCode }) {
             );
           }}
           isOptionEqualToValue={(option, value) => option?.key === value?.key}
-          sx={{
-            minWidth: 320,
-            background: "#fff",
-          }}
+          sx={{ minWidth: 320, background: "#fff" }}
           renderInput={(params) => (
             <TextField
               {...params}
@@ -612,6 +357,7 @@ export default function AccountCommunicationStats({ teamCode }) {
         />
       </MDBox>
 
+      {/* 선택 거래처 기준 통계 3종 */}
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
           <PieStatCard
@@ -640,7 +386,3 @@ export default function AccountCommunicationStats({ teamCode }) {
     </MDBox>
   );
 }
-
-AccountCommunicationStats.propTypes = {
-  teamCode: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
-};

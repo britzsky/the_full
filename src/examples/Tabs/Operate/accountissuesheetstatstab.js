@@ -268,11 +268,11 @@ export default function AccountIssueSheetStatsTab() {
         <MDTypography variant="h6">이슈 통계</MDTypography>
       </MDBox>
 
-      {/* 전체 기준 통계 3종(업장/구분/해결) */}
+      {/* 전체 기준 통계 3종(거래처/구분/해결) */}
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
           <PieStatCard
-            title="전체 업장별 통계"
+            title="전체 거래처별 통계"
             rows={accountStats.map((row) => ({ key: row.key, label: row.accountName, count: row.count }))}
             emptyText="통계 데이터가 없습니다."
             onSelectRow={(row) => setSelectedAccountKey(row?.key || "")}
@@ -361,9 +361,9 @@ export default function AccountIssueSheetStatsTab() {
       <Grid container spacing={2}>
         <Grid item xs={12} md={4}>
           <PieStatCard
-            title={selectedAccountName ? `${selectedAccountName} 이슈 총계` : "선택 업장별 이슈 총계"}
+            title={selectedAccountName ? `${selectedAccountName} 이슈 총계` : "선택 거래처별 이슈 총계"}
             rows={selectedAccountStats}
-            emptyText="거래처를 선택하면 업장 통계가 표시됩니다."
+            emptyText="거래처를 선택하면 통계가 표시됩니다."
           />
         </Grid>
 

@@ -21,6 +21,29 @@ const normalizeTime = (t) => {
   return s.replace(/^0(\d):/, "$1:");
 };
 
+// ✅ "YYYY-MM-DD" -> { record_year, record_month, record_date(day) }
+const splitDispatchRecordDate = (dateStr) => {
+  const raw = String(dateStr || "").trim();
+  if (!raw) return { record_year: null, record_month: null, record_date: null };
+
+  const matched = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!matched) return { record_year: null, record_month: null, record_date: null };
+
+  const year = Number(matched[1]);
+  const month = Number(matched[2]);
+  const day = Number(matched[3]);
+
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return { record_year: null, record_month: null, record_date: null };
+  }
+
+  return {
+    record_year: year,
+    record_month: month,
+    record_date: day,
+  };
+};
+
 export default function useAccountMembersheetData(account_id, activeStatus, memberName) {
   const [activeRows, setActiveRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -188,14 +211,52 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
     return api.post("/Operate/AccountMemberWorkSystemSave", payload);
   };
 
-  const saveData = (activeData) => {
-    api
-      .post("/account/membersheetSave", {
-        account_id,
-        data: activeData,
-      })
-      .then(() => alert("저장 성공!"))
-      .catch((err) => console.error("저장 실패:", err));
+  // =========================
+  // 5) 직원파출 매핑 삭제(우클릭 메뉴용)
+  // =========================
+  const deleteDispatchMappingRow = async (row) => {
+    if (!row) throw new Error("삭제할 매핑 정보가 없습니다.");
+
+    // 신규 행은 서버 반영 없이 화면에서만 제거
+    if (row.idx == null) {
+      return { localOnly: true };
+    }
+
+    const userId =
+      localStorage.getItem("user_id") ||
+      sessionStorage.getItem("login_user_id") ||
+      sessionStorage.getItem("user_id") ||
+      "";
+
+    const { record_year, record_month, record_date } = splitDispatchRecordDate(row.record_date);
+
+    const payload = [
+      {
+        idx: row.idx ?? null,
+        member_id: row.member_id ?? null,
+        account_id: row.account_id ?? null,
+        dispatch_account_id: row.dispatch_account_id ?? null,
+        name: row.name ?? "",
+        position_type: row.position_type ?? null,
+        start_time: normalizeTime(row.start_time ?? ""),
+        end_time: normalizeTime(row.end_time ?? ""),
+        record_year,
+        record_month,
+        record_date,
+        type: row.type ?? 6,
+        user_id: userId || null,
+        del_yn: "Y",
+      },
+    ];
+
+    const res = await api.post("/Account/AccountMemberDispatchMappingSave", payload);
+    const ok = res?.status === 200 || Number(res?.data?.code) === 200;
+
+    if (!ok) {
+      throw new Error(res?.data?.message || "직원파출 매핑 삭제에 실패했습니다.");
+    }
+
+    return { localOnly: false };
   };
 
   return {
@@ -213,8 +274,8 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
 
     fetchWorkSystemList,
     saveWorkSystemList,
+    deleteDispatchMappingRow,
 
-    saveData,
     fetchAccountMembersAllList,
     loading,
   };

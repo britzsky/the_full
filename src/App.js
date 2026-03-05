@@ -215,24 +215,26 @@ const ProtectedRoute = ({
   const { deptCode, posCode, userId } = getUserCodes();
   const localUserId = localStorage.getItem("user_id");
   const tabUserId = getSessionUserId();
-  const hasAnyUserId = !!localUserId || !!tabUserId;
+  const hasBothUserIds = !!localUserId && !!tabUserId;
+  const isSameUserId = hasBothUserIds && String(localUserId) === String(tabUserId);
+  const hasValidUserAuth = hasBothUserIds && isSameUserId;
   const [shouldRedirect, setShouldRedirect] = useState(false);
   const [shouldMoveLogin, setShouldMoveLogin] = useState(false);
   const noSessionPopupOpenRef = useRef(false);
 
-  // ✅ local/session user_id가 모두 없으면 로그인 안내 후 이동
+  // ✅ local/session user_id가 유효하지 않으면 로그인 안내 후 이동
   useEffect(() => {
-    if (hasAnyUserId || noSessionPopupOpenRef.current) return;
+    if (hasValidUserAuth || noSessionPopupOpenRef.current) return;
     noSessionPopupOpenRef.current = true;
 
     Swal.fire({
       title: "알림",
-      html: "로그인 세션이 없습니다.<br/>로그인 화면으로 이동합니다.",
+      html: "로그인 세션이 유효하지 않습니다.<br/>로그인 화면으로 이동합니다.",
       icon: "warning",
       confirmButtonColor: "#d33",
       confirmButtonText: "확인",
     }).then(() => setShouldMoveLogin(true));
-  }, [hasAnyUserId]);
+  }, [hasValidUserAuth]);
 
   // route 형식으로 임시 객체 만들어서 재사용
   const routeLike = {
@@ -247,7 +249,7 @@ const ProtectedRoute = ({
   const allowed = hasAccess(routeLike, deptCode, posCode, userId);
 
   useEffect(() => {
-    if (!hasAnyUserId || allowed) return;
+    if (!hasValidUserAuth || allowed) return;
     Swal.fire({
       title: "권한없음",
       text: "접근 권한이 없습니다.\n관리자에게 확인 바랍니다.",
@@ -255,9 +257,9 @@ const ProtectedRoute = ({
       confirmButtonColor: "#d33",
       confirmButtonText: "확인",
     }).then(() => setShouldRedirect(true));
-  }, [allowed, hasAnyUserId]);
+  }, [allowed, hasValidUserAuth]);
 
-  if (!hasAnyUserId) {
+  if (!hasValidUserAuth) {
     return shouldMoveLogin ? <Navigate to="/authentication/sign-in" replace /> : null;
   }
 
@@ -299,7 +301,7 @@ export default function App() {
 
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
-  const { pathname } = useLocation();
+  const { pathname, state: routeState } = useLocation();
   const [, setAuthTick] = useState(0);
   const sessionPopupOpenRef = useRef(false);
 
@@ -350,6 +352,7 @@ export default function App() {
       ? false
       : localSessionId === tabSessionId || (localUserId && tabUserId && localUserId === tabUserId);
   const isAuthed = (!!localUserId || !!tabUserId) && (isSessionMatched || !localSessionId || !tabSessionId);
+  const isFieldboardLoginEntry = routeState?.fieldboardLogin === true;
 
   // body dir 속성 설정
   useEffect(() => {
@@ -520,6 +523,42 @@ export default function App() {
     };
   }, []);
 
+  // ✅ 화면에서 캐시와 스토리지를 지워도 바로 로그인 화면으로 진입
+  useEffect(() => {
+    let prevSnapshot = {
+      localUserId: localStorage.getItem("user_id") || "",
+      tabUserId: getSessionUserId() || "",
+      localSessionId: localStorage.getItem("login_session_id") || "",
+      tabSessionId: sessionStorage.getItem("login_session_id") || "",
+      accountId: localStorage.getItem("account_id") || "",
+    };
+
+    const detectSameTabStorageChange = () => {
+      const nextSnapshot = {
+        localUserId: localStorage.getItem("user_id") || "",
+        tabUserId: getSessionUserId() || "",
+        localSessionId: localStorage.getItem("login_session_id") || "",
+        tabSessionId: sessionStorage.getItem("login_session_id") || "",
+        accountId: localStorage.getItem("account_id") || "",
+      };
+
+      const changed =
+        nextSnapshot.localUserId !== prevSnapshot.localUserId ||
+        nextSnapshot.tabUserId !== prevSnapshot.tabUserId ||
+        nextSnapshot.localSessionId !== prevSnapshot.localSessionId ||
+        nextSnapshot.tabSessionId !== prevSnapshot.tabSessionId ||
+        nextSnapshot.accountId !== prevSnapshot.accountId;
+
+      if (!changed) return;
+
+      prevSnapshot = nextSnapshot;
+      setAuthTick((prev) => prev + 1);
+    };
+
+    const intervalId = window.setInterval(detectSameTabStorageChange, 500);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   // 라우트 변경 시 페이지 스크롤 초기화
   useEffect(() => {
     document.documentElement.scrollTop = 0;
@@ -630,8 +669,19 @@ export default function App() {
       <Route path="/business/cookwear/:account_id" element={<CookWearSheet />} />
       <Route path="/business/accountfile/:account_id" element={<AccountFileSheet />} />
 
-      {/* 기타 */}
-      <Route path="/fieldboard/fieldbordtab" element={<FieldBoardTabs />} />
+      {/* 현장 fieldboard */}
+      <Route
+        path="/fieldboard/*"
+        element={
+          isFieldboardLoginEntry ? (
+            <ProtectedRoute>
+              <FieldBoardTabs />
+            </ProtectedRoute>
+          ) : (
+            <Navigate to="/authentication/sign-in" replace />
+          )
+        }
+      />
 
       {/* ✅ 나머지 못 찾는 경로는 전부 /로 */}
       <Route path="*" element={<Navigate to="/" replace />} />

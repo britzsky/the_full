@@ -60,7 +60,7 @@ function AccountMemberSheet() {
     originalWorkSystemList, // ✅ 추가
     fetchWorkSystemList, // ✅ 추가
     saveWorkSystemList, // ✅ 추가
-    saveData,
+    deleteDispatchMappingRow, // ✅ 추가
     fetchAccountMembersAllList,
     loading: hookLoading,
   } = useAccountMembersheetData(selectedAccountId, activeStatus, memberSearchName);
@@ -348,6 +348,15 @@ function AccountMemberSheet() {
     { value: "6", label: "유틸" },
     { value: "7", label: "통합" },
   ];
+
+  // ✅ 직책 표시는 position_type 우선, 없으면 서버 문자열(position)로 폴백
+  const getPositionLabel = (positionType, positionText) => {
+    const key = String(positionType ?? "").trim();
+    if (key) {
+      return positionOptions.find((p) => String(p.value) === key)?.label ?? key;
+    }
+    return String(positionText ?? "").trim();
+  };
 
   const contractOptions = [
     { value: "1", label: "4대보험" },
@@ -1070,7 +1079,16 @@ function AccountMemberSheet() {
 
   // 가운데: 매핑 목록
   const [dispatchMappingRows, setDispatchMappingRows] = useState([]);
+  const [dispatchOriginalMappingRows, setDispatchOriginalMappingRows] = useState([]);
   const [dispatchSelectedMappingRowIndex, setDispatchSelectedMappingRowIndex] = useState(null);
+  const [dispatchCtxMenu, setDispatchCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
+  const [dispatchSaving, setDispatchSaving] = useState(false);
+  const dispatchSaveLockRef = useRef(false);
 
   // 오른쪽: 업장 목록
   const [dispatchAccountRows, setDispatchAccountRows] = useState([]);
@@ -1097,6 +1115,63 @@ function AccountMemberSheet() {
     );
   };
 
+  // ✅ 가운데 매핑 목록 우클릭 메뉴
+  const closeDispatchCtxMenu = useCallback(() => {
+    setDispatchCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  const handleDispatchMappingContextMenu = useCallback((e, rowIndex) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setDispatchSelectedMappingRowIndex(rowIndex);
+    setDispatchCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  }, []);
+
+  // 가운데 매핑 목록 삭제
+  const handleDeleteDispatchMappingRow = useCallback(
+    async (rowIndex) => {
+      if (rowIndex == null) return;
+      const targetRow = dispatchMappingRows?.[rowIndex];
+      if (!targetRow) return;
+
+      const result = await Swal.fire({
+        title: "행 삭제",
+        text: "선택한 파출 매핑을 삭제할까요?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#9e9e9e",
+        confirmButtonText: "삭제",
+        cancelButtonText: "취소",
+      });
+      if (!result.isConfirmed) return;
+
+      try {
+        await deleteDispatchMappingRow(targetRow);
+
+        setDispatchMappingRows((prev) => prev.filter((_, i) => i !== rowIndex));
+        setDispatchOriginalMappingRows((prev) => {
+          if (targetRow?.idx == null) return prev;
+          return (prev || []).filter((r) => String(r.idx ?? "") !== String(targetRow.idx ?? ""));
+        });
+        setDispatchSelectedMappingRowIndex(null);
+        closeDispatchCtxMenu();
+
+        Swal.fire("삭제", "삭제 처리되었습니다.", "success");
+      } catch (err) {
+        closeDispatchCtxMenu();
+        Swal.fire("삭제 실패", err?.message || "오류", "error");
+      }
+    },
+    [dispatchMappingRows, deleteDispatchMappingRow, closeDispatchCtxMenu]
+  );
+
   // ✅ (중요) API는 통합/유틸 관리와 동일하게 호출하되, year/month를 params에 포함
   //    서버가 year/month를 아직 안 받더라도 무시될 수 있으니 안전함
   // ✅ 왼쪽: 직원 목록 (/Operate/AccountMemberAllList)
@@ -1117,12 +1192,12 @@ function AccountMemberSheet() {
   );
 
   // ✅ 가운데: 매핑 조회 (/Account/AccountMemberDispatchMappingList)
-  // 더 이상 year/month로 필터하지 않고 member_id만으로 조회
+  // member_id + del_yn='N' 조건으로 조회(삭제처리된 데이터 제외)
   const fetchDispatchMappingList = useCallback(async (memberId) => {
     if (!memberId) return [];
 
     const res = await api.get("/Account/AccountMemberDispatchMappingList", {
-      params: { member_id: memberId },
+      params: { member_id: memberId, del_yn: "N" },
     });
 
     const list = res?.data?.data ?? res?.data ?? [];
@@ -1144,6 +1219,7 @@ function AccountMemberSheet() {
       setDispatchSelectedAccount(null);
       setDispatchSelectedMappingRowIndex(null);
       setDispatchMappingRows([]);
+      setDispatchOriginalMappingRows([]);
 
       const initAccId =
         String(selectedAccountId ?? "") || String(accountOptions?.[0]?.value ?? "") || "";
@@ -1166,6 +1242,7 @@ function AccountMemberSheet() {
 
   const closeDispatchModal = () => {
     setDispatchOpen(false);
+    closeDispatchCtxMenu();
   };
 
   const handleSelectDispatchMember = async (row) => {
@@ -1176,6 +1253,7 @@ function AccountMemberSheet() {
       const memberId = row?.member_id;
       if (!memberId) {
         setDispatchMappingRows([]);
+        setDispatchOriginalMappingRows([]);
         return;
       }
 
@@ -1207,6 +1285,7 @@ function AccountMemberSheet() {
       });
 
       setDispatchMappingRows(normalized);
+      setDispatchOriginalMappingRows(normalized);
     } catch (err) {
       Swal.fire("조회 실패", err?.message || "오류", "error");
     }
@@ -1266,6 +1345,8 @@ function AccountMemberSheet() {
   };
 
   const handleDispatchSave = async () => {
+    if (dispatchSaveLockRef.current || dispatchSaving) return;
+
     if (!dispatchSelectedMember?.member_id) {
       Swal.fire("안내", "왼쪽에서 직원을 먼저 선택해주세요.", "info");
       return;
@@ -1278,8 +1359,30 @@ function AccountMemberSheet() {
       return;
     }
 
+    dispatchSaveLockRef.current = true;
+    setDispatchSaving(true);
+
     try {
-      const payload = (dispatchMappingRows || []).map((r) => {
+      Swal.fire({
+        title: "저장중입니다.",
+        text: "잠시만 기다려 주세요.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      // ✅ del_yn='N' 매핑은 모두 저장(백엔드 AccountMemberRecordSave 연동 보장)
+      const rowsToSave = (dispatchMappingRows || []).filter(
+        (r) => String(r.del_yn ?? "N").toUpperCase() !== "Y"
+      );
+
+      if (rowsToSave.length === 0) {
+        Swal.close();
+        Swal.fire("안내", "저장할 매핑이 없습니다.", "info");
+        return;
+      }
+
+      const payload = rowsToSave.map((r) => {
         const { record_year, record_month, record_date } = splitRecordDate(r.record_date);
 
         return {
@@ -1307,6 +1410,9 @@ function AccountMemberSheet() {
 
           // ✅ type은 6 고정
           type: DISPATCH_TYPE,
+
+          // ✅ 활성 데이터로 저장
+          del_yn: "N",
         };
       });
 
@@ -1314,11 +1420,10 @@ function AccountMemberSheet() {
       const ok = res?.status === 200 || res?.data?.code === 200;
 
       if (!ok) {
+        Swal.close();
         Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
         return;
       }
-
-      Swal.fire("저장 완료", "직원 파출 매핑이 저장되었습니다.", "success");
 
       // 저장 후 가운데 재조회
       const latest = await fetchDispatchMappingList(dispatchSelectedMember.member_id);
@@ -1343,9 +1448,15 @@ function AccountMemberSheet() {
       });
 
       setDispatchMappingRows(normalized);
-      setDispatchOpen(false);
+      setDispatchOriginalMappingRows(normalized);
+      Swal.close();
+      Swal.fire("저장 완료", "직원 파출 매핑이 저장되었습니다.", "success");
     } catch (err) {
+      Swal.close();
       Swal.fire("저장 실패", err?.message || "오류", "error");
+    } finally {
+      dispatchSaveLockRef.current = false;
+      setDispatchSaving(false);
     }
   };
 
@@ -1390,8 +1501,10 @@ function AccountMemberSheet() {
           });
 
           setDispatchMappingRows(normalized);
+          setDispatchOriginalMappingRows(normalized);
         } else {
           setDispatchMappingRows([]);
+          setDispatchOriginalMappingRows([]);
         }
       } catch (e) {
         console.error(e);
@@ -1405,6 +1518,14 @@ function AccountMemberSheet() {
     fetchDispatchAccountList,
     fetchDispatchMappingList,
   ]);
+
+  useEffect(() => {
+    if (!dispatchCtxMenu.open) return;
+    const rowIndex = dispatchCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+    if (rowIndex < (dispatchMappingRows || []).length) return;
+    closeDispatchCtxMenu();
+  }, [dispatchCtxMenu.open, dispatchCtxMenu.rowIndex, dispatchMappingRows, closeDispatchCtxMenu]);
 
   // 직원파출관리 모달에서 업장명 표시용 맵
   const dispatchAccountNameMap = useMemo(() => {
@@ -2603,9 +2724,7 @@ function AccountMemberSheet() {
                     {(utilMemberRows || []).map((r, i) => {
                       const selected =
                         String(utilSelectedMember?.member_id ?? "") === String(r.member_id ?? "");
-                      const posLabel =
-                        positionOptions.find((p) => String(p.value) === String(r.position_type))
-                          ?.label ?? String(r.position_type ?? "");
+                      const posLabel = getPositionLabel(r.position_type, r.position);
 
                       return (
                         <tr
@@ -2681,9 +2800,7 @@ function AccountMemberSheet() {
                   <tbody>
                     {(utilMappingRows || []).map((r, i) => {
                       const selected = utilSelectedMappingRowIndex === i;
-                      const posLabel =
-                        positionOptions.find((p) => String(p.value) === String(r.position_type))
-                          ?.label ?? String(r.position_type ?? "");
+                      const posLabel = getPositionLabel(r.position_type, r.position);
                       const accName = utilAccountNameMap.get(String(r.account_id ?? "")) ?? "";
                       const accText = accName
                         ? `${r.account_id ?? ""} (${accName})`
@@ -2871,6 +2988,7 @@ function AccountMemberSheet() {
                 setDispatchSelectedAccount(null);
                 setDispatchSelectedMappingRowIndex(null);
                 setDispatchMappingRows([]);
+                setDispatchOriginalMappingRows([]);
 
                 // ✅ 왼쪽 직원목록 재조회
                 try {
@@ -2901,10 +3019,20 @@ function AccountMemberSheet() {
             />
 
             <MDBox display="flex" gap={1}>
-              <MDButton variant="gradient" color="info" onClick={handleDispatchSave}>
-                저장
+              <MDButton
+                variant="gradient"
+                color="info"
+                onClick={handleDispatchSave}
+                disabled={dispatchSaving}
+              >
+                {dispatchSaving ? "저장중..." : "저장"}
               </MDButton>
-              <MDButton variant="outlined" color="secondary" onClick={closeDispatchModal}>
+              <MDButton
+                variant="outlined"
+                color="secondary"
+                onClick={closeDispatchModal}
+                disabled={dispatchSaving}
+              >
                 닫기
               </MDButton>
             </MDBox>
@@ -2969,9 +3097,7 @@ function AccountMemberSheet() {
                       const selected =
                         String(dispatchSelectedMember?.member_id ?? "") ===
                         String(r.member_id ?? "");
-                      const posLabel =
-                        positionOptions.find((p) => String(p.value) === String(r.position_type))
-                          ?.label ?? String(r.position_type ?? "");
+                      const posLabel = getPositionLabel(r.position_type, r.position);
 
                       return (
                         <tr
@@ -3049,9 +3175,7 @@ function AccountMemberSheet() {
                     {(dispatchMappingRows || []).map((r, i) => {
                       const selected = dispatchSelectedMappingRowIndex === i;
 
-                      const posLabel =
-                        positionOptions.find((p) => String(p.value) === String(r.position_type))
-                          ?.label ?? String(r.position_type ?? "");
+                      const posLabel = getPositionLabel(r.position_type, r.position);
 
                       const ownerAccId = String(r.account_id ?? "");
                       const ownerAccName = memberAccountNameMap.get(ownerAccId) ?? "";
@@ -3067,6 +3191,7 @@ function AccountMemberSheet() {
                         <tr
                           key={`${r.idx ?? "new"}-${ownerAccId}-${dispAccId}-${i}`}
                           onClick={() => setDispatchSelectedMappingRowIndex(i)}
+                          onContextMenu={(e) => handleDispatchMappingContextMenu(e, i)}
                           style={{
                             cursor: "pointer",
                             backgroundColor: selected ? "rgba(255,193,7,0.12)" : "#fff",
@@ -3203,6 +3328,54 @@ function AccountMemberSheet() {
           </MDBox>
         </Box>
       </Modal>
+
+      {dispatchCtxMenu.open && (
+        <div
+          onClick={closeDispatchCtxMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeDispatchCtxMenu();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 10000,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: dispatchCtxMenu.mouseY,
+              left: dispatchCtxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={() => handleDeleteDispatchMappingRow(dispatchCtxMenu.rowIndex)}
+            >
+              🗑️ 행 삭제
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* =========================
           ✅ 이미지 뷰어 (추가)

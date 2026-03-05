@@ -369,6 +369,15 @@ function HygieneSheetTab() {
   // 저장
   const handleSave = async () => {
     try {
+      // ✅ 저장 완료/실패 확인창 전까지 로딩 모달 유지
+      Swal.fire({
+        title: "저장중입니다.",
+        text: "잠시만 기다려 주세요.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
       const modifiedRows = await Promise.all(
         rows.map(async (row, index) => {
           const original = originalRows[index] || {};
@@ -408,6 +417,7 @@ function HygieneSheetTab() {
       const payload = modifiedRows.filter(Boolean);
 
       if (payload.length === 0) {
+        Swal.close();
         Swal.fire({
           title: "안내",
           text: "변경된 내용이 없습니다.",
@@ -421,6 +431,8 @@ function HygieneSheetTab() {
       const response = await api.post("/Operate/HygieneSave", payload, {
         headers: { "Content-Type": "application/json" },
       });
+
+      Swal.close();
 
       if (response.data.code === 200) {
         Swal.fire({
@@ -442,6 +454,7 @@ function HygieneSheetTab() {
         });
       }
     } catch (error) {
+      Swal.close();
       Swal.fire({
         title: "실패",
         text: "저장 중 오류가 발생했습니다.",

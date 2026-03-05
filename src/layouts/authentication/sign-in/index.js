@@ -106,7 +106,9 @@ function Basic() {
           const department = response.data.department;
 
           if (department == "7") {
-            navigate("/fieldboard/fieldbordtab");
+            navigate("/fieldboard/fieldbordtab", {
+              state: { fieldboardLogin: true },
+            });
           } else {
             navigate("/Dashboard");
           }

@@ -42,28 +42,38 @@ function AccountMemberRecordMainTableTab() {
   const [accountInput, setAccountInput] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
 
-  const [sidoOptions, setSidoOptions] = useState([NONE_OPTION]);
-  const [sigunguOptions, setSigunguOptions] = useState([NONE_OPTION]);
-  const [eupmyeondongOptions, setEupmyeondongOptions] = useState([NONE_OPTION]);
-
-  const [selectedSidoCode, setSelectedSidoCode] = useState("");
-  const [selectedSigunguCode, setSelectedSigunguCode] = useState("");
-  const [selectedEmdCode, setSelectedEmdCode] = useState("");
-
-  const [originalSidoCode, setOriginalSidoCode] = useState("");
-  const [originalSigunguCode, setOriginalSigunguCode] = useState("");
-  const [originalEmdCode, setOriginalEmdCode] = useState("");
+  // ✅ Root select (시도/시군구/읍면동 대체)
+  const [rootOptions, setRootOptions] = useState([NONE_OPTION]);
+  const [selectedRootIdx, setSelectedRootIdx] = useState("");
+  const [originalRootIdx, setOriginalRootIdx] = useState("");
 
   // ✅ 부족 클릭 시 오른쪽에 보여줄 응급 인력 리스트
   const [emergencyRows, setEmergencyRows] = useState([]);
   const [emergencyLoading, setEmergencyLoading] = useState(false);
   const [emergencyTitle, setEmergencyTitle] = useState("부족 인력 조회");
 
+  // ✅ 채용여부(use_yn) 수정용(행별)
+  const [emergencyUseYnMap, setEmergencyUseYnMap] = useState({});
+  const [savingEmployment, setSavingEmployment] = useState(false);
+
+  // ✅ 부족항목 클릭 시 "시작/마감"도 보여주기 위해 보관
+  const [shortageSelectedShift, setShortageSelectedShift] = useState({
+    start_time: "",
+    end_time: "",
+  });
+
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
 
+  // ✅ 부족항목 클릭에서 계산된 "일자(1~31)"를 저장(전송/표시용)
+  const [selectedDayOfMonth, setSelectedDayOfMonth] = useState(null);
+
+  // ✅ 마지막으로 클릭한 부족항목의 position_type 저장(전송용)
+  const [selectedPositionType, setSelectedPositionType] = useState("");
+
   const tableContainerRef = useRef(null);
+
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -113,18 +123,18 @@ function AccountMemberRecordMainTableTab() {
   const startTimes = generateTimeOptions("5:30", "16:00", 30);
   const endTimes = generateTimeOptions("10:00", "20:00", 30);
 
-  const corOptions = useMemo(
-    () => [
-      { value: "1", label: "(주)더채움" },
-      { value: "2", label: "더채움" },
-    ],
-    []
-  );
-
   const positionOptions = useMemo(
     () => [
       { value: "4", label: "조리사" },
       { value: "5", label: "조리원" },
+    ],
+    []
+  );
+
+  const statusOptions = useMemo(
+    () => [
+      { value: "1", label: "가능" },
+      { value: "2", label: "블랙리스트" },
     ],
     []
   );
@@ -142,38 +152,113 @@ function AccountMemberRecordMainTableTab() {
   );
 
   // =========================
-  // ✅ 코드/날짜 유틸
+  // ✅ 표시 라벨 매핑(오른쪽 테이블)
   // =========================
-  const normCode = useCallback((v) => {
+  const positionLabelOf = useCallback(
+    (pos) =>
+      positionOptions.find((p) => String(p.value) === String(pos))?.label ?? String(pos ?? ""),
+    [positionOptions]
+  );
+
+  const statusLabelOf = useCallback(
+    (pos) => statusOptions.find((p) => String(p.value) === String(pos))?.label ?? String(pos ?? ""),
+    [statusOptions]
+  );
+
+  const statusColorOf = useCallback((v) => {
     const s = String(v ?? "").trim();
-    return s === "" ? "" : s;
+    if (s === "1") return "#1976d2";
+    if (s === "2") return "#d32f2f";
+    return "inherit";
   }, []);
 
+  const manpowerTypeLabelOf = useCallback((v) => {
+    const s = String(v ?? "").trim();
+    if (s === "1") return "내부대체";
+    if (s === "2") return "외부대체";
+    if (s === "3") return "퇴사자";
+    if (s === "4") return "파출";
+    return s;
+  }, []);
+
+  const employmentOptions = useMemo(
+    () => [
+      { value: "1", label: "보류" }, // 주황
+      { value: "2", label: "불가" }, // 빨강
+      { value: "3", label: "확정" }, // 파랑
+    ],
+    []
+  );
+
+  const employmentColorOf = useCallback((v) => {
+    const s = String(v ?? "").trim();
+    if (s === "1") return "#FF9760"; // 보류: 주황
+    if (s === "2") return "#d32f2f"; // 불가: 빨강
+    if (s === "3") return "#1976d2"; // 확정: 파랑
+    return "#777";
+  }, []);
+
+  // =========================
+  // ✅ 유틸
+  // =========================
   const isValueInOptions = useCallback((val, opts) => {
     const v = String(val ?? "");
     return (opts || []).some((o) => String(o.value) === v);
   }, []);
 
+  const normalizeToOptionValue = useCallback(
+    (raw, opts) => {
+      let v = String(raw ?? "").trim();
+      if (!v) return "";
+
+      const optsArr = Array.isArray(opts) ? opts : [];
+      if (isValueInOptions(v, optsArr)) return v;
+
+      const sample = optsArr.find((o) => String(o.value ?? "") !== "")?.value;
+      const len = sample ? String(sample).length : 0;
+
+      if (len > 0 && v.length < len) {
+        const padded = v.padStart(len, "0");
+        if (isValueInOptions(padded, optsArr)) return padded;
+      }
+
+      if (len > 0 && v.length > len) {
+        const tail = v.slice(-len);
+        if (isValueInOptions(tail, optsArr)) return tail;
+      }
+
+      const noLeading = v.replace(/^0+/, "");
+      if (noLeading && isValueInOptions(noLeading, optsArr)) return noLeading;
+
+      const vv = v.replace(/[^\d]/g, "");
+      if (vv) {
+        const hit1 = optsArr.find((o) => String(o?.value ?? "").startsWith(vv));
+        if (hit1) return String(hit1.value);
+
+        const hit2 = optsArr.find((o) => vv.startsWith(String(o?.value ?? "")));
+        if (hit2) return String(hit2.value);
+      }
+
+      return "";
+    },
+    [isValueInOptions]
+  );
+
   const pad2 = (n) => String(n).padStart(2, "0");
   const formatYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
-  // 월의 week(1..n) + 요일(mon..sun) → 날짜 계산(월 기준, 주 시작=월요일)
   const getDateByWeekDay = useCallback(
     (y, mm, week, dayKey) => {
-      const m = Number(mm); // 1..12
+      const m = Number(mm);
       const w = Number(week);
-      const dayIndex = DAY_KEYS.indexOf(dayKey); // mon=0..sun=6
+      const dayIndex = DAY_KEYS.indexOf(dayKey);
       if (!Number.isFinite(m) || !Number.isFinite(w) || dayIndex < 0) return null;
 
-      // 1일
       const first = new Date(y, m - 1, 1);
-      // JS: 일=0..토=6 → 월요일 기준 offset
-      const firstDow = first.getDay(); // 0..6
-      const mondayBased = (firstDow + 6) % 7; // 월=0..일=6
-      // “1일이 포함된 주”의 월요일 날짜
+      const firstDow = first.getDay();
+      const mondayBased = (firstDow + 6) % 7;
       const firstWeekMonday = new Date(y, m - 1, 1 - mondayBased);
 
-      // week(1) = firstWeekMonday 주
       const target = new Date(firstWeekMonday);
       target.setDate(firstWeekMonday.getDate() + (w - 1) * 7 + dayIndex);
       return target;
@@ -191,7 +276,6 @@ function AccountMemberRecordMainTableTab() {
     }));
   }, [accountList]);
 
-  // 첫 거래처 자동 선택
   useEffect(() => {
     if (!selectedAccountId && accountOptions.length > 0) {
       setSelectedAccountId(accountOptions[0].value);
@@ -205,122 +289,40 @@ function AccountMemberRecordMainTableTab() {
   }, [accountOptions, selectedAccountId]);
 
   // =========================
-  // ✅ 시도/시군구/읍면동 옵션 조회
+  // ✅ RootList 옵션 fetch
   // =========================
-  const fetchSidoOptions = useCallback(async () => {
-    try {
-      const res = await api.get("/Operate/SidoList");
-      const opts = (res.data || []).map((x) => ({
-        value: String(x.sido_code),
-        label: x.sido_name,
-      }));
+  const fetchRootList = useCallback(async () => {
+    const res = await api.get("/Operate/RootList");
+    const opts = (res.data || []).map((x) => {
+      const sido = String(x?.sido_name ?? "").trim();
+      const sigungu = String(x?.sigungu_name ?? "").trim();
+      const emd = String(x?.emd_name ?? "").trim();
+      const label = [sido, sigungu, emd].filter(Boolean).join(" ");
+      return {
+        value: String(x.root_idx),
+        label: label || String(x.root_idx),
+      };
+    });
+    return [NONE_OPTION, ...opts];
+  }, [NONE_OPTION]);
 
-      const merged = [NONE_OPTION, ...opts];
-      setSidoOptions(merged);
-
-      // ✅ 현재 선택값이 옵션에 없으면 "지정안됨"으로
-      setSelectedSidoCode((prev) => {
-        const v = normCode(prev);
-        if (v === "") return "";
-        return isValueInOptions(v, merged) ? v : "";
-      });
-    } catch (e) {
-      console.error(e);
-      setSidoOptions([NONE_OPTION]);
-      setSelectedSidoCode("");
-    }
-  }, [NONE_OPTION, isValueInOptions, normCode]);
-
-  const fetchSigunguOptions = useCallback(
-    async (sido_code) => {
-      const sido = normCode(sido_code);
-
-      if (!sido) {
-        setSigunguOptions([NONE_OPTION]);
-        setSelectedSigunguCode("");
-        // ✅ 시군구 없으면 읍면동도 초기화
-        setEupmyeondongOptions([NONE_OPTION]);
-        setSelectedEmdCode("");
-        return;
-      }
-
+  useEffect(() => {
+    let alive = true;
+    (async () => {
       try {
-        const res = await api.get("/Operate/SigunguList", { params: { sido_code: sido } });
-        const opts = (res.data || []).map((x) => ({
-          value: String(x.sigungu_code),
-          label: x.sigungu_name,
-        }));
-
-        const merged = [NONE_OPTION, ...opts];
-        setSigunguOptions(merged);
-
-        // ✅ 현재 선택값이 options에 있으면 유지, 없으면 ""로
-        setSelectedSigunguCode((prev) => {
-          const v = normCode(prev);
-          if (v === "") return "";
-          return isValueInOptions(v, merged) ? v : "";
-        });
+        const list = await fetchRootList();
+        if (!alive) return;
+        setRootOptions(list);
       } catch (e) {
         console.error(e);
-        setSigunguOptions([NONE_OPTION]);
-        setSelectedSigunguCode("");
-        setEupmyeondongOptions([NONE_OPTION]);
-        setSelectedEmdCode("");
+        if (!alive) return;
+        setRootOptions([NONE_OPTION]);
       }
-    },
-    [NONE_OPTION, isValueInOptions, normCode]
-  );
-
-  // ✅ 읍면동 옵션 조회 (시군구 기준)
-  const fetchEupmyeondongOptions = useCallback(
-    async (sigungu_code) => {
-      const sigungu = normCode(sigungu_code);
-
-      if (!sigungu) {
-        setEupmyeondongOptions([NONE_OPTION]);
-        setSelectedEmdCode("");
-        return;
-      }
-
-      try {
-        const res = await api.get("/Operate/EupmyeondongList", {
-          params: { sigungu_code: sigungu },
-        });
-
-        const opts = (res.data || []).map((x) => ({
-          value: String(x.emd_code),
-          label: x.emd_name,
-        }));
-
-        const merged = [NONE_OPTION, ...opts];
-        setEupmyeondongOptions(merged);
-
-        // ✅ 현재 선택값이 options에 있으면 유지, 없으면 ""로
-        setSelectedEmdCode((prev) => {
-          const v = normCode(prev);
-          if (v === "") return "";
-          return isValueInOptions(v, merged) ? v : "";
-        });
-      } catch (e) {
-        console.error(e);
-        setEupmyeondongOptions([NONE_OPTION]);
-        setSelectedEmdCode("");
-      }
-    },
-    [NONE_OPTION, isValueInOptions, normCode]
-  );
-
-  useEffect(() => {
-    fetchSidoOptions();
-  }, [fetchSidoOptions]);
-
-  useEffect(() => {
-    fetchSigunguOptions(selectedSidoCode);
-  }, [selectedSidoCode, fetchSigunguOptions]);
-
-  useEffect(() => {
-    fetchEupmyeondongOptions(selectedSigunguCode);
-  }, [selectedSigunguCode, fetchEupmyeondongOptions]);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [fetchRootList, NONE_OPTION]);
 
   // =========================
   // ✅ 거래처 입력으로 선택
@@ -348,7 +350,7 @@ function AccountMemberRecordMainTableTab() {
   }, [accountInput, accountOptions]);
 
   // =========================
-  // ✅ 조회: 표준 + 상황(연/월) 같이 조회
+  // ✅ 조회
   // =========================
   useEffect(() => {
     let alive = true;
@@ -389,7 +391,7 @@ function AccountMemberRecordMainTableTab() {
   ]);
 
   // =========================
-  // ✅ activeRows 로딩 후 스케줄 키 주입 + 원본 스냅샷 갱신 + 지역 매핑
+  // ✅ activeRows 로딩 후 root_idx 자동매핑
   // =========================
   useEffect(() => {
     if (Array.isArray(activeRows) && activeRows.length > 0) {
@@ -398,69 +400,30 @@ function AccountMemberRecordMainTableTab() {
       setOriginalRows(updated);
 
       const first = updated[0] || {};
+      const incomingRootIdx = String(first?.root_idx ?? "").trim();
 
-      const nextSido = normCode(first.sido_code);
-      const nextSigungu = normCode(first.sigungu_code);
-      const nextEmd = normCode(first.emd_code);
-
-      // ✅ sido: 값이 있으면 옵션에 있는지 체크(없으면 지정안됨)
-      setSelectedSidoCode(() => {
-        const target = nextSido;
-        if (target === "") return "";
-        return isValueInOptions(target, sidoOptions) ? target : "";
-      });
-      setOriginalSidoCode(nextSido);
-
-      // ✅ sigungu: 우선 값 세팅해두고, fetchSigunguOptions에서 옵션 로딩 후 유지/초기화 판단
-      setSelectedSigunguCode(nextSigungu);
-      setOriginalSigunguCode(nextSigungu);
-
-      // ✅ emd: 우선 값 세팅해두고, fetchEupmyeondongOptions에서 옵션 로딩 후 유지/초기화 판단
-      setSelectedEmdCode(nextEmd);
-      setOriginalEmdCode(nextEmd);
+      setOriginalRootIdx(incomingRootIdx);
+      setSelectedRootIdx(incomingRootIdx);
     } else {
       setOriginalRows([]);
-      // 데이터가 없을 때는 지역도 지정안됨
-      setSelectedSidoCode("");
-      setSelectedSigunguCode("");
-      setSelectedEmdCode("");
-      setOriginalSidoCode("");
-      setOriginalSigunguCode("");
-      setOriginalEmdCode("");
+      setOriginalRootIdx("");
+      setSelectedRootIdx("");
     }
-    // length 기준 유지
-  }, [
-    activeRows?.length,
-    hydrateSchedule,
-    setActiveRows,
-    setOriginalRows,
-    normCode,
-    isValueInOptions,
-    sidoOptions,
-  ]);
+  }, [activeRows?.length]);
 
-  // ✅ sido가 "지정안됨"으로 바뀌면 sigungu/emd도 같이 지정안됨 처리
+  // ✅ rootOptions 준비된 뒤 매핑 안정화(스냅백 방지 버전)
   useEffect(() => {
-    if (!String(selectedSidoCode ?? "").trim()) {
-      setSigunguOptions([NONE_OPTION]);
-      setSelectedSigunguCode("");
+    const fixed = normalizeToOptionValue(originalRootIdx, rootOptions || []);
+    setSelectedRootIdx((prev) => {
+      const prevStr = String(prev ?? "");
+      const origStr = String(originalRootIdx ?? "");
+      if (!prevStr) return fixed;
+      if (prevStr === origStr) return fixed;
+      return prevStr;
+    });
+  }, [originalRootIdx, rootOptions, normalizeToOptionValue]);
 
-      setEupmyeondongOptions([NONE_OPTION]);
-      setSelectedEmdCode("");
-    }
-  }, [selectedSidoCode, NONE_OPTION]);
-
-  // ✅ sigungu가 "지정안됨"으로 바뀌면 emd도 같이 지정안됨 처리
-  useEffect(() => {
-    if (!String(selectedSigunguCode ?? "").trim()) {
-      setEupmyeondongOptions([NONE_OPTION]);
-      setSelectedEmdCode("");
-    }
-  }, [selectedSigunguCode, NONE_OPTION]);
-
-  const isSidoChanged = String(selectedSidoCode ?? "") !== String(originalSidoCode ?? "");
-  const isSigunguChanged = String(selectedSigunguCode ?? "") !== String(originalSigunguCode ?? "");
-  const isEmdChanged = String(selectedEmdCode ?? "") !== String(originalEmdCode ?? "");
+  const isRootChanged = String(selectedRootIdx ?? "") !== String(originalRootIdx ?? "");
 
   // =========================
   // ✅ 테이블 정의
@@ -530,18 +493,21 @@ function AccountMemberRecordMainTableTab() {
   };
 
   useEffect(() => {
-    // ✅ 전체 조회(거래처 미선택/전체)면 오른쪽 응급인력 영역 초기화
-    if (!String(selectedAccountId ?? "").trim()) {
-      setEmergencyRows([]);
-      setEmergencyLoading(false);
-      setEmergencyTitle("부족 인력 조회");
-    }
-  }, [selectedAccountId]);
+    // ✅ 조건 변경(연도/월/거래처/root) 시 오른쪽 영역(응급인력) 초기화
+    setEmergencyRows([]);
+    setEmergencyUseYnMap({});
+    setEmergencyLoading(false);
+    setEmergencyTitle("부족 인력 조회");
 
-  // ✅ 저장 로직
+    setSelectedDayOfMonth(null);
+    setSelectedPositionType("");
+    setShortageSelectedShift({ start_time: "", end_time: "" });
+  }, [year, month, selectedAccountId, selectedRootIdx]);
+
+  // ✅ 저장 로직(root_idx만 저장) - 기존 유지
   const handleSave = async () => {
-    if (!String(selectedSidoCode ?? "").trim() || !String(selectedSigunguCode ?? "").trim()) {
-      Swal.fire("안내", "업장 지역(시도/시군구)을 선택하세요.", "info");
+    if (!String(selectedRootIdx ?? "").trim()) {
+      Swal.fire("안내", "업장 지역(root)을 선택하세요.", "info");
       return;
     }
 
@@ -554,13 +520,9 @@ function AccountMemberRecordMainTableTab() {
       );
     });
 
-    const _isSidoChanged = String(selectedSidoCode ?? "") !== String(originalSidoCode ?? "");
-    const _isSigunguChanged =
-      String(selectedSigunguCode ?? "") !== String(originalSigunguCode ?? "");
-    const _isEmdChanged = String(selectedEmdCode ?? "") !== String(originalEmdCode ?? "");
-    const isRegionChanged = _isSidoChanged || _isSigunguChanged || _isEmdChanged;
+    const _isRootChanged = String(selectedRootIdx ?? "") !== String(originalRootIdx ?? "");
 
-    if (changedRows.length === 0 && !isRegionChanged) {
+    if (changedRows.length === 0 && !_isRootChanged) {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
       return;
     }
@@ -584,9 +546,7 @@ function AccountMemberRecordMainTableTab() {
         return {
           ...newRow,
           user_id: userId,
-          sido_code: selectedSidoCode ? Number(selectedSidoCode) : null,
-          sigungu_code: selectedSigunguCode ? Number(selectedSigunguCode) : null,
-          emd_code: selectedEmdCode ? Number(selectedEmdCode) : null, // ✅ 추가
+          root_idx: selectedRootIdx ? Number(selectedRootIdx) : null,
         };
       });
 
@@ -597,10 +557,7 @@ function AccountMemberRecordMainTableTab() {
 
         const snapshot = (activeRows || []).map((r) => hydrateSchedule(r));
         setOriginalRows(snapshot);
-
-        setOriginalSidoCode(String(selectedSidoCode ?? ""));
-        setOriginalSigunguCode(String(selectedSigunguCode ?? ""));
-        setOriginalEmdCode(String(selectedEmdCode ?? ""));
+        setOriginalRootIdx(String(selectedRootIdx ?? ""));
 
         await fetchAccountStandardList();
       } else {
@@ -627,7 +584,7 @@ function AccountMemberRecordMainTableTab() {
         sx={{
           flex: 1,
           minHeight: 0,
-          maxHeight: isMobile ? "55vh" : "70vh",
+          maxHeight: isMobile ? "30vh" : "30vh",
           overflowX: "auto",
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
@@ -1003,24 +960,55 @@ function AccountMemberRecordMainTableTab() {
 
   // =========================================
   // ✅ 부족 항목 클릭 → 응급인력 조회
+  // - root_idx + position_type + (있으면) 시작/마감 힌트도 제목에 표시
   // =========================================
-  const getEffectiveSidoSigungu = useCallback(() => {
-    const fallbackSido = activeRows?.[0]?.sido_code != null ? String(activeRows[0].sido_code) : "";
-    const fallbackSigungu =
-      activeRows?.[0]?.sigungu_code != null ? String(activeRows[0].sigungu_code) : "";
+  const getEffectiveRootIdx = useCallback(() => {
+    const fallbackRoot = activeRows?.[0]?.root_idx != null ? String(activeRows[0].root_idx) : "";
+    const root_idx = String(selectedRootIdx ?? "").trim() || String(fallbackRoot ?? "").trim();
+    return root_idx;
+  }, [activeRows, selectedRootIdx]);
 
-    const sido_code = String(selectedSidoCode ?? "").trim() || fallbackSido;
-    const sigungu_code = String(selectedSigunguCode ?? "").trim() || fallbackSigungu;
+  // ✅ 부족항목 클릭된 포지션의 start/end를 activeRows에서 추정
+  // - 같은 position_type 행들 중 "가장 많이 등장하는 값"을 선택 (없으면 첫 유효값)
+  const getShiftByPosition = useCallback(
+    (position_type) => {
+      const pos = String(position_type ?? "").trim();
+      if (!pos) return { start_time: "", end_time: "" };
 
-    return { sido_code, sigungu_code };
-  }, [activeRows, selectedSidoCode, selectedSigunguCode]);
+      const list = (activeRows || []).filter((r) => String(r?.position_type ?? "").trim() === pos);
+
+      const pickMostCommon = (arr) => {
+        const freq = {};
+        arr.forEach((v) => {
+          const s = String(v ?? "").trim();
+          if (!s) return;
+          freq[s] = (freq[s] || 0) + 1;
+        });
+        const entries = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+        return entries.length ? entries[0][0] : "";
+      };
+
+      const startCandidates = list.map((r) => r?.start_time);
+      const endCandidates = list.map((r) => r?.end_time);
+
+      const start_time =
+        pickMostCommon(startCandidates) ||
+        String(startCandidates.find((v) => String(v ?? "").trim()) ?? "");
+      const end_time =
+        pickMostCommon(endCandidates) ||
+        String(endCandidates.find((v) => String(v ?? "").trim()) ?? "");
+
+      return { start_time, end_time };
+    },
+    [activeRows]
+  );
 
   const handleClickShortageItem = useCallback(
     async ({ position_type, week, dayKey, dayLabel, posLabel, 부족 }) => {
-      const { sido_code, sigungu_code } = getEffectiveSidoSigungu();
+      const root_idx = getEffectiveRootIdx();
 
-      if (!sido_code || !sigungu_code) {
-        Swal.fire("안내", "시도/시군구 코드가 없습니다. 상단 지역 선택을 확인하세요.", "info");
+      if (!root_idx) {
+        Swal.fire("안내", "root_idx가 없습니다. 상단 Root 선택을 확인하세요.", "info");
         return;
       }
       if (!position_type) {
@@ -1028,39 +1016,165 @@ function AccountMemberRecordMainTableTab() {
         return;
       }
 
-      // ✅ “몇일인지” 계산
+      setSelectedPositionType(String(position_type));
+
       const d = getDateByWeekDay(year, month, week, dayKey);
       const ymd = d ? formatYMD(d) : "";
-      const dayNum = d ? `${d.getDate()}일` : "";
+      const dayNum = d ? d.getDate() : null;
+      setSelectedDayOfMonth(dayNum);
+
+      // ✅ 시작/마감 추정
+      const shift = getShiftByPosition(position_type);
+      setShortageSelectedShift(shift);
+
+      const rootLabel =
+        rootOptions.find((o) => String(o.value) === String(root_idx))?.label ?? `root:${root_idx}`;
 
       try {
         setEmergencyLoading(true);
         setEmergencyRows([]);
+        setEmergencyUseYnMap({});
 
         setEmergencyTitle(
           `${week}주차 ${dayLabel} (${ymd}${
-            dayNum ? `, ${dayNum}` : ""
-          }) / ${posLabel} 부족-${부족} (시도:${sido_code}, 시군구:${sigungu_code})`
+            dayNum ? `, ${dayNum}일` : ""
+          }) / ${posLabel} 부족-${부족} (${rootLabel})${
+            shift?.start_time || shift?.end_time
+              ? ` / 시작:${shift?.start_time || "-"} 마감:${shift?.end_time || "-"}`
+              : ""
+          }`
         );
 
         const res = await api.get("/Operate/EmergencyPersonList", {
           params: {
-            sido_code,
-            sigungu_code,
+            root_idx,
             position_type,
+
+            // ✅ 클릭된 날짜도 함께 전달
+            record_year: Number(year),
+            record_month: Number(month),
+            record_date: Number(dayNum), // dayNum은 클릭으로 계산된 일자(1~31)
           },
         });
 
         const list = res?.data?.list ?? res?.data ?? [];
-        setEmergencyRows(Array.isArray(list) ? list : []);
+        const arr = Array.isArray(list) ? list : [];
+        setEmergencyRows(arr);
+
+        // ✅ use_yn 초기값 map 구성
+        const m = {};
+        arr.forEach((it) => {
+          const id = it?.idx;
+          if (id == null) return;
+          const v = String(it?.use_yn ?? "").trim();
+          m[String(id)] = v; // "" or 1/2/3
+        });
+        setEmergencyUseYnMap(m);
       } catch (e) {
         setEmergencyRows([]);
+        setEmergencyUseYnMap({});
         Swal.fire("실패", e?.message || "응급 인력 조회 오류", "error");
       } finally {
         setEmergencyLoading(false);
       }
     },
-    [getEffectiveSidoSigungu, getDateByWeekDay, year, month]
+    [getEffectiveRootIdx, getDateByWeekDay, year, month, formatYMD, rootOptions, getShiftByPosition]
+  );
+
+  // =========================================
+  // ✅ 채용여부 저장
+  // =========================================
+  // =========================================
+  // ✅ 채용여부 저장 (account_id, member_id 포함)
+  // =========================================
+  const handleSaveEmployment = useCallback(
+    async (idx, item) => {
+      const id = String(idx ?? "").trim();
+      if (!id) return;
+
+      // ✅ account_id: 거래처 select 값
+      const account_id = String(selectedAccountId ?? "").trim();
+      if (!account_id) {
+        Swal.fire("안내", "거래처(account)를 선택하세요.", "info");
+        return;
+      }
+
+      // ✅ member_id: row(item)에 있다고 가정
+      const member_id_raw = item?.member_id ?? item?.memberId ?? null; // 혹시 키가 다를 수도 있어서 안전 처리
+      const member_id = member_id_raw ?? null;
+      const name = item?.name ?? null;
+      const use_yn = String(emergencyUseYnMap?.[id] ?? "").trim();
+
+      const salaryRaw = item?.salary ?? null;
+      const salary =
+        salaryRaw == null || String(salaryRaw).trim() === ""
+          ? null
+          : Number(String(salaryRaw).replace(/[^\d-]/g, "")); // "1,000" → 1000
+
+      if (!use_yn) {
+        Swal.fire("안내", "채용여부(use_yn)를 선택하세요.", "info");
+        return;
+      }
+
+      if (!selectedDayOfMonth) {
+        Swal.fire(
+          "안내",
+          "일자 정보가 없습니다. 부족항목을 클릭해서 날짜를 먼저 선택하세요.",
+          "info"
+        );
+        return;
+      }
+
+      const start_time = String(shortageSelectedShift?.start_time ?? "").trim();
+      const end_time = String(shortageSelectedShift?.end_time ?? "").trim();
+      if (!start_time || !end_time) {
+        Swal.fire("안내", "시작/마감 시간이 없습니다. 부족항목을 다시 클릭해 주세요.", "info");
+        return;
+      }
+
+      try {
+        setSavingEmployment(true);
+
+        const userId = localStorage.getItem("user_id");
+
+        const payload = {
+          idx: Number(id),
+          account_id: Number(account_id),
+          member_id, // null 가능
+          salary: Number(salary),
+          record_year: Number(year),
+          record_month: Number(month),
+          record_date: Number(selectedDayOfMonth),
+          use_yn: Number(use_yn),
+          name: name,
+          start_time,
+          end_time,
+          user_id: userId,
+        };
+
+        const res = await api.post("/Operate/EmergencyPersonEmployment", payload);
+
+        const ok = res?.data?.code === 200 || res?.data?.success === true || res?.status === 200;
+
+        if (ok) {
+          Swal.fire("저장 완료", "채용여부가 저장되었습니다.", "success");
+        } else {
+          Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
+        }
+      } catch (e) {
+        Swal.fire("저장 실패", e?.message || "오류", "error");
+      } finally {
+        setSavingEmployment(false);
+      }
+    },
+    [
+      emergencyUseYnMap,
+      selectedDayOfMonth,
+      year,
+      month,
+      shortageSelectedShift,
+      selectedAccountId, // ✅ 추가
+    ]
   );
 
   // =========================================
@@ -1078,7 +1192,7 @@ function AccountMemberRecordMainTableTab() {
         ) : (
           <MDBox
             sx={{
-              maxHeight: isMobile ? "45vh" : "60vh",
+              maxHeight: isMobile ? "45vh" : "45vh",
               overflowY: "auto",
               overflowX: "auto",
               "& table": { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" },
@@ -1092,36 +1206,109 @@ function AccountMemberRecordMainTableTab() {
                 textAlign: "center",
               },
               "& th": { background: "#f7fbff", position: "sticky", top: 0, zIndex: 1 },
+              "& select": {
+                fontSize: 11,
+                padding: "2px 6px",
+                borderRadius: 6,
+                border: "1px solid #d0d0d0",
+                outline: "none",
+                cursor: "pointer",
+              },
             }}
           >
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: 60 }}>IDX</th>
+                  <th style={{ width: 50 }}>IDX</th>
                   <th style={{ width: 90 }}>이름</th>
-                  <th style={{ width: 70 }}>직책</th>
+                  <th style={{ width: 60 }}>직책</th>
                   <th style={{ width: 80 }}>급여</th>
-                  <th style={{ width: 60 }}>차량</th>
-                  <th style={{ width: 90 }}>상태</th>
-                  <th style={{ width: 90 }}>구분</th>
-                  <th style={{ width: 140 }}>비고</th>
+                  <th style={{ width: 50 }}>차량</th>
+                  <th style={{ width: 80 }}>상태</th>
+                  <th style={{ width: 80 }}>구분</th>
+                  <th style={{ width: 100 }}>비고</th>
+                  <th style={{ width: 80 }}>채용여부</th>
+                  <th style={{ width: 80 }}>저장</th>
                 </tr>
               </thead>
               <tbody>
-                {(emergencyRows || []).map((item, idx) => (
-                  <tr key={`${item?.idx ?? "x"}-${idx}`}>
-                    <td title={String(item?.idx ?? "")}>{item?.idx ?? ""}</td>
-                    <td title={String(item?.name ?? "")}>{item?.name ?? ""}</td>
-                    <td title={String(item?.position_type ?? "")}>{item?.position_type ?? ""}</td>
-                    <td title={String(item?.salary ?? "")}>{item?.salary ?? ""}</td>
-                    <td title={String(item?.car_yn ?? "")}>{item?.car_yn ?? ""}</td>
-                    <td title={String(item?.status ?? "")}>{item?.status ?? ""}</td>
-                    <td title={String(item?.manpower_type ?? "")}>{item?.manpower_type ?? ""}</td>
-                    <td title={String(item?.note ?? "")} style={{ textAlign: "left" }}>
-                      {item?.note ?? ""}
-                    </td>
-                  </tr>
-                ))}
+                {(emergencyRows || []).map((item, idx) => {
+                  const rowId = String(item?.idx ?? "");
+                  const useYnVal = String(
+                    emergencyUseYnMap?.[rowId] ?? String(item?.use_yn ?? "")
+                  ).trim();
+
+                  return (
+                    <tr key={`${item?.idx ?? "x"}-${idx}`}>
+                      <td title={String(item?.idx ?? "")}>{item?.idx ?? ""}</td>
+                      <td title={String(item?.name ?? "")}>{item?.name ?? ""}</td>
+                      {/* ✅ 직책: 4/5 라벨 표기 */}
+                      <td title={String(item?.position_type ?? "")}>
+                        {positionLabelOf(item?.position_type)}
+                      </td>
+                      <td title={String(item?.salary ?? "")}>{item?.salary ?? ""}</td>
+                      <td title={String(item?.car_yn ?? "")}>{item?.car_yn ?? ""}</td>
+                      {/* ✅ 상태: 1/2 라벨 표기 */}
+                      <td
+                        title={String(item?.status ?? "")}
+                        style={{ color: statusColorOf(item?.status), fontWeight: 800 }}
+                      >
+                        {statusLabelOf(item?.status)}
+                      </td>
+                      {/* ✅ 구분: manpower_type 라벨 표기 */}
+                      <td title={String(item?.manpower_type ?? "")}>
+                        {manpowerTypeLabelOf(item?.manpower_type)}
+                      </td>
+                      <td title={String(item?.note ?? "")} style={{ textAlign: "left" }}>
+                        {item?.note ?? ""}
+                      </td>
+                      {/* ✅ 채용여부 select (use_yn) - 수정 가능 */}
+                      <td>
+                        <select
+                          value={useYnVal || ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setEmergencyUseYnMap((prev) => ({ ...(prev || {}), [rowId]: v }));
+                          }}
+                          style={{
+                            color: employmentColorOf(useYnVal),
+                            fontWeight: 800,
+                            width: "100%",
+                            background: "#fff",
+                          }}
+                        >
+                          <option value="">선택</option>
+                          {employmentOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      {/* ✅ 저장 버튼 */}
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveEmployment(item?.idx, item)}
+                          disabled={savingEmployment}
+                          style={{
+                            width: "100%",
+                            padding: "4px 8px",
+                            borderRadius: 8,
+                            border: "1px solid #0AC4E0",
+                            background: "#fff",
+                            cursor: savingEmployment ? "not-allowed" : "pointer",
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
+                          title="채용여부 저장"
+                        >
+                          저장
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </MDBox>
@@ -1140,7 +1327,6 @@ function AccountMemberRecordMainTableTab() {
         pb={1}
         sx={{
           display: "flex",
-          // ✅ 왼쪽 정렬
           justifyContent: "flex-start",
           alignItems: "center",
           gap: isMobile ? 1 : 2,
@@ -1215,19 +1401,14 @@ function AccountMemberRecordMainTableTab() {
           )}
         />
 
+        {/* ✅ Root select */}
         <TextField
           select
           size="small"
-          value={selectedSidoCode}
-          onChange={(e) => {
-            const v = e.target.value;
-            setSelectedSidoCode(v);
-            // ✅ 시도 바꾸면 시군구/읍면동은 지정안됨으로 리셋
-            setSelectedSigunguCode("");
-            setSelectedEmdCode("");
-          }}
+          value={selectedRootIdx}
+          onChange={(e) => setSelectedRootIdx(e.target.value)}
           sx={{
-            minWidth: 140,
+            minWidth: 260,
             "& .MuiInputBase-root": { height: 35 },
             "& .MuiSelect-select": {
               display: "flex",
@@ -1235,93 +1416,19 @@ function AccountMemberRecordMainTableTab() {
               height: "100%",
               paddingTop: 0,
               paddingBottom: 0,
-              color: isSidoChanged ? "#d32f2f" : "inherit",
-              fontWeight: isSidoChanged ? 700 : 400,
+              color: isRootChanged ? "#d32f2f" : "inherit",
+              fontWeight: isRootChanged ? 700 : 400,
             },
             "& .MuiInputLabel-root": {
               top: -2,
-              color: isSidoChanged ? "#d32f2f" : "inherit",
-              fontWeight: isSidoChanged ? 700 : 400,
+              color: isRootChanged ? "#d32f2f" : "inherit",
+              fontWeight: isRootChanged ? 700 : 400,
             },
             "& .MuiInputLabel-shrink": { top: 0 },
           }}
           SelectProps={{ displayEmpty: true }}
         >
-          {(sidoOptions || []).map((o) => (
-            <MenuItem key={o.value} value={o.value}>
-              {o.label}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        <TextField
-          select
-          size="small"
-          value={selectedSigunguCode}
-          onChange={(e) => {
-            const v = e.target.value;
-            setSelectedSigunguCode(v);
-            // ✅ 시군구 바꾸면 읍면동은 지정안됨으로 리셋
-            setSelectedEmdCode("");
-          }}
-          sx={{
-            minWidth: 160,
-            "& .MuiInputBase-root": { height: 35 },
-            "& .MuiSelect-select": {
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              paddingTop: 0,
-              paddingBottom: 0,
-              color: isSigunguChanged ? "#d32f2f" : "inherit",
-              fontWeight: isSigunguChanged ? 700 : 400,
-            },
-            "& .MuiInputLabel-root": {
-              top: -2,
-              color: isSigunguChanged ? "#d32f2f" : "inherit",
-              fontWeight: isSigunguChanged ? 700 : 400,
-            },
-            "& .MuiInputLabel-shrink": { top: 0 },
-          }}
-          SelectProps={{ displayEmpty: true }}
-          disabled={!selectedSidoCode || (sigunguOptions || []).length === 0}
-        >
-          {(sigunguOptions || []).map((o) => (
-            <MenuItem key={o.value} value={o.value}>
-              {o.label}
-            </MenuItem>
-          ))}
-        </TextField>
-
-        {/* ✅ 읍면동 select 추가 */}
-        <TextField
-          select
-          size="small"
-          value={selectedEmdCode}
-          onChange={(e) => setSelectedEmdCode(e.target.value)}
-          sx={{
-            minWidth: 180,
-            "& .MuiInputBase-root": { height: 35 },
-            "& .MuiSelect-select": {
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
-              paddingTop: 0,
-              paddingBottom: 0,
-              color: isEmdChanged ? "#d32f2f" : "inherit",
-              fontWeight: isEmdChanged ? 700 : 400,
-            },
-            "& .MuiInputLabel-root": {
-              top: -2,
-              color: isEmdChanged ? "#d32f2f" : "inherit",
-              fontWeight: isEmdChanged ? 700 : 400,
-            },
-            "& .MuiInputLabel-shrink": { top: 0 },
-          }}
-          SelectProps={{ displayEmpty: true }}
-          disabled={!selectedSigunguCode || (eupmyeondongOptions || []).length === 0}
-        >
-          {(eupmyeondongOptions || []).map((o) => (
+          {(rootOptions || []).map((o) => (
             <MenuItem key={o.value} value={o.value}>
               {o.label}
             </MenuItem>

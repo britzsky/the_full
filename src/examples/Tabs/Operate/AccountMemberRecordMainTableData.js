@@ -72,8 +72,7 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
           fri: item.fri,
           sat: item.sat,
           sun: item.sun,
-          sido_code: item.sido_code,
-          sigungu_code: item.sigungu_code,
+          root_idx: item.root_idx,
         }));
 
         const mappedRows =

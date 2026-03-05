@@ -37,10 +37,20 @@ const SimpleTable = React.memo(function SimpleTable({
     overflowX: "auto",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
-    fontSize: "11px",
+    fontSize: "11.5px",
 
     // ✅ scroll anchoring 영향 줄이기
     overflowAnchor: "none",
+
+    // ✅ iOS/모바일 잔상 원인이 되기도 함 (아래 3번 참고)
+    WebkitOverflowScrolling: "touch",
+
+    // ✅ 배경을 명확히
+    backgroundColor: "#fff",
+
+    // ✅ sticky zIndex가 안정적으로 먹도록 컨텍스트 생성
+    position: "relative",
+    isolation: "isolate",
 
     "& table": {
       borderCollapse: "separate",
@@ -53,7 +63,7 @@ const SimpleTable = React.memo(function SimpleTable({
       border: "1px solid #686D76",
       textAlign: "center",
       padding: isMobile ? "2px" : "6px",
-      fontSize: isMobile ? "10px" : "12px",
+      fontSize: isMobile ? "10px" : "11.5px",
       whiteSpace: "pre-wrap",
       verticalAlign: "middle",
       overflow: "hidden",
@@ -72,7 +82,24 @@ const SimpleTable = React.memo(function SimpleTable({
       onClickCapture={(e) => onBeforeAction?.(e)}
     >
       <MDBox
-        sx={{ position: "sticky", top: 0, zIndex: 5, margin: 0, borderRadius: 2 }}
+        sx={{
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
+
+          // ✅ 잔해(비침) 방지 핵심
+          backgroundColor: (theme) => theme.palette.info.main,
+          backgroundImage: "none", // gradient 제거(원하면 아래에서 다시 지정)
+          opacity: 1,
+          isolation: "isolate",
+
+          // ✅ 스크롤 중 리페인트 안정화(특히 모바일)
+          transform: "translateZ(0)",
+          backfaceVisibility: "hidden",
+
+          margin: 0,
+          borderRadius: 2,
+        }}
         py={0.8}
         px={2}
         variant="gradient"
@@ -137,7 +164,7 @@ const SimpleTable = React.memo(function SimpleTable({
                             outline: "none",
                             cursor: "pointer",
                             textAlignLast: "center",
-                            fontSize: "11px",
+                            fontSize: "11.5px",
                           }}
                           onMouseDownCapture={(e) => onBeforeAction?.(e)}
                           onClick={(e) => e.stopPropagation()}
@@ -164,7 +191,7 @@ const SimpleTable = React.memo(function SimpleTable({
                             background: "transparent",
                             outline: "none",
                             textAlign: "center",
-                            fontSize: "11px",
+                            fontSize: "11.5px",
                           }}
                           onMouseDownCapture={(e) => onBeforeAction?.(e)}
                           onClick={(e) => e.stopPropagation()}
@@ -174,7 +201,7 @@ const SimpleTable = React.memo(function SimpleTable({
                   }
 
                   return (
-                    <td key={c.key} title={String(v)} style={{ fontSize: "11px" }}>
+                    <td key={c.key} title={String(v)} style={{ fontSize: "11.5px" }}>
                       {v}
                     </td>
                   );

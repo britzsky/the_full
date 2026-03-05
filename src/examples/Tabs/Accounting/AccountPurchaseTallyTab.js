@@ -71,6 +71,14 @@ function AccountPurchaseTallyTab() {
   const { rows, setRows, originalRows, mappingRows, loading, fetchPurchaseList, fetchMappingList } =
     useAccountPurchaseTallyData();
 
+  // ✅ (NEW) 우클릭(컨텍스트) 메뉴 상태 (행 삭제)
+  const [ctxMenu, setCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
+
   // ✅ account_id -> account_name 매핑
   const accountNameById = useMemo(() => {
     const map = new Map();
@@ -281,7 +289,7 @@ function AccountPurchaseTallyTab() {
         }
       })
       .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
-  }, []);
+  }, []); // eslint-disable-line
 
   // ✅ 월 변경(상단 조회조건)
   const handleMonthChange = useCallback((v) => {
@@ -473,25 +481,6 @@ function AccountPurchaseTallyTab() {
       borderCollapse: "separate",
     },
   };
-
-  const columns = useMemo(
-    () => [
-      { header: "사업장", accessorKey: "account_name", size: 120 },
-      { header: "날짜", accessorKey: "_saleMonth", size: 140 },
-      { header: "구매처", accessorKey: "type", size: 170 },
-
-      { header: "과세", accessorKey: "expen_tax", size: 90 },
-      { header: "부가세", accessorKey: "expen_vat", size: 90 },
-      { header: "면세", accessorKey: "expen_taxFree", size: 90 },
-      { header: "합계", accessorKey: "expen_total", size: 90 },
-
-      { header: "과세", accessorKey: "food_tax", size: 90 },
-      { header: "부가세", accessorKey: "food_vat", size: 90 },
-      { header: "면세", accessorKey: "food_taxFree", size: 90 },
-      { header: "합계", accessorKey: "food_total", size: 90 },
-    ],
-    []
-  );
 
   // =========================
   // ✅ 파일 URL 유틸 + 다운로드
@@ -699,6 +688,94 @@ function AccountPurchaseTallyTab() {
     }
   }, [accountInput, accountOptions, handleAccountChange]);
 
+  // =========================================
+  // ✅ (NEW) 우클릭 메뉴 열기/닫기 + 삭제
+  // =========================================
+  const handleRowContextMenu = useCallback((e, rowIndex) => {
+    e.preventDefault();
+    setCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  }, []);
+
+  const closeCtxMenu = useCallback(() => {
+    setCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  const handleDeleteRow = useCallback(
+    async (rowIndex) => {
+      if (rowIndex == null) return;
+      const row = rows?.[rowIndex];
+      if (!row) return;
+
+      const result = await Swal.fire({
+        title: "행 삭제",
+        text: "해당 행을 삭제할까요?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#9e9e9e",
+        confirmButtonText: "삭제",
+        cancelButtonText: "취소",
+      });
+
+      if (!result.isConfirmed) return;
+
+      // ✅ 신규행(서버 sale_id 없음)은 화면에서만 제거
+      const sale_id = row?.sale_id ?? row?.saleId ?? null;
+      if (!sale_id) {
+        setRows((prev) => (prev || []).filter((_, i) => i !== rowIndex));
+        closeCtxMenu();
+        Swal.fire("삭제", "행이 제거되었습니다.", "success");
+        return;
+      }
+
+      try {
+        Swal.fire({
+          title: "삭제 중...",
+          text: "잠시만 기다려 주세요.",
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          didOpen: () => Swal.showLoading(),
+        });
+
+        const userId = localStorage.getItem("user_id");
+
+        const payload = {
+          sale_id: sale_id,
+          user_id: userId,
+        };
+
+        // ✅ 삭제 API 호출 (sale_id 전달)
+        // - 백엔드가 GET params 방식이면 여기만 변경하면 됨
+        const res = await api.post("/Account/AccountPurchaseTallyV2Delete", payload, {
+          validateStatus: () => true,
+        });
+
+        Swal.close();
+
+        const ok = res?.status === 200 || res?.data?.code === 200;
+        if (!ok) {
+          return Swal.fire("실패", res?.data?.message || "삭제에 실패했습니다.", "error");
+        }
+
+        closeCtxMenu();
+        Swal.fire("삭제", "삭제되었습니다.", "success");
+
+        // ✅ 삭제 후 동기화를 위해 재조회(거래처+월만)
+        await fetchPurchaseList(buildSearchParams(filters));
+      } catch (err) {
+        Swal.close();
+        console.error(err);
+        Swal.fire("오류", err?.message || "삭제 중 오류가 발생했습니다.", "error");
+      }
+    },
+    [rows, setRows, closeCtxMenu, fetchPurchaseList, buildSearchParams, filters]
+  );
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -871,7 +948,11 @@ function AccountPurchaseTallyTab() {
                     </tr>
                   ) : (
                     rows.map((row, rowIndex) => (
-                      <tr key={row._rowKey || rowIndex}>
+                      <tr
+                        key={row._rowKey || rowIndex}
+                        onContextMenu={(e) => handleRowContextMenu(e, rowIndex)} // ✅ 우클릭
+                        style={{ cursor: "context-menu" }}
+                      >
                         {/* 사업장 */}
                         <td
                           style={{
@@ -916,7 +997,7 @@ function AccountPurchaseTallyTab() {
                                       "& input": {
                                         textAlign: "center",
                                         padding: "4px 6px",
-                                        color: cellColor, // ✅ 글씨색 적용 핵심
+                                        color: cellColor,
                                       },
                                     },
                                   },
@@ -957,7 +1038,7 @@ function AccountPurchaseTallyTab() {
                                   "& .MuiInputBase-root": { height: 30, fontSize: 12 },
                                   "& .MuiSelect-select": {
                                     padding: "4px 8px",
-                                    color: cellColor, // ✅ 글씨색 적용 핵심
+                                    color: cellColor,
                                   },
                                 }}
                               >
@@ -1009,7 +1090,54 @@ function AccountPurchaseTallyTab() {
           </Grid>
         </MDBox>
 
-        {/* 미리보기 영역은 기존 그대로 유지하면 됨(생략) */}
+        {/* ✅ 우클릭 컨텍스트 메뉴 (행 삭제) */}
+        {ctxMenu.open && (
+          <div
+            onClick={closeCtxMenu}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              closeCtxMenu();
+            }}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              zIndex: 10000,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: ctxMenu.mouseY,
+                left: ctxMenu.mouseX,
+                background: "#fff",
+                border: "1px solid #ddd",
+                borderRadius: 8,
+                boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                minWidth: 140,
+                overflow: "hidden",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={() => handleDeleteRow(ctxMenu.rowIndex)}
+              >
+                🗑️ 삭제
+              </button>
+            </div>
+          </div>
+        )}
       </DashboardLayout>
     </LocalizationProvider>
   );

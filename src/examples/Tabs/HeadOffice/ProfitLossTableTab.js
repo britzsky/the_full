@@ -137,6 +137,7 @@ export default function ProfitLossTableTab() {
     "not_budget_cost",
     "etc_indirect_cost",
     "return_cost",
+    "payback_price",
   ];
 
   // ✅ 텍스트 입력 가능한 항목

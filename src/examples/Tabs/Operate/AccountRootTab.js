@@ -157,7 +157,7 @@ function AccountRootTab() {
       border: "1px solid #686D76",
       textAlign: "center",
       padding: isMobile ? "2px" : "6px",
-      fontSize: isMobile ? "10px" : "12px",
+      fontSize: isMobile ? "10px" : "11.5px",
       whiteSpace: "pre-wrap",
       verticalAlign: "middle",
       overflow: "hidden",
@@ -479,7 +479,7 @@ function AccountRootTab() {
       { key: "sigungu_code", label: "시군구코드", width: 70 },
       { key: "sigungu_name", label: "시군구명", width: 100 },
       { key: "emd_code", label: "읍면동코드", width: 70 },
-      { key: "emd_name", label: "읍면동명", width: 100 },
+      { key: "emd_name", label: "읍면동명", width: 80 },
       { key: "del_yn", label: "삭제여부", width: 70 }, // ✅ 추가
     ],
     []

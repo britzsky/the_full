@@ -439,6 +439,24 @@ YourSelectableTable.propTypes = {
 function TallySheet() {
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
   const localUserId = useMemo(() => localStorage.getItem("user_id") || "", []);
+  // ✅ 우클릭 "입력가능/불가" 메뉴 권한:
+  //    부서(0:대표, 2:회계팀, 6:개발팀) 또는 직책(0:대표, 1:팀장) 중 하나라도 맞으면 허용(OR)
+  const localDepartmentCode = useMemo(() => {
+    const rawDepartment = localStorage.getItem("department");
+    if (rawDepartment == null || String(rawDepartment).trim() === "") return null;
+    const parsedDepartment = Number(rawDepartment);
+    return Number.isFinite(parsedDepartment) ? parsedDepartment : null;
+  }, []);
+  const localPositionCode = useMemo(() => {
+    const rawPosition = localStorage.getItem("position");
+    if (rawPosition == null || String(rawPosition).trim() === "") return null;
+    const parsedPosition = Number(rawPosition);
+    return Number.isFinite(parsedPosition) ? parsedPosition : null;
+  }, []);
+  const canManageUseInputState = useMemo(
+    () => [0, 2, 6].includes(localDepartmentCode) || [0, 1].includes(localPositionCode),
+    [localDepartmentCode, localPositionCode]
+  );
   const isAccountLocked = useMemo(() => !!localAccountId, [localAccountId]);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
   const [accountInput, setAccountInput] = useState("");
@@ -2858,6 +2876,7 @@ function TallySheet() {
 
   const openUseMenu = useCallback(
     (e, rowOriginal, isSecond) => {
+      if (!canManageUseInputState) return;
       if (!selectedAccountId) {
         Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
         return;
@@ -2876,11 +2895,12 @@ function TallySheet() {
         target: { year: y, month: m, type: t },
       });
     },
-    [selectedAccountId, year, month, prevYear, prevMonth]
+    [canManageUseInputState, selectedAccountId, year, month, prevYear, prevMonth]
   );
 
   const saveUseInputYn = useCallback(
     async (inputYn) => {
+      if (!canManageUseInputState) return;
       const t = useMenu.target;
       if (!t) return;
 
@@ -2943,7 +2963,7 @@ function TallySheet() {
         Swal.fire("오류", err.message || "입력상태 저장 중 오류", "error");
       }
     },
-    [useMenu.target, selectedAccountId, closeUseMenu, fetchUseList]
+    [canManageUseInputState, useMenu.target, selectedAccountId, closeUseMenu, fetchUseList]
   );
 
   if (loading) return <LoadingScreen />;
@@ -3105,6 +3125,7 @@ function TallySheet() {
                     onContextMenu={(e) => {
                       // ✅ 1) 구분(업체명) 우클릭 -> 입력가능/불가 메뉴
                       if (colKey === "name" && !isTotalRow) {
+                        if (!canManageUseInputState) return;
                         e.preventDefault();
                         e.stopPropagation();
                         openUseMenu(e, row.original, isSecond);
@@ -3432,6 +3453,7 @@ function TallySheet() {
       </Menu>
 
       {/* ======================== ✅ 우클릭 입력가능/불가 메뉴(구분 셀) ======================== */}
+<<<<<<< HEAD
       <Menu
         open={useMenu.open}
         onClose={closeUseMenu}
@@ -3443,27 +3465,42 @@ function TallySheet() {
           const cur = t
             ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0)
             : 0;
+=======
+      {canManageUseInputState && (
+        <Menu
+          open={useMenu.open}
+          onClose={closeUseMenu}
+          anchorReference="anchorPosition"
+          anchorPosition={useMenu.open ? { top: useMenu.mouseY, left: useMenu.mouseX } : undefined}
+        >
+          {(() => {
+            const t = useMenu.target;
+            const cur = t
+              ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0)
+              : 0;
+>>>>>>> dee8ab41b1832aad67b04e5e953c99ae72d5dab3
 
-          return (
-            <>
-              <MenuItem
-                selected={cur === 0}
-                onClick={() => saveUseInputYn(0)}
-                sx={{ fontSize: 13 }}
-              >
-                입력가능 (0)
-              </MenuItem>
-              <MenuItem
-                selected={cur === 1}
-                onClick={() => saveUseInputYn(1)}
-                sx={{ fontSize: 13 }}
-              >
-                입력불가 (1)
-              </MenuItem>
-            </>
-          );
-        })()}
-      </Menu>
+            return (
+              <>
+                <MenuItem
+                  selected={cur === 0}
+                  onClick={() => saveUseInputYn(0)}
+                  sx={{ fontSize: 13 }}
+                >
+                  입력가능 (0)
+                </MenuItem>
+                <MenuItem
+                  selected={cur === 1}
+                  onClick={() => saveUseInputYn(1)}
+                  sx={{ fontSize: 13 }}
+                >
+                  입력불가 (1)
+                </MenuItem>
+              </>
+            );
+          })()}
+        </Menu>
+      )}
 
       {/* ================= 거래처 연결 모달(open) ================= */}
       <Modal open={open} onClose={() => setOpen(false)}>

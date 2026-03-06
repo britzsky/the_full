@@ -16,10 +16,9 @@ export const fetchFieldBoardAccountList = async ({
 } = {}) => {
   const localAccountId = toSafeString(localStorage.getItem("account_id"));
   const localUserId = toSafeString(localStorage.getItem("user_id"));
-  const tabUserId = toSafeString(sessionStorage.getItem("login_user_id"));
   const localUserType = toSafeString(localStorage.getItem("user_type"));
   let resolvedAccountId = localAccountId;
-  let resolvedUserId = localUserId || tabUserId;
+  let resolvedUserId = localUserId;
 
   // ✅ 보강 분기: account_id 누락 서버 재조회 복구 처리
   // ✅ 정상 분기: localStorage account_id 존재 기존 흐름 유지

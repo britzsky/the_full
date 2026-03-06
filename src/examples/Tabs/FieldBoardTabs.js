@@ -29,6 +29,8 @@ function FieldBoardTabs() {
     localStorage.removeItem("department");
     localStorage.removeItem("account_id");
     localStorage.removeItem("login_session_id");
+    localStorage.removeItem("position_name");
+    localStorage.removeItem("user_name");
     sessionStorage.removeItem("login_session_id");
     sessionStorage.removeItem("login_user_id");
 

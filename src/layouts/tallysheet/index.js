@@ -478,8 +478,8 @@ function TallySheet() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
-    fetchBudgetGrant = async () => { },
-    fetchBudget2Grant = async () => { },
+    fetchBudgetGrant = async () => {},
+    fetchBudget2Grant = async () => {},
   } = hook || {};
 
   const prevYm = useMemo(() => {
@@ -2092,16 +2092,7 @@ function TallySheet() {
   const buildTallyExcelSheet = useCallback(
     (
       workbook,
-      {
-        sheetName,
-        accountName,
-        reportDateLabel,
-        budget,
-        used,
-        ratioData,
-        tableRows,
-        daysCount,
-      }
+      { sheetName, accountName, reportDateLabel, budget, used, ratioData, tableRows, daysCount }
     ) => {
       const ws = workbook.addWorksheet(sheetName);
       const totalCols = daysCount + 2; // 구분 + 일자들 + 합계
@@ -2139,7 +2130,10 @@ function TallySheet() {
       for (let c = 1; c <= Math.min(6, totalCols); c++) {
         const cell = ws.getCell(`${toExcelColName(c)}2`);
         cell.border = borderThin;
-        cell.alignment = { vertical: "middle", horizontal: [2, 4, 6].includes(c) ? "right" : "center" };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: [2, 4, 6].includes(c) ? "right" : "center",
+        };
         if ([1, 3, 5].includes(c)) {
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
           cell.font = { bold: true };
@@ -2251,7 +2245,9 @@ function TallySheet() {
       workbook.creator = "tallysheet";
       workbook.created = new Date();
 
-      const accountName = String(selectedAccountOption?.account_name || selectedAccountId || "업장");
+      const accountName = String(
+        selectedAccountOption?.account_name || selectedAccountId || "업장"
+      );
       const reportDateLabel = dayjs().format("YYYY-MM");
 
       if (hasNow) {
@@ -2888,12 +2884,15 @@ function TallySheet() {
       const t = useMenu.target;
       if (!t) return;
 
+      const user_id = localStorage.getItem("user_id");
+
       const payload = {
         year: Number(t.year),
         month: Number(t.month),
         account_id: selectedAccountId,
         type: String(t.type),
         input_yn: Number(inputYn), // 0 or 1
+        user_id: user_id,
       };
 
       try {
@@ -2911,22 +2910,20 @@ function TallySheet() {
 
         // ✅ 저장한 월/년 기준으로 다시 조회 + 값 검증
         const refreshed = (await fetchUseList?.(selectedAccountId, year, month)) || [];
-        const matched = refreshed.find(
-          (r) => {
-            const rowYear = Number(r?.count_year ?? r?.year);
-            const rowMonth = Number(r?.count_month ?? r?.month);
-            const rowType = String(r?.type ?? r?.use_type ?? r?.gubun ?? "").trim();
-            const rowAccountId = String(r?.account_id ?? r?.row_account_id ?? "").trim();
-            const accountMatch = !rowAccountId || rowAccountId === String(selectedAccountId ?? "");
+        const matched = refreshed.find((r) => {
+          const rowYear = Number(r?.count_year ?? r?.year);
+          const rowMonth = Number(r?.count_month ?? r?.month);
+          const rowType = String(r?.type ?? r?.use_type ?? r?.gubun ?? "").trim();
+          const rowAccountId = String(r?.account_id ?? r?.row_account_id ?? "").trim();
+          const accountMatch = !rowAccountId || rowAccountId === String(selectedAccountId ?? "");
 
-            return (
-              rowYear === Number(t.year) &&
-              rowMonth === Number(t.month) &&
-              rowType === String(t.type) &&
-              accountMatch
-            );
-          }
-        );
+          return (
+            rowYear === Number(t.year) &&
+            rowMonth === Number(t.month) &&
+            rowType === String(t.type) &&
+            accountMatch
+          );
+        });
         const nextInputYn = matched ? parseInputYn(matched.input_yn ?? matched.use_yn) : 0;
         if (nextInputYn !== Number(inputYn)) {
           throw new Error("저장 후 재조회 값이 반영되지 않았습니다.");
@@ -3086,20 +3083,20 @@ function TallySheet() {
                       color: isChanged
                         ? "#d32f2f"
                         : pointColor
-                          ? isLightPoint
-                            ? "black"
-                            : "#fff"
-                          : "black",
+                        ? isLightPoint
+                          ? "black"
+                          : "#fff"
+                        : "black",
                       width: "80px",
                       cursor: !isBaseCell
                         ? "default"
                         : rowLocked
-                          ? "not-allowed"
-                          : canInlineEdit
-                            ? "text"
-                            : shouldBlockModalByType(rowType)
-                              ? "not-allowed"
-                              : "pointer",
+                        ? "not-allowed"
+                        : canInlineEdit
+                        ? "text"
+                        : shouldBlockModalByType(rowType)
+                        ? "not-allowed"
+                        : "pointer",
                       // ✅ 우선순위: 활성셀 > 포인트색 > 활성행 > 기본BG
                       background: mergedBg,
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
@@ -3124,29 +3121,29 @@ function TallySheet() {
                       isEditable
                         ? undefined
                         : (e) => {
-                          if (e.button !== 0) return;
-                          if (rowLocked) return; // ✅ 추가: 입력불가면 클릭 무시
+                            if (e.button !== 0) return;
+                            if (rowLocked) return; // ✅ 추가: 입력불가면 클릭 무시
 
-                          e.preventDefault();
-                          handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
-                        }
+                            e.preventDefault();
+                            handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
+                          }
                     }
                     onClick={
                       isEditable
                         ? (e) => {
-                          if (e.button !== 0) return;
-                          if (rowLocked) return; // ✅ 추가
+                            if (e.button !== 0) return;
+                            if (rowLocked) return; // ✅ 추가
 
-                          handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
-                        }
+                            handleSpecialCellClick(row.original, rIdx, colKey, isSecond);
+                          }
                         : undefined
                     }
                     onBlur={
                       isEditable
                         ? (e) => {
-                          if (rowLocked) return; // ✅ 안전장치
-                          handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond);
-                        }
+                            if (rowLocked) return; // ✅ 안전장치
+                            handleChange(rIdx, colKey, e.currentTarget.innerText, isSecond);
+                          }
                         : undefined
                     }
                   >
@@ -3443,7 +3440,9 @@ function TallySheet() {
       >
         {(() => {
           const t = useMenu.target;
-          const cur = t ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0) : 0;
+          const cur = t
+            ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0)
+            : 0;
 
           return (
             <>
@@ -3672,8 +3671,8 @@ function TallySheet() {
                 KOREAN_BANKS.includes(formData.bank_name)
                   ? formData.bank_name
                   : formData.bank_name
-                    ? "기타(직접입력)"
-                    : ""
+                  ? "기타(직접입력)"
+                  : ""
               }
               onChange={handleBankSelect}
               displayEmpty
@@ -3691,18 +3690,18 @@ function TallySheet() {
 
             {(!KOREAN_BANKS.includes(formData.bank_name) ||
               formData.bank_name === "기타(직접입력)") && (
-                <TextField
-                  fullWidth
-                  required
-                  margin="normal"
-                  label="은행명 직접입력"
-                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
-                  name="bank_name"
-                  value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
-                  onChange={handleChange2}
-                  sx={{ mt: 1 }}
-                />
-              )}
+              <TextField
+                fullWidth
+                required
+                margin="normal"
+                label="은행명 직접입력"
+                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                name="bank_name"
+                value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
+                onChange={handleChange2}
+                sx={{ mt: 1 }}
+              />
+            )}
           </Box>
 
           <TextField
@@ -4005,11 +4004,11 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    card_idx: v,
-                                    card_brand: picked?.card_brand || x.card_brand || "",
-                                    card_no: picked?.card_no || x.card_no || "",
-                                  }
+                                      ...x,
+                                      card_idx: v,
+                                      card_brand: picked?.card_brand || x.card_brand || "",
+                                      card_no: picked?.card_no || x.card_no || "",
+                                    }
                                   : x
                               )
                             );
@@ -4146,7 +4145,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type || "UNKNOWN") !==
-                      String(orig.receipt_type || "UNKNOWN") ||
+                        String(orig.receipt_type || "UNKNOWN") ||
                       pickedCardIdx !== origCardIdx;
 
                     const hasFile = !!cardRowFiles?.[rowKey]?.file;
@@ -4183,12 +4182,12 @@ function TallySheet() {
                     );
                     const cardIdx = String(
                       r.card_idx ??
-                      r.corp_card_idx ??
-                      r.idx ??
-                      orig.card_idx ??
-                      orig.corp_card_idx ??
-                      orig.idx ??
-                      ""
+                        r.corp_card_idx ??
+                        r.idx ??
+                        orig.card_idx ??
+                        orig.corp_card_idx ??
+                        orig.idx ??
+                        ""
                     );
                     const picked = getCorpCardByIdx(cardIdx);
                     const cardBrand =
@@ -4447,12 +4446,12 @@ function TallySheet() {
                               prev.map((x, i) =>
                                 i === idx
                                   ? {
-                                    ...x,
-                                    payType: v,
-                                    // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
-                                    cash_receipt_type:
-                                      v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
-                                  }
+                                      ...x,
+                                      payType: v,
+                                      // 카드로 바꾸면 cash_receipt_type 의미 없으니 기본값만 유지
+                                      cash_receipt_type:
+                                        v === "1" ? String(x.cash_receipt_type ?? "3") : "3",
+                                    }
                                   : x
                               )
                             );
@@ -4603,9 +4602,9 @@ function TallySheet() {
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
-                      String(orig.cash_receipt_type ?? "3") ||
+                        String(orig.cash_receipt_type ?? "3") ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -4923,7 +4922,7 @@ function TallySheet() {
                       normalizeText(r.use_name) !== normalizeText(orig.use_name) ||
                       parseNumber(r.total) !== parseNumber(orig.total) ||
                       String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                        String(orig.receipt_type ?? "UNKNOWN");
 
                     const hasFile = !!otherRowFiles?.[rowKey]?.file;
 

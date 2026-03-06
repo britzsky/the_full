@@ -4,6 +4,7 @@ import MDBox from "components/MDBox";
 
 // 탭용 서브 컴포넌트 import
 import AccountMemberRecordMainTableTab from "./Operate/AccountMemberRecordMainTableTab";
+import AccountEmergencyMemberSheetTab from "./Operate/AccountEmergencyMemberSheetTab";
 import AccountRootTab from "./Operate/AccountRootTab";
 import AccountFieldMemberTab from "./Operate/AccountFieldMemberTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -70,8 +71,17 @@ function OperateTabs_2() {
     },
     {
       key: "property",
-      label: "🗺️ 근무가능지역 관리",
+      label: "🙋 인력관리",
       iconIndex: 1,
+      component: <AccountEmergencyMemberSheetTab />,
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+      accessMode: "AND",
+    },
+    {
+      key: "property",
+      label: "🛣️ 권역관리",
+      iconIndex: 2,
       component: <AccountRootTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
@@ -80,7 +90,7 @@ function OperateTabs_2() {
     {
       key: "property",
       label: "🗺️ 근무가능지역 관리",
-      iconIndex: 1,
+      iconIndex: 3,
       component: <AccountFieldMemberTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한

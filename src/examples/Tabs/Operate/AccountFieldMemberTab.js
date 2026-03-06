@@ -6,7 +6,7 @@ import Box from "@mui/material/Box";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import { useTheme, useMediaQuery, TextField } from "@mui/material";
+import { useTheme, useMediaQuery, TextField, MenuItem } from "@mui/material";
 import Swal from "sweetalert2";
 import api from "api/api";
 
@@ -25,8 +25,9 @@ const SimpleTable = React.memo(function SimpleTable({
   onRowClick,
   onCellChange,
   scrollRef,
-  onBeforeAction, // (e) => void  : 클릭/입력 전에 scrollTop 저장
+  onBeforeAction,
   isMobile,
+  getRowKey,
 }) {
   const HEADER_H = isMobile ? 34 : 40;
 
@@ -38,17 +39,8 @@ const SimpleTable = React.memo(function SimpleTable({
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
     fontSize: "11.5px",
-
-    // ✅ scroll anchoring 영향 줄이기
     overflowAnchor: "none",
-
-    // ✅ iOS/모바일 잔상 원인이 되기도 함 (아래 3번 참고)
-    WebkitOverflowScrolling: "touch",
-
-    // ✅ 배경을 명확히
     backgroundColor: "#fff",
-
-    // ✅ sticky zIndex가 안정적으로 먹도록 컨텍스트 생성
     position: "relative",
     isolation: "isolate",
 
@@ -73,11 +65,22 @@ const SimpleTable = React.memo(function SimpleTable({
     },
   };
 
+  const defaultGetRowKey = useCallback((r, idx) => {
+    const primary =
+      r?.root_idx ?? r?.idx ?? r?.id ?? r?.emd_code ?? r?.sigungu_code ?? r?.sido_code ?? idx;
+
+    const secondary =
+      r?.idx ?? r?.root_idx ?? r?.id ?? r?.emd_code ?? r?.sigungu_code ?? r?.sido_code ?? idx;
+
+    return `${String(primary)}-${String(secondary)}-${String(idx)}`;
+  }, []);
+
+  const resolveRowKey = getRowKey || defaultGetRowKey;
+
   return (
     <Box
       sx={tableSx}
       ref={scrollRef}
-      // ✅ 캡처 단계에서 먼저 저장 (리렌더/포커스 이동 전에)
       onMouseDownCapture={(e) => onBeforeAction?.(e)}
       onClickCapture={(e) => onBeforeAction?.(e)}
     >
@@ -86,17 +89,12 @@ const SimpleTable = React.memo(function SimpleTable({
           position: "sticky",
           top: 0,
           zIndex: 20,
-
-          // ✅ 잔해(비침) 방지 핵심
           backgroundColor: (theme) => theme.palette.info.main,
-          backgroundImage: "none", // gradient 제거(원하면 아래에서 다시 지정)
+          backgroundImage: "none",
           opacity: 1,
           isolation: "isolate",
-
-          // ✅ 스크롤 중 리페인트 안정화(특히 모바일)
           transform: "translateZ(0)",
           backfaceVisibility: "hidden",
-
           margin: 0,
           borderRadius: 2,
         }}
@@ -138,7 +136,7 @@ const SimpleTable = React.memo(function SimpleTable({
         <tbody>
           {(rows || []).map((r, idx) => {
             const isSelected = selectedRowKey ? Boolean(selectedRowKey(r, idx)) : false;
-            const stableKey = String(r?.idx ?? r?.root_idx ?? idx);
+            const stableKey = resolveRowKey(r, idx);
 
             return (
               <tr
@@ -225,47 +223,42 @@ SimpleTable.propTypes = {
   scrollRef: PropTypes.oneOfType([PropTypes.func, PropTypes.shape({ current: PropTypes.any })]),
   onBeforeAction: PropTypes.func,
   isMobile: PropTypes.bool.isRequired,
+  getRowKey: PropTypes.func,
 };
 
 function AccountFieldMemberTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const { personRows, rootRows, loading, fetchFieldPersonList, fetchRootList, setPersonRows } =
+  const { personRows, rootRows, loading, fetchRootList, setPersonRows } =
     useAccountFieldMemberDataData();
 
-  // ✅ 입력만 / 엔터 or 조회 버튼에서만 조회
   const [searchName, setSearchName] = useState("");
+  const [searchRootIdx, setSearchRootIdx] = useState("");
 
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [selectedRoot, setSelectedRoot] = useState(null);
   const [mapRows, setMapRows] = useState([]);
 
-  // ✅ 실제 스크롤 컨테이너 ref (SimpleTable의 Box)
   const leftScrollRef = useRef(null);
+  const middleScrollRef = useRef(null);
   const rightScrollRef = useRef(null);
 
-  // ✅ 마지막 스크롤Top 저장
   const leftTopRef = useRef(0);
   const rightTopRef = useRef(0);
 
-  // ✅ 복원 예약
   const pendingLeftRestoreRef = useRef(false);
   const pendingRightRestoreRef = useRef(false);
 
-  // fetch 함수 ref 고정
-  const fetchFieldPersonListRef = useRef(fetchFieldPersonList);
   const fetchRootListRef = useRef(fetchRootList);
 
-  useEffect(() => {
-    fetchFieldPersonListRef.current = fetchFieldPersonList;
-  }, [fetchFieldPersonList]);
+  // ✅ 마지막 사람 클릭 요청만 반영하기 위한 request id
+  const personMapRequestSeqRef = useRef(0);
 
   useEffect(() => {
     fetchRootListRef.current = fetchRootList;
   }, [fetchRootList]);
 
-  // ✅ “리렌더 직후” 스크롤 복원
   useLayoutEffect(() => {
     if (!pendingLeftRestoreRef.current) return;
     pendingLeftRestoreRef.current = false;
@@ -294,7 +287,6 @@ function AccountFieldMemberTab() {
     });
   }, [selectedRoot?.root_idx, rootRows?.length]);
 
-  // ✅ 클릭/입력 전에 scrollTop 저장 + 복원 예약
   const captureLeftScroll = useCallback(() => {
     const el = leftScrollRef.current;
     if (!el) return;
@@ -309,7 +301,6 @@ function AccountFieldMemberTab() {
     pendingRightRestoreRef.current = true;
   }, []);
 
-  // rootRows join
   const rootIndexById = useMemo(() => {
     const m = new Map();
     (rootRows || []).forEach((r) => {
@@ -319,14 +310,33 @@ function AccountFieldMemberTab() {
     return m;
   }, [rootRows]);
 
+  const rootSelectOptions = useMemo(() => {
+    return (rootRows || []).map((r) => {
+      const label = [
+        r?.root_idx ? `[${r.root_idx}]` : "",
+        r?.sido_name || "",
+        r?.sigungu_name || "",
+        r?.emd_name || "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return {
+        value: String(r?.root_idx ?? ""),
+        label,
+      };
+    });
+  }, [rootRows]);
+
   const normalizeMapRows = useCallback(
     (list) => {
       const arr = Array.isArray(list) ? list : [];
-      return arr.map((r) => {
+      return arr.map((r, idx) => {
         const key = String(r?.root_idx ?? "");
         const root = rootIndexById.get(key);
         return {
           ...r,
+          __rowKey: `map-${String(r?.root_idx ?? "")}-${String(r?.idx ?? "")}-${idx}`,
           root_idx: r?.root_idx ?? "",
           sido_name: r?.sido_name ?? root?.sido_name ?? "",
           sigungu_name: r?.sigungu_name ?? root?.sigungu_name ?? "",
@@ -337,32 +347,56 @@ function AccountFieldMemberTab() {
     [rootIndexById]
   );
 
-  // ✅ 조회 (엔터/조회 버튼에서만)
-  const handleRefresh = useCallback(async ({ name = "" } = {}) => {
-    try {
-      const q = String(name ?? "").trim();
+  // ✅ 사람 목록 직접 조회: name, root_idx를 항상 명시적으로 전달
+  const fetchFieldPersonListWithParams = useCallback(
+    async ({ name = "", root_idx = "" } = {}) => {
+      const res = await api.get("/Operate/FieldPersonMasterList", {
+        params: {
+          name: String(name ?? ""),
+          root_idx: String(root_idx ?? ""),
+        },
+      });
 
-      await Promise.all([
-        fetchFieldPersonListRef.current?.(q ? { name: q } : undefined),
-        fetchRootListRef.current?.(),
-      ]);
+      const raw = res?.data?.list ?? res?.data ?? [];
+      const list = Array.isArray(raw) ? raw : [];
+      setPersonRows(list);
+    },
+    [setPersonRows]
+  );
 
-      setSelectedPerson(null);
-      setSelectedRoot(null);
-      setMapRows([]);
+  const handleRefresh = useCallback(
+    async ({ name = "", root_idx = "" } = {}) => {
+      try {
+        const q = String(name ?? "");
+        const rootIdx = String(root_idx ?? "");
 
-      // 조회 시 맨 위로
-      leftTopRef.current = 0;
-      rightTopRef.current = 0;
-      if (leftScrollRef.current) leftScrollRef.current.scrollTop = 0;
-      if (rightScrollRef.current) rightScrollRef.current.scrollTop = 0;
-    } catch (e) {
-      Swal.fire("실패", e?.message || "재조회 중 오류", "error");
-    }
-  }, []);
+        // ✅ 진행 중인 가운데 조회 무효화
+        personMapRequestSeqRef.current += 1;
+
+        await Promise.all([
+          fetchFieldPersonListWithParams({ name: q, root_idx: rootIdx }),
+          fetchRootListRef.current?.(),
+        ]);
+
+        setSelectedPerson(null);
+        setSelectedRoot(null);
+        setMapRows([]);
+
+        leftTopRef.current = 0;
+        rightTopRef.current = 0;
+
+        if (leftScrollRef.current) leftScrollRef.current.scrollTop = 0;
+        if (middleScrollRef.current) middleScrollRef.current.scrollTop = 0;
+        if (rightScrollRef.current) rightScrollRef.current.scrollTop = 0;
+      } catch (e) {
+        Swal.fire("실패", e?.message || "재조회 중 오류", "error");
+      }
+    },
+    [fetchFieldPersonListWithParams]
+  );
 
   useEffect(() => {
-    handleRefresh({ name: "" });
+    handleRefresh({ name: "", root_idx: "" });
   }, [handleRefresh]);
 
   const fetchPersonRootMapList = useCallback(async (personIdx) => {
@@ -373,19 +407,31 @@ function AccountFieldMemberTab() {
 
   const handleClickPersonRow = useCallback(
     async (row) => {
-      // ✅ 클릭 전에 left 스크롤 저장/복원 예약은 이미 captureLeftScroll에서 함
       setSelectedPerson(row);
       setSelectedRoot(null);
 
-      if (!row?.idx) {
-        setMapRows([]);
-        return;
+      setMapRows([]);
+      if (middleScrollRef.current) {
+        middleScrollRef.current.scrollTop = 0;
       }
+
+      if (!row?.idx) return;
+
+      const requestId = ++personMapRequestSeqRef.current;
 
       try {
         const list = await fetchPersonRootMapList(row.idx);
-        setMapRows(normalizeMapRows(list));
+
+        if (requestId !== personMapRequestSeqRef.current) return;
+
+        const normalized = normalizeMapRows(list);
+        setMapRows(normalized);
+
+        if (middleScrollRef.current) {
+          middleScrollRef.current.scrollTop = 0;
+        }
       } catch (err) {
+        if (requestId !== personMapRequestSeqRef.current) return;
         setMapRows([]);
         Swal.fire("실패", err?.message || "매핑 조회 오류", "error");
       }
@@ -432,8 +478,15 @@ function AccountFieldMemberTab() {
         confirmButtonText: "확인",
       });
 
+      const requestId = ++personMapRequestSeqRef.current;
       const list = await fetchPersonRootMapList(selectedPerson.idx);
+      if (requestId !== personMapRequestSeqRef.current) return;
+
       setMapRows(normalizeMapRows(list));
+
+      if (middleScrollRef.current) {
+        middleScrollRef.current.scrollTop = 0;
+      }
     } catch (e) {
       Swal.fire("실패", e?.message || "저장 중 오류", "error");
     }
@@ -454,6 +507,7 @@ function AccountFieldMemberTab() {
     if (exists) return;
 
     const newRow = {
+      __rowKey: `map-${String(selectedRoot.root_idx)}-${String(selectedPerson.idx)}-new`,
       idx: selectedPerson.idx,
       root_idx: selectedRoot.root_idx,
       sido_code: selectedRoot.sido_code,
@@ -465,6 +519,10 @@ function AccountFieldMemberTab() {
     };
 
     setMapRows((prev) => [newRow, ...(prev || [])]);
+
+    if (middleScrollRef.current) {
+      middleScrollRef.current.scrollTop = 0;
+    }
   }, [canPushToMap, mapRows, selectedPerson, selectedRoot]);
 
   const personColumns = useMemo(
@@ -492,7 +550,7 @@ function AccountFieldMemberTab() {
       { key: "root_idx", label: "경로순번", width: 70 },
       { key: "sido_name", label: "시도", width: 90 },
       { key: "sigungu_name", label: "시군구", width: 110 },
-      { key: "emd_name", label: "읍면동", width: 110 },
+      { key: "emd_name", label: "읍면동", width: 100 },
     ],
     []
   );
@@ -514,7 +572,6 @@ function AccountFieldMemberTab() {
 
   return (
     <>
-      {/* ✅ 이름 검색: 입력 후 엔터/조회 버튼에서만 조회 */}
       <MDBox
         pt={0}
         pb={1}
@@ -530,25 +587,53 @@ function AccountFieldMemberTab() {
           size="small"
           label="이름"
           value={searchName}
-          onChange={(e) => setSearchName(e.target.value)} // 입력만
+          onChange={(e) => setSearchName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              handleRefresh({ name: searchName });
+              handleRefresh({ name: searchName, root_idx: searchRootIdx });
             }
           }}
-          sx={{ minWidth: isMobile ? 160 : 220 }}
+          sx={{ minWidth: isMobile ? 100 : 150 }}
         />
+
+        <TextField
+          select
+          size="small"
+          label="경로"
+          value={searchRootIdx}
+          onChange={(e) => {
+            const nextValue = String(e.target.value ?? "");
+            setSearchRootIdx(nextValue);
+            handleRefresh({ name: searchName, root_idx: nextValue });
+          }}
+          sx={{ minWidth: isMobile ? 180 : 300, height: "40px" }}
+        >
+          <MenuItem value="">전체</MenuItem>
+          {rootSelectOptions.map((op) => (
+            <MenuItem key={op.value} value={op.value}>
+              {op.label}
+            </MenuItem>
+          ))}
+        </TextField>
 
         <MDButton
           variant="gradient"
           color="info"
-          onClick={() => handleRefresh({ name: searchName })}
+          onClick={() => handleRefresh({ name: searchName, root_idx: searchRootIdx })}
         >
           조회
         </MDButton>
 
-        <MDButton variant="gradient" color="info" onClick={() => handleRefresh({ name: "" })}>
+        <MDButton
+          variant="gradient"
+          color="info"
+          onClick={() => {
+            setSearchName("");
+            setSearchRootIdx("");
+            handleRefresh({ name: "", root_idx: "" });
+          }}
+        >
           새로고침
         </MDButton>
 
@@ -580,12 +665,14 @@ function AccountFieldMemberTab() {
                 (prev || []).map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
               );
             }}
+            getRowKey={(r, idx) => `person-${String(r?.idx ?? idx)}`}
           />
         </Grid>
 
         {/* 가운데 */}
         <Grid item xs={12} md={3}>
           <SimpleTable
+            key={selectedPerson?.idx ? `map-table-${selectedPerson.idx}` : "map-table-empty"}
             isMobile={isMobile}
             title={
               selectedPerson
@@ -594,8 +681,13 @@ function AccountFieldMemberTab() {
             }
             columns={mapColumns}
             rows={mapRows || []}
-            scrollRef={null}
+            scrollRef={middleScrollRef}
             onBeforeAction={null}
+            getRowKey={(r, idx) =>
+              r?.__rowKey
+                ? String(r.__rowKey)
+                : `map-${String(r?.root_idx ?? "")}-${String(r?.idx ?? "")}-${idx}`
+            }
           />
         </Grid>
 
@@ -628,6 +720,7 @@ function AccountFieldMemberTab() {
             onBeforeAction={captureRightScroll}
             scrollRef={rightScrollRef}
             onRowClick={(r) => handleClickRootRow(r)}
+            getRowKey={(r, idx) => `root-${String(r?.root_idx ?? idx)}`}
           />
         </Grid>
       </Grid>

@@ -42,21 +42,22 @@ function AccountMemberRecordMainTableTab() {
   const [accountInput, setAccountInput] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
 
-  // ✅ Root select (시도/시군구/읍면동 대체)
+  // ✅ Root select
   const [rootOptions, setRootOptions] = useState([NONE_OPTION]);
   const [selectedRootIdx, setSelectedRootIdx] = useState("");
   const [originalRootIdx, setOriginalRootIdx] = useState("");
 
-  // ✅ 부족 클릭 시 오른쪽에 보여줄 응급 인력 리스트
+  // ✅ 부족 클릭 시 오른쪽 응급 인력 리스트
   const [emergencyRows, setEmergencyRows] = useState([]);
   const [emergencyLoading, setEmergencyLoading] = useState(false);
   const [emergencyTitle, setEmergencyTitle] = useState("부족 인력 조회");
 
-  // ✅ 채용여부(use_yn) 수정용(행별)
+  // ✅ 채용여부(use_yn) 수정용
   const [emergencyUseYnMap, setEmergencyUseYnMap] = useState({});
+  const [originalEmergencyUseYnMap, setOriginalEmergencyUseYnMap] = useState({});
   const [savingEmployment, setSavingEmployment] = useState(false);
 
-  // ✅ 부족항목 클릭 시 "시작/마감"도 보여주기 위해 보관
+  // ✅ 부족항목 클릭 시 시작/마감 보관
   const [shortageSelectedShift, setShortageSelectedShift] = useState({
     start_time: "",
     end_time: "",
@@ -66,10 +67,10 @@ function AccountMemberRecordMainTableTab() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(String(now.getMonth() + 1).padStart(2, "0"));
 
-  // ✅ 부족항목 클릭에서 계산된 "일자(1~31)"를 저장(전송/표시용)
+  // ✅ 부족항목 클릭에서 계산된 일자
   const [selectedDayOfMonth, setSelectedDayOfMonth] = useState(null);
 
-  // ✅ 마지막으로 클릭한 부족항목의 position_type 저장(전송용)
+  // ✅ 마지막 클릭 부족항목의 position_type
   const [selectedPositionType, setSelectedPositionType] = useState("");
 
   const tableContainerRef = useRef(null);
@@ -122,6 +123,14 @@ function AccountMemberRecordMainTableTab() {
 
   const startTimes = generateTimeOptions("5:30", "16:00", 30);
   const endTimes = generateTimeOptions("10:00", "20:00", 30);
+
+  const corOptions = useMemo(
+    () => [
+      { value: "1", label: "고정" },
+      { value: "2", label: "대체" },
+    ],
+    []
+  );
 
   const positionOptions = useMemo(
     () => [
@@ -183,18 +192,18 @@ function AccountMemberRecordMainTableTab() {
 
   const employmentOptions = useMemo(
     () => [
-      { value: "1", label: "보류" }, // 주황
-      { value: "2", label: "불가" }, // 빨강
-      { value: "3", label: "확정" }, // 파랑
+      { value: "1", label: "보류" },
+      { value: "2", label: "불가" },
+      { value: "3", label: "확정" },
     ],
     []
   );
 
   const employmentColorOf = useCallback((v) => {
     const s = String(v ?? "").trim();
-    if (s === "1") return "#FF9760"; // 보류: 주황
-    if (s === "2") return "#d32f2f"; // 불가: 빨강
-    if (s === "3") return "#1976d2"; // 확정: 파랑
+    if (s === "1") return "#FF9760";
+    if (s === "2") return "#d32f2f";
+    if (s === "3") return "#1976d2";
     return "#777";
   }, []);
 
@@ -411,7 +420,6 @@ function AccountMemberRecordMainTableTab() {
     }
   }, [activeRows?.length]);
 
-  // ✅ rootOptions 준비된 뒤 매핑 안정화(스냅백 방지 버전)
   useEffect(() => {
     const fixed = normalizeToOptionValue(originalRootIdx, rootOptions || []);
     setSelectedRootIdx((prev) => {
@@ -493,9 +501,9 @@ function AccountMemberRecordMainTableTab() {
   };
 
   useEffect(() => {
-    // ✅ 조건 변경(연도/월/거래처/root) 시 오른쪽 영역(응급인력) 초기화
     setEmergencyRows([]);
     setEmergencyUseYnMap({});
+    setOriginalEmergencyUseYnMap({});
     setEmergencyLoading(false);
     setEmergencyTitle("부족 인력 조회");
 
@@ -504,7 +512,7 @@ function AccountMemberRecordMainTableTab() {
     setShortageSelectedShift({ start_time: "", end_time: "" });
   }, [year, month, selectedAccountId, selectedRootIdx]);
 
-  // ✅ 저장 로직(root_idx만 저장) - 기존 유지
+  // ✅ 저장 로직(root_idx만 저장)
   const handleSave = async () => {
     if (!String(selectedRootIdx ?? "").trim()) {
       Swal.fire("안내", "업장 지역(root)을 선택하세요.", "info");
@@ -796,7 +804,6 @@ function AccountMemberRecordMainTableTab() {
     );
   };
 
-  // ✅ 숫자 파서
   const toInt = useCallback((v) => {
     const s = String(v ?? "").trim();
     if (!s) return 0;
@@ -804,7 +811,6 @@ function AccountMemberRecordMainTableTab() {
     return Number.isFinite(n) ? n : 0;
   }, []);
 
-  // ✅ 주차 파서
   const toWeekNo = useCallback((v) => {
     const s = String(v ?? "").trim();
     if (!s) return 0;
@@ -812,7 +818,6 @@ function AccountMemberRecordMainTableTab() {
     return Number.isFinite(n) ? n : 0;
   }, []);
 
-  // ✅ none 판별
   const isNone = useCallback((v) => {
     const norm = String(v ?? "")
       .replace(/\u00A0/g, " ")
@@ -835,7 +840,6 @@ function AccountMemberRecordMainTableTab() {
     [isNone]
   );
 
-  // ✅ 부족 목록 생성
   const shortageList = useMemo(() => {
     const requiredByPosDay = {};
     const actualByWeekPosDay = {};
@@ -958,18 +962,12 @@ function AccountMemberRecordMainTableTab() {
 
   const excludedMatrixByWeek = useMemo(() => shortageList?.excluded || {}, [shortageList]);
 
-  // =========================================
-  // ✅ 부족 항목 클릭 → 응급인력 조회
-  // - root_idx + position_type + (있으면) 시작/마감 힌트도 제목에 표시
-  // =========================================
   const getEffectiveRootIdx = useCallback(() => {
     const fallbackRoot = activeRows?.[0]?.root_idx != null ? String(activeRows[0].root_idx) : "";
     const root_idx = String(selectedRootIdx ?? "").trim() || String(fallbackRoot ?? "").trim();
     return root_idx;
   }, [activeRows, selectedRootIdx]);
 
-  // ✅ 부족항목 클릭된 포지션의 start/end를 activeRows에서 추정
-  // - 같은 position_type 행들 중 "가장 많이 등장하는 값"을 선택 (없으면 첫 유효값)
   const getShiftByPosition = useCallback(
     (position_type) => {
       const pos = String(position_type ?? "").trim();
@@ -1023,7 +1021,6 @@ function AccountMemberRecordMainTableTab() {
       const dayNum = d ? d.getDate() : null;
       setSelectedDayOfMonth(dayNum);
 
-      // ✅ 시작/마감 추정
       const shift = getShiftByPosition(position_type);
       setShortageSelectedShift(shift);
 
@@ -1034,6 +1031,7 @@ function AccountMemberRecordMainTableTab() {
         setEmergencyLoading(true);
         setEmergencyRows([]);
         setEmergencyUseYnMap({});
+        setOriginalEmergencyUseYnMap({});
 
         setEmergencyTitle(
           `${week}주차 ${dayLabel} (${ymd}${
@@ -1049,11 +1047,9 @@ function AccountMemberRecordMainTableTab() {
           params: {
             root_idx,
             position_type,
-
-            // ✅ 클릭된 날짜도 함께 전달
             record_year: Number(year),
             record_month: Number(month),
-            record_date: Number(dayNum), // dayNum은 클릭으로 계산된 일자(1~31)
+            record_date: Number(dayNum),
           },
         });
 
@@ -1061,18 +1057,20 @@ function AccountMemberRecordMainTableTab() {
         const arr = Array.isArray(list) ? list : [];
         setEmergencyRows(arr);
 
-        // ✅ use_yn 초기값 map 구성
         const m = {};
         arr.forEach((it) => {
           const id = it?.idx;
           if (id == null) return;
           const v = String(it?.use_yn ?? "").trim();
-          m[String(id)] = v; // "" or 1/2/3
+          m[String(id)] = v;
         });
+
         setEmergencyUseYnMap(m);
+        setOriginalEmergencyUseYnMap(m);
       } catch (e) {
         setEmergencyRows([]);
         setEmergencyUseYnMap({});
+        setOriginalEmergencyUseYnMap({});
         Swal.fire("실패", e?.message || "응급 인력 조회 오류", "error");
       } finally {
         setEmergencyLoading(false);
@@ -1081,40 +1079,29 @@ function AccountMemberRecordMainTableTab() {
     [getEffectiveRootIdx, getDateByWeekDay, year, month, formatYMD, rootOptions, getShiftByPosition]
   );
 
-  // =========================================
-  // ✅ 채용여부 저장
-  // =========================================
-  // =========================================
-  // ✅ 채용여부 저장 (account_id, member_id 포함)
-  // =========================================
   const handleSaveEmployment = useCallback(
     async (idx, item) => {
       const id = String(idx ?? "").trim();
       if (!id) return;
 
-      // ✅ account_id: 거래처 select 값
       const account_id = String(selectedAccountId ?? "").trim();
       if (!account_id) {
         Swal.fire("안내", "거래처(account)를 선택하세요.", "info");
         return;
       }
 
-      // ✅ member_id: row(item)에 있다고 가정
-      const member_id_raw = item?.member_id ?? item?.memberId ?? null; // 혹시 키가 다를 수도 있어서 안전 처리
+      const member_id_raw = item?.member_id ?? item?.memberId ?? null;
       const member_id = member_id_raw ?? null;
       const name = item?.name ?? null;
-      const use_yn = String(emergencyUseYnMap?.[id] ?? "").trim();
+
+      const useYnRaw = String(emergencyUseYnMap?.[id] ?? "").trim();
+      const use_yn = useYnRaw === "" ? null : Number(useYnRaw);
 
       const salaryRaw = item?.salary ?? null;
       const salary =
         salaryRaw == null || String(salaryRaw).trim() === ""
           ? null
-          : Number(String(salaryRaw).replace(/[^\d-]/g, "")); // "1,000" → 1000
-
-      if (!use_yn) {
-        Swal.fire("안내", "채용여부(use_yn)를 선택하세요.", "info");
-        return;
-      }
+          : Number(String(salaryRaw).replace(/[^\d-]/g, ""));
 
       if (!selectedDayOfMonth) {
         Swal.fire(
@@ -1140,13 +1127,13 @@ function AccountMemberRecordMainTableTab() {
         const payload = {
           idx: Number(id),
           account_id: Number(account_id),
-          member_id, // null 가능
-          salary: Number(salary),
+          member_id,
+          salary,
           record_year: Number(year),
           record_month: Number(month),
           record_date: Number(selectedDayOfMonth),
-          use_yn: Number(use_yn),
-          name: name,
+          use_yn,
+          name,
           start_time,
           end_time,
           user_id: userId,
@@ -1158,6 +1145,16 @@ function AccountMemberRecordMainTableTab() {
 
         if (ok) {
           Swal.fire("저장 완료", "채용여부가 저장되었습니다.", "success");
+
+          setOriginalEmergencyUseYnMap((prev) => ({
+            ...(prev || {}),
+            [id]: useYnRaw,
+          }));
+
+          setEmergencyUseYnMap((prev) => ({
+            ...(prev || {}),
+            [id]: useYnRaw,
+          }));
         } else {
           Swal.fire("저장 실패", res?.data?.message || "서버 오류", "error");
         }
@@ -1167,19 +1164,9 @@ function AccountMemberRecordMainTableTab() {
         setSavingEmployment(false);
       }
     },
-    [
-      emergencyUseYnMap,
-      selectedDayOfMonth,
-      year,
-      month,
-      shortageSelectedShift,
-      selectedAccountId, // ✅ 추가
-    ]
+    [emergencyUseYnMap, selectedDayOfMonth, year, month, shortageSelectedShift, selectedAccountId]
   );
 
-  // =========================================
-  // ✅ 오른쪽 응급인력 테이블 렌더
-  // =========================================
   const renderEmergencyTable = () => {
     return (
       <MDBox mt={0} p={1} sx={{ border: "1px solid #0AC4E0", borderRadius: 1, height: "100%" }}>
@@ -1237,32 +1224,32 @@ function AccountMemberRecordMainTableTab() {
                   const useYnVal = String(
                     emergencyUseYnMap?.[rowId] ?? String(item?.use_yn ?? "")
                   ).trim();
+                  const originalUseYnVal = String(
+                    originalEmergencyUseYnMap?.[rowId] ?? String(item?.use_yn ?? "")
+                  ).trim();
+                  const isEmploymentChanged = useYnVal !== originalUseYnVal;
 
                   return (
                     <tr key={`${item?.idx ?? "x"}-${idx}`}>
                       <td title={String(item?.idx ?? "")}>{item?.idx ?? ""}</td>
                       <td title={String(item?.name ?? "")}>{item?.name ?? ""}</td>
-                      {/* ✅ 직책: 4/5 라벨 표기 */}
                       <td title={String(item?.position_type ?? "")}>
                         {positionLabelOf(item?.position_type)}
                       </td>
                       <td title={String(item?.salary ?? "")}>{item?.salary ?? ""}</td>
                       <td title={String(item?.car_yn ?? "")}>{item?.car_yn ?? ""}</td>
-                      {/* ✅ 상태: 1/2 라벨 표기 */}
                       <td
                         title={String(item?.status ?? "")}
                         style={{ color: statusColorOf(item?.status), fontWeight: 800 }}
                       >
                         {statusLabelOf(item?.status)}
                       </td>
-                      {/* ✅ 구분: manpower_type 라벨 표기 */}
                       <td title={String(item?.manpower_type ?? "")}>
                         {manpowerTypeLabelOf(item?.manpower_type)}
                       </td>
                       <td title={String(item?.note ?? "")} style={{ textAlign: "left" }}>
                         {item?.note ?? ""}
                       </td>
-                      {/* ✅ 채용여부 select (use_yn) - 수정 가능 */}
                       <td>
                         <select
                           value={useYnVal || ""}
@@ -1285,7 +1272,6 @@ function AccountMemberRecordMainTableTab() {
                           ))}
                         </select>
                       </td>
-                      {/* ✅ 저장 버튼 */}
                       <td>
                         <button
                           type="button"
@@ -1295,8 +1281,9 @@ function AccountMemberRecordMainTableTab() {
                             width: "100%",
                             padding: "4px 8px",
                             borderRadius: 8,
-                            border: "1px solid #0AC4E0",
-                            background: "#fff",
+                            border: isEmploymentChanged ? "1px solid #d32f2f" : "1px solid #0AC4E0",
+                            background: isEmploymentChanged ? "#ffebee" : "#fff",
+                            color: isEmploymentChanged ? "#d32f2f" : "#111",
                             cursor: savingEmployment ? "not-allowed" : "pointer",
                             fontSize: 11,
                             fontWeight: 700,
@@ -1321,7 +1308,6 @@ function AccountMemberRecordMainTableTab() {
 
   return (
     <>
-      {/* 상단 컨트롤 */}
       <MDBox
         pt={1}
         pb={1}
@@ -1401,7 +1387,6 @@ function AccountMemberRecordMainTableTab() {
           )}
         />
 
-        {/* ✅ Root select */}
         <TextField
           select
           size="small"
@@ -1444,14 +1429,12 @@ function AccountMemberRecordMainTableTab() {
         </MDButton>
       </MDBox>
 
-      {/* 테이블들 */}
       <MDBox pt={0} pb={1}>
         <Grid container spacing={1}>
           <Grid item xs={12}>
             {renderTable(table, activeRows, originalRows)}
           </Grid>
 
-          {/* ✅ 아래 영역: 왼쪽(부족항목) + 오른쪽(응급인력) */}
           <Grid item xs={12} md={6}>
             <MDBox mt={0} p={1} sx={{ border: "1px solid #519A66", borderRadius: 1 }}>
               <MDBox sx={{ fontWeight: 700, mb: 0.5, fontSize: 14 }}>
@@ -1619,7 +1602,6 @@ function AccountMemberRecordMainTableTab() {
             </MDBox>
           </Grid>
 
-          {/* ✅ 부족항목 오른쪽: 응급 인력 리스트 */}
           <Grid item xs={12} md={6}>
             {renderEmergencyTable()}
           </Grid>

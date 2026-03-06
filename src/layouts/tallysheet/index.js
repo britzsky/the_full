@@ -3453,19 +3453,6 @@ function TallySheet() {
       </Menu>
 
       {/* ======================== ✅ 우클릭 입력가능/불가 메뉴(구분 셀) ======================== */}
-<<<<<<< HEAD
-      <Menu
-        open={useMenu.open}
-        onClose={closeUseMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={useMenu.open ? { top: useMenu.mouseY, left: useMenu.mouseX } : undefined}
-      >
-        {(() => {
-          const t = useMenu.target;
-          const cur = t
-            ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0)
-            : 0;
-=======
       {canManageUseInputState && (
         <Menu
           open={useMenu.open}
@@ -3478,7 +3465,6 @@ function TallySheet() {
             const cur = t
               ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0)
               : 0;
->>>>>>> dee8ab41b1832aad67b04e5e953c99ae72d5dab3
 
             return (
               <>

@@ -145,16 +145,8 @@ const isSameRow = (a, b) =>
 const getStoredUserId = () => {
   if (typeof window === "undefined") return "";
 
-  // 과거/현재 키명(user_id, login_user_id) + 저장 위치(session/local) 모두 호환
-  const keys = ["login_user_id", "user_id"];
-  for (const key of keys) {
-    const sessionValue = window.sessionStorage.getItem(key);
-    if (String(sessionValue || "").trim()) return String(sessionValue).trim();
-
-    const localValue = window.localStorage.getItem(key);
-    if (String(localValue || "").trim()) return String(localValue).trim();
-  }
-  return "";
+  // localStorage 단일 기준(user_id) 사용
+  return String(window.localStorage.getItem("user_id") || "").trim();
 };
 
 // native date input picker 열기 유틸

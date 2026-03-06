@@ -27,6 +27,8 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
     localStorage.removeItem("department");
     localStorage.removeItem("account_id");
     localStorage.removeItem("login_session_id");
+    localStorage.removeItem("position_name");
+    localStorage.removeItem("user_name");
     sessionStorage.removeItem("login_session_id");
     sessionStorage.removeItem("login_user_id");
 
@@ -65,7 +67,7 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
             }}
           >
             {/* miniSidenav 여부에 따라 아이콘 변경 (선택사항) */}
-            <Icon fontSize="small" sx={{color:"white"}}>
+            <Icon fontSize="small" sx={{ color: "white" }}>
               {miniSidenav ? "menu_open" : "menu"}
             </Icon>
           </IconButton>

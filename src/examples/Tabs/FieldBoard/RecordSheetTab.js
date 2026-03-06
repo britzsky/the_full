@@ -563,9 +563,7 @@ function RecordSheet() {
     const recoverLockedAccountId = async () => {
       setRecoveringLockedAccount(true);
       try {
-        const fallbackUserId = String(
-          localStorage.getItem("user_id") || sessionStorage.getItem("login_user_id") || ""
-        ).trim();
+        const fallbackUserId = String(localStorage.getItem("user_id") || "").trim();
 
         if (!fallbackUserId) return;
 

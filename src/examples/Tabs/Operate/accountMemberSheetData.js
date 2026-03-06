@@ -222,11 +222,7 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
       return { localOnly: true };
     }
 
-    const userId =
-      localStorage.getItem("user_id") ||
-      sessionStorage.getItem("login_user_id") ||
-      sessionStorage.getItem("user_id") ||
-      "";
+    const userId = localStorage.getItem("user_id") || "";
 
     const { record_year, record_month, record_date } = splitDispatchRecordDate(row.record_date);
 

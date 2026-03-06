@@ -84,32 +84,11 @@ import FieldBoardTabs from "examples/Tabs/FieldBoardTabs";
    ✅ 권한 관련 유틸
 ========================================================= */
 
-// 🔹 세션 사용자ID 키 호환 처리(login_user_id / user_id)
-const getSessionUserId = () =>
-  sessionStorage.getItem("user_id") || sessionStorage.getItem("login_user_id");
-
-// 🔹 사용자 부서/직책/아이디 코드 조회(local/session 기준)
+// 🔹 사용자 부서/직책/아이디 코드 조회(localStorage 기준)
 const getUserCodes = () => {
-  const localSessionId = localStorage.getItem("login_session_id");
-  const tabSessionId = sessionStorage.getItem("login_session_id");
-  const localUserId = localStorage.getItem("user_id");
-  const tabUserId = getSessionUserId();
-
-  if (
-    localSessionId &&
-    tabSessionId &&
-    localSessionId !== tabSessionId &&
-    localUserId &&
-    tabUserId &&
-    localUserId !== tabUserId
-  ) {
-    return { deptCode: null, posCode: null, userId: null };
-  }
-
   const dept = localStorage.getItem("department"); // ex: "2"
   const pos = localStorage.getItem("position"); // ex: "4"
-  const userId =
-    localStorage.getItem("user_id") || getSessionUserId(); // ✅ 특정 아이디 권한용 (키가 다르면 여기만 수정)
+  const userId = localStorage.getItem("user_id");
 
   return {
     deptCode: dept != null ? Number(dept) : null,
@@ -214,10 +193,7 @@ const ProtectedRoute = ({
 }) => {
   const { deptCode, posCode, userId } = getUserCodes();
   const localUserId = localStorage.getItem("user_id");
-  const tabUserId = getSessionUserId();
-  const hasBothUserIds = !!localUserId && !!tabUserId;
-  const isSameUserId = hasBothUserIds && String(localUserId) === String(tabUserId);
-  const hasValidUserAuth = hasBothUserIds && isSameUserId;
+  const hasValidUserAuth = !!String(localUserId || "").trim();
   const [shouldRedirect, setShouldRedirect] = useState(false);
   const [shouldMoveLogin, setShouldMoveLogin] = useState(false);
   const noSessionPopupOpenRef = useRef(false);
@@ -248,21 +224,6 @@ const ProtectedRoute = ({
 
   const allowed = hasAccess(routeLike, deptCode, posCode, userId);
 
-  useEffect(() => {
-    if (!hasValidUserAuth || allowed) return;
-    Swal.fire({
-      title: "권한없음",
-      text: "접근 권한이 없습니다.\n관리자에게 확인 바랍니다.",
-      icon: "error",
-      confirmButtonColor: "#d33",
-      confirmButtonText: "확인",
-    }).then(() => setShouldRedirect(true));
-  }, [allowed, hasValidUserAuth]);
-
-  if (!hasValidUserAuth) {
-    return shouldMoveLogin ? <Navigate to="/authentication/sign-in" replace /> : null;
-  }
-
   if (!allowed) {
     return shouldRedirect ? <Navigate to="/" replace /> : null;
   }
@@ -280,6 +241,40 @@ ProtectedRoute.propTypes = {
   allowUserIds: PropTypes.arrayOf(PropTypes.string),
   denyUserIds: PropTypes.arrayOf(PropTypes.string),
   onlyUserIds: PropTypes.arrayOf(PropTypes.string),
+};
+
+// ✅ 현장(fieldboard) 전용 계정이 다른 화면으로 접근했을 때: 안내 후 로그인으로 이동
+const FieldboardOnlyRouteBlocker = () => {
+  const [shouldMoveLogin, setShouldMoveLogin] = useState(false);
+  const popupOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (popupOpenRef.current) return;
+    popupOpenRef.current = true;
+
+    Swal.fire({
+      title: "알림",
+      html: "로그인 세션이 유효하지 않습니다.<br/>로그인 화면으로 이동합니다.",
+      icon: "warning",
+      confirmButtonColor: "#d33",
+      confirmButtonText: "확인",
+    }).then(() => {
+      // ✅ 로그인 세션/사용자 정보 초기화 후 로그인 화면으로 이동
+      [
+        "position_name",
+        "user_name",
+        "user_id",
+        "user_type",
+        "position",
+        "department",
+        "account_id",
+        "login_session_id",
+      ].forEach((key) => localStorage.removeItem(key));
+      setShouldMoveLogin(true);
+    });
+  }, []);
+
+  return shouldMoveLogin ? <Navigate to="/authentication/sign-in" replace /> : null;
 };
 
 /* =========================================================
@@ -301,9 +296,8 @@ export default function App() {
 
   const [onMouseEnter, setOnMouseEnter] = useState(false);
   const [rtlCache, setRtlCache] = useState(null);
-  const { pathname, state: routeState } = useLocation();
+  const { pathname } = useLocation();
   const [, setAuthTick] = useState(0);
-  const sessionPopupOpenRef = useRef(false);
 
   // 🔹 현재 로그인한 유저의 부서/직책/아이디
   const { deptCode, posCode, userId } = getUserCodes();
@@ -341,18 +335,16 @@ export default function App() {
   };
 
   // 설정 패널 열림 상태 토글
-  const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
+  // const handleConfiguratorOpen = () => setOpenConfigurator(dispatch, !openConfigurator);
 
   const localSessionId = localStorage.getItem("login_session_id");
-  const tabSessionId = sessionStorage.getItem("login_session_id");
   const localUserId = localStorage.getItem("user_id");
-  const tabUserId = getSessionUserId();
-  const isSessionMatched =
-    !localSessionId || !tabSessionId
-      ? false
-      : localSessionId === tabSessionId || (localUserId && tabUserId && localUserId === tabUserId);
-  const isAuthed = (!!localUserId || !!tabUserId) && (isSessionMatched || !localSessionId || !tabSessionId);
-  const isFieldboardLoginEntry = routeState?.fieldboardLogin === true;
+  const department = localStorage.getItem("department");
+  const isAuthed = !!localUserId && !!localSessionId;
+  const isAuthPath = pathname.startsWith("/authentication/");
+
+  // 현장(department == 7)은 fieldboard 경로만 허용
+  const isFieldboardUser = isAuthed && department == 7 && !isAuthPath;
 
   // body dir 속성 설정
   useEffect(() => {
@@ -360,78 +352,7 @@ export default function App() {
   }, [direction]);
 
   useEffect(() => {
-    // 최초 진입 시 탭 세션을 로컬 세션과 동기화
-    const localSessionId = localStorage.getItem("login_session_id");
-    if (localSessionId && !sessionStorage.getItem("login_session_id")) {
-      sessionStorage.setItem("login_session_id", localSessionId);
-      const storedUserId = localStorage.getItem("user_id");
-      if (storedUserId) sessionStorage.setItem("login_user_id", storedUserId);
-    }
-
-    // 다른 탭에서 다른 계정으로 로그인되면 안내 후 이 탭을 로그인 화면으로 돌림
-    const showSessionChangedPopup = (nextSessionId) => {
-      const currentLocalUserId = localStorage.getItem("user_id");
-      const currentTabUserId = sessionStorage.getItem("login_user_id");
-      if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
-        sessionStorage.setItem("login_session_id", nextSessionId || "");
-        setAuthTick((prev) => prev + 1);
-        return;
-      }
-      if (sessionPopupOpenRef.current) return;
-      sessionPopupOpenRef.current = true;
-
-      Swal.fire({
-        title: "로그인 변경",
-        text: "다른 계정으로 로그인되었습니다.",
-        icon: "warning",
-        confirmButtonText: "확인",
-        confirmButtonColor: "#d33",
-      }).then(() => {
-        sessionStorage.removeItem("login_session_id");
-        setAuthTick((prev) => prev + 1);
-        sessionPopupOpenRef.current = false;
-        window.location.hash = "/authentication/sign-in";
-      });
-    };
-
-    // 포커스/가시성 변경 시 세션 불일치 재검사
-    const checkSessionMismatch = () => {
-      const currentLocalSession = localStorage.getItem("login_session_id");
-      const currentTabSession = sessionStorage.getItem("login_session_id");
-      const currentLocalUserId = localStorage.getItem("user_id");
-      const currentTabUserId = sessionStorage.getItem("login_user_id");
-      if (currentLocalSession && !currentTabSession) {
-        sessionStorage.setItem("login_session_id", currentLocalSession);
-        if (currentLocalUserId) sessionStorage.setItem("login_user_id", currentLocalUserId);
-        setAuthTick((prev) => prev + 1);
-        return;
-      }
-
-      if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
-        if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-        }
-        return;
-      }
-
-      if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
-        if (currentLocalUserId && !currentTabUserId) {
-          sessionStorage.setItem("login_user_id", currentLocalUserId);
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        showSessionChangedPopup(currentLocalSession);
-      }
-    };
-
-    // 다른 탭의 storage 변경 이벤트에 반응
+    // localStorage 인증 키 변경 시 화면 갱신
     const handleStorage = (event) => {
       if (!event) return;
 
@@ -445,81 +366,12 @@ export default function App() {
       ]);
 
       if (!watchKeys.has(event.key)) return;
-
-      const currentLocalSession = localStorage.getItem("login_session_id");
-      const currentTabSession = sessionStorage.getItem("login_session_id");
-      const currentLocalUserId = localStorage.getItem("user_id");
-      const currentTabUserId = sessionStorage.getItem("login_user_id");
-      if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
-        if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-        }
-        return;
-      }
-
-      if (event.key === "login_session_id" && currentLocalSession) {
-        if (!currentTabSession) {
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          if (currentLocalUserId) sessionStorage.setItem("login_user_id", currentLocalUserId);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        if (currentLocalUserId && !currentTabUserId) {
-          sessionStorage.setItem("login_user_id", currentLocalUserId);
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        if (
-          currentLocalSession !== currentTabSession &&
-          currentLocalUserId &&
-          currentTabUserId &&
-          currentLocalUserId === currentTabUserId
-        ) {
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        if (currentLocalSession !== currentTabSession) {
-          showSessionChangedPopup(currentLocalSession);
-          return;
-        }
-      }
-
-      if (currentLocalSession && !currentTabSession) {
-        sessionStorage.setItem("login_session_id", currentLocalSession);
-        if (currentLocalUserId) sessionStorage.setItem("login_user_id", currentLocalUserId);
-        setAuthTick((prev) => prev + 1);
-        return;
-      }
-
-      if (currentLocalSession && currentTabSession && currentLocalSession !== currentTabSession) {
-        if (currentLocalUserId && !currentTabUserId) {
-          sessionStorage.setItem("login_user_id", currentLocalUserId);
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        if (currentLocalUserId && currentTabUserId && currentLocalUserId === currentTabUserId) {
-          sessionStorage.setItem("login_session_id", currentLocalSession);
-          setAuthTick((prev) => prev + 1);
-          return;
-        }
-        showSessionChangedPopup(currentLocalSession);
-        return;
-      }
-
       setAuthTick((prev) => prev + 1);
     };
 
     window.addEventListener("storage", handleStorage);
-    window.addEventListener("focus", checkSessionMismatch);
-    document.addEventListener("visibilitychange", checkSessionMismatch);
     return () => {
       window.removeEventListener("storage", handleStorage);
-      window.removeEventListener("focus", checkSessionMismatch);
-      document.removeEventListener("visibilitychange", checkSessionMismatch);
     };
   }, []);
 
@@ -527,26 +379,20 @@ export default function App() {
   useEffect(() => {
     let prevSnapshot = {
       localUserId: localStorage.getItem("user_id") || "",
-      tabUserId: getSessionUserId() || "",
       localSessionId: localStorage.getItem("login_session_id") || "",
-      tabSessionId: sessionStorage.getItem("login_session_id") || "",
       accountId: localStorage.getItem("account_id") || "",
     };
 
     const detectSameTabStorageChange = () => {
       const nextSnapshot = {
         localUserId: localStorage.getItem("user_id") || "",
-        tabUserId: getSessionUserId() || "",
         localSessionId: localStorage.getItem("login_session_id") || "",
-        tabSessionId: sessionStorage.getItem("login_session_id") || "",
         accountId: localStorage.getItem("account_id") || "",
       };
 
       const changed =
         nextSnapshot.localUserId !== prevSnapshot.localUserId ||
-        nextSnapshot.tabUserId !== prevSnapshot.tabUserId ||
         nextSnapshot.localSessionId !== prevSnapshot.localSessionId ||
-        nextSnapshot.tabSessionId !== prevSnapshot.tabSessionId ||
         nextSnapshot.accountId !== prevSnapshot.accountId;
 
       if (!changed) return;
@@ -567,8 +413,6 @@ export default function App() {
 
   useEffect(() => {
     if (pathname === "/authentication/sign-in") {
-      sessionStorage.removeItem("login_session_id");
-      sessionStorage.removeItem("login_user_id");
       setAuthTick((prev) => prev + 1);
     }
   }, [pathname]);
@@ -634,7 +478,15 @@ export default function App() {
   //   </MDBox>
   // );
 
-  const routesForRouter = (
+  const routesForRouter = isFieldboardUser ? (
+    <Routes>
+      {/* ✅ 현장(부서 7) 사용자는 fieldboard만 접근 허용 */}
+      <Route path="/fieldboard/*" element={<FieldBoardTabs />} />
+
+      {/* ✅ fieldboard 외 모든 경로는 안내 팝업 후 로그인으로 이동 */}
+      <Route path="*" element={<FieldboardOnlyRouteBlocker />} />
+    </Routes>
+  ) : (
     <Routes>
       {/* ✅ routes.js 기반 (권한 필터 적용) */}
       {getRoutes(filteredRoutes)}
@@ -669,18 +521,10 @@ export default function App() {
       <Route path="/business/cookwear/:account_id" element={<CookWearSheet />} />
       <Route path="/business/accountfile/:account_id" element={<AccountFileSheet />} />
 
-      {/* 현장 fieldboard */}
+      {/* ✅ 부서 7이 아닌 사용자는 fieldboard 접근 차단 */}
       <Route
         path="/fieldboard/*"
-        element={
-          isFieldboardLoginEntry ? (
-            <ProtectedRoute>
-              <FieldBoardTabs />
-            </ProtectedRoute>
-          ) : (
-            <Navigate to="/authentication/sign-in" replace />
-          )
-        }
+        element={<Navigate to={isAuthed ? "/" : "/authentication/sign-in"} replace />}
       />
 
       {/* ✅ 나머지 못 찾는 경로는 전부 /로 */}

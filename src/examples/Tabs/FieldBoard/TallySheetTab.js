@@ -456,7 +456,6 @@ function TallySheet() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [tabValue, setTabValue] = useState(0);
-  const [directUseRows, setDirectUseRows] = useState([]);
 
   const hook = useTallysheetData(selectedAccountId, year, month);
 
@@ -540,38 +539,6 @@ function TallySheet() {
     if (!selectedAccountId) return;
     fetchUseList?.(selectedAccountId, year, month);
   }, [selectedAccountId, year, month, fetchUseList]);
-
-  // FieldBoard는 DB 잠금값을 직접 한 번 더 조회해서 화면 잠금 상태를 확정한다.
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchDirectUseRows = async () => {
-      if (!selectedAccountId) {
-        if (!cancelled) setDirectUseRows([]);
-        return;
-      }
-
-      try {
-        const nowParams = { account_id: selectedAccountId, year, month };
-        const prevParams = { account_id: selectedAccountId, year: prevYear, month: prevMonth };
-        const [nowRes, prevRes] = await Promise.all([
-          api.get("/Operate/TallySheetUseList", { params: nowParams }),
-          api.get("/Operate/TallySheetUseList", { params: prevParams }),
-        ]);
-
-        const nowRows = Array.isArray(nowRes?.data) ? nowRes.data : [];
-        const prevRows = Array.isArray(prevRes?.data) ? prevRes.data : [];
-        if (!cancelled) setDirectUseRows([...nowRows, ...prevRows]);
-      } catch (err) {
-        if (!cancelled) setDirectUseRows([]);
-      }
-    };
-
-    fetchDirectUseRows();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedAccountId, year, month, prevYear, prevMonth]);
 
   // ✅ 검색: 엔터 입력 시 텍스트로 거래처 선택 (정확 일치 우선, 없으면 부분 일치)
   const selectAccountByInput = () => {
@@ -2739,10 +2706,7 @@ function TallySheet() {
   // useList -> (year,month,type) 단위로 input_yn lookup 맵
   const useLockMap = useMemo(() => {
     const map = new Map();
-    const sourceRows =
-      Array.isArray(directUseRows) && directUseRows.length > 0 ? directUseRows : useList || [];
-
-    sourceRows.forEach((u) => {
+    (useList || []).forEach((u) => {
       const rowAccountId = String(u.account_id ?? u.row_account_id ?? "").trim();
       if (selectedAccountId && rowAccountId && rowAccountId !== String(selectedAccountId)) return;
 
@@ -2761,7 +2725,7 @@ function TallySheet() {
       }
     });
     return map;
-  }, [directUseRows, useList, selectedAccountId]);
+  }, [useList, selectedAccountId]);
 
   const isTypeLocked = useCallback(
     (y, m, type) => (useLockMap.get(buildUseKey(y, m, type))?.lock ?? 0) === 1,
@@ -2895,107 +2859,6 @@ function TallySheet() {
       }
     },
     [pointMenu.target, selectedAccountId, closePointMenu, refetchPointForExactMonth]
-  );
-
-  // ======================== ✅ "구분(업체명)" 우클릭 입력가능/불가 메뉴 ========================
-  const [useMenu, setUseMenu] = useState({
-    open: false,
-    mouseX: null,
-    mouseY: null,
-    target: null, // { year, month, type }
-  });
-
-  const closeUseMenu = useCallback(() => {
-    setUseMenu({ open: false, mouseX: null, mouseY: null, target: null });
-  }, []);
-
-  const openUseMenu = useCallback(
-    (e, rowOriginal, isSecond) => {
-      if (!selectedAccountId) {
-        Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
-        return;
-      }
-      const t = String(rowOriginal?.type ?? "");
-      if (!t) return;
-      if (rowOriginal?.name === "총합") return;
-
-      const y = isSecond ? prevYear : year;
-      const m = isSecond ? prevMonth : month;
-
-      setUseMenu({
-        open: true,
-        mouseX: e.clientX - 2,
-        mouseY: e.clientY - 4,
-        target: { year: y, month: m, type: t },
-      });
-    },
-    [selectedAccountId, year, month, prevYear, prevMonth]
-  );
-
-  const saveUseInputYn = useCallback(
-    async (inputYn) => {
-      const t = useMenu.target;
-      if (!t) return;
-
-      const payload = {
-        year: Number(t.year),
-        month: Number(t.month),
-        account_id: selectedAccountId,
-        type: String(t.type),
-        input_yn: Number(inputYn), // 0 or 1
-      };
-
-      try {
-        const res = await api.post("/Operate/TallySheetUseSave", payload, {
-          validateStatus: () => true,
-        });
-
-        const responseCode = Number(res?.data?.code);
-        const ok = responseCode === 200;
-        if (!ok) {
-          throw new Error(
-            res?.data?.message || res?.data?.msg || `저장 실패 (code: ${res?.data?.code ?? "N/A"})`
-          );
-        }
-
-        // ✅ 저장한 월/년 기준으로 다시 조회 + 값 검증
-        const refreshed = (await fetchUseList?.(selectedAccountId, year, month)) || [];
-        const matched = refreshed.find(
-          (r) => {
-            const rowYear = Number(r?.count_year ?? r?.year);
-            const rowMonth = Number(r?.count_month ?? r?.month);
-            const rowType = String(r?.type ?? r?.use_type ?? r?.gubun ?? "").trim();
-            const rowAccountId = String(r?.account_id ?? r?.row_account_id ?? "").trim();
-            const accountMatch = !rowAccountId || rowAccountId === String(selectedAccountId ?? "");
-
-            return (
-              rowYear === Number(t.year) &&
-              rowMonth === Number(t.month) &&
-              rowType === String(t.type) &&
-              accountMatch
-            );
-          }
-        );
-        const nextInputYn = matched ? parseInputYn(matched.input_yn ?? matched.use_yn) : 0;
-        if (nextInputYn !== Number(inputYn)) {
-          throw new Error("저장 후 재조회 값이 반영되지 않았습니다.");
-        }
-
-        closeUseMenu();
-        Swal.fire({
-          toast: true,
-          position: "top-end",
-          icon: "success",
-          title: "입력상태 저장 완료",
-          showConfirmButton: false,
-          timer: 900,
-        });
-      } catch (err) {
-        closeUseMenu();
-        Swal.fire("오류", err.message || "입력상태 저장 중 오류", "error");
-      }
-    },
-    [useMenu.target, selectedAccountId, closeUseMenu, fetchUseList]
   );
 
   if (loading) return <LoadingScreen />;
@@ -3153,21 +3016,6 @@ function TallySheet() {
                       background: mergedBg,
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
                       outlineOffset: isActiveThisCell ? "-2px" : "0px",
-                    }}
-                    onContextMenu={(e) => {
-                      // ✅ 1) 구분(업체명) 우클릭 -> 입력가능/불가 메뉴
-                      if (colKey === "name" && !isTotalRow) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        //openUseMenu(e, row.original, isSecond);
-                        return;
-                      }
-
-                      // ✅ 2) day 셀 우클릭 -> 포인트 메뉴(기존)
-                      if (!isBaseCell || isTotalRow) return;
-                      e.preventDefault();
-                      e.stopPropagation();
-                      //openPointMenu(e, row.original, colKey, isSecond);
                     }}
                     onMouseDown={
                       isEditable
@@ -3490,38 +3338,6 @@ function TallySheet() {
             {it.label}
           </MenuItem>
         ))}
-      </Menu>
-
-      {/* ======================== ✅ 우클릭 입력가능/불가 메뉴(구분 셀) ======================== */}
-      <Menu
-        open={useMenu.open}
-        onClose={closeUseMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={useMenu.open ? { top: useMenu.mouseY, left: useMenu.mouseX } : undefined}
-      >
-        {(() => {
-          const t = useMenu.target;
-          const cur = t ? Number(useLockMap.get(buildUseKey(t.year, t.month, t.type))?.lock || 0) : 0;
-
-          return (
-            <>
-              <MenuItem
-                selected={cur === 0}
-                onClick={() => saveUseInputYn(0)}
-                sx={{ fontSize: 13 }}
-              >
-                입력가능 (0)
-              </MenuItem>
-              <MenuItem
-                selected={cur === 1}
-                onClick={() => saveUseInputYn(1)}
-                sx={{ fontSize: 13 }}
-              >
-                입력불가 (1)
-              </MenuItem>
-            </>
-          );
-        })()}
       </Menu>
 
       {/* ================= 거래처 연결 모달(open) ================= */}

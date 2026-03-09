@@ -65,6 +65,7 @@ const TYPE_LABEL = {
   16: "업장휴무",
   18: "경조사",
   19: "통합",
+  20: "재택근무",
 };
 
 const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
@@ -3127,6 +3128,7 @@ function RecordSheet() {
                 { value: "15", label: "하계휴가" },
                 { value: "16", label: "업장휴무" },
                 { value: "18", label: "경조사" },
+                { value: "20", label: "재택근무" },
               ];
             })();
 

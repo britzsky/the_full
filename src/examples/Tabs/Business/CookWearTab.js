@@ -128,8 +128,8 @@ function CookWearTabStyled() {
 
   const tableSx = {
     flex: 1,
-    minHeight: 0,
-    maxHeight: isMobile ? "40vh" : "60vh",
+    minHeight: isMobile ? "40vh" : "77vh",
+    maxHeight: isMobile ? "40vh" : "77vh",
     overflowX: "auto",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
@@ -609,6 +609,7 @@ function CookWearTabStyled() {
                                   {acc.account_name}
                                 </option>
                               ))}
+                              <option value="0">(주)더채움</option>
                             </select>
                           </td>
                         );

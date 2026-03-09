@@ -607,7 +607,17 @@ function AccountFieldMemberTab() {
             setSearchRootIdx(nextValue);
             handleRefresh({ name: searchName, root_idx: nextValue });
           }}
-          sx={{ minWidth: isMobile ? 180 : 300, height: "40px" }}
+          sx={{
+            minWidth: isMobile ? 180 : 300,
+            "& .MuiOutlinedInput-root": {
+              minHeight: 38,
+            },
+            "& .MuiSelect-select": {
+              display: "flex",
+              alignItems: "center",
+              minHeight: "38px !important",
+            },
+          }}
         >
           <MenuItem value="">전체</MenuItem>
           {rootSelectOptions.map((op) => (
@@ -643,7 +653,7 @@ function AccountFieldMemberTab() {
           onClick={handleSaveMap}
           disabled={!selectedPerson?.idx}
         >
-          매핑 저장
+          저장
         </MDButton>
       </MDBox>
 
@@ -676,8 +686,8 @@ function AccountFieldMemberTab() {
             isMobile={isMobile}
             title={
               selectedPerson
-                ? `매핑 (${selectedPerson.name || selectedPerson.idx})`
-                : "매핑 (사람 선택)"
+                ? `연결 (${selectedPerson.name || selectedPerson.idx})`
+                : "연결 (사람 선택)"
             }
             columns={mapColumns}
             rows={mapRows || []}

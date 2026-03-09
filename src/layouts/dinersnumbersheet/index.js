@@ -1241,6 +1241,11 @@ function DinersNumberSheet() {
 
   if (loading) return <LoadingScreen />;
 
+  // ✅ 화면에서 본문 행을 1~2줄 더 보이도록 카드 높이를 소폭 확장
+  const tableCardHeight = "calc(95vh - 120px)";
+  // ✅ 하단 고정 합계/평균 행 겹침 방지를 위한 기준 높이
+  const summaryStickyRowHeight = 28;
+
   return (
     <DashboardLayout>
       <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
@@ -1366,7 +1371,7 @@ function DinersNumberSheet() {
       <MDBox pt={3} pb={3}>
         <Grid container spacing={6}>
           <Grid item xs={12}>
-            <Card sx={{ height: "calc(95vh - 160px)", display: "flex", flexDirection: "column" }}>
+            <Card sx={{ height: tableCardHeight, display: "flex", flexDirection: "column" }}>
               <MDBox
                 pt={0}
                 sx={{
@@ -1391,6 +1396,12 @@ function DinersNumberSheet() {
                     backgroundColor: "#f0f0f0",
                     position: "sticky",
                     zIndex: 10,
+                  },
+                  // ✅ 합계/평균을 헤더처럼 하단에 고정하기 위한 공통 스타일
+                  "& tfoot td": {
+                    position: "sticky",
+                    zIndex: 9,
+                    fontWeight: 700,
                   },
                 }}
               >
@@ -1511,27 +1522,55 @@ function DinersNumberSheet() {
                         })}
                       </tr>
                     ))}
-                    <tr style={{ background: "#ffeb3b", fontWeight: 700 }}>
-                      <td>합계</td>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td
+                        style={{
+                          bottom: summaryStickyRowHeight,
+                          background: "#ffeb3b",
+                        }}
+                      >
+                        합계
+                      </td>
                       {visibleColumns.map((key) => (
-                        <td key={`sum-${key}`}>
+                        <td
+                          key={`sum-${key}`}
+                          style={{
+                            bottom: summaryStickyRowHeight,
+                            background: "#ffeb3b",
+                          }}
+                        >
                           {numericCols.includes(key) && key !== "total"
                             ? formatNumber(summaryRows.totals[key])
                             : ""}
                         </td>
                       ))}
                     </tr>
-                    <tr style={{ background: "#b2ebf2", fontWeight: 700 }}>
-                      <td>평균</td>
+                    <tr>
+                      <td
+                        style={{
+                          bottom: 0,
+                          background: "#b2ebf2",
+                        }}
+                      >
+                        평균
+                      </td>
                       {visibleColumns.map((key) => (
-                        <td key={`avg-${key}`}>
+                        <td
+                          key={`avg-${key}`}
+                          style={{
+                            bottom: 0,
+                            background: "#b2ebf2",
+                          }}
+                        >
                           {numericCols.includes(key) && key !== "total"
                             ? formatNumber(summaryRows.avgs[key])
                             : ""}
                         </td>
                       ))}
                     </tr>
-                  </tbody>
+                  </tfoot>
                 </table>
               </MDBox>
             </Card>

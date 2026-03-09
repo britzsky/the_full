@@ -137,6 +137,8 @@ const CELL_HEIGHT = 33;
 const CELL_INNER_HEIGHT = 23;
 const MIN_LOADING_MODAL_MS = 420;
 const PAGE_SIZE = 20;
+// 저장 전 변경 셀 강조 색상(accountissuesheettab과 동일)
+const CHANGED_ACCENT_COLOR = "#d32f2f";
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -703,13 +705,110 @@ function UserManagement() {
     ...extra,
   });
 
+  // Select 계열은 변경된 경우 텍스트/테두리를 빨간색으로 표시
+  const changedSelectSx = {
+    "& .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "&:hover .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "& .MuiSelect-select": {
+      color: CHANGED_ACCENT_COLOR,
+    },
+    "& .MuiSelect-select.MuiSelect-select": {
+      color: CHANGED_ACCENT_COLOR,
+    },
+  };
+
+  // Autocomplete 계열은 변경된 경우 입력 텍스트/테두리를 빨간색으로 표시
+  const changedAutocompleteSx = {
+    "& .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "& .MuiInputBase-input": {
+      color: CHANGED_ACCENT_COLOR,
+    },
+  };
+
+  // 원본 대비 셀 변경 여부 계산(렌더 표시 전용)
+  const isTrackFieldChanged = (row, field) => {
+    const original = originalRowsById[row.user_id];
+    if (!original) return false;
+
+    return toComparableValue(field, row[field]) !== toComparableValue(field, original[field]);
+  };
+
+  const isDelYnChanged = (row) => {
+    const original = originalRowsById[row.user_id];
+    if (!original) return false;
+
+    const nextDelYn = asText(row.del_yn || "N").toUpperCase();
+    const originalDelYn = asText(original.orig_del_yn ?? original.del_yn ?? "N").toUpperCase();
+    return nextDelYn !== originalDelYn;
+  };
+
+  // 부서/거래처 셀은 user_type, department, account_id 변경을 함께 본다
+  const isDeptOrAccountChanged = (row) =>
+    isTrackFieldChanged(row, "user_type") ||
+    isTrackFieldChanged(row, "department") ||
+    isTrackFieldChanged(row, "account_id");
+
+  // 직책 셀은 user_type, position, util_member_type 변경을 함께 본다
+  const isPositionCellChanged = (row) =>
+    isTrackFieldChanged(row, "user_type") ||
+    isTrackFieldChanged(row, "position") ||
+    isTrackFieldChanged(row, "util_member_type");
+
+  // 컬럼별 변경 판단(렌더 표시 전용)
+  const isCellChanged = (row, columnKey) => {
+    if (!row) return false;
+
+    switch (columnKey) {
+      case "user_name":
+      case "password":
+      case "join_dt":
+      case "birth_date":
+      case "phone":
+        return isTrackFieldChanged(row, columnKey);
+      case "address_full":
+        return isTrackFieldChanged(row, "address") || isTrackFieldChanged(row, "address_detail");
+      case "dept_or_account":
+        return isDeptOrAccountChanged(row);
+      case "position_label":
+        return isPositionCellChanged(row);
+      case "del_yn":
+        return isDelYnChanged(row);
+      default:
+        return false;
+    }
+  };
+
   // 아이디는 클릭 안내만 제공하고 편집은 막는다
   const handleReadonlyIdClick = () => {
     Swal.fire("안내", "아이디는 변경할 수 없습니다.", "info");
   };
 
+  // contentEditable 입력 중에도 원본 대비 변경 여부를 즉시 색상으로 반영
+  const syncEditableDraftColor = (element, userId, field) => {
+    if (!element) return;
+    const original = originalRowsById[userId];
+    const draftValue = asText(element.textContent);
+    const originalValue = asText(original?.[field]);
+    element.style.color = draftValue !== originalValue ? CHANGED_ACCENT_COLOR : "#111";
+  };
+
   // 텍스트를 클릭하면 같은 자리에서 바로 수정되도록 contentEditable을 사용한다
-  const renderEditableCell = (row, field, align = "left") => {
+  const renderEditableCell = (row, field, align = "left", isChanged = false) => {
     const userId = row.user_id;
     const value = asText(row[field]);
 
@@ -720,7 +819,7 @@ function UserManagement() {
         spellCheck={false}
         style={{
           ...cellTextStyle,
-          color: "#111",
+          color: isChanged ? CHANGED_ACCENT_COLOR : "#111",
           display: "flex",
           alignItems: "center",
           justifyContent: align === "center" ? "center" : "flex-start",
@@ -736,8 +835,15 @@ function UserManagement() {
           outline: "none",
           cursor: "text",
         }}
+        onFocus={(e) => {
+          syncEditableDraftColor(e.currentTarget, userId, field);
+        }}
+        onInput={(e) => {
+          syncEditableDraftColor(e.currentTarget, userId, field);
+        }}
         onBlur={(e) => {
           const nextValue = asText(e.currentTarget.textContent);
+          syncEditableDraftColor(e.currentTarget, userId, field);
           if (nextValue !== value) {
             handleTextFieldChange(userId, field, nextValue);
           }
@@ -868,6 +974,8 @@ function UserManagement() {
 
   // 컬럼 key 기준으로 셀 내용을 렌더링하는 함수
   const renderTableCellContent = (row, columnKey) => {
+    const cellChanged = isCellChanged(row, columnKey);
+
     // 1) 순번
     if (columnKey === "ui_index") {
       return (
@@ -909,15 +1017,17 @@ function UserManagement() {
     }
 
     // 3) 일반 텍스트 편집 셀
-    if (columnKey === "user_name") return renderEditableCell(row, "user_name", "center");
-    if (columnKey === "password") return renderEditableCell(row, "password", "center");
-    if (columnKey === "join_dt") return renderEditableCell(row, "join_dt", "center");
-    if (columnKey === "birth_date") return renderEditableCell(row, "birth_date", "center");
-    if (columnKey === "phone") return renderEditableCell(row, "phone", "center");
-    if (columnKey === "address_full") return renderEditableCell(row, "address", "left");
+    if (columnKey === "user_name") return renderEditableCell(row, "user_name", "center", cellChanged);
+    if (columnKey === "password") return renderEditableCell(row, "password", "center", cellChanged);
+    if (columnKey === "join_dt") return renderEditableCell(row, "join_dt", "center", cellChanged);
+    if (columnKey === "birth_date") return renderEditableCell(row, "birth_date", "center", cellChanged);
+    if (columnKey === "phone") return renderEditableCell(row, "phone", "center", cellChanged);
+    if (columnKey === "address_full") return renderEditableCell(row, "address", "left", cellChanged);
 
     // 4) 부서/거래처 클릭 편집 셀
     if (columnKey === "dept_or_account") {
+      const deptOrAccountChanged = cellChanged;
+
       if (normalizeCode(row.user_type) === "4") {
         return (
           <div style={controlCellWrapStyle}>
@@ -927,6 +1037,7 @@ function UserManagement() {
               disabled
               sx={{
                 ...compactSelectSx,
+                ...(deptOrAccountChanged ? changedSelectSx : {}),
                 minWidth: 112,
                 width: "100%",
               }}
@@ -946,6 +1057,7 @@ function UserManagement() {
               disabled
               sx={{
                 ...compactSelectSx,
+                ...(deptOrAccountChanged ? changedSelectSx : {}),
                 minWidth: 112,
                 width: "100%",
               }}
@@ -965,7 +1077,12 @@ function UserManagement() {
               onChange={(e) => {
                 handleDepartmentChange(row.user_id, e.target.value);
               }}
-              sx={{ ...compactSelectSx, minWidth: 112, width: "100%" }}
+              sx={{
+                ...compactSelectSx,
+                ...(deptOrAccountChanged ? changedSelectSx : {}),
+                minWidth: 112,
+                width: "100%",
+              }}
             >
               {HQ_DEPARTMENT_OPTIONS.map((option) => (
                 <MenuItem key={option.value} value={option.value}>
@@ -1000,7 +1117,10 @@ function UserManagement() {
                   borderRadius: "4px",
                   height: `${CELL_INNER_HEIGHT}px`,
                   cursor: "pointer",
-                  color: "#111",
+                  color: deptOrAccountChanged ? CHANGED_ACCENT_COLOR : "#111",
+                  border: deptOrAccountChanged
+                    ? `1px solid ${CHANGED_ACCENT_COLOR}`
+                    : "1px solid transparent",
                   padding: "0 8px",
                   boxSizing: "border-box",
                   overflow: "hidden",
@@ -1122,6 +1242,7 @@ function UserManagement() {
               "& .MuiAutocomplete-endAdornment": {
                 display: "none",
               },
+              ...(deptOrAccountChanged ? changedAutocompleteSx : {}),
             }}
           />
         </div>
@@ -1130,6 +1251,8 @@ function UserManagement() {
 
     // 5) 직책 클릭 편집 셀
     if (columnKey === "position_label") {
+      const positionChanged = cellChanged;
+
       if (normalizeCode(row.user_type) === "4") {
         return (
           <div style={controlCellWrapStyle}>
@@ -1141,6 +1264,7 @@ function UserManagement() {
               }}
             sx={{
                 ...compactSelectSx,
+                ...(positionChanged ? changedSelectSx : {}),
                 minWidth: 88,
                 width: "100%",
               }}
@@ -1164,6 +1288,7 @@ function UserManagement() {
               disabled
               sx={{
                 ...compactSelectSx,
+                ...(positionChanged ? changedSelectSx : {}),
                 minWidth: 82,
                 width: "100%",
               }}
@@ -1184,6 +1309,7 @@ function UserManagement() {
             }}
             sx={{
               ...compactSelectSx,
+              ...(positionChanged ? changedSelectSx : {}),
               minWidth: 82,
               width: "100%",
             }}
@@ -1202,6 +1328,7 @@ function UserManagement() {
     if (columnKey === "del_yn") {
       const userId = row.user_id;
       const currentValue = pendingDelYn[userId] ?? asText(row.del_yn || "N").toUpperCase();
+      const delYnChanged = cellChanged;
 
       return (
         <div style={controlCellWrapStyle}>
@@ -1214,6 +1341,7 @@ function UserManagement() {
             }}
             sx={{
               ...compactSelectSx,
+              ...(delYnChanged ? changedSelectSx : {}),
               minWidth: 76,
               width: "100%",
             }}
@@ -1226,7 +1354,12 @@ function UserManagement() {
     }
 
     return (
-      <span style={makeCellTextStyle({ width: "100%" })}>
+      <span
+        style={makeCellTextStyle({
+          width: "100%",
+          color: cellChanged ? CHANGED_ACCENT_COLOR : "#111",
+        })}
+      >
         {asText(row[columnKey]) || "-"}
       </span>
     );
@@ -1343,9 +1476,11 @@ function UserManagement() {
                 {isMobile ? (
                   // ✅ 모바일: 카드형 리스트
                   <MDBox display="flex" flexDirection="column" gap={1}>
-                    {pagedRows.map((row) => (
-                      <Card key={row.ui_index} sx={{ p: 1.5 }}>
-                        <MDBox display="flex" justifyContent="space-between" gap={1}>
+                    {pagedRows.map((row) => {
+                      const mobileDelYnChanged = isCellChanged(row, "del_yn");
+                      return (
+                        <Card key={row.ui_index} sx={{ p: 1.5 }}>
+                          <MDBox display="flex" justifyContent="space-between" gap={1}>
                           <MDBox>
                             <MDTypography variant="caption" color="#111" fontWeight="medium">
                               {row.user_name} ({row.user_id})
@@ -1364,17 +1499,22 @@ function UserManagement() {
                             size="small"
                             value={pendingDelYn[row.user_id] ?? row.del_yn}
                             onChange={(e) => handleDelYnChange(row.user_id, e.target.value)}
-                            sx={{ ...compactSelectSx, minWidth: 84 }}
+                            sx={{
+                              ...compactSelectSx,
+                              ...(mobileDelYnChanged ? changedSelectSx : {}),
+                              minWidth: 84,
+                            }}
                           >
                             <MenuItem value="N">재직</MenuItem>
                             <MenuItem value="Y">퇴사</MenuItem>
                           </Select>
-                        </MDBox>
-                        <MDTypography variant="caption" color="text">
-                          {row.address_full}
-                        </MDTypography>
-                      </Card>
-                    ))}
+                          </MDBox>
+                          <MDTypography variant="caption" color="text">
+                            {row.address_full}
+                          </MDTypography>
+                        </Card>
+                      );
+                    })}
                   </MDBox>
                 ) : (
                   // 데스크톱: accountissuesheet2 톤으로 직접 테이블 렌더링

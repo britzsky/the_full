@@ -29,11 +29,11 @@ import "./tables.css";
 export default function Tables() {
   const navigate = useNavigate();
   const [selectedType, setSelectedType] = useState("0");
-  // ✅ 삭제여부 조회값 (기본 N)
-  const [selectedDelYn, setSelectedDelYn] = useState("N");
-  // ✅ 삭제여부 Y 전용 조회 결과
+  // ✅ 삭제여부 조회값 (전체/정상/삭제)
+  const [selectedDelYn, setSelectedDelYn] = useState("ALL");
+  // ✅ 삭제여부 Y 조회 결과(전체/삭제 조회에서 사용)
   const [delYnRows, setDelYnRows] = useState([]);
-  // ✅ 삭제여부 Y 조회 로딩 상태
+  // ✅ 삭제여부 Y 조회 로딩 상태(전체/삭제 조회에서 사용)
   const [delYnLoading, setDelYnLoading] = useState(false);
   // ✅ 고객사 목록 정렬 기준(기본: 거래처명)
   const [accountSortKey, setAccountSortKey] = useState("account_name");
@@ -131,7 +131,6 @@ export default function Tables() {
             "#9112BC",
             "확인"
           ),
-          tally: to(`/tallysheet/${item.account_id}?name=${item.account_name}`, "#0D92F4", "확인"),
         };
       }),
     [navigate]
@@ -142,7 +141,8 @@ export default function Tables() {
     let active = true;
 
     const fetchDelYnRows = async () => {
-      if (selectedDelYn !== "Y") {
+      // ✅ 삭제 포함 조회(전체/삭제)일 때만 Y 목록을 별도로 조회
+      if (!["ALL", "Y"].includes(String(selectedDelYn || "").toUpperCase())) {
         setDelYnRows([]);
         setDelYnLoading(false);
         return;
@@ -172,8 +172,25 @@ export default function Tables() {
     };
   }, [selectedDelYn, selectedType, refreshKey, mapAccountRowsForDelYn]);
 
-  // ✅ 기본(N)은 기존 훅 rows를 사용하고, Y는 index.js 직접조회 결과를 사용
-  const rowsByDelYn = selectedDelYn === "Y" ? delYnRows : rows;
+  // ✅ 전체는 N(rows)+Y(delYnRows)를 합치고, 정상/삭제는 기존 분기 그대로 사용
+  const rowsByDelYn = useMemo(() => {
+    const normalized = String(selectedDelYn || "ALL").trim().toUpperCase();
+    if (normalized === "Y") return delYnRows;
+    if (normalized === "ALL") {
+      const merged = [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(delYnRows) ? delYnRows : [])];
+      const seen = new Set();
+      return merged.filter((row, idx) => {
+        const key =
+          row?.account_id != null && String(row.account_id).trim() !== ""
+            ? String(row.account_id)
+            : `row-${idx}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+    return rows;
+  }, [selectedDelYn, rows, delYnRows]);
 
   // =========================
   // ✅ 값 정리 유틸 (rows에 ReactElement가 섞여있을 수 있어서)
@@ -285,9 +302,9 @@ export default function Tables() {
 
   const onSearchList = (e) => setSelectedType(e.target.value);
 
-  // ✅ 삭제여부(N/Y) 조회 셀렉트 변경
+  // ✅ 삭제여부(전체/정상/삭제) 조회 셀렉트 변경
   const handledelynChange = (e) => {
-    const nextDelYn = String(e.target.value || "N").trim().toUpperCase();
+    const nextDelYn = String(e.target.value || "ALL").trim().toUpperCase();
     if (nextDelYn === selectedDelYn) return;
 
     setSortLoading(true);
@@ -314,12 +331,14 @@ export default function Tables() {
   // ✅ 화면 표시 순서만 정렬(원본 localRows/저장 로직은 유지)
   const sortedLocalRows = useMemo(() => {
     const copied = Array.isArray(localRows) ? [...localRows] : [];
-    // ✅ 삭제여부(N/Y) 1차 필터
-    const filtered = copied.filter(
-      (row) =>
-        String(row?.del_yn ?? "N").trim().toUpperCase() ===
-        String(selectedDelYn ?? "N").trim().toUpperCase()
-    );
+    // ✅ 삭제여부(전체/정상/삭제) 1차 필터
+    const normalizedDelYn = String(selectedDelYn ?? "ALL").trim().toUpperCase();
+    const filtered =
+      normalizedDelYn === "ALL"
+        ? copied
+        : copied.filter(
+            (row) => String(row?.del_yn ?? "N").trim().toUpperCase() === normalizedDelYn
+          );
 
     const textCompare = (a, b) =>
       String(a ?? "").localeCompare(String(b ?? ""), "ko-KR", {
@@ -713,7 +732,10 @@ export default function Tables() {
   // ✅ 테이블 컬럼 구성
   // =========================
   const tableColumns = useMemo(() => {
-    return (columns || []).map((col) => {
+    // ✅ 집계표(tally) 컬럼은 index.js 화면에서 제외
+    return (columns || [])
+      .filter((col) => col?.accessor !== "tally")
+      .map((col) => {
       const accessorKey = col.accessor;
 
       if (accessorKey === "account_rqd_member") {
@@ -763,7 +785,8 @@ export default function Tables() {
     autoResetPageIndex: false,
   });
 
-  if (loading || sortLoading || (selectedDelYn === "Y" && delYnLoading)) return <LoadingScreen />;
+  if (loading || sortLoading || (["ALL", "Y"].includes(selectedDelYn) && delYnLoading))
+    return <LoadingScreen />;
 
   return (
     <DashboardLayout>
@@ -789,9 +812,10 @@ export default function Tables() {
                 sx={{ minWidth: 150 }}
                 SelectProps={{ native: true }}
               >
-                {/* ✅ 삭제여부 조회 (기본 N) */}
-                <option value="N">삭제여부 N</option>
-                <option value="Y">삭제여부 Y</option>
+                {/* ✅ 삭제여부 조회: 전체(N+Y) / 정상(N) / 삭제(Y) */}
+                <option value="ALL">전체</option>
+                <option value="N">정상</option>
+                <option value="Y">삭제</option>
               </TextField>
 
               <TextField

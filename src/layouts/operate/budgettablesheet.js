@@ -86,7 +86,7 @@ export default function BudgetTableTab() {
     { key: "month", label: "월", width: 50 },
     { key: "account_type_name", label: "구분", width: 60 },
     { key: "meal_type_name", label: "예산기준", width: 90 },
-    { key: "account_name", label: "거래처명", width: 120 },
+    { key: "account_name", label: "거래처명", width: 135 },
     // { key: "total",             label: "식수",              width: 50  },
     // { key: "diet_price",        label: "식비",              width: 80 },
     // { key: "utility_bills",     label: "수도광열비",        width: 90 },
@@ -99,7 +99,7 @@ export default function BudgetTableTab() {
     { key: "diff_amount", label: "차액", width: 90 },
     { key: "use_ratio", label: "총 예산대비 사용비율(%)", width: 115 },
     { key: "budget_grant", label: "예산부여", width: 90 }, // editable
-    { key: "note", label: "비고", width: 200 }, // editable
+    { key: "note", label: "비고", width: 185 }, // editable
   ];
 
   // ✅ 저장 (예산부여, 비고만 변경 체크)

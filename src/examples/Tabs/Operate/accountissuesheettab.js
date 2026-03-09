@@ -32,6 +32,8 @@ const PLACEHOLDER_FONT_SIZE = CONTROL_FONT_SIZE;
 const DROPDOWN_ICON_SIZE = "1rem";
 const SELECTED_ROW_BG = "#ffe4e1";
 const BODY_BORDER_COLOR = "#cfd8e3";
+// 저장 전 변경 셀 강조 색상
+const CHANGED_ACCENT_COLOR = "#d32f2f";
 const MULTILINE_CELL_MAX_HEIGHT = 140;
 const TOP_ACCOUNT_INPUT_MIN_WIDTH = 240;
 const TOP_ACCOUNT_DROPDOWN_MIN_WIDTH = 240;
@@ -138,8 +140,36 @@ export default function AccountIssueSheetTab() {
 
   const getModifiedCellSx = (row, key) =>
     isCellModified(row, key)
-      ? { color: "#d32f2f" }
+      ? { color: CHANGED_ACCENT_COLOR }
       : {};
+
+  // 수정된 드롭다운은 텍스트와 테두리를 같은 빨간색으로 표시
+  const changedDropdownBorderSx = {
+    "& .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "&:hover .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+    },
+  };
+
+  // Autocomplete용 TextField에도 같은 빨간 테두리를 적용
+  const changedAutocompleteInputBorderSx = {
+    "& .MuiOutlinedInput-root": {
+      "& .MuiOutlinedInput-notchedOutline": {
+        border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+      },
+      "&:hover .MuiOutlinedInput-notchedOutline": {
+        border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+      },
+      "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+        border: `1px solid ${CHANGED_ACCENT_COLOR} !important`,
+      },
+    },
+  };
 
   // 테이블 공통 스타일
   const tableSx = {
@@ -681,7 +711,7 @@ export default function AccountIssueSheetTab() {
                                   lineHeight: 1.25,
                                   whiteSpace: "nowrap",
                                   fontVariantNumeric: "tabular-nums",
-                                  color: isSubDateModified ? "#d32f2f" : undefined,
+                                  color: isSubDateModified ? CHANGED_ACCENT_COLOR : undefined,
                                   cursor: "text",
                                   textAlign: "left",
                                 },
@@ -795,7 +825,7 @@ export default function AccountIssueSheetTab() {
                               ...(isAccountModified
                                 ? {
                                   "& .MuiInputBase-input": {
-                                    color: "#d32f2f",
+                                    color: CHANGED_ACCENT_COLOR,
                                   },
                                 }
                                 : {}),
@@ -835,10 +865,14 @@ export default function AccountIssueSheetTab() {
                                 }}
                                 sx={{
                                   ...textFieldSx,
+                                  ...(isAccountModified ? changedAutocompleteInputBorderSx : {}),
                                   width: "100%",
                                   "& .MuiInputBase-input": {
                                     padding: "6px 8px",
                                     fontSize: CONTROL_FONT_SIZE,
+                                    ...(isAccountModified
+                                      ? { color: CHANGED_ACCENT_COLOR }
+                                      : {}),
                                   },
                                   "& .MuiInputBase-input::placeholder": {
                                     fontSize: PLACEHOLDER_FONT_SIZE,
@@ -861,7 +895,7 @@ export default function AccountIssueSheetTab() {
                               py: "6px",
                               ...(
                                 isAccountModified
-                                  ? { color: "#d32f2f" }
+                                  ? { color: CHANGED_ACCENT_COLOR }
                                   : {}
                               ),
                             }}
@@ -886,6 +920,7 @@ export default function AccountIssueSheetTab() {
                             sx={{
                               ...selectSx,
                               ...typeBoxSx,
+                              ...(isTypeModified ? changedDropdownBorderSx : {}),
                               display: "block",
                               width: "88%",
                               minWidth: 52,
@@ -906,7 +941,7 @@ export default function AccountIssueSheetTab() {
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                color: isTypeModified ? "#d32f2f" : undefined,
+                                color: isTypeModified ? CHANGED_ACCENT_COLOR : undefined,
                               },
                             }}
                           >
@@ -931,7 +966,7 @@ export default function AccountIssueSheetTab() {
                               mx: "auto",
                               borderRadius: "4px",
                               backgroundColor: "#f1f3f5",
-                              color: isTypeModified ? "#d32f2f" : "#495057",
+                              color: isTypeModified ? CHANGED_ACCENT_COLOR : "#495057",
                             }}
                           >
                             {typeDisplayLabel}
@@ -945,7 +980,7 @@ export default function AccountIssueSheetTab() {
                             size="small"
                             defaultValue={row.issue || ""}
                             onChange={(e) => {
-                              e.target.style.color = "#d32f2f";
+                              e.target.style.color = CHANGED_ACCENT_COLOR;
                             }}
                             onBlur={(e) => handleRowChange(row.id, "issue", e.target.value)}
                             multiline
@@ -958,7 +993,7 @@ export default function AccountIssueSheetTab() {
                               "& .MuiInputBase-inputMultiline": {
                                 ...multilineFieldSx["& .MuiInputBase-inputMultiline"],
                                 ...(isCellModified(row, "issue")
-                                  ? { color: "#d32f2f" }
+                                  ? { color: CHANGED_ACCENT_COLOR }
                                   : {}),
                               },
                             }}
@@ -996,6 +1031,7 @@ export default function AccountIssueSheetTab() {
                             sx={{
                               ...selectSx,
                               ...resultStyle,
+                              ...(isResultModified ? changedDropdownBorderSx : {}),
                               display: "block",
                               width: "88%",
                               minWidth: 52,
@@ -1016,7 +1052,7 @@ export default function AccountIssueSheetTab() {
                                 whiteSpace: "nowrap",
                                 overflow: "hidden",
                                 textOverflow: "ellipsis",
-                                color: isResultModified ? "#d32f2f" : undefined,
+                                color: isResultModified ? CHANGED_ACCENT_COLOR : undefined,
                               },
                             }}
                           >
@@ -1041,7 +1077,7 @@ export default function AccountIssueSheetTab() {
                               overflow: "hidden",
                               mx: "auto",
                               borderRadius: "4px",
-                              ...(isResultModified ? { color: "#d32f2f" } : {}),
+                              ...(isResultModified ? { color: CHANGED_ACCENT_COLOR } : {}),
                             }}
                           >
                             {resultLabel}
@@ -1097,7 +1133,7 @@ export default function AccountIssueSheetTab() {
                                   lineHeight: 1.25,
                                   whiteSpace: "nowrap",
                                   fontVariantNumeric: "tabular-nums",
-                                  color: isEndDateModified ? "#d32f2f" : deadlineColor,
+                                  color: isEndDateModified ? CHANGED_ACCENT_COLOR : deadlineColor,
                                   fontWeight: deadlineColor === "#344767" ? 400 : 700,
                                   cursor: "text",
                                   textAlign: "left",
@@ -1147,7 +1183,7 @@ export default function AccountIssueSheetTab() {
                               textAlign: "center",
                               whiteSpace: "nowrap",
                               fontVariantNumeric: "tabular-nums",
-                              color: isEndDateModified ? "#d32f2f" : deadlineColor,
+                              color: isEndDateModified ? CHANGED_ACCENT_COLOR : deadlineColor,
                               fontWeight: deadlineColor === "#344767" ? 400 : 700,
                               minHeight: 34,
                             }}
@@ -1164,7 +1200,7 @@ export default function AccountIssueSheetTab() {
                             onContextMenu={(e) => e.preventDefault()}
                             defaultValue={row.solution || ""}
                             onChange={(e) => {
-                              e.target.style.color = "#d32f2f";
+                              e.target.style.color = CHANGED_ACCENT_COLOR;
                             }}
                             onBlur={(e) => handleRowChange(row.id, "solution", e.target.value)}
                             multiline
@@ -1177,7 +1213,7 @@ export default function AccountIssueSheetTab() {
                               "& .MuiInputBase-inputMultiline": {
                                 ...multilineFieldSx["& .MuiInputBase-inputMultiline"],
                                 ...(isCellModified(row, "solution")
-                                  ? { color: "#d32f2f" }
+                                  ? { color: CHANGED_ACCENT_COLOR }
                                   : {}),
                               },
                             }}
@@ -1211,7 +1247,7 @@ export default function AccountIssueSheetTab() {
                             onContextMenu={(e) => e.preventDefault()}
                             defaultValue={row.note || ""}
                             onChange={(e) => {
-                              e.target.style.color = "#d32f2f";
+                              e.target.style.color = CHANGED_ACCENT_COLOR;
                             }}
                             onBlur={(e) => handleRowChange(row.id, "note", e.target.value)}
                             multiline
@@ -1224,7 +1260,7 @@ export default function AccountIssueSheetTab() {
                               "& .MuiInputBase-inputMultiline": {
                                 ...multilineFieldSx["& .MuiInputBase-inputMultiline"],
                                 ...(isCellModified(row, "note")
-                                  ? { color: "#d32f2f" }
+                                  ? { color: CHANGED_ACCENT_COLOR }
                                   : {}),
                               },
                             }}

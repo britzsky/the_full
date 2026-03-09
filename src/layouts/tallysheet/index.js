@@ -2266,10 +2266,13 @@ function TallySheet() {
       const accountName = String(selectedAccountOption?.account_name || selectedAccountId || "업장");
       const nowReportDateLabel = `${year}-${String(month).padStart(2, "0")}`;
       const prevReportDateLabel = `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
+      // ✅ 엑셀 하단 시트 탭: 화면 조회 월을 함께 표기 (예: 현재월(2026-03))
+      const nowSheetName = `현재월(${nowReportDateLabel})`;
+      const prevSheetName = `전월(${prevReportDateLabel})`;
 
       if (hasNow) {
         buildTallyExcelSheet(workbook, {
-          sheetName: `${year}-${String(month).padStart(2, "0")}`,
+          sheetName: nowSheetName,
           accountName,
           reportDateLabel: nowReportDateLabel,
           budget: budgetGrant,
@@ -2282,7 +2285,7 @@ function TallySheet() {
 
       if (hasPrev) {
         buildTallyExcelSheet(workbook, {
-          sheetName: `${prevYear}-${String(prevMonth).padStart(2, "0")}`,
+          sheetName: prevSheetName,
           accountName,
           reportDateLabel: prevReportDateLabel,
           budget: budget2Grant,
@@ -3296,7 +3299,11 @@ function TallySheet() {
             select
             size="small"
             value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
+            onChange={(e) => {
+              setMonth(Number(e.target.value));
+              // '전월' 탭이어도 월을 변경하면 바꾸면 항상 '현재월' 탭으로 복귀
+              setTabValue(0);
+            }}
             sx={{ minWidth: isMobile ? 140 : 150 }}
             SelectProps={{ native: true }}
           >

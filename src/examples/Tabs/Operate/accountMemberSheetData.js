@@ -126,10 +126,17 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
           }))
           : rows;
 
-      setActiveRows(mappedRows);
-      if (opts.snapshot) setOriginalRows(mappedRows);
+      // ✅ del_yn 필터 적용
+      const status = String(activeStatus ?? "").trim().toUpperCase();
+      const filteredRows =
+        status === "Y" || status === "N"
+          ? mappedRows.filter((r) => String(r?.del_yn ?? "N").trim().toUpperCase() === status)
+          : mappedRows;
 
-      return mappedRows;
+      setActiveRows(filteredRows);
+      if (opts.snapshot) setOriginalRows(filteredRows);
+
+      return filteredRows;
     } catch (err) {
       console.error("AccountMemberAllList 조회 실패:", err);
       setActiveRows([]);

@@ -18,6 +18,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
+import { SENSITIVE_FIELD_SET, maskSensitiveFieldValue } from "utils/maskingUtils";
 
 // 운영 -> 채용관리 -> 현장 직원목록
 function AccountMemberSheet() {
@@ -45,6 +46,7 @@ function AccountMemberSheet() {
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [maskingEnabled, setMaskingEnabled] = useState(true);
 
   const {
     activeRows,
@@ -1094,11 +1096,21 @@ function AccountMemberSheet() {
                             ? "right"
                             : "left",
                       }}
-                      contentEditable={isEditable && !isSelect && !isDate && !isInsuranceDate}
+                      contentEditable={
+                        isEditable &&
+                        !isSelect &&
+                        !isDate &&
+                        !isInsuranceDate &&
+                        (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                      }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
                       onBlur={
-                        isEditable && !isSelect && !isDate && !isInsuranceDate
+                        isEditable &&
+                        !isSelect &&
+                        !isDate &&
+                        !isInsuranceDate &&
+                        (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
                           ? (e) => {
                             let newValue = e.target.innerText.trim();
                             if (isNumeric) newValue = parseNumber(newValue);
@@ -1342,7 +1354,9 @@ function AccountMemberSheet() {
                           className={isChanged ? "edited-cell" : ""}
                         />
                       ) : (
-                        (isNumeric ? formatNumber(currentValue) : currentValue) ?? ""
+                        (isNumeric
+                          ? formatNumber(currentValue)
+                          : maskSensitiveFieldValue(colKey, currentValue, maskingEnabled)) ?? ""
                       )}
                     </td>
                   );
@@ -1471,6 +1485,14 @@ function AccountMemberSheet() {
 
         <MDButton variant="gradient" color="warning" onClick={openUtilModal}>
           통합/유틸 관리
+        </MDButton>
+
+        <MDButton
+          variant="outlined"
+          color={maskingEnabled ? "dark" : "secondary"}
+          onClick={() => setMaskingEnabled((prev) => !prev)}
+        >
+          {maskingEnabled ? "* 해제" : "* 적용"}
         </MDButton>
 
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>

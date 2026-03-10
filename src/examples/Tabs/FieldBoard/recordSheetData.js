@@ -45,6 +45,8 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
           member_id: item.member_id,
           name: item.name,
           position: item.position,
+          del_yn: item.del_yn ?? "",
+          del_dt: item.del_dt ?? "",
           working_day: item.working_day,
           employ_dispatch: item.employ_dispatch || "",
           over_work: item.over_work || "",
@@ -105,6 +107,7 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
           position_type: item.position_type ?? "",
           position: item.position ?? "",
           del_yn: item.del_yn ?? "",
+          del_dt: item.del_dt ?? "",
         };
       });
 
@@ -142,6 +145,7 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
           member_id: firstItem.member_id || "",
           position: firstItem.position || "",
           del_yn: firstItem.del_yn ?? "",
+          del_dt: String(dayValues.day_default?.del_dt ?? firstItem.del_dt ?? "").trim(),
           // ✅ row 단위로 실입사일을 올려서 탭에서 잠금/안내 모달에 사용
           act_join_dt: String(dayValues.day_default?.act_join_dt ?? firstItem.act_join_dt ?? "").trim(),
 

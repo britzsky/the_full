@@ -22,6 +22,7 @@ import useAccountMemberRecSheetData, {
 } from "./accountMemberRecSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
+import { SENSITIVE_FIELD_SET, maskSensitiveFieldValue } from "utils/maskingUtils";
 
 function AccountMemberRecSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -30,6 +31,7 @@ function AccountMemberRecSheet() {
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [maskingEnabled, setMaskingEnabled] = useState(true);
 
   const {
     activeRows,
@@ -844,11 +846,19 @@ function AccountMemberRecSheet() {
                               ? "right"
                               : "left",
                         }}
-                        contentEditable={isEditable && !isSelect && !isDate}
+                        contentEditable={
+                          isEditable &&
+                          !isSelect &&
+                          !isDate &&
+                          (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                        }
                         suppressContentEditableWarning
                         className={isEditable && isChanged ? "edited-cell" : ""}
                         onBlur={
-                          isEditable && !isSelect && !isDate
+                          isEditable &&
+                          !isSelect &&
+                          !isDate &&
+                          (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
                             ? (e) => {
                               let newValue = e.target.innerText.trim();
                               if (isNumeric) newValue = parseNumber(newValue);
@@ -981,7 +991,9 @@ function AccountMemberRecSheet() {
                             className={isChanged ? "edited-cell" : ""}
                           />
                         ) : (
-                          (isNumeric ? formatNumber(currentValue) : currentValue) ?? ""
+                          (isNumeric
+                            ? formatNumber(currentValue)
+                            : maskSensitiveFieldValue(colKey, currentValue, maskingEnabled)) ?? ""
                         )}
                       </td>
                     );
@@ -1069,6 +1081,14 @@ function AccountMemberRecSheet() {
 
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>
           행추가
+        </MDButton>
+
+        <MDButton
+          variant="outlined"
+          color={maskingEnabled ? "dark" : "secondary"}
+          onClick={() => setMaskingEnabled((prev) => !prev)}
+        >
+          {maskingEnabled ? "* 해제" : "* 적용"}
         </MDButton>
 
         <MDButton variant="gradient" color="info" onClick={handleSave}>

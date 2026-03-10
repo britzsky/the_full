@@ -602,6 +602,39 @@ const getTableStructure = (
     };
   }
 
+  // KDB생명 데이케어센터 고양(20260210044430)
+  if (selectedAccountId === "20260210044430") {
+    return {
+      headerRows: [
+        [
+          { label: "구분" },
+          { label: "오전간식" },
+          { label: "중식" },
+          { label: "석식" },
+          { label: "경관식" },
+          { label: "직원" },
+          { label: "계" },
+          { label: "비고" },
+          { label: "조식취소" },
+          { label: "중식취소" },
+          { label: "석식취소" },
+        ],
+      ],
+      visibleColumns: [
+        "breakfast",
+        "lunch",
+        "dinner",
+        "ceremony",
+        "employ",
+        "total",
+        "note",
+        "breakcancel",
+        "lunchcancel",
+        "dinnercancel",
+      ],
+    };
+  }
+
   // ✅ 기본 레이아웃(학교/산업체 제외) : special_yn 숨김
   const showDaycareLunch = isDaycareVisible;
   const showDaycareDinner = isDaycareVisible;

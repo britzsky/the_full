@@ -30,6 +30,7 @@ import Swal from "sweetalert2";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import { SENSITIVE_FIELD_SET, maskSensitiveFieldValue } from "utils/maskingUtils";
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -72,19 +73,35 @@ const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
 const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
 // 퇴사자 노출 규칙(엑셀):
-// 퇴사월(n) + 다음월(n+1)까지 노출, n+2월 1일부터 제외
-const shouldIncludeRetiredForExcel = (row, rangeStartDate) => {
-  const delYn = safeTrim(row?.del_yn ?? "", "").toUpperCase();
-  if (delYn !== "Y") return true;
-
+// del_dt 월까지는 노출, 그 다음 달부터 미노출
+const getRetiredMonthStart = (row) => {
   const delDtRaw = safeTrim(row?.del_dt ?? "", "");
-  if (!delDtRaw) return true;
+  if (!delDtRaw) return null;
 
   const delDt = dayjs(delDtRaw);
-  if (!delDt.isValid()) return true;
+  if (!delDt.isValid()) return null;
 
-  const hideFromMonthStart = delDt.startOf("month").add(2, "month");
-  return rangeStartDate.startOf("month").isBefore(hideFromMonthStart);
+  return delDt.startOf("month");
+};
+
+const isRetiredByDelInfo = (row) => {
+  const delYn = safeTrim(row?.del_yn ?? "", "").toUpperCase();
+  if (delYn === "Y") return true;
+  return getRetiredMonthStart(row) !== null;
+};
+
+const shouldIncludeRetiredForExcel = (row, rangeStartDate) => {
+  const retiredMonthStart = getRetiredMonthStart(row);
+  if (!retiredMonthStart) return true;
+  return !rangeStartDate.startOf("month").isAfter(retiredMonthStart);
+};
+
+// 화면 조회용 퇴사자 노출 규칙:
+// del_dt 월까지는 노출, 그 다음 달부터 미노출
+const shouldIncludeRetiredForViewMonth = (row, viewYear, viewMonth) => {
+  const viewMonthDate = dayjs(`${viewYear}-${String(viewMonth).padStart(2, "0")}-01`);
+  if (!viewMonthDate.isValid()) return true;
+  return shouldIncludeRetiredForExcel(row, viewMonthDate);
 };
 
 const isDispatchTypeValue = (v) => {
@@ -576,15 +593,20 @@ const normalizeDispatchValue = (field, v) => {
   return s;
 };
 
-function DispatchEditableCell({ getValue, row, table, field }) {
+function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = false }) {
   const value = getValue() ?? "";
   const rid = String(row?.original?._rid ?? "");
+  const isSensitiveField = SENSITIVE_FIELD_SET.has(String(field ?? ""));
 
   const original = table.options.meta?.getOriginalDispatchValueByRid?.(rid, field) ?? "";
   const isChanged =
     normalizeDispatchValue(field, value) !== normalizeDispatchValue(field, original);
+  const displayValue = isSensitiveField
+    ? maskSensitiveFieldValue(field, value, maskingEnabled)
+    : value;
 
   const handleChange = (e) => {
+    if (maskingEnabled && isSensitiveField) return;
     const newVal = e.target.value;
     table.options.meta?.updateDispatchByRid?.(rid, { [field]: newVal });
   };
@@ -597,8 +619,9 @@ function DispatchEditableCell({ getValue, row, table, field }) {
         el.style.setProperty("text-align", "center", "important");
         el.style.setProperty("text-align-last", "center", "important");
       }}
-      value={value}
+      value={displayValue}
       onChange={handleChange}
+      readOnly={maskingEnabled && isSensitiveField}
       style={{
         width: "100%",
         height: 20,
@@ -611,7 +634,7 @@ function DispatchEditableCell({ getValue, row, table, field }) {
         border: "1px solid #ccc",
         borderRadius: 3,
         padding: "0 2px",
-        background: "#fff",
+        background: maskingEnabled && isSensitiveField ? "#f7f7f7" : "#fff",
         color: isChanged ? "red" : "black",
         fontWeight: isChanged ? 700 : 400,
       }}
@@ -624,6 +647,7 @@ DispatchEditableCell.propTypes = {
   row: PropTypes.object.isRequired,
   table: PropTypes.object.isRequired,
   field: PropTypes.string.isRequired,
+  maskingEnabled: PropTypes.bool,
 };
 
 // ✅ 파출 삭제/복원 버튼 셀
@@ -704,8 +728,18 @@ function RecordSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
+  // ✅ 상단 "전체 거래처 엑셀/지급 일괄" 버튼 권한:
+  // - position: 0(대표님), 1(팀장)
+  // - department: 3(인사팀), 6(개발팀)
+  const loginPositionCode = safeTrim(localStorage.getItem("position"), "");
+  const loginDepartmentCode = safeTrim(localStorage.getItem("department"), "");
+  const canUseBulkExcelAndPay =
+    ["0", "1"].includes(loginPositionCode) || ["3", "6"].includes(loginDepartmentCode);
+
   const [open, setOpen] = useState(false);
   const handleModalOpen = () => setOpen(true);
+  // ✅ 민감정보 마스킹 토글(표시용)
+  const [maskingEnabled, setMaskingEnabled] = useState(true);
 
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [excelRangeOpen, setExcelRangeOpen] = useState(false);
@@ -1224,6 +1258,7 @@ function RecordSheet() {
           member_id: mid,
           position: r.position || "",
           del_yn: r.del_yn ?? "",
+          del_dt: safeTrim(r.del_dt ?? "", ""),
           act_join_dt: safeTrim(r.act_join_dt ?? "", ""),
           cor_type: safeTrim(r?.cor_type ?? r?.corType ?? "", ""),
           gubun: r.gubun ?? "nor",
@@ -1321,6 +1356,7 @@ function RecordSheet() {
         if (!target.cor_type && item.cor_type) target.cor_type = item.cor_type;
         if (!target.position_type && item.position_type) target.position_type = item.position_type;
         if (!target.gubun && item.gubun) target.gubun = item.gubun;
+        if (!target.del_dt && item.del_dt) target.del_dt = item.del_dt;
         if (!target.act_join_dt && item.act_join_dt) target.act_join_dt = item.act_join_dt;
       });
 
@@ -3074,10 +3110,14 @@ function RecordSheet() {
       daysInMonth
     );
 
-    setAttendanceRows(attendanceRowsBuilt);
-    setOriginalAttendanceRows(JSON.parse(JSON.stringify(attendanceRowsBuilt)));
+    const visibleAttendanceRows = (attendanceRowsBuilt || []).filter((row) =>
+      shouldIncludeRetiredForViewMonth(row, year, month)
+    );
+
+    setAttendanceRows(visibleAttendanceRows);
+    setOriginalAttendanceRows(JSON.parse(JSON.stringify(visibleAttendanceRows)));
     setDefaultTimes(defaultTimesMap);
-  }, [sheetRows, memberRows, timesRows, daysInMonth]);
+  }, [sheetRows, memberRows, timesRows, daysInMonth, year, month]);
 
   const getOrgTimes = (row, defaultTimesObj) => {
     const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
@@ -3140,14 +3180,17 @@ function RecordSheet() {
     [daysInMonth, year, month, isMobile]
   );
 
-  const memberDelYnMap = useMemo(() => {
+  const memberRetireMap = useMemo(() => {
     const map = new Map();
     (memberRows || []).forEach((m) => {
-      const delYn = String(m?.del_yn ?? "").toUpperCase();
+      const retireMeta = {
+        del_yn: String(m?.del_yn ?? "").toUpperCase() || "N",
+        del_dt: safeTrim(m?.del_dt ?? "", ""),
+      };
       const mid = safeTrim(m?.member_id ?? m?.memberId ?? "", "");
-      if (mid) map.set(mid, delYn || "N");
+      if (mid) map.set(mid, retireMeta);
       const name = safeTrim(m?.name ?? "", "");
-      if (name && !map.has(name)) map.set(name, delYn || "N");
+      if (name && !map.has(name)) map.set(name, retireMeta);
     });
     return map;
   }, [memberRows]);
@@ -3164,7 +3207,7 @@ function RecordSheet() {
       },
       ...dayColumns,
     ],
-    [dayColumns, memberDelYnMap]
+    [dayColumns, memberRetireMap]
   );
 
   const attendanceTable = useReactTable({
@@ -3469,19 +3512,25 @@ function RecordSheet() {
         header: "연락처",
         accessorKey: "phone",
         size: "3%",
-        cell: (props) => <DispatchEditableCell {...props} field="phone" />,
+        cell: (props) => (
+          <DispatchEditableCell {...props} field="phone" maskingEnabled={maskingEnabled} />
+        ),
       },
       {
         header: "주민등록번호",
         accessorKey: "rrn",
         size: "3%",
-        cell: (props) => <DispatchEditableCell {...props} field="rrn" />,
+        cell: (props) => (
+          <DispatchEditableCell {...props} field="rrn" maskingEnabled={maskingEnabled} />
+        ),
       },
       {
         header: "계좌정보",
         accessorKey: "account_number",
         size: "3%",
-        cell: (props) => <DispatchEditableCell {...props} field="account_number" />,
+        cell: (props) => (
+          <DispatchEditableCell {...props} field="account_number" maskingEnabled={maskingEnabled} />
+        ),
       },
       {
         header: "금액",
@@ -3574,6 +3623,7 @@ function RecordSheet() {
       dispatchMemoOpen,
       toggleDispatchMemo,
       getDispatchRowKey,
+      maskingEnabled,
     ]
   );
 
@@ -3937,32 +3987,49 @@ function RecordSheet() {
               출퇴근 일괄 적용
             </MDButton>
 
-            <MDButton
-              variant="gradient"
-              color="dark"
-              onClick={openExcelRangeModal}
-              disabled={excelDownloading}
-              sx={{
-                fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 90 : 140,
-                px: isMobile ? 1 : 2,
-                opacity: excelDownloading ? 0.6 : 1,
-              }}
-            >
-              {excelDownloading ? "엑셀 생성 중..." : "전체 거래처 엑셀"}
-            </MDButton>
+            {canUseBulkExcelAndPay && (
+              <MDButton
+                variant="gradient"
+                color="dark"
+                onClick={openExcelRangeModal}
+                disabled={excelDownloading}
+                sx={{
+                  fontSize: isMobile ? "0.7rem" : "0.8rem",
+                  minWidth: isMobile ? 90 : 140,
+                  px: isMobile ? 1 : 2,
+                  opacity: excelDownloading ? 0.6 : 1,
+                }}
+              >
+                {excelDownloading ? "엑셀 생성 중..." : "전체 거래처 엑셀"}
+              </MDButton>
+            )}
+
+            {canUseBulkExcelAndPay && (
+              <MDButton
+                variant="gradient"
+                color="primary"
+                onClick={openPayRangeModal}
+                sx={{
+                  fontSize: isMobile ? "0.7rem" : "0.8rem",
+                  minWidth: isMobile ? 90 : 130,
+                  px: isMobile ? 1 : 2,
+                }}
+              >
+                지급 일괄
+              </MDButton>
+            )}
 
             <MDButton
-              variant="gradient"
-              color="primary"
-              onClick={openPayRangeModal}
+              variant="outlined"
+              color={maskingEnabled ? "dark" : "secondary"}
+              onClick={() => setMaskingEnabled((prev) => !prev)}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 90 : 130,
+                minWidth: isMobile ? 78 : 96,
                 px: isMobile ? 1 : 2,
               }}
             >
-              지급 일괄
+              {maskingEnabled ? "* 해제" : "* 적용"}
             </MDButton>
 
             <MDButton
@@ -4036,16 +4103,16 @@ function RecordSheet() {
                   {attendanceTable.getRowModel().rows.map((row) => (
                     <tr key={row.id}>
                       {row.getVisibleCells().map((cell) => {
-                        const rowDelYn = String(row.original?.del_yn ?? "").toUpperCase();
+                        const rowRetired = isRetiredByDelInfo(row.original);
                         const memberId = safeTrim(
                           row.original?.member_id ?? row.original?.memberId ?? "",
                           ""
                         );
-                        const fallbackDelYn =
-                          (memberId && memberDelYnMap.get(memberId)) ||
-                          memberDelYnMap.get(safeTrim(row.original?.name ?? "", "")) ||
-                          "N";
-                        const isRetired = rowDelYn === "Y" || fallbackDelYn === "Y";
+                        const fallbackRetire =
+                          (memberId && memberRetireMap.get(memberId)) ||
+                          memberRetireMap.get(safeTrim(row.original?.name ?? "", "")) ||
+                          null;
+                        const isRetired = rowRetired || isRetiredByDelInfo(fallbackRetire);
                         const isJoinLocked =
                           cell.column.id.startsWith("day_") &&
                           isCellLockedByActJoin(row.original, cell.column.id);
@@ -4618,7 +4685,7 @@ function RecordSheet() {
                           />
                         </td>
                         <td>{r.name || ""}</td>
-                        <td>{r.phone || ""}</td>
+                        <td>{maskSensitiveFieldValue("phone", r.phone || "", maskingEnabled)}</td>
                         <td>{formatMoneyLike(r.total_pay || 0)}</td>
                         <td>
                           {r.pay_status} {r.total_cnt > 0 ? `(${r.paid_cnt}/${r.total_cnt})` : ""}

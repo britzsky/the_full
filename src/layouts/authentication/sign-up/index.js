@@ -175,7 +175,7 @@ function SignUp() {
         user_type: code,
         util_member_type: "",
         department: "7", // 통합/유틸은 현장(7) 고정
-        position: "",
+        position: "8",   // 통합/유틸도 영양사(8) 고정
         account_id: "",
       }));
     } else {
@@ -297,6 +297,16 @@ function SignUp() {
     // 영양사일 때만 account_id 포함
     if (form.user_type === "3" && form.account_id) {
       info.account_id = form.account_id;
+    }
+    // 통합/유틸 회원가입 시 account_id 코드 고정(통합=1, 유틸=2)
+    if (form.user_type === "4") {
+      const utilAccountId =
+        form.util_member_type === "7" ? "1" : form.util_member_type === "6" ? "2" : "";
+      // 통합/유틸 회원가입 시 position은 사원(8) 고정 저장
+      info.position = 8;
+      if (utilAccountId) {
+        info.account_id = utilAccountId;
+      }
     }
 
     const detail = {

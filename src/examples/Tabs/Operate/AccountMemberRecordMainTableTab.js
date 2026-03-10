@@ -434,6 +434,27 @@ function AccountMemberRecordMainTableTab() {
   const isRootChanged = String(selectedRootIdx ?? "") !== String(originalRootIdx ?? "");
 
   // =========================
+  // ✅ 확정 중복 체크
+  // =========================
+  const hasAnotherConfirmedEmployment = useCallback(
+    (targetRowId) => {
+      const targetId = String(targetRowId ?? "").trim();
+
+      return (emergencyRows || []).some((row) => {
+        const rowId = String(row?.idx ?? "").trim();
+        if (!rowId || rowId === targetId) return false;
+
+        const currentUseYn = String(
+          emergencyUseYnMap?.[rowId] ?? originalEmergencyUseYnMap?.[rowId] ?? row?.use_yn ?? ""
+        ).trim();
+
+        return currentUseYn === "3";
+      });
+    },
+    [emergencyRows, emergencyUseYnMap, originalEmergencyUseYnMap]
+  );
+
+  // =========================
   // ✅ 테이블 정의
   // =========================
   const columns = useMemo(
@@ -1095,6 +1116,17 @@ function AccountMemberRecordMainTableTab() {
       const name = item?.name ?? null;
 
       const useYnRaw = String(emergencyUseYnMap?.[id] ?? "").trim();
+
+      // ✅ 저장 직전에도 확정 중복 방지
+      if (useYnRaw === "3" && hasAnotherConfirmedEmployment(id)) {
+        Swal.fire("안내", "이미 채용 확정된 인력이 있습니다.", "info");
+        setEmergencyUseYnMap((prev) => ({
+          ...(prev || {}),
+          [id]: String(originalEmergencyUseYnMap?.[id] ?? item?.use_yn ?? "").trim(),
+        }));
+        return;
+      }
+
       const use_yn = useYnRaw === "" ? null : Number(useYnRaw);
 
       const salaryRaw = item?.salary ?? null;
@@ -1164,7 +1196,16 @@ function AccountMemberRecordMainTableTab() {
         setSavingEmployment(false);
       }
     },
-    [emergencyUseYnMap, selectedDayOfMonth, year, month, shortageSelectedShift, selectedAccountId]
+    [
+      emergencyUseYnMap,
+      selectedDayOfMonth,
+      year,
+      month,
+      shortageSelectedShift,
+      selectedAccountId,
+      hasAnotherConfirmedEmployment,
+      originalEmergencyUseYnMap,
+    ]
   );
 
   const renderEmergencyTable = () => {
@@ -1254,7 +1295,13 @@ function AccountMemberRecordMainTableTab() {
                         <select
                           value={useYnVal || ""}
                           onChange={(e) => {
-                            const v = e.target.value;
+                            const v = String(e.target.value ?? "").trim();
+
+                            if (v === "3" && hasAnotherConfirmedEmployment(rowId)) {
+                              Swal.fire("안내", "이미 채용 확정된 인력이 있습니다.", "info");
+                              return;
+                            }
+
                             setEmergencyUseYnMap((prev) => ({ ...(prev || {}), [rowId]: v }));
                           }}
                           style={{

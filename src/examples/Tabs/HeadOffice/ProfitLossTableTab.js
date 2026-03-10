@@ -18,6 +18,7 @@ import ExcelJS from "exceljs";
 export default function ProfitLossTableTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
+  const [month, setMonth] = useState("ALL");
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
   const didSetDefaultAccountRef = useRef(false);
@@ -25,8 +26,14 @@ export default function ProfitLossTableTab() {
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
 
+  // ✅ 실제 조회에 사용할 month (전체면 빈값으로 넘김)
+  const queryMonth = useMemo(() => {
+    return String(month ?? "") === "ALL" ? "" : String(month ?? "");
+  }, [month]);
+
+  // ✅ month까지 전달되도록 수정
   const { profitLossTableRows, accountList, loading, fetchProfitLossTableList } =
-    useProfitLossTableData(year, selectedAccountId);
+    useProfitLossTableData(year, queryMonth, selectedAccountId);
 
   const accountTypeById = useMemo(() => {
     const map = new Map();
@@ -53,10 +60,12 @@ export default function ProfitLossTableTab() {
     return selectedAccountId === "ALL" ? "" : selectedAccountId;
   }, [selectedAccountId]);
 
-  // ✅ 데이터 조회 (전체 포함)
+  // ✅ 데이터 조회 (전체 포함, 월 포함)
   useEffect(() => {
-    if (selectedAccountId) fetchProfitLossTableList(queryAccountId);
-  }, [year, selectedAccountId, queryAccountId]);
+    if (selectedAccountId) {
+      fetchProfitLossTableList(queryAccountId, queryMonth, year);
+    }
+  }, [year, queryMonth, queryAccountId, selectedAccountId, fetchProfitLossTableList]);
 
   // ✅ 데이터 원본 저장
   useEffect(() => {
@@ -81,7 +90,7 @@ export default function ProfitLossTableTab() {
   useEffect(() => {
     if (didSetDefaultAccountRef.current) return;
     if (accountList.length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountId("ALL");
       didSetDefaultAccountRef.current = true;
     }
   }, [accountList, selectedAccountId]);
@@ -179,7 +188,6 @@ export default function ProfitLossTableTab() {
       "매출소계",
     ];
 
-    // ✅ 생계비/일반식대/직원식대 "옆으로" (2) 컬럼 삽입
     const salesCols = isSpecialSales2
       ? [
           "생계비",
@@ -256,7 +264,6 @@ export default function ProfitLossTableTab() {
     영업이익: { value: "business_profit", ratio: "business_profit_ratio" },
   };
 
-  // ✅ 숨겨진 컬럼 적용
   const filteredHeaders = headers
     .map((h) => {
       let cols = h.cols;
@@ -273,7 +280,6 @@ export default function ProfitLossTableTab() {
     })
     .filter((h) => h.cols.length > 0);
 
-  // ✅ 수정사항 존재 여부 체크
   const hasUnsavedChanges = useMemo(() => {
     return (editRows || []).some((row) => {
       const numChanged = editableNumberFields.some((field) => {
@@ -290,9 +296,9 @@ export default function ProfitLossTableTab() {
 
       return numChanged || textChanged;
     });
-  }, [editRows, editableNumberFields, editableTextFields]);
+  }, [editRows]);
 
-  // ✅ 새로고침: 현재 조건(year, 거래처/전체)로 재조회
+  // ✅ 새로고침: 현재 조건(year, month, 거래처/전체)로 재조회
   const handleRefresh = async () => {
     if (!selectedAccountId) return;
 
@@ -308,10 +314,9 @@ export default function ProfitLossTableTab() {
       if (!result.isConfirmed) return;
     }
 
-    fetchProfitLossTableList(queryAccountId);
+    fetchProfitLossTableList(queryAccountId, queryMonth, year);
   };
 
-  // ✅ 파일 다운로드 유틸
   const downloadBlob = (blob, filename) => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -331,7 +336,6 @@ export default function ProfitLossTableTab() {
     return safe.length > 100 ? safe.slice(0, 100) : safe;
   };
 
-  // ✅ ExcelJS 테두리/헤더 스타일
   const excelBorderThin = {
     top: { style: "thin" },
     left: { style: "thin" },
@@ -345,7 +349,6 @@ export default function ProfitLossTableTab() {
     fgColor: { argb: "FFEFEFEF" },
   };
 
-  // ✅ arraybuffer -> 매직넘버로 xlsx/xls/에러텍스트 판별
   const detectExcelExtOrError = (arrayBuffer) => {
     const u8 = new Uint8Array(arrayBuffer);
     if (u8.length < 4) return { kind: "unknown" };
@@ -376,7 +379,6 @@ export default function ProfitLossTableTab() {
     return { kind: "not_excel", preview };
   };
 
-  // ✅ 인터셉터 없는 엑셀 전용 axios
   const excelApi = axios.create({
     baseURL: api.defaults.baseURL,
     withCredentials: api.defaults.withCredentials,
@@ -446,11 +448,7 @@ export default function ProfitLossTableTab() {
     });
   };
 
-  // ==============================
-  // ✅ 월전체(첨부 엑셀 형태) 생성 로직 추가
-  // ==============================
   const monthExcelRowDefs = [
-    // 인원
     {
       group: "인원",
       label: "인원추산(생계비)",
@@ -469,8 +467,6 @@ export default function ProfitLossTableTab() {
       valueKey: "estimate_total",
       ratioKey: "estimate_total_ratio",
     },
-
-    // 매출
     { group: "매출", label: "생계비", valueKey: "living_cost", ratioKey: "living_ratio" },
     { group: "매출", label: "일반식대", valueKey: "basic_cost", ratioKey: "basic_ratio" },
     { group: "매출", label: "직원식대", valueKey: "employ_cost", ratioKey: "employ_ratio" },
@@ -486,8 +482,6 @@ export default function ProfitLossTableTab() {
     { group: "매출", label: "판장금", valueKey: "payback_price", ratioKey: "payback_ratio" },
     { __blank: true },
     { group: "매출", label: "소계(매출)", valueKey: "sales_total", ratioKey: "sales_total_ratio" },
-
-    // 매입
     { group: "매입", label: "식자재", valueKey: "food_cost", ratioKey: "food_ratio" },
     { group: "매입", label: "음식물처리", valueKey: "food_process", ratioKey: "food_trash_ratio" },
     { group: "매입", label: "식기세척기", valueKey: "dishwasher", ratioKey: "dishwasher_ratio" },
@@ -508,8 +502,6 @@ export default function ProfitLossTableTab() {
       valueKey: "purchase_total",
       ratioKey: "purchase_total_ratio",
     },
-
-    // 인건
     { group: "인건", label: "인건비확보", valueKey: "person_cost", ratioKey: "person_ratio" },
     { group: "인건", label: "파출비", valueKey: "dispatch_cost", ratioKey: "dispatch_ratio" },
     { __blank: true },
@@ -519,10 +511,8 @@ export default function ProfitLossTableTab() {
       valueKey: "person_total",
       ratioKey: "person_total_ratio",
     },
-
-    // 간접
     { group: "간접", label: "수도광열비", valueKey: "utility_bills", ratioKey: "utility_ratio" },
-    { group: "간접", label: "비고", valueKey: "utility_bills_note", ratioKey: null }, // 텍스트
+    { group: "간접", label: "비고", valueKey: "utility_bills_note", ratioKey: null },
     { group: "간접", label: "세금확보", valueKey: "duty_secure", ratioKey: "duty_secure_ratio" },
     { __blank: true },
     {
@@ -531,8 +521,6 @@ export default function ProfitLossTableTab() {
       valueKey: "indirect_total",
       ratioKey: "indirect_total_ratio",
     },
-
-    // 이익
     {
       group: "이익",
       label: "영업이익",
@@ -563,17 +551,14 @@ export default function ProfitLossTableTab() {
   };
 
   const buildMonthAllExcelLikeTemplate = async (rows) => {
-    // ✅ rows: [{account_id, account_name, month, ...value/ratio fields...}] 형태를 기대
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("손익표(월전체)");
-    const grayRowNumbers = new Set(); // ✅ 이 줄 추가 (에러 방지)
-    // ✅ 첨부 엑셀과 같은 헤더 구성(단일 헤더 행)
     const header = [
       "NO",
-      "", // 2번째 빈 헤더 유지(원래 양식 느낌)
-      "C분류", // 거래처명
-      "E분류", // 그룹(인원/매출/매입/인건/간접/이익)
-      "F분류", // 항목명(라벨)
+      "",
+      "C분류",
+      "E분류",
+      "F분류",
       "당월",
       "비율",
       "1월",
@@ -626,10 +611,8 @@ export default function ProfitLossTableTab() {
       return { header: h, key: `c${idx + 1}`, width: w };
     });
 
-    // 1행: 헤더
     sheet.addRow(header);
 
-    // 헤더 스타일
     const hr = sheet.getRow(1);
     hr.height = 18;
     hr.eachCell((cell) => {
@@ -639,7 +622,6 @@ export default function ProfitLossTableTab() {
       cell.border = excelBorderThin;
     });
 
-    // ✅ account 기준 그룹핑
     const byAccount = new Map();
     rows.forEach((r) => {
       const aid = String(r?.account_id ?? r?.account_name ?? "");
@@ -648,9 +630,7 @@ export default function ProfitLossTableTab() {
       byAccount.get(aid).push(r);
     });
 
-    // 당월 기준: 동일 연도면 "현재월", 아니면 12월로
-    const currentMonth = year === today.year() ? today.month() : 12;
-
+    const currentMonth = year === today.year() ? today.month() + 1 : 12;
     let no = 1;
 
     const putBlankRow = () => {
@@ -663,7 +643,6 @@ export default function ProfitLossTableTab() {
       const defs =
         accId === SPECIAL_ACCOUNT_ID
           ? (() => {
-              // 매출의 생계비/일반식대/직원식대 뒤에 (2) 3개를 끼워넣기
               const out = [];
               for (const d of monthExcelRowDefs) {
                 out.push(d);
@@ -675,7 +654,6 @@ export default function ProfitLossTableTab() {
             })()
           : monthExcelRowDefs;
 
-      // 월별 인덱싱
       const monthMap = new Map();
       accRows.forEach((r) => {
         const m = getMonthNumber(r);
@@ -683,8 +661,6 @@ export default function ProfitLossTableTab() {
       });
 
       const accName = accRows[0]?.account_name ?? "";
-      const aCat = accRows[0]?.a_category ?? accRows[0]?.company_name ?? accRows[0]?.A ?? "";
-      const bCat = accRows[0]?.b_category ?? accRows[0]?.biz_type ?? accRows[0]?.B ?? "";
 
       for (const def of defs) {
         if (def.__blank) {
@@ -693,40 +669,30 @@ export default function ProfitLossTableTab() {
         }
 
         const row = new Array(header.length).fill(null);
-
-        // ✅ 고정 컬럼 (A/B분류 제거한 헤더에 맞춤)
         row[0] = no++;
-        row[1] = accRows[0]?.account_code ?? null; // 2번째(빈 헤더 컬럼)
-        row[2] = accName || null; // C분류 = 거래처명
-        row[3] = def.group || null; // E분류 = 그룹
-        row[4] = def.label || null; // F분류 = 항목(라벨)
+        row[1] = accRows[0]?.account_code ?? null;
+        row[2] = accName || null;
+        row[3] = def.group || null;
+        row[4] = def.label || null;
 
-        // ✅ 값/비율 넣기 헬퍼
         const setValueRatioAt = (valueColIdx0, value, ratio) => {
           row[valueColIdx0] = value ?? null;
           row[valueColIdx0 + 1] = ratio ?? null;
         };
 
-        // ✅ 당월
         const curRec = monthMap.get(currentMonth);
         const curVal = curRec ? curRec?.[def.valueKey] : null;
         const curRatio = def.ratioKey && curRec ? toPercentCell(curRec?.[def.ratioKey]) : null;
         setValueRatioAt(5, curVal, curRatio);
 
-        // ✅ 1~12월
         for (let m = 1; m <= 12; m++) {
           const rec = monthMap.get(m);
           const val = rec ? rec?.[def.valueKey] : null;
           const ratio = def.ratioKey && rec ? toPercentCell(rec?.[def.ratioKey]) : null;
-
-          // 1월 value가 시작되는 index: 9(0-base)
-          // 각 월은 (value, ratio) 2칸씩
-          // ✅ 1~12월 (1월 값 시작 인덱스: 7)
           const base = 7 + (m - 1) * 2;
           setValueRatioAt(base, val, ratio);
         }
 
-        // ✅ 합계(값만 합산, 비율은 서버정의 불명이라 비움)
         if (def.valueKey && def.valueKey !== "utility_bills_note") {
           let sum = 0;
           let hasAny = false;
@@ -739,7 +705,6 @@ export default function ProfitLossTableTab() {
               hasAny = true;
             }
           }
-          // ✅ 합계 (value index: 31, ratio index: 32)
           row[31] = hasAny ? sum : null;
           row[32] = null;
         }
@@ -748,54 +713,37 @@ export default function ProfitLossTableTab() {
       }
     }
 
-    // ✅ 연한 회색(요약행), 연한 하늘색, 빨강 폰트
     const excelGrayFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE6E6E6" } };
     const excelSkyFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDDEEFF" } };
     const excelRedFont = { color: { argb: "FFFF0000" } };
 
-    // 값/비율 컬럼 셋(현재 너 헤더 기준)
-    const valueCols = new Set(
-      [5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31].map((x) => x + 1)
-    );
-    const ratioCols = new Set(
-      [6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32].map((x) => x + 1)
-    );
+    const valueCols = new Set([6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]);
+    const ratioCols = new Set([7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33]);
 
     sheet.eachRow((r, rno) => {
-      if (rno === 1) return; // 헤더 제외
+      if (rno === 1) return;
 
-      // ✅ F분류(5번째 컬럼 = cno 5) 텍스트
       const fLabel = String(r.getCell(5).value ?? "");
-      const isSoGyeRow = fLabel.includes("소계"); // ✅ '소계' 뒤에 뭐가 붙어도 OK
-
-      // ✅ '영업이익' + 오타 '영엽이익' 둘 다 처리
+      const isSoGyeRow = fLabel.includes("소계");
       const isProfitRow = fLabel.includes("영업이익") || fLabel.includes("영엽이익");
-
-      // ✅ 요약행(회색 기본): 소계/합계/영업이익
       const isSummaryRow = isSoGyeRow || fLabel.includes("합계") || isProfitRow;
 
       r.eachCell((cell, cno) => {
         cell.border = excelBorderThin;
 
-        // 1) 요약행은 기본 회색
         if (isSummaryRow) cell.fill = excelGrayFill;
-
-        // 2) C분류(3번째 컬럼)는 항상 연한 하늘색
         if (cno === 3) cell.fill = excelSkyFill;
 
-        // 3) 소계 행: F분류 셀만 하늘색 + 빨강 + Bold
         if (cno === 5 && isSoGyeRow) {
           cell.fill = excelSkyFill;
           cell.font = { ...(cell.font || {}), ...excelRedFont, bold: true };
         }
 
-        // 4) 영업이익(영엽이익 포함) 행: 행 전체 하늘색 + Bold
         if (isProfitRow) {
           cell.fill = excelSkyFill;
           cell.font = { ...(cell.font || {}), bold: true };
         }
 
-        // 정렬/포맷
         if (cno <= 5) {
           cell.alignment = { vertical: "middle", horizontal: cno === 5 ? "left" : "center" };
           return;
@@ -825,7 +773,6 @@ export default function ProfitLossTableTab() {
     return buffer;
   };
 
-  // ✅ 엑셀 다운로드
   const handleExcelDownload = async () => {
     if (!selectedAccountId) return;
 
@@ -836,7 +783,6 @@ export default function ProfitLossTableTab() {
         : `${year}-${sanitizeFilename(accountName)}.xlsx`;
 
     try {
-      // ✅ 1) 전체(ALL)일 때: "월 전체 / 거래처 전체" 선택
       if (selectedAccountId === "ALL") {
         const { value: mode } = await Swal.fire({
           title: "전체 다운로드 옵션",
@@ -854,12 +800,9 @@ export default function ProfitLossTableTab() {
 
         if (!mode) return;
 
-        // --------------------------
-        // (1-A) 거래처 전체 (기존)
-        // --------------------------
         if (mode === "account") {
           const res = await excelApi.get("/HeadOffice/ExcelDaownProfitLossTableList", {
-            params: { year },
+            params: { year, month: queryMonth },
             responseType: "arraybuffer",
             headers: {
               Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -868,7 +811,6 @@ export default function ProfitLossTableTab() {
 
           const detected = detectExcelExtOrError(res.data);
 
-          // ✅ 서버가 엑셀 → 그대로 다운로드
           if (detected.kind === "xlsx" || detected.kind === "xls") {
             const ext = detected.kind === "xls" ? "xls" : "xlsx";
             const blob = new Blob([res.data], {
@@ -881,7 +823,6 @@ export default function ProfitLossTableTab() {
             return;
           }
 
-          // ✅ 서버가 JSON → 기존 화면형(2줄 헤더) ExcelJS 생성
           let rows;
           try {
             rows = arrayBufferToJson(res.data);
@@ -985,12 +926,9 @@ export default function ProfitLossTableTab() {
           return;
         }
 
-        // --------------------------
-        // (1-B) 월 전체 (신규)
-        // --------------------------
         if (mode === "month") {
           const res = await excelApi.get("/HeadOffice/ExcelDaownMonthProfitLossTableList", {
-            params: { year },
+            params: { year, month: queryMonth },
             responseType: "arraybuffer",
             headers: {
               Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -999,7 +937,6 @@ export default function ProfitLossTableTab() {
 
           const detected = detectExcelExtOrError(res.data);
 
-          // ✅ 서버가 엑셀 → 그대로 다운로드 (가장 정확: 서버가 첨부형태로 주는 경우)
           if (detected.kind === "xlsx" || detected.kind === "xls") {
             const ext = detected.kind === "xls" ? "xls" : "xlsx";
             const blob = new Blob([res.data], {
@@ -1012,7 +949,6 @@ export default function ProfitLossTableTab() {
             return;
           }
 
-          // ✅ 서버가 JSON → 첨부 엑셀처럼 피벗해서 생성
           let rows;
           try {
             rows = arrayBufferToJson(res.data);
@@ -1052,7 +988,6 @@ export default function ProfitLossTableTab() {
         return;
       }
 
-      // ✅ 2) 전체가 아닐 때: 기존 조회 데이터(editRows)로 프론트에서 엑셀 생성
       if (!editRows || editRows.length === 0) {
         Swal.fire("다운로드할 데이터가 없습니다.", "", "info");
         return;
@@ -1140,7 +1075,6 @@ export default function ProfitLossTableTab() {
     }
   };
 
-  // ✅ 변경 저장
   const handleSave = async () => {
     const modifiedRows = editRows
       .map((row) => {
@@ -1174,7 +1108,7 @@ export default function ProfitLossTableTab() {
         if (Object.keys(changedFields).length > 0) {
           return {
             account_id: row.account_id,
-            year: year,
+            year,
             month: row.month,
             ...changedFields,
           };
@@ -1191,13 +1125,12 @@ export default function ProfitLossTableTab() {
     try {
       await api.post("/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
-      fetchProfitLossTableList(queryAccountId);
+      fetchProfitLossTableList(queryAccountId, queryMonth);
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
     }
   };
 
-  // ✅ 숫자 입력 핸들러
   const handleInputChange = (rowIdx, field, value) => {
     const newRows = [...editRows];
 
@@ -1294,6 +1227,15 @@ export default function ProfitLossTableTab() {
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
             <MenuItem key={y} value={y}>
               {y}년
+            </MenuItem>
+          ))}
+        </Select>
+
+        <Select value={month} onChange={(e) => setMonth(e.target.value)} size="small">
+          <MenuItem value="ALL">전체</MenuItem>
+          {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((m) => (
+            <MenuItem key={m} value={m}>
+              {m}월
             </MenuItem>
           ))}
         </Select>

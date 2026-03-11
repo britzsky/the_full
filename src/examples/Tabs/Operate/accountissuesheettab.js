@@ -60,6 +60,7 @@ const ALL_ACCOUNT_OPTION = {
 };
 
 export default function AccountIssueSheetTab() {
+  // 이슈 목록/행삭제는 데이터 훅에서 소프트삭제(del_yn) 규칙으로 처리
   const {
     loading,
     rows,
@@ -348,6 +349,14 @@ export default function AccountIssueSheetTab() {
 
   const colStyle = (w) => ({ minWidth: w, width: w });
 
+  // 우측 상세 테이블에서도 결과값(문자/코드)을 동일 코드(1/2)로 맞춰 색상 매핑을 고정
+  const normalizeResultCode = (value) => {
+    const code = String(value || "").trim();
+    if (code === "해결") return "2";
+    if (code === "보류") return "1";
+    return code;
+  };
+
   const getResultLabel = (resultCode) =>
     RESULT_OPTIONS.find((opt) => opt.value === String(resultCode || ""))?.label || "미입력";
 
@@ -427,6 +436,7 @@ export default function AccountIssueSheetTab() {
         <tbody>
           {dataRows.map((item) => {
             const deadlineColor = getDeadlineTextColor(item.endDate, item.resultCode);
+            const normalizedResultCode = normalizeResultCode(item.resultCode);
             return (
               <tr key={`${item.id}_${item.idx || "n"}_${item.subDate || ""}`}>
                 <td
@@ -482,7 +492,23 @@ export default function AccountIssueSheetTab() {
                     wordBreak: "keep-all",
                   }}
                 >
-                  {getResultLabel(item.resultCode)}
+                  {/* 우측 결과 컬럼도 좌측 드롭다운과 동일한 상태색 박스로 고정 표시 */}
+                  <Box
+                    sx={{
+                      ...compactCenteredSelectTextSx,
+                      ...resultBoxSx(normalizedResultCode),
+                      minHeight: "25px !important",
+                      height: "25px",
+                      width: "72%",
+                      minWidth: 40,
+                      overflow: "hidden",
+                      mx: "auto",
+                      borderRadius: "4px",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    {getResultLabel(normalizedResultCode)}
+                  </Box>
                 </td>
                 <td
                   style={{

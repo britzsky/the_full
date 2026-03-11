@@ -18,7 +18,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
-import { SENSITIVE_FIELD_SET, maskSensitiveFieldValue } from "utils/maskingUtils";
+import { maskSensitiveFieldValue, shouldMaskSensitiveField } from "utils/maskingUtils";
 
 // 운영 -> 채용관리 -> 현장 직원목록
 function AccountMemberSheet() {
@@ -1101,7 +1101,7 @@ function AccountMemberSheet() {
                         !isSelect &&
                         !isDate &&
                         !isInsuranceDate &&
-                        (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                        !shouldMaskSensitiveField(colKey, maskingEnabled)
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
@@ -1110,7 +1110,7 @@ function AccountMemberSheet() {
                         !isSelect &&
                         !isDate &&
                         !isInsuranceDate &&
-                        (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                        !shouldMaskSensitiveField(colKey, maskingEnabled)
                           ? (e) => {
                             let newValue = e.target.innerText.trim();
                             if (isNumeric) newValue = parseNumber(newValue);
@@ -1870,9 +1870,7 @@ function AccountMemberSheet() {
                         positionOptions.find((p) => String(p.value) === String(r.position_type))
                           ?.label ?? String(r.position_type ?? "");
                       const accName = utilAccountNameMap.get(String(r.account_id ?? "")) ?? "";
-                      const accText = accName
-                        ? `${r.account_id ?? ""} (${accName})`
-                        : String(r.account_id ?? "");
+                      const accText = accName;
 
                       return (
                         <tr

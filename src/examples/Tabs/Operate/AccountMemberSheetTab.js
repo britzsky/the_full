@@ -22,7 +22,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
-import { SENSITIVE_FIELD_SET, maskSensitiveFieldValue } from "utils/maskingUtils";
+import { maskSensitiveFieldValue, shouldMaskSensitiveField } from "utils/maskingUtils";
 
 // 인사 -> 현장관리 -> 현장 직원관리
 function AccountMemberSheet() {
@@ -1110,6 +1110,22 @@ function AccountMemberSheet() {
     };
   };
 
+  const normalizeDispatchDate = (dateStr) => {
+    const raw = String(dateStr ?? "").trim();
+    if (!raw) return "";
+    const d = dayjs(raw);
+    return d.isValid() ? d.format("YYYY-MM-DD") : raw;
+  };
+
+  const buildDispatchDuplicateKey = (row, fallbackMemberId = "") => {
+    const memberId = String(row?.member_id ?? fallbackMemberId ?? "").trim();
+    const ownerAccountId = String(row?.account_id ?? "").trim();
+    const dispatchAccId = String(row?.dispatch_account_id ?? "").trim();
+    const recordDate = normalizeDispatchDate(row?.record_date);
+    if (!memberId || !ownerAccountId || !dispatchAccId || !recordDate) return "";
+    return [memberId, ownerAccountId, dispatchAccId, recordDate].join("|");
+  };
+
   // ✅ 가운데 테이블에서 파견일자 수정용
   const handleDispatchRowChange = (rowIndex, key, value) => {
     setDispatchMappingRows((prev) =>
@@ -1312,14 +1328,18 @@ function AccountMemberSheet() {
     // ✅ 파견 고객사(업장 목록에서 선택)
     const dispatch_account_id = dispatchSelectedAccount.account_id;
 
-    // ✅ 중복 방지: member_id + dispatch_account_id 기준
+    const newRecordDate = dayjs().format("YYYY-MM-DD");
+
+    // ✅ member_id + account_id + dispatch_account_id + record_date 중복 방지
     const exists = (dispatchMappingRows || []).some(
       (r) =>
         String(r.member_id) === String(member_id) &&
-        String(r.dispatch_account_id) === String(dispatch_account_id)
+        String(r.account_id) === String(account_id) &&
+        String(r.dispatch_account_id) === String(dispatch_account_id) &&
+        normalizeDispatchDate(r.record_date) === normalizeDispatchDate(newRecordDate)
     );
     if (exists) {
-      Swal.fire("안내", "이미 매핑된 업장입니다.", "info");
+      Swal.fire("안내", "해당 파견일자에 이미 등록되어 있습니다.", "info");
       return;
     }
 
@@ -1337,7 +1357,7 @@ function AccountMemberSheet() {
       end_time: normalizeTime(dispatchSelectedMember.end_time),
 
       // ✅ 파견일자(달력 선택) - 기본값: 오늘
-      record_date: dayjs().format("YYYY-MM-DD"),
+      record_date: newRecordDate,
 
       // ✅ type 고정
       type: DISPATCH_TYPE,
@@ -1358,6 +1378,25 @@ function AccountMemberSheet() {
     const noDate = (dispatchMappingRows || []).some((r) => !r.record_date);
     if (noDate) {
       Swal.fire("안내", "가운데 매핑 목록에서 파견일자를 모두 선택해주세요.", "info");
+      return;
+    }
+
+    const rowsToValidate = (dispatchMappingRows || []).filter(
+      (r) => String(r.del_yn ?? "N").toUpperCase() !== "Y"
+    );
+    const seenDispatchKeys = new Set();
+    const hasDuplicate = rowsToValidate.some((r) => {
+      const key = buildDispatchDuplicateKey(r, dispatchSelectedMember?.member_id);
+      if (!key || seenDispatchKeys.has(key)) return seenDispatchKeys.has(key);
+      seenDispatchKeys.add(key);
+      return false;
+    });
+    if (hasDuplicate) {
+      Swal.fire(
+        "안내",
+        "같은 직원/소속업장/파견업장/파견일자 조합이 중복되었습니다. 중복 행을 정리해주세요.",
+        "info"
+      );
       return;
     }
 
@@ -1987,16 +2026,16 @@ function AccountMemberSheet() {
                         !isSelect &&
                         !isDate &&
                         !isInsuranceDate &&
-                        (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                        !shouldMaskSensitiveField(colKey, maskingEnabled)
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
                       onBlur={
                         isEditable &&
-                        !isSelect &&
-                        !isDate &&
-                        !isInsuranceDate &&
-                        (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                          !isSelect &&
+                          !isDate &&
+                          !isInsuranceDate &&
+                          !shouldMaskSensitiveField(colKey, maskingEnabled)
                           ? (e) => {
                             let newValue = e.target.innerText.trim();
                             if (isNumeric) newValue = parseNumber(newValue);
@@ -2824,9 +2863,7 @@ function AccountMemberSheet() {
                       const selected = utilSelectedMappingRowIndex === i;
                       const posLabel = getPositionLabel(r.position_type, r.position);
                       const accName = utilAccountNameMap.get(String(r.account_id ?? "")) ?? "";
-                      const accText = accName
-                        ? `${r.account_id ?? ""} (${accName})`
-                        : String(r.account_id ?? "");
+                      const accText = accName;
 
                       return (
                         <tr
@@ -3201,13 +3238,11 @@ function AccountMemberSheet() {
 
                       const ownerAccId = String(r.account_id ?? "");
                       const ownerAccName = memberAccountNameMap.get(ownerAccId) ?? "";
-                      const ownerText = ownerAccName
-                        ? `${ownerAccId} (${ownerAccName})`
-                        : ownerAccId;
+                      const ownerText = ownerAccName;
 
                       const dispAccId = String(r.dispatch_account_id ?? "");
                       const dispAccName = dispatchAccountNameMap.get(dispAccId) ?? "";
-                      const dispText = dispAccName ? `${dispAccId} (${dispAccName})` : dispAccId;
+                      const dispText = dispAccName;
 
                       return (
                         <tr

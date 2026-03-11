@@ -234,7 +234,7 @@ PieStatCard.defaultProps = {
 };
 
 export default function DeadlineIssueStatsTab2() {
-  // 회계팀(team_code=2) 통계 데이터/필터 상태 훅
+  // 회계팀(team_code=2) 통계 데이터/필터 상태 훅(del_yn='N' 기준 집계)
   const {
     loading,
     selectedAccountKey,
@@ -386,4 +386,3 @@ export default function DeadlineIssueStatsTab2() {
     </MDBox>
   );
 }
-

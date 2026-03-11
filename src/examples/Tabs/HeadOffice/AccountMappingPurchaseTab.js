@@ -142,7 +142,7 @@ export default function PeopleCountingTab() {
     [monthDetailRows]
   );
 
-  // 월 셀 클릭 시 거래처+월 기준 업장별 상세 모달을 연다.
+  // 월 셀 클릭 시 거래처+월 기준 업장별 상세 모달
   const openMonthDetail = async (vendorRow, monthNumber) => {
     setSelectedVendor(vendorRow);
     setMonthDetailVendor(vendorRow);
@@ -504,16 +504,12 @@ export default function PeopleCountingTab() {
                   }}
                 >
                   <colgroup>
-                    <col style={{ width: "130px" }} />
                     <col />
                     <col style={{ width: "140px" }} />
                   </colgroup>
 
                   <Box component="thead">
                     <Box component="tr" sx={{ background: "#f7f7f7" }}>
-                      <Box component="th" sx={{ p: 1, textAlign: "left", borderRight: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", fontWeight: 700 }}>
-                        업장ID
-                      </Box>
                       <Box component="th" sx={{ p: 1, textAlign: "left", borderRight: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0", fontWeight: 700 }}>
                         업장명
                       </Box>
@@ -526,20 +522,6 @@ export default function PeopleCountingTab() {
                   <Box component="tbody">
                     {monthDetailRows.map((row, idx) => (
                       <Box component="tr" key={`${row.account_id || row.account_name}-${idx}`}>
-                        <Box
-                          component="td"
-                          sx={{
-                            p: 1,
-                            borderRight: "1px solid #f0f0f0",
-                            borderBottom: "1px solid #f0f0f0",
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                          title={row.account_id || "-"}
-                        >
-                          {row.account_id || "-"}
-                        </Box>
                         <Box
                           component="td"
                           sx={{
@@ -575,7 +557,6 @@ export default function PeopleCountingTab() {
                       <Box component="td" sx={{ p: 1, borderRight: "1px solid #e0e0e0", fontWeight: 700 }}>
                         합계
                       </Box>
-                      <Box component="td" sx={{ p: 1, borderRight: "1px solid #e0e0e0" }} />
                       <Box component="td" sx={{ p: 1, textAlign: "right", fontWeight: 700 }}>
                         {formatNumber(monthDetailTotal)}
                       </Box>

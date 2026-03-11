@@ -203,7 +203,10 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
         const [accountRes, typeRes, rowRes] = await Promise.all([
           api.get("/Account/AccountList", { params: { account_type: "0" } }),
           api.get("/Account/AccountCommunicationMappingList", { params: { team_code: teamCodeKey } }),
-          api.get("/Account/AccountCommunicationList", { params: { team_code: teamCodeKey } }),
+          // 소프트삭제 적용: 삭제되지 않은 행(del_yn='N')만 통계에 반영
+          api.get("/Account/AccountCommunicationList", {
+            params: { team_code: teamCodeKey, del_yn: "N" },
+          }),
         ]);
 
         if (!mounted) return;

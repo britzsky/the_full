@@ -86,6 +86,8 @@ const makeBlankRow = (id) => ({
   solution: "",
   note: "",
   user_id: "",
+  // 삭제 플래그 기본값(N): 화면 기본 행은 항상 노출 대상
+  del_yn: "N",
 });
 
 // 저장되지 않은 신규 행 구분용 로컬 ID
@@ -114,6 +116,8 @@ const normalizeRow = (row) => ({
   solution: row.solution || "",
   note: row.note || "",
   user_id: row.user_id ? String(row.user_id) : "",
+  // 소프트삭제 컬럼(미존재/NULL 대비 기본값 N)
+  del_yn: String(row.del_yn || "N").toUpperCase(),
 });
 
 // 비어있는 행(신규 placeholder 행) 판별
@@ -413,7 +417,8 @@ export default function useDeadlineIssueTab2Data(teamCode = 2) {
   // 이슈 목록 조회
   const fetchCommunicationList = async () => {
     const res = await api.get("/Account/AccountCommunicationList", {
-      params: { team_code: teamCode },
+      // 소프트삭제 적용: 삭제되지 않은 행(del_yn='N')만 조회
+      params: { team_code: teamCode, del_yn: "N" },
     });
     const list = (res.data || []).map((item) => normalizeRow(item));
 
@@ -746,6 +751,8 @@ export default function useDeadlineIssueTab2Data(teamCode = 2) {
         solution: row.solution || "",
         note: row.note || "",
         user_id: currentUserId || null,
+        // 일반 저장은 항상 활성 상태(N)로 유지
+        del_yn: "N",
     }));
 
     try {

@@ -22,7 +22,7 @@ import useAccountMemberRecSheetData, {
 } from "./accountMemberRecSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
-import { SENSITIVE_FIELD_SET, maskSensitiveFieldValue } from "utils/maskingUtils";
+import { maskSensitiveFieldValue, shouldMaskSensitiveField } from "utils/maskingUtils";
 
 function AccountMemberRecSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -850,7 +850,7 @@ function AccountMemberRecSheet() {
                           isEditable &&
                           !isSelect &&
                           !isDate &&
-                          (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                          !shouldMaskSensitiveField(colKey, maskingEnabled)
                         }
                         suppressContentEditableWarning
                         className={isEditable && isChanged ? "edited-cell" : ""}
@@ -858,7 +858,7 @@ function AccountMemberRecSheet() {
                           isEditable &&
                           !isSelect &&
                           !isDate &&
-                          (!maskingEnabled || !SENSITIVE_FIELD_SET.has(colKey))
+                          !shouldMaskSensitiveField(colKey, maskingEnabled)
                             ? (e) => {
                               let newValue = e.target.innerText.trim();
                               if (isNumeric) newValue = parseNumber(newValue);

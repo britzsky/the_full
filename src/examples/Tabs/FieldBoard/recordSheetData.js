@@ -9,6 +9,8 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
   const [timesRows, setTimesRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
+  const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
   // ✅ 전체 데이터 조회
   const fetchAllData = async () => {
@@ -42,11 +44,12 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
       // ✅ 직원정보
       setMemberRows(
         (memberRes.data || []).map((item) => ({
-          member_id: item.member_id,
+          member_id: safeTrim(item.member_id ?? item.memberId ?? "", ""),
           name: item.name,
           position: item.position,
+          cor_type: safeTrim(item.cor_type ?? item.corType ?? "", ""),
           del_yn: item.del_yn ?? "",
-          del_dt: item.del_dt ?? "",
+          del_dt: safeTrim(item.del_dt ?? "", ""),
           working_day: item.working_day,
           employ_dispatch: item.employ_dispatch || "",
           over_work: item.over_work || "",
@@ -61,10 +64,12 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
           account_id: item.account_id,
           member_id: item.member_id,
           name: item.name,
-          phone: item.phone,
           rrn: item.rrn,
           account_number: item.account_number,
+          phone: item.phone,
           total: item.total,
+          salary: item.salary,
+          dispatch_account: item.dispatch_account,
           del_yn: item.del_yn,
         }))
       );
@@ -79,41 +84,73 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
         }))
       );
 
-      // ✅ 출근현황 sheetRows로 변환
+      // ✅ 출근현황: member_id 기준 그룹핑
       const data = sheetRes.data || [];
       const grouped = {};
 
-      data.forEach((item) => {
-        const name = item.name || `member_${item.member_id || Math.random()}`;
-        if (!grouped[name]) grouped[name] = {};
+      data.forEach((item, idx) => {
+        const mid = safeTrim(item.member_id, `tmp_${idx}`);
+        if (!grouped[mid]) {
+          grouped[mid] = {
+            member_id: mid,
+            name: item.name || `member_${mid}`,
+            account_id: item.account_id || "",
+            position: item.position || "",
+            del_yn: item.del_yn ?? "",
+            del_dt: safeTrim(item.del_dt ?? "", ""),
+            act_join_dt: safeTrim(item.act_join_dt, ""),
+            gubun: safeTrim(item.gubun, ""),
+            position_type: safeTrim(item.position_type, ""),
+            days: {},
+          };
+        }
 
         const dayNum = Number(item.record_date);
         const key = !dayNum || dayNum <= 0 ? "day_default" : `day_${dayNum}`;
 
-        grouped[name][key] = {
+        grouped[mid].days[key] = {
           start_time: item.start_time || "",
           end_time: item.end_time || "",
           type: item.type != null ? String(item.type) : "",
           salary: item.salary || "",
           note: item.note || "",
-          // ✅ 실입사일 잠금 판단을 위해 day 데이터에도 보관
-          act_join_dt: item.act_join_dt || "",
-
-          member_id: item.member_id || "",
+          pay_yn: item.pay_yn || "",
+          act_join_dt: safeTrim(item.act_join_dt, ""),
+          member_id: mid,
           account_id: item.account_id || "",
-
-          // ✅ 핵심: 조회 데이터에서 넘어온 값 보존
-          gubun: item.gubun ?? "nor",
-          position_type: item.position_type ?? "",
-          position: item.position ?? "",
-          del_yn: item.del_yn ?? "",
-          del_dt: item.del_dt ?? "",
+          position_type: safeTrim(item.position_type, ""),
+          gubun: safeTrim(item.gubun, ""),
+          del_dt: safeTrim(item.del_dt ?? "", ""),
         };
       });
 
-      const rows = Object.keys(grouped).map((name) => {
-        const firstItem = data.find((d) => d.name === name) || {};
-        const dayValues = grouped[name];
+      const rows = Object.values(grouped).map((g) => {
+        const dayValues = g.days || {};
+
+        const anyDay =
+          Object.values(dayValues).find((v) => v && (v.gubun || v.position_type)) || {};
+        const rowGubun =
+          safeTrim(g.gubun, "") ||
+          safeTrim(dayValues.day_default?.gubun, "") ||
+          safeTrim(anyDay.gubun, "nor") ||
+          "nor";
+
+        const rowPt =
+          safeTrim(g.position_type, "") ||
+          safeTrim(dayValues.day_default?.position_type, "") ||
+          safeTrim(anyDay.position_type, "") ||
+          "";
+
+        const rowActJoinDt =
+          safeTrim(g.act_join_dt, "") ||
+          safeTrim(dayValues.day_default?.act_join_dt, "") ||
+          safeTrim(anyDay.act_join_dt, "") ||
+          "";
+        const rowDelDt =
+          safeTrim(g.del_dt, "") ||
+          safeTrim(dayValues.day_default?.del_dt, "") ||
+          safeTrim(anyDay.del_dt, "") ||
+          "";
 
         const flatDays = Object.fromEntries(
           Object.entries(dayValues)
@@ -122,6 +159,8 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
               key,
               {
                 ...val,
+                gubun: safeTrim(val?.gubun, rowGubun),
+                position_type: safeTrim(val?.position_type, rowPt),
                 start: val.start_time || "",
                 end: val.end_time || "",
                 defaultStart: val.start_time || "",
@@ -130,32 +169,27 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
             ])
         );
 
-        // ✅ row 레벨 기본값도 같이 세팅해두면 프론트에서 상속하기 편함
-        const baseGubun = String(dayValues.day_default?.gubun ?? firstItem.gubun ?? "nor")
-          .trim()
-          .toLowerCase();
-
-        const basePosType = String(
-          dayValues.day_default?.position_type ?? firstItem.position_type ?? ""
-        ).trim();
+        const dayDefault = dayValues.day_default
+          ? {
+            ...dayValues.day_default,
+            gubun: safeTrim(dayValues.day_default.gubun, rowGubun),
+            position_type: safeTrim(dayValues.day_default.position_type, rowPt),
+          }
+          : null;
 
         return {
-          name,
-          account_id: firstItem.account_id || "",
-          member_id: firstItem.member_id || "",
-          position: firstItem.position || "",
-          del_yn: firstItem.del_yn ?? "",
-          del_dt: String(dayValues.day_default?.del_dt ?? firstItem.del_dt ?? "").trim(),
-          // ✅ row 단위로 실입사일을 올려서 탭에서 잠금/안내 모달에 사용
-          act_join_dt: String(dayValues.day_default?.act_join_dt ?? firstItem.act_join_dt ?? "").trim(),
-
-          // ✅ row 기본값
-          gubun: baseGubun,
-          position_type: basePosType,
-
+          name: g.name,
+          account_id: g.account_id,
+          member_id: g.member_id,
+          position: g.position,
+          del_yn: g.del_yn ?? "",
+          del_dt: rowDelDt,
+          act_join_dt: rowActJoinDt,
+          gubun: rowGubun,
+          position_type: rowPt,
           days: dayValues,
           ...flatDays,
-          day_default: dayValues.day_default || null,
+          day_default: dayDefault,
         };
       });
 

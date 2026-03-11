@@ -86,6 +86,8 @@ const makeBlankRow = (id) => ({
   solution: "",
   note: "",
   user_id: "",
+  // 삭제 플래그 기본값(N): 화면 기본 행은 항상 노출 대상
+  del_yn: "N",
 });
 
 // 저장되지 않은 신규 행 구분용 로컬 ID
@@ -114,6 +116,8 @@ const normalizeRow = (row) => ({
   solution: row.solution || "",
   note: row.note || "",
   user_id: row.user_id ? String(row.user_id) : "",
+  // 소프트삭제 컬럼(미존재/NULL 대비 기본값 N)
+  del_yn: String(row.del_yn || "N").toUpperCase(),
 });
 
 // 비어있는 행(신규 placeholder 행) 판별
@@ -413,7 +417,8 @@ export default function useAccountIssueSheetData(teamCode = 1) {
   // 이슈 목록 조회
   const fetchCommunicationList = async () => {
     const res = await api.get("/Account/AccountCommunicationList", {
-      params: { team_code: teamCode },
+      // 소프트삭제 적용: 삭제되지 않은 행(del_yn='N')만 조회
+      params: { team_code: teamCode, del_yn: "N" },
     });
     const list = (res.data || []).map((item) => normalizeRow(item));
 
@@ -746,6 +751,8 @@ export default function useAccountIssueSheetData(teamCode = 1) {
       solution: row.solution || "",
       note: row.note || "",
       user_id: currentUserId || null,
+      // 일반 저장은 항상 활성 상태(N)로 유지
+      del_yn: "N",
     }));
 
     try {
@@ -818,7 +825,10 @@ export default function useAccountIssueSheetData(teamCode = 1) {
 
   // 구분 삭제(기존 idx는 삭제 목록에 적재)
   const handleTypeDelete = (row) => {
-    if (row.idx) setTypeDeletedIds((prev) => [...prev, row.idx]);
+    const idx = row?.idx;
+    if (idx != null && String(idx).trim() !== "") {
+      setTypeDeletedIds((prev) => Array.from(new Set([...prev, idx])));
+    }
     setTypeRows((prev) => prev.filter((r) => r.id !== row.id));
   };
 
@@ -831,6 +841,23 @@ export default function useAccountIssueSheetData(teamCode = 1) {
       return;
     }
 
+    // 삭제 클릭 누락/동기화 이슈가 있어도 원본 대비 사라진 idx는 삭제 대상으로 강제 반영
+    const deletedIdsByDiff = (typeOriginalRows || [])
+      .filter((orig) => {
+        const origIdx = String(orig?.idx ?? "").trim();
+        if (!origIdx) return false;
+        return !trimmed.some((row) => String(row?.idx ?? "").trim() === origIdx);
+      })
+      .map((orig) => String(orig.idx).trim());
+
+    const finalDeletedIds = Array.from(
+      new Set(
+        [...(typeDeletedIds || []), ...deletedIdsByDiff]
+          .map((id) => String(id ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+
     const modified = trimmed.filter((row, i) => {
       const orig = typeOriginalRows[i];
       if (!orig) return true;
@@ -840,9 +867,9 @@ export default function useAccountIssueSheetData(teamCode = 1) {
     try {
       let hasSaved = false;
 
-      if (typeDeletedIds.length > 0) {
+      if (finalDeletedIds.length > 0) {
         const delRes = await api.post("/Account/AccountCommunicationMappingDelete", {
-          ids: typeDeletedIds,
+          ids: finalDeletedIds,
         });
         if (delRes.data?.code !== 200) {
           throw new Error(delRes.data?.message || "삭제 실패");

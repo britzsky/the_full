@@ -537,7 +537,9 @@ function PropertySheetTab() {
             disabled={isAccountLocked} // ✅ 잠금
             onChange={(_, opt) => {
               if (isAccountLocked) return; // ✅ 혹시 몰라 방어
-              setSelectedAccountId(opt ? opt.value : "");
+              // 입력 비움 시 거래처 선택 유지
+              if (!opt) return;
+              setSelectedAccountId(opt.value);
             }}
             inputValue={accountInput}
             onInputChange={(_, newValue) => setAccountInput(newValue)}

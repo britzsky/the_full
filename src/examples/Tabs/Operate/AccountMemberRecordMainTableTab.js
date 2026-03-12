@@ -1408,7 +1408,9 @@ function AccountMemberRecordMainTableTab() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => {
-            setSelectedAccountId(opt ? opt.value : "");
+            // 입력 비움 시 거래처 선택 유지
+            if (!opt) return;
+            setSelectedAccountId(opt.value);
             setLoading(true);
           }}
           inputValue={accountInput}

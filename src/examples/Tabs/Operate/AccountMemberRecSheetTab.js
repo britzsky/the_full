@@ -22,7 +22,10 @@ import useAccountMemberRecSheetData, {
 } from "./accountMemberRecSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
-import { maskSensitiveFieldValue, shouldMaskSensitiveField } from "utils/maskingUtils";
+import {
+  canEditSensitiveField,
+  maskSensitiveFieldValue,
+} from "utils/maskingUtils";
 
 function AccountMemberRecSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -32,6 +35,18 @@ function AccountMemberRecSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [maskingEnabled, setMaskingEnabled] = useState(true);
+  const maskingRole = useMemo(() => {
+    if (typeof window === "undefined" || !window?.localStorage) {
+      return { department: "", position: "", user_id: "" };
+    }
+
+    const toCode = (value) => String(value ?? "").trim();
+    return {
+      department: toCode(window.localStorage.getItem("department")),
+      position: toCode(window.localStorage.getItem("position")),
+      user_id: toCode(window.localStorage.getItem("user_id")),
+    };
+  }, []);
 
   const {
     activeRows,
@@ -258,11 +273,14 @@ function AccountMemberRecSheet() {
   );
 
   const accountOptions = useMemo(
-    () =>
-      (accountList || []).map((acc) => ({
+    () => [
+      // 거래처 전체 옵션
+      { value: "", label: "전체" },
+      ...((accountList || []).map((acc) => ({
         value: String(acc.account_id),
         label: acc.account_name,
-      })),
+      })) || []),
+    ],
     [accountList]
   );
 
@@ -667,6 +685,7 @@ function AccountMemberRecSheet() {
           <tbody>
             {tableInstance.getRowModel().rows.map((row) => {
               const rid = String(row.original?._rid ?? "");
+              const isNewRow = rid.startsWith("NEW_");
 
               return (
                 <tr key={row.id}>
@@ -699,6 +718,13 @@ function AccountMemberRecSheet() {
                     const isEditable = !nonEditableCols.has(colKey);
                     const isSelect = selectFields.has(colKey);
                     const isDate = dateFields.has(colKey);
+                    const canEditMaskedSensitiveField = canEditSensitiveField(
+                      colKey,
+                      currentValue,
+                      maskingEnabled,
+                      maskingRole,
+                      { isNewRow }
+                    );
 
                     const handleCellChange = (newValue) => {
                       if (colKey === "idx") {
@@ -850,7 +876,7 @@ function AccountMemberRecSheet() {
                           isEditable &&
                           !isSelect &&
                           !isDate &&
-                          !shouldMaskSensitiveField(colKey, maskingEnabled)
+                          canEditMaskedSensitiveField
                         }
                         suppressContentEditableWarning
                         className={isEditable && isChanged ? "edited-cell" : ""}
@@ -858,7 +884,7 @@ function AccountMemberRecSheet() {
                           isEditable &&
                           !isSelect &&
                           !isDate &&
-                          !shouldMaskSensitiveField(colKey, maskingEnabled)
+                          canEditMaskedSensitiveField
                             ? (e) => {
                               let newValue = e.target.innerText.trim();
                               if (isNumeric) newValue = parseNumber(newValue);
@@ -993,7 +1019,12 @@ function AccountMemberRecSheet() {
                         ) : (
                           (isNumeric
                             ? formatNumber(currentValue)
-                            : maskSensitiveFieldValue(colKey, currentValue, maskingEnabled)) ?? ""
+                            : maskSensitiveFieldValue(
+                                colKey,
+                                currentValue,
+                                maskingEnabled,
+                                maskingRole
+                              )) ?? ""
                         )}
                       </td>
                     );
@@ -1048,8 +1079,10 @@ function AccountMemberRecSheet() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => {
+            // 입력 비움 시 거래처 선택 유지
+            if (!opt) return;
             setLoading(true);
-            setSelectedAccountId(opt ? opt.value : "");
+            setSelectedAccountId(opt.value);
           }}
           inputValue={accountInput}
           onInputChange={(_, newValue) => setAccountInput(newValue)}

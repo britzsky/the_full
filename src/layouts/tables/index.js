@@ -337,8 +337,8 @@ export default function Tables() {
       normalizedDelYn === "ALL"
         ? copied
         : copied.filter(
-            (row) => String(row?.del_yn ?? "N").trim().toUpperCase() === normalizedDelYn
-          );
+          (row) => String(row?.del_yn ?? "N").trim().toUpperCase() === normalizedDelYn
+        );
 
     const textCompare = (a, b) =>
       String(a ?? "").localeCompare(String(b ?? ""), "ko-KR", {
@@ -736,38 +736,38 @@ export default function Tables() {
     return (columns || [])
       .filter((col) => col?.accessor !== "tally")
       .map((col) => {
-      const accessorKey = col.accessor;
+        const accessorKey = col.accessor;
 
-      if (accessorKey === "account_rqd_member") {
+        if (accessorKey === "account_rqd_member") {
+          return {
+            header: col.Header,
+            accessorKey,
+            cell: (info) => <EditableCell info={info} field="account_rqd_member" />,
+          };
+        }
+
+        if (accessorKey === "account_headcount") {
+          return {
+            header: col.Header,
+            accessorKey,
+            cell: (info) => <EditableCell info={info} field="account_headcount" />,
+          };
+        }
+
+        if (accessorKey === "del_yn") {
+          return {
+            header: col.Header,
+            accessorKey,
+            cell: (info) => <EditableSelectCell info={info} field="del_yn" />,
+          };
+        }
+
         return {
           header: col.Header,
           accessorKey,
-          cell: (info) => <EditableCell info={info} field="account_rqd_member" />,
+          cell: (info) => info.getValue(),
         };
-      }
-
-      if (accessorKey === "account_headcount") {
-        return {
-          header: col.Header,
-          accessorKey,
-          cell: (info) => <EditableCell info={info} field="account_headcount" />,
-        };
-      }
-
-      if (accessorKey === "del_yn") {
-        return {
-          header: col.Header,
-          accessorKey,
-          cell: (info) => <EditableSelectCell info={info} field="del_yn" />,
-        };
-      }
-
-      return {
-        header: col.Header,
-        accessorKey,
-        cell: (info) => info.getValue(),
-      };
-    });
+      });
   }, [columns, editedMap, toPlainText, originalMap, updateEditableField]);
 
   // =========================
@@ -813,7 +813,7 @@ export default function Tables() {
                 SelectProps={{ native: true }}
               >
                 {/* ✅ 삭제여부 조회: 전체(N+Y) / 정상(N) / 삭제(Y) */}
-                <option value="ALL">전체</option>
+                <option value="ALL">전체(삭제여부)</option>
                 <option value="N">정상</option>
                 <option value="Y">삭제</option>
               </TextField>
@@ -826,7 +826,7 @@ export default function Tables() {
                 SelectProps={{ native: true }}
                 value={selectedType}
               >
-                <option value="0">전체</option>
+                <option value="0">전체(업장구분)</option>
                 <option value="1">요양원</option>
                 <option value="4">산업체</option>
                 <option value="5">학교</option>

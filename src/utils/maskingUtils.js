@@ -4,6 +4,8 @@ export const SENSITIVE_FIELD_SET = new Set(["rrn", "phone", "account_number", "a
 const FULL_UNMASK_DEPARTMENT_SET = new Set(["0", "3", "6"]);
 // 마스킹 해제 권한 직책 코드(대표/팀장)
 const FULL_UNMASK_POSITION_SET = new Set(["0", "1"]);
+// 마스킹 해제 권한 사용자 ID
+const FULL_UNMASK_USER_ID_SET = new Set(["db1"]);
 
 // 저장소/서버 값의 공백을 제거해 코드 비교용 문자열로 통일
 const toCode = (value) => String(value ?? "").trim();
@@ -11,20 +13,26 @@ const toCode = (value) => String(value ?? "").trim();
 // 브라우저 저장소에서 부서/직책 코드를 읽어 기본 권한 정보를 구성
 const getMaskingRoleFromStorage = () => {
   if (typeof window === "undefined" || !window?.localStorage) {
-    return { department: "", position: "" };
+    return { department: "", position: "", user_id: "" };
   }
 
   return {
     department: toCode(window.localStorage.getItem("department")),
     position: toCode(window.localStorage.getItem("position")),
+    user_id: toCode(window.localStorage.getItem("user_id")),
   };
 };
 
-// 부서/직책 기준으로 민감정보 전체 노출 권한 여부를 판정
-export const canUnmaskAllSensitiveFields = (department, position) => {
+// 사용자ID/부서/직책 기준으로 민감정보 전체 노출 권한 여부를 판정
+export const canUnmaskAllSensitiveFields = (department, position, userId) => {
   const deptCode = toCode(department);
   const posCode = toCode(position);
-  return FULL_UNMASK_DEPARTMENT_SET.has(deptCode) || FULL_UNMASK_POSITION_SET.has(posCode);
+  const uidCode = toCode(userId);
+  return (
+    FULL_UNMASK_USER_ID_SET.has(uidCode) ||
+    FULL_UNMASK_DEPARTMENT_SET.has(deptCode) ||
+    FULL_UNMASK_POSITION_SET.has(posCode)
+  );
 };
 
 // 권한 + 필드 기준 최종 마스킹 적용 여부
@@ -38,16 +46,65 @@ export const shouldMaskSensitiveField = (colKey, maskingEnabled = true, role = {
   const fromStorage = getMaskingRoleFromStorage();
   const department = role?.department ?? fromStorage.department;
   const position = role?.position ?? fromStorage.position;
+  // user_id 권한은 화면별 선택 적용을 위해 caller가 넘긴 값만 사용
+  const userId = role?.user_id ?? role?.userId ?? "";
 
   // 마스킹 해제 버튼 클릭 후:
-  // 부서 0/3/6 또는 직책 0/1이면 민감정보 전체 노출
-  if (canUnmaskAllSensitiveFields(department, position)) return false;
+  // user_id/부서/직책 중 하나라도 전체 해제 권한이면 민감정보 전체 노출
+  if (canUnmaskAllSensitiveFields(department, position, userId)) return false;
 
   // 그 외 권한은 연락처만 노출
   if (key === "phone") return false;
 
   // 그 외(주민번호/계좌번호/주소)는 계속 마스킹
   return true;
+};
+
+const hasSensitiveValue = (value) => {
+  if (value === null || value === undefined) return false;
+  return String(value).trim() !== "";
+};
+
+const onlyDigits = (value, maxLen = Infinity) => String(value ?? "").replace(/\D/g, "").slice(0, maxLen);
+
+// 민감필드 편집 허용 여부:
+// - 마스킹되지 않으면 항상 편집 가능
+// - 마스킹 중이어도 새 행이거나 값이 비어있으면 입력 허용
+export const canEditSensitiveField = (
+  colKey,
+  value,
+  maskingEnabled = true,
+  role = {},
+  options = {}
+) => {
+  const key = String(colKey ?? "").trim();
+  if (!SENSITIVE_FIELD_SET.has(key)) return true;
+  if (!shouldMaskSensitiveField(key, maskingEnabled, role)) return true;
+  if (options?.isNewRow) return true;
+  return !hasSensitiveValue(value);
+};
+
+const formatRrnInput = (value) => {
+  const digits = onlyDigits(value, 13);
+  if (!digits) return "";
+  if (digits.length <= 6) return digits;
+  return `${digits.slice(0, 6)}-${digits.slice(6, 13)}`;
+};
+
+const formatPhoneInput = (value) => {
+  const digits = onlyDigits(value, 11);
+  if (!digits) return "";
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7, 11)}`;
+};
+
+// 민감필드 입력 포맷터(입력 시 자동 하이픈 적용)
+export const formatSensitiveFieldInputValue = (colKey, value) => {
+  const key = String(colKey ?? "").trim();
+  if (key === "rrn") return formatRrnInput(value);
+  if (key === "phone") return formatPhoneInput(value);
+  return value ?? "";
 };
 
 // 주민등록번호: 앞 6자리 + 뒤 1자리만 노출 (예: 900101-1******)
@@ -142,6 +199,7 @@ const BANK_NAME_ALIASES = {
   기업은행: "IBK기업은행",
   농협: "NH농협은행",
   NH농협: "NH농협은행",
+  농축협: "NH농협은행",
   카카오: "카카오뱅크",
   카뱅: "카카오뱅크",
   토스: "토스뱅크",
@@ -263,13 +321,26 @@ export const maskKoreanAddress = (value) => {
   const normalized = raw.split(",")[0].split("(")[0].replace(/\s+/g, " ").trim();
   if (!normalized) return "";
 
+  // 값 기준 해시로 4~15개 별표
+  const getMaskedTail = (seed) => {
+    const s = String(seed ?? "");
+    let hash = 0;
+    for (let i = 0; i < s.length; i += 1) {
+      hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+    }
+    const starCount = 4 + (hash % 12); // 4~15
+    return ` ${"*".repeat(starCount)}`;
+  };
+
   const roadMatch = normalized.match(/^(.+?(?:로|길|대로)\s*\d+(?:-\d+)?)/);
-  if (roadMatch?.[1]) return roadMatch[1].trim();
+  if (roadMatch?.[1]) return `${roadMatch[1].trim()}${getMaskedTail(raw)}`;
 
   const jibunMatch = normalized.match(/^(.+?(?:읍|면|동|리)\s*(?:산\s*)?\d+(?:-\d+)?)/);
-  if (jibunMatch?.[1]) return jibunMatch[1].trim();
+  if (jibunMatch?.[1]) return `${jibunMatch[1].trim()}${getMaskedTail(raw)}`;
 
-  return normalized.replace(/\s+(?:\S*동|\S*층|\S*호).*$/, "").trim();
+  const base = normalized.replace(/\s+(?:\S*동|\S*층|\S*호).*$/, "").trim();
+  if (!base) return "";
+  return `${base}${getMaskedTail(raw)}`;
 };
 
 // 컬럼 키 기준 통합 마스킹 함수

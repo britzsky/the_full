@@ -22,7 +22,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
-import { maskSensitiveFieldValue, shouldMaskSensitiveField } from "utils/maskingUtils";
+import { canEditSensitiveField, maskSensitiveFieldValue } from "utils/maskingUtils";
 
 // 인사 -> 현장관리 -> 현장 직원관리
 function AccountMemberSheet() {
@@ -1783,6 +1783,7 @@ function AccountMemberSheet() {
                   const colKey = cell.column.columnDef.accessorKey;
                   const currentValue = row.getValue(colKey);
                   const originalValue = originals?.[rowIndex]?.[colKey];
+                  const isNewRow = !String(row.original?.member_id ?? "").trim();
 
                   const isNumeric = numericCols.includes(colKey);
                   const isImage = imageFields.includes(colKey);
@@ -1808,6 +1809,13 @@ function AccountMemberSheet() {
                   const isSelect = selectFields.has(colKey);
                   const isDate = dateFields.has(colKey);
                   const isInsuranceDate = insuranceDateFields.has(colKey);
+                  const canEditMaskedSensitiveField = canEditSensitiveField(
+                    colKey,
+                    currentValue,
+                    maskingEnabled,
+                    {},
+                    { isNewRow }
+                  );
                   const isRetiredRow =
                     String(row.getValue("del_yn") ?? "")
                       .trim()
@@ -2026,7 +2034,7 @@ function AccountMemberSheet() {
                         !isSelect &&
                         !isDate &&
                         !isInsuranceDate &&
-                        !shouldMaskSensitiveField(colKey, maskingEnabled)
+                        canEditMaskedSensitiveField
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
@@ -2035,7 +2043,7 @@ function AccountMemberSheet() {
                           !isSelect &&
                           !isDate &&
                           !isInsuranceDate &&
-                          !shouldMaskSensitiveField(colKey, maskingEnabled)
+                          canEditMaskedSensitiveField
                           ? (e) => {
                             let newValue = e.target.innerText.trim();
                             if (isNumeric) newValue = parseNumber(newValue);

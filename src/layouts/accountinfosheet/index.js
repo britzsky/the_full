@@ -1399,7 +1399,9 @@ function AccountInfoSheet() {
                 ) || null
               }
               onChange={(_, newValue) => {
-                setSelectedAccountId(newValue ? newValue.account_id : "");
+                // 입력 비움 시 거래처 선택 유지
+                if (!newValue) return;
+                setSelectedAccountId(newValue.account_id);
               }}
               inputValue={accountInput}
               onInputChange={(_, newValue) => setAccountInput(newValue)}

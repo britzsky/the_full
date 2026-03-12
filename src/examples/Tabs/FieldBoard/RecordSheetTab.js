@@ -27,7 +27,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import {
-  SENSITIVE_FIELD_SET,
+  formatSensitiveFieldInputValue,
   maskSensitiveFieldValue,
   shouldMaskSensitiveField,
 } from "utils/maskingUtils";
@@ -551,10 +551,8 @@ const ensureDispatchRid = (row) => {
 
 const normalizeDispatchValue = (field, v) => {
   const s = String(v ?? "");
-  if (field === "phone" || field === "rrn") return s.replace(/[^0-9]/g, "");
-  if (field === "account_number") return s.replace(/\s/g, "");
   if (field === "del_yn") return s.trim().toUpperCase();
-  return s.trim();
+  return s;
 };
 
 function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = false }) {
@@ -562,7 +560,6 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
   const [inputValue, setInputValue] = useState(value);
   const [isComposing, setIsComposing] = useState(false);
   const rid = String(row?.original?._rid ?? "");
-  const isSensitiveField = SENSITIVE_FIELD_SET.has(String(field ?? ""));
   const isMaskedSensitiveField = shouldMaskSensitiveField(field, maskingEnabled);
 
   const original = table.options.meta?.getOriginalDispatchValueByRid?.(rid, field) ?? "";
@@ -574,7 +571,7 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
   const comparedValue = isMaskedSensitiveField ? value : inputValue;
   const isChanged =
     normalizeDispatchValue(field, comparedValue) !== normalizeDispatchValue(field, original);
-  const displayValue = isSensitiveField
+  const displayValue = isMaskedSensitiveField
     ? maskSensitiveFieldValue(field, value, maskingEnabled)
     : inputValue;
 
@@ -588,7 +585,7 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
 
   const handleChange = (e) => {
     if (isMaskedSensitiveField) return;
-    const newVal = e.target.value;
+    const newVal = formatSensitiveFieldInputValue(field, e.target.value);
     setInputValue(newVal);
   };
 
@@ -597,14 +594,14 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
   };
 
   const handleCompositionEnd = (e) => {
-    const newVal = e.currentTarget.value;
+    const newVal = formatSensitiveFieldInputValue(field, e.currentTarget.value);
     setIsComposing(false);
     setInputValue(newVal);
     commitValue(newVal);
   };
 
   const handleBlur = () => {
-    commitValue(inputValue);
+    commitValue(formatSensitiveFieldInputValue(field, inputValue));
   };
 
   return (
@@ -1429,7 +1426,7 @@ function RecordSheet() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: formatSensitiveFieldInputValue(name, value) }));
   };
 
   // ============================================================

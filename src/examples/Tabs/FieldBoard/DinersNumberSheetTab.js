@@ -1248,7 +1248,9 @@ function DinersNumberSheet() {
             })()}
             onChange={(_, opt) => {
               if (isAccountLocked) return; // ✅ localStorage로 고정이면 변경 불가
-              setSelectedAccountId(opt ? opt.value : "");
+              // 입력 비움 시 거래처 선택 유지
+              if (!opt) return;
+              setSelectedAccountId(opt.value);
             }}
             inputValue={accountInput}
             onInputChange={(_, newValue) => {

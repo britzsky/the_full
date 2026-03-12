@@ -190,19 +190,19 @@ export default function ProfitLossTableTab() {
 
     const salesCols = isSpecialSales2
       ? [
-          "생계비",
-          "일반식대",
-          "직원식대",
-          "생계비(2)",
-          "일반식대(2)",
-          "직원식대(2)",
-          "주간일반",
-          "주간직원",
-          "보전",
-          "반환금",
-          "판장금",
-          "매출소계",
-        ]
+        "생계비",
+        "일반식대",
+        "직원식대",
+        "생계비(2)",
+        "일반식대(2)",
+        "직원식대(2)",
+        "주간일반",
+        "주간직원",
+        "보전",
+        "반환금",
+        "판장금",
+        "매출소계",
+      ]
       : salesColsBase;
 
     return [
@@ -594,20 +594,20 @@ export default function ProfitLossTableTab() {
         idx === 0
           ? 6
           : idx === 1
-          ? 10
-          : idx === 2
-          ? 18
-          : idx === 3
-          ? 12
-          : idx === 4
-          ? 14
-          : idx === 5
-          ? 10
-          : idx === 6
-          ? 22
-          : idx >= 7
-          ? 12
-          : 12;
+            ? 10
+            : idx === 2
+              ? 18
+              : idx === 3
+                ? 12
+                : idx === 4
+                  ? 14
+                  : idx === 5
+                    ? 10
+                    : idx === 6
+                      ? 22
+                      : idx >= 7
+                        ? 12
+                        : 12;
       return { header: h, key: `c${idx + 1}`, width: w };
     });
 
@@ -643,15 +643,15 @@ export default function ProfitLossTableTab() {
       const defs =
         accId === SPECIAL_ACCOUNT_ID
           ? (() => {
-              const out = [];
-              for (const d of monthExcelRowDefs) {
-                out.push(d);
-                if (d.label === "생계비") out.push(monthExcelRowDefsSales2[0]);
-                if (d.label === "일반식대") out.push(monthExcelRowDefsSales2[1]);
-                if (d.label === "직원식대") out.push(monthExcelRowDefsSales2[2]);
-              }
-              return out;
-            })()
+            const out = [];
+            for (const d of monthExcelRowDefs) {
+              out.push(d);
+              if (d.label === "생계비") out.push(monthExcelRowDefsSales2[0]);
+              if (d.label === "일반식대") out.push(monthExcelRowDefsSales2[1]);
+              if (d.label === "직원식대") out.push(monthExcelRowDefsSales2[2]);
+            }
+            return out;
+          })()
           : monthExcelRowDefs;
 
       const monthMap = new Map();
@@ -899,8 +899,7 @@ export default function ProfitLossTableTab() {
           } catch (e) {
             Swal.fire(
               "엑셀 다운로드 실패",
-              `서버가 엑셀도 아니고 JSON 파싱도 실패했습니다.\n\n(앞부분)\n${
-                detected.preview || ""
+              `서버가 엑셀도 아니고 JSON 파싱도 실패했습니다.\n\n(앞부분)\n${detected.preview || ""
               }`,
               "error"
             );
@@ -1001,8 +1000,7 @@ export default function ProfitLossTableTab() {
           } catch (e) {
             Swal.fire(
               "엑셀 다운로드 실패",
-              `서버가 엑셀도 아니고 JSON 파싱도 실패했습니다.\n\n(앞부분)\n${
-                detected.preview || ""
+              `서버가 엑셀도 아니고 JSON 파싱도 실패했습니다.\n\n(앞부분)\n${detected.preview || ""
               }`,
               "error"
             );
@@ -1062,8 +1060,7 @@ export default function ProfitLossTableTab() {
           } catch (e) {
             Swal.fire(
               "엑셀 다운로드 실패",
-              `서버가 엑셀도 아니고 JSON 파싱도 실패했습니다.\n\n(앞부분)\n${
-                detected.preview || ""
+              `서버가 엑셀도 아니고 JSON 파싱도 실패했습니다.\n\n(앞부분)\n${detected.preview || ""
               }`,
               "error"
             );
@@ -1243,7 +1240,9 @@ export default function ProfitLossTableTab() {
           options={accountOptions}
           value={selectedAccount}
           onChange={(_, newValue) => {
-            setSelectedAccountId(newValue ? newValue.account_id : "ALL");
+            // 입력 비움 시 거래처 선택 유지
+            if (!newValue) return;
+            setSelectedAccountId(newValue.account_id);
           }}
           inputValue={accountInput}
           onInputChange={(_, newValue) => setAccountInput(newValue)}
@@ -1424,8 +1423,8 @@ export default function ProfitLossTableTab() {
                                     field === "return_cost" && r?.[rawKey]
                                       ? r[rawKey]
                                       : r[field] !== null && r[field] !== undefined
-                                      ? formatNumber(r[field])
-                                      : "";
+                                        ? formatNumber(r[field])
+                                        : "";
 
                                   return (
                                     <input

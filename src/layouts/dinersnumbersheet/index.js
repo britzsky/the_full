@@ -1330,7 +1330,11 @@ function DinersNumberSheet() {
               const v = String(selectedAccountId ?? "");
               return accountOptions.find((o) => o.value === v) || null;
             })()}
-            onChange={(_, opt) => setSelectedAccountId(opt ? opt.value : "")}
+            onChange={(_, opt) => {
+              // 입력 비움 시 거래처 선택 유지
+              if (!opt) return;
+              setSelectedAccountId(opt.value);
+            }}
             inputValue={accountInput}
             onInputChange={(_, newValue) => setAccountInput(newValue)}
             getOptionLabel={(opt) => opt?.label ?? ""}

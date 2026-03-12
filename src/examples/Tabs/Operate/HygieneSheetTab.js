@@ -495,7 +495,9 @@ function HygieneSheetTab() {
             disabled={isAccountLocked}
             onChange={(_, opt) => {
               if (isAccountLocked) return;
-              setSelectedAccountId(opt ? opt.value : "");
+              // 입력 비움 시 거래처 선택 유지
+              if (!opt) return;
+              setSelectedAccountId(opt.value);
             }}
             inputValue={accountInput}
             onInputChange={(_, newValue) => {

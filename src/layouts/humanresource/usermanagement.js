@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Card from "@mui/material/Card";
 import Grid from "@mui/material/Grid";
 import Select from "@mui/material/Select";
@@ -267,10 +267,12 @@ function UserManagement() {
   const [accountOptions, setAccountOptions] = useState([]);
   const [accountOptionsLoading, setAccountOptionsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [searchKeyword, setSearchKeyword] = useState("");
+  // 입력창 값과 실제 필터 적용 값을 분리해서, Enter 입력 시에만 검색이 실행되게 함
+  const [appliedSearchKeyword, setAppliedSearchKeyword] = useState("");
   const [editingAccountUserId, setEditingAccountUserId] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const deferredSearchKeyword = useDeferredValue(searchKeyword);
+  const [searchInputResetKey, setSearchInputResetKey] = useState(0);
+  const searchKeywordDraftRef = useRef("");
   const rowsRef = useRef(rows);
   const originalRowsByIdRef = useRef(originalRowsById);
 
@@ -431,6 +433,20 @@ function UserManagement() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // Enter 입력 시 현재 검색어를 필터 키로 확정하고 1페이지로 이동
+  const applySearch = () => {
+    setAppliedSearchKeyword(searchKeywordDraftRef.current);
+    setCurrentPage(1);
+  };
+
+  // 새로고침 시 검색어/필터를 초기화하고 전체 목록을 다시 조회
+  const handleRefreshUsers = () => {
+    searchKeywordDraftRef.current = "";
+    setAppliedSearchKeyword("");
+    setSearchInputResetKey((prev) => prev + 1);
+    fetchUsers();
+  };
 
   // accountissuesheet2와 동일한 테이블 외곽/헤더/본문 톤
   const tableSx = {
@@ -1366,11 +1382,11 @@ function UserManagement() {
   };
 
   const filteredRows = useMemo(() => {
-    const keyword = deferredSearchKeyword.trim().toLowerCase();
+    const keyword = appliedSearchKeyword.trim().toLowerCase();
     if (!keyword) return rows;
 
     return rows.filter((row) => asText(row.search_blob).includes(keyword));
-  }, [rows, deferredSearchKeyword]);
+  }, [rows, appliedSearchKeyword]);
 
   const totalFilteredRows = filteredRows.length;
   const totalPages = Math.max(1, Math.ceil(totalFilteredRows / PAGE_SIZE));
@@ -1405,7 +1421,7 @@ function UserManagement() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [deferredSearchKeyword]);
+  }, [appliedSearchKeyword]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -1442,18 +1458,26 @@ function UserManagement() {
               >
                 <MDBox sx={{ width: isMobile ? "100%" : "14rem", mr: isMobile ? 0 : 1 }}>
                   <MDInput
+                    key={`search-input-${searchInputResetKey}`}
                     placeholder="필터 검색"
-                    value={searchKeyword}
                     size="small"
                     fullWidth
-                    onChange={({ currentTarget }) => setSearchKeyword(currentTarget.value)}
+                    onChange={({ currentTarget }) => {
+                      searchKeywordDraftRef.current = currentTarget.value;
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        applySearch();
+                      }
+                    }}
                   />
                 </MDBox>
                 <MDButton
                   size="medium"
                   variant="contained"
                   color="success"
-                  onClick={fetchUsers}
+                  onClick={handleRefreshUsers}
                   disabled={loading}
                 >
                   새로고침

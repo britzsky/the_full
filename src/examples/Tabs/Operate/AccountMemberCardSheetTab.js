@@ -18,7 +18,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
-import { maskSensitiveFieldValue, shouldMaskSensitiveField } from "utils/maskingUtils";
+import { canEditSensitiveField, maskSensitiveFieldValue } from "utils/maskingUtils";
 
 // 운영 -> 채용관리 -> 현장 직원목록
 function AccountMemberSheet() {
@@ -869,6 +869,7 @@ function AccountMemberSheet() {
                   const colKey = cell.column.columnDef.accessorKey;
                   const currentValue = row.getValue(colKey);
                   const originalValue = originals?.[rowIndex]?.[colKey];
+                  const isNewRow = !String(row.original?.member_id ?? "").trim();
 
                   const isNumeric = numericCols.includes(colKey);
                   const isImage = imageFields.includes(colKey);
@@ -893,6 +894,13 @@ function AccountMemberSheet() {
                   const isSelect = selectFields.has(colKey);
                   const isDate = dateFields.has(colKey);
                   const isInsuranceDate = insuranceDateFields.has(colKey);
+                  const canEditMaskedSensitiveField = canEditSensitiveField(
+                    colKey,
+                    currentValue,
+                    maskingEnabled,
+                    {},
+                    { isNewRow }
+                  );
 
                   const handleCellChange = (newValue) => {
                     const updatedRows = rows.map((r, idx) => {
@@ -1101,7 +1109,7 @@ function AccountMemberSheet() {
                         !isSelect &&
                         !isDate &&
                         !isInsuranceDate &&
-                        !shouldMaskSensitiveField(colKey, maskingEnabled)
+                        canEditMaskedSensitiveField
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
@@ -1110,7 +1118,7 @@ function AccountMemberSheet() {
                         !isSelect &&
                         !isDate &&
                         !isInsuranceDate &&
-                        !shouldMaskSensitiveField(colKey, maskingEnabled)
+                        canEditMaskedSensitiveField
                           ? (e) => {
                             let newValue = e.target.innerText.trim();
                             if (isNumeric) newValue = parseNumber(newValue);
@@ -1437,12 +1445,14 @@ function AccountMemberSheet() {
           options={accountOptions}
           value={selectedAccountOption}
           onChange={(_, opt) => {
+            // 입력 비움 시 거래처 선택 유지
+            if (!opt) return;
             // ✅ 거래처를 직접 선택하면 자동 reset 차단은 해제
             suppressAccountResetRef.current = false;
             setLoading(true);
             setMemberInput("");
             setMemberSearchName("");
-            setSelectedAccountId(opt ? opt.value : "");
+            setSelectedAccountId(opt.value);
           }}
           inputValue={accountInput}
           onInputChange={(_, newValue, reason) => {

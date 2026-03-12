@@ -31,7 +31,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import {
-  SENSITIVE_FIELD_SET,
+  formatSensitiveFieldInputValue,
   maskSensitiveFieldValue,
   shouldMaskSensitiveField,
 } from "utils/maskingUtils";
@@ -652,7 +652,6 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
   const [inputValue, setInputValue] = useState(value);
   const [isComposing, setIsComposing] = useState(false);
   const rid = String(row?.original?._rid ?? "");
-  const isSensitiveField = SENSITIVE_FIELD_SET.has(String(field ?? ""));
   const isMaskedSensitiveField = shouldMaskSensitiveField(field, maskingEnabled);
 
   const original = table.options.meta?.getOriginalDispatchValueByRid?.(rid, field) ?? "";
@@ -678,7 +677,7 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
 
   const handleChange = (e) => {
     if (isMaskedSensitiveField) return;
-    const newVal = e.target.value;
+    const newVal = formatSensitiveFieldInputValue(field, e.target.value);
     setInputValue(newVal);
   };
 
@@ -687,14 +686,14 @@ function DispatchEditableCell({ getValue, row, table, field, maskingEnabled = fa
   };
 
   const handleCompositionEnd = (e) => {
-    const newVal = e.currentTarget.value;
+    const newVal = formatSensitiveFieldInputValue(field, e.currentTarget.value);
     setIsComposing(false);
     setInputValue(newVal);
     commitValue(newVal);
   };
 
   const handleBlur = () => {
-    commitValue(inputValue);
+    commitValue(formatSensitiveFieldInputValue(field, inputValue));
   };
 
   return (
@@ -2820,7 +2819,7 @@ function RecordSheet() {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: formatSensitiveFieldInputValue(name, value) }));
   };
 
   // ============================================================
@@ -3403,6 +3402,7 @@ function RecordSheet() {
     [daysInMonth, year, month, isMobile]
   );
 
+  // 회원 퇴사 메타 맵
   const memberRetireMap = useMemo(() => {
     const map = new Map();
     (memberRows || []).forEach((m) => {
@@ -3418,6 +3418,7 @@ function RecordSheet() {
     return map;
   }, [memberRows]);
 
+  // 근태 테이블 컬럼 구성
   const attendanceColumns = useMemo(
     () => [
       {
@@ -3456,6 +3457,7 @@ function RecordSheet() {
     },
   });
 
+  // 파출 지급 상태 집계 맵
   const dispatchPayStatusMap = useMemo(() => {
     const map = new Map();
     (attendanceSummaryRows || []).forEach((row) => {
@@ -3481,6 +3483,7 @@ function RecordSheet() {
     return map;
   }, [attendanceSummaryRows, daysInMonth]);
 
+  // 파출 건수/금액 집계 맵
   const dispatchAmountMap = useMemo(() => {
     const map = new Map();
     (attendanceSummaryRows || []).forEach((row) => {
@@ -3506,6 +3509,7 @@ function RecordSheet() {
     return map;
   }, [attendanceSummaryRows, daysInMonth]);
 
+  // 직원파출 건수/금액 집계 맵
   const employeeDispatchStatMap = useMemo(() => {
     const map = new Map();
     (attendanceSummaryRows || []).forEach((row) => {
@@ -3528,6 +3532,7 @@ function RecordSheet() {
     return map;
   }, [attendanceSummaryRows, daysInMonth]);
 
+  // 급여범위 선택 요약
   const payRangeSummary = useMemo(() => {
     const totalSum = (payRangeRows || []).reduce(
       (acc, r) => acc + (Number(r.total_pay || 0) || 0),

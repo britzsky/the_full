@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Autocomplete,
   Box,
@@ -103,6 +103,15 @@ export default function DeadlineIssueTab2() {
     handleTypeSave,
     handleSave,
   } = useDeadlineIssueTab2Data(2);
+
+  // 헤더 클릭 정렬 상태(좌/우 테이블을 각각 독립적으로 관리)
+  const [leftSort, setLeftSort] = useState({ key: "subDate", direction: "desc" });
+  const [rightSortByTable, setRightSortByTable] = useState({
+    summary: { key: "subDate", direction: "asc" },
+    unresolved: { key: "subDate", direction: "asc" },
+  });
+  // 저장 버튼 클릭 시점에 현재 정렬을 다시 적용하기 위한 트리거
+  const [leftSortTrigger, setLeftSortTrigger] = useState(0);
 
   // 상단 거래처 선택: 항상 "전체" 옵션을 맨 위에 노출
   const accountSelectOptions = useMemo(
@@ -343,7 +352,142 @@ export default function DeadlineIssueTab2() {
   const getResultLabel = (resultCode) =>
     RESULT_OPTIONS.find((opt) => opt.value === String(resultCode || ""))?.label || "미입력";
 
-  const renderDetailTable = (dataRows, emptyText, { showAccount = false } = {}) => {
+  const getSortDirectionMark = (sortState, key) => {
+    if (!sortState || sortState.key !== key) return "";
+    return sortState.direction === "asc" ? " ▲" : " ▼";
+  };
+
+  // 빈 값은 항상 아래로 보내고, 값이 있으면 문자열 기준으로 정렬
+  const compareSortValue = (aValue, bValue) => {
+    const aText = String(aValue ?? "").trim();
+    const bText = String(bValue ?? "").trim();
+    const aEmpty = !aText;
+    const bEmpty = !bText;
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    return aText.localeCompare(bText, "ko", { numeric: true, sensitivity: "base" });
+  };
+
+  const toggleLeftSort = (key) => {
+    setLeftSort((prev) => {
+      if (prev.key === key) {
+        return { ...prev, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
+  const toggleRightSort = (tableKey, key) => {
+    setRightSortByTable((prev) => {
+      const current = prev[tableKey] || { key: "subDate", direction: "asc" };
+      if (current.key === key) {
+        return {
+          ...prev,
+          [tableKey]: {
+            ...current,
+            direction: current.direction === "asc" ? "desc" : "asc",
+          },
+        };
+      }
+      return {
+        ...prev,
+        [tableKey]: { key, direction: "asc" },
+      };
+    });
+  };
+
+  // 저장 완료 후 편집 테이블 정렬을 한 번 더 적용
+  const handleSaveWithSort = async () => {
+    await handleSave();
+    setLeftSortTrigger((prev) => prev + 1);
+  };
+
+  // 행 추가/삭제처럼 구조가 바뀌면 즉시 정렬을 다시 계산
+  const leftRowsIdKey = useMemo(
+    () => (rows || []).map((row) => String(row.id)).join("|"),
+    [rows]
+  );
+
+  const leftRowById = useMemo(() => {
+    const map = new Map();
+    (rows || []).forEach((row, sourceIndex) => {
+      map.set(row.id, { row, sourceIndex });
+    });
+    return map;
+  }, [rows]);
+
+  // 왼쪽 편집 테이블은 기본 접수일 내림차순으로 표시
+  const leftSortedRowIds = useMemo(() => {
+    const withSourceIndex = (rows || []).map((row, sourceIndex) => ({ row, sourceIndex }));
+    return withSourceIndex
+      .sort((a, b) => {
+        const resolveValue = (targetRow) => {
+          if (leftSort.key === "subDate") return toDateInputValue(targetRow.sub_date);
+          if (leftSort.key === "account") return getRowAccountDisplayName(targetRow);
+          if (leftSort.key === "type") {
+            const typeCode = String(targetRow.type || "");
+            return typeLabelById.get(typeCode) || typeCode;
+          }
+          if (leftSort.key === "result") {
+            const resultCode = String(targetRow.result || "");
+            return RESULT_OPTIONS.find((opt) => opt.value === resultCode)?.label || resultCode;
+          }
+          if (leftSort.key === "endDate") return toDateInputValue(targetRow.end_date);
+          return "";
+        };
+
+        const compared = compareSortValue(resolveValue(a.row), resolveValue(b.row));
+        if (compared !== 0) {
+          return leftSort.direction === "asc" ? compared : -compared;
+        }
+        return a.sourceIndex - b.sourceIndex;
+      })
+      .map(({ row }) => row.id);
+  }, [leftSort, leftSortTrigger, leftRowsIdKey, RESULT_OPTIONS, toDateInputValue, typeLabelById, accountNameById]);
+
+  // 우측 상세 테이블은 기존 기본값(접수일 오름차순)을 유지한 채 컬럼 클릭 정렬을 추가
+  const sortDetailRows = (dataRows, sortState) => {
+    const withIndex = (dataRows || []).map((item, index) => ({ item, index }));
+    return withIndex
+      .sort((a, b) => {
+        const resolveValue = (targetItem) => {
+          if (sortState.key === "subDate") return targetItem.subDate;
+          if (sortState.key === "account") return targetItem.accountName;
+          if (sortState.key === "type") {
+            return typeLabelById.get(targetItem.typeCode) || targetItem.typeCode;
+          }
+          if (sortState.key === "result") {
+            return getResultLabel(normalizeResultCode(targetItem.resultCode));
+          }
+          if (sortState.key === "endDate") return targetItem.endDate;
+          return "";
+        };
+
+        const compared = compareSortValue(resolveValue(a.item), resolveValue(b.item));
+        if (compared !== 0) {
+          return sortState.direction === "asc" ? compared : -compared;
+        }
+        return a.index - b.index;
+      })
+      .map(({ item }) => item);
+  };
+
+  const rightSummaryRowsSorted = useMemo(
+    () => sortDetailRows(scopedRowsSorted, rightSortByTable.summary),
+    [scopedRowsSorted, rightSortByTable.summary, RESULT_OPTIONS, typeLabelById]
+  );
+
+  const rightUnresolvedRowsSorted = useMemo(
+    () => sortDetailRows(unresolvedRows, rightSortByTable.unresolved),
+    [unresolvedRows, rightSortByTable.unresolved, RESULT_OPTIONS, typeLabelById]
+  );
+
+  const renderDetailTable = (
+    dataRows,
+    emptyText,
+    { showAccount = false, sortState, onSort } = {}
+  ) => {
     /*
       우측 "전체 거래처별 확인 / 미해결건 확인" 공통 테이블 렌더러.
       가로/세로 셀 구분선이 동일하게 보이도록 th/td 기본 테두리를 통일한다.
@@ -399,12 +543,39 @@ export default function DeadlineIssueTab2() {
         </colgroup>
         <thead>
           <tr>
-            <th style={firstHeadCellStyle}>접수일</th>
-            {showAccount && <th style={headCellStyle}>거래처</th>}
-            <th style={headCellStyle}>구분</th>
+            <th
+              style={{ ...firstHeadCellStyle, cursor: "pointer", userSelect: "none" }}
+              onClick={() => onSort?.("subDate")}
+            >
+              {`접수일${getSortDirectionMark(sortState, "subDate")}`}
+            </th>
+            {showAccount && (
+              <th
+                style={{ ...headCellStyle, cursor: "pointer", userSelect: "none" }}
+                onClick={() => onSort?.("account")}
+              >
+                {`거래처${getSortDirectionMark(sortState, "account")}`}
+              </th>
+            )}
+            <th
+              style={{ ...headCellStyle, cursor: "pointer", userSelect: "none" }}
+              onClick={() => onSort?.("type")}
+            >
+              {`구분${getSortDirectionMark(sortState, "type")}`}
+            </th>
             <th style={headCellStyle}>이슈</th>
-            <th style={headCellStyle}>결과</th>
-            <th style={headCellStyle}>마감일</th>
+            <th
+              style={{ ...headCellStyle, cursor: "pointer", userSelect: "none" }}
+              onClick={() => onSort?.("result")}
+            >
+              {`결과${getSortDirectionMark(sortState, "result")}`}
+            </th>
+            <th
+              style={{ ...headCellStyle, cursor: "pointer", userSelect: "none" }}
+              onClick={() => onSort?.("endDate")}
+            >
+              {`마감일${getSortDirectionMark(sortState, "endDate")}`}
+            </th>
             <th style={headCellStyle}>비고</th>
           </tr>
         </thead>
@@ -586,7 +757,7 @@ export default function DeadlineIssueTab2() {
         <MDButton variant="outlined" color="info" onClick={openTypeModal}>
           구분 관리
         </MDButton>
-        <MDButton variant="gradient" color="info" onClick={handleSave}>
+        <MDButton variant="gradient" color="info" onClick={handleSaveWithSort}>
           저장
         </MDButton>
       </MDBox>
@@ -614,17 +785,45 @@ export default function DeadlineIssueTab2() {
               </colgroup>
               <thead>
                 <tr>
-                  <th style={colStyle(LEFT_COL_WIDTH.subDate)}>접수일</th>
-                  <th style={colStyle(LEFT_COL_WIDTH.account)}>거래처</th>
-                  <th style={colStyle(LEFT_COL_WIDTH.type)}>구분</th>
+                  <th
+                    style={{ ...colStyle(LEFT_COL_WIDTH.subDate), cursor: "pointer", userSelect: "none" }}
+                    onClick={() => toggleLeftSort("subDate")}
+                  >
+                    {`접수일${getSortDirectionMark(leftSort, "subDate")}`}
+                  </th>
+                  <th
+                    style={{ ...colStyle(LEFT_COL_WIDTH.account), cursor: "pointer", userSelect: "none" }}
+                    onClick={() => toggleLeftSort("account")}
+                  >
+                    {`거래처${getSortDirectionMark(leftSort, "account")}`}
+                  </th>
+                  <th
+                    style={{ ...colStyle(LEFT_COL_WIDTH.type), cursor: "pointer", userSelect: "none" }}
+                    onClick={() => toggleLeftSort("type")}
+                  >
+                    {`구분${getSortDirectionMark(leftSort, "type")}`}
+                  </th>
                   <th style={colStyle(LEFT_COL_WIDTH.issue)}>이슈</th>
-                  <th style={colStyle(LEFT_COL_WIDTH.result)}>결과</th>
-                  <th style={colStyle(LEFT_COL_WIDTH.endDate)}>마감일</th>
+                  <th
+                    style={{ ...colStyle(LEFT_COL_WIDTH.result), cursor: "pointer", userSelect: "none" }}
+                    onClick={() => toggleLeftSort("result")}
+                  >
+                    {`결과${getSortDirectionMark(leftSort, "result")}`}
+                  </th>
+                  <th
+                    style={{ ...colStyle(LEFT_COL_WIDTH.endDate), cursor: "pointer", userSelect: "none" }}
+                    onClick={() => toggleLeftSort("endDate")}
+                  >
+                    {`마감일${getSortDirectionMark(leftSort, "endDate")}`}
+                  </th>
                   <th style={colStyle(LEFT_COL_WIDTH.note)}>비고</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, rowIndex) => {
+                {leftSortedRowIds.map((rowId) => {
+                  const rowEntry = leftRowById.get(rowId);
+                  if (!rowEntry) return null;
+                  const { row, sourceIndex: rowIndex } = rowEntry;
                   // 행 단위 파생값은 한 번만 계산해 셀 렌더에서 재사용
                   const deadlineColor = getDeadlineTextColor(row.end_date, row.result);
                   const isSelectedRow = selectedRowId === row.id;
@@ -1343,7 +1542,11 @@ export default function DeadlineIssueTab2() {
               flex: 1,
             }}
           >
-            {renderDetailTable(scopedRowsSorted, "표시할 건이 없습니다.", { showAccount: !selectedAccountKey })}
+            {renderDetailTable(rightSummaryRowsSorted, "표시할 건이 없습니다.", {
+              showAccount: !selectedAccountKey,
+              sortState: rightSortByTable.summary,
+              onSort: (key) => toggleRightSort("summary", key),
+            })}
           </Box>
 
           <MDTypography variant="h6">미해결건 확인</MDTypography>
@@ -1358,8 +1561,10 @@ export default function DeadlineIssueTab2() {
               flex: 1,
             }}
           >
-            {renderDetailTable(unresolvedRows, "미해결 건이 없습니다.", {
+            {renderDetailTable(rightUnresolvedRowsSorted, "미해결 건이 없습니다.", {
               showAccount: true,
+              sortState: rightSortByTable.unresolved,
+              onSort: (key) => toggleRightSort("unresolved", key),
             })}
           </Box>
         </Box>

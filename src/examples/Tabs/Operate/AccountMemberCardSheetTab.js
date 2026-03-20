@@ -1743,6 +1743,7 @@ function AccountMemberSheet() {
               p: 1.5,
               overflow: "hidden",
               bgcolor: "#fff",
+              "& .edited-cell": { color: "#d32f2f", fontWeight: 600 },
             }}
           >
             {/* 왼쪽 테이블 */}
@@ -1876,6 +1877,7 @@ function AccountMemberSheet() {
                   <tbody>
                     {(utilMappingRows || []).map((r, i) => {
                       const selected = utilSelectedMappingRowIndex === i;
+                      const isNewUtilRow = r?.idx == null;
                       const posLabel =
                         positionOptions.find((p) => String(p.value) === String(r.position_type))
                           ?.label ?? String(r.position_type ?? "");
@@ -1886,15 +1888,21 @@ function AccountMemberSheet() {
                         <tr
                           key={`${r.idx ?? "new"}-${r.account_id ?? "a"}-${i}`}
                           onClick={() => setUtilSelectedMappingRowIndex(i)}
+                          className={isNewUtilRow ? "edited-cell" : ""}
                           style={{
                             cursor: "pointer",
                             backgroundColor: selected ? "rgba(255,193,7,0.12)" : "#fff",
                           }}
                         >
-                          <td>{r.idx ?? ""}</td>
-                          <td style={{ textAlign: "left" }}>{accText}</td>
-                          <td>{r.name ?? ""}</td>
-                          <td>{posLabel}</td>
+                          <td className={isNewUtilRow ? "edited-cell" : ""}>{r.idx ?? ""}</td>
+                          <td
+                            className={isNewUtilRow ? "edited-cell" : ""}
+                            style={{ textAlign: "left" }}
+                          >
+                            {accText}
+                          </td>
+                          <td className={isNewUtilRow ? "edited-cell" : ""}>{r.name ?? ""}</td>
+                          <td className={isNewUtilRow ? "edited-cell" : ""}>{posLabel}</td>
                         </tr>
                       );
                     })}

@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+/* eslint-disable react/function-component-definition, react/prop-types */
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
@@ -24,6 +24,243 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 import { canEditSensitiveField, maskSensitiveFieldValue } from "utils/maskingUtils";
 
+// ✅ Autocomplete 검색어를 라벨 기준으로만 가볍게 필터링
+const filterOptionsByLabel = (options, state) => {
+  const q = String(state?.inputValue ?? "")
+    .trim()
+    .toLowerCase();
+  if (!q) return options;
+  return options.filter((option) => String(option?.label ?? "").toLowerCase().includes(q));
+};
+
+// ✅ 상단 검색/버튼 영역을 분리해서 입력 중 본문 테이블 전체 리렌더링을 줄임
+const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
+  isMobile,
+  activeStatus,
+  onActiveStatusChange,
+  accountOptions,
+  selectedAccountId,
+  onSelectAccount,
+  onSearchMember,
+  onOpenWorkSystemModal,
+  onOpenUtilModal,
+  onOpenDispatchModal,
+  onDownloadExcel,
+  excelDownloading,
+  maskingEnabled,
+  onToggleMasking,
+  onAddRow,
+  onSave,
+}) {
+  const [memberInput, setMemberInput] = useState("");
+  const [accountInput, setAccountInput] = useState("");
+  const suppressAccountResetRef = useRef(false);
+
+  const selectedAccountOption = useMemo(() => {
+    const value = String(selectedAccountId ?? "");
+    return accountOptions.find((option) => option.value === value) || null;
+  }, [accountOptions, selectedAccountId]);
+
+  useEffect(() => {
+    if (suppressAccountResetRef.current) return;
+    setAccountInput(selectedAccountOption?.label ?? "");
+  }, [selectedAccountOption?.label, selectedAccountOption?.value]);
+
+  const selectAccountByInput = useCallback(() => {
+    suppressAccountResetRef.current = false;
+    setMemberInput("");
+    onSearchMember("");
+
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+
+    const qLower = q.toLowerCase();
+    const exact = accountOptions.find((option) => String(option?.label ?? "").toLowerCase() === qLower);
+    const partial =
+      exact ||
+      accountOptions.find((option) =>
+        String(option?.label ?? "")
+          .toLowerCase()
+          .includes(qLower)
+      );
+
+    if (partial) {
+      setAccountInput(partial.label || q);
+      onSelectAccount(partial.value);
+    }
+  }, [accountInput, accountOptions, onSearchMember, onSelectAccount]);
+
+  const selectMemberByInput = useCallback(() => {
+    const q = String(memberInput || "").trim();
+    suppressAccountResetRef.current = true;
+    setAccountInput("");
+    setMemberInput(q);
+    onSearchMember(q);
+  }, [memberInput, onSearchMember]);
+
+  return (
+    <MDBox
+      pt={1}
+      pb={1}
+      sx={{
+        display: "flex",
+        justifyContent: isMobile ? "space-between" : "flex-end",
+        alignItems: "center",
+        gap: isMobile ? 1 : 2,
+        flexWrap: isMobile ? "wrap" : "nowrap",
+        position: "sticky",
+        zIndex: 10,
+        top: 78,
+        backgroundColor: "#ffffff",
+      }}
+    >
+      <TextField
+        select
+        size="small"
+        value={activeStatus}
+        onChange={(e) => onActiveStatusChange(e.target.value)}
+        sx={{ minWidth: 150 }}
+        SelectProps={{ native: true }}
+      >
+        <option value="N">재직자</option>
+        <option value="Y">퇴사자</option>
+      </TextField>
+
+      <TextField
+        size="small"
+        value={memberInput}
+        onChange={(e) => setMemberInput(e.target.value)}
+        label="직원 검색"
+        placeholder="직원명을 입력"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            selectMemberByInput();
+          }
+        }}
+        sx={{
+          minWidth: 200,
+          "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+          "& input": { padding: "0 8px" },
+        }}
+      />
+
+      <Autocomplete
+        size="small"
+        sx={{ minWidth: 200 }}
+        options={accountOptions}
+        value={selectedAccountOption}
+        onChange={(_, option) => {
+          if (!option) return;
+          suppressAccountResetRef.current = false;
+          setMemberInput("");
+          setAccountInput(option.label ?? "");
+          onSearchMember("");
+          onSelectAccount(option.value);
+        }}
+        inputValue={accountInput}
+        onInputChange={(_, newValue, reason) => {
+          if (reason === "reset" && suppressAccountResetRef.current) return;
+          if (reason === "input" || reason === "clear") {
+            suppressAccountResetRef.current = false;
+          }
+          setAccountInput(newValue);
+        }}
+        getOptionLabel={(option) => option?.label ?? ""}
+        isOptionEqualToValue={(option, value) => option.value === value.value}
+        filterOptions={filterOptionsByLabel}
+        renderInput={(params) => (
+          <TextField
+            {...params}
+            label="거래처 검색"
+            placeholder="거래처명을 입력"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                selectAccountByInput();
+              }
+            }}
+            sx={{
+              "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+              "& input": { padding: "0 8px" },
+            }}
+          />
+        )}
+      />
+
+      <MDButton variant="gradient" color="warning" onClick={onOpenWorkSystemModal}>
+        근무형태 관리
+      </MDButton>
+
+      <MDButton variant="gradient" color="warning" onClick={onOpenUtilModal}>
+        통합/유틸 관리
+      </MDButton>
+
+      <MDButton variant="gradient" color="warning" onClick={onOpenDispatchModal}>
+        직원파출관리
+      </MDButton>
+
+      <MDButton variant="gradient" color="dark" onClick={onDownloadExcel} disabled={excelDownloading}>
+        {excelDownloading ? "다운로드 중..." : "전체 거래처 엑셀"}
+      </MDButton>
+
+      <MDButton variant="outlined" color={maskingEnabled ? "dark" : "secondary"} onClick={onToggleMasking}>
+        {maskingEnabled ? "* 해제" : "* 적용"}
+      </MDButton>
+
+      <MDButton variant="gradient" color="success" onClick={onAddRow}>
+        행추가
+      </MDButton>
+
+      <MDButton variant="gradient" color="info" onClick={onSave}>
+        저장
+      </MDButton>
+    </MDBox>
+  );
+});
+
+// ✅ 직원파출관리 모달의 거래처 검색도 별도 컴포넌트로 분리해 입력 지연을 줄임
+const DispatchAccountAutocomplete = React.memo(function DispatchAccountAutocomplete({
+  accountOptions,
+  selectedOption,
+  onChange,
+}) {
+  const [inputValue, setInputValue] = useState(selectedOption?.label ?? "");
+
+  useEffect(() => {
+    setInputValue(selectedOption?.label ?? "");
+  }, [selectedOption?.label, selectedOption?.value]);
+
+  return (
+    <Autocomplete
+      size="small"
+      sx={{ minWidth: 220 }}
+      options={accountOptions}
+      value={selectedOption}
+      inputValue={inputValue}
+      onInputChange={(_, value) => setInputValue(value)}
+      onChange={(_, option) => {
+        if (!option) return;
+        onChange(option);
+      }}
+      getOptionLabel={(option) => option?.label ?? ""}
+      isOptionEqualToValue={(option, value) => option.value === value.value}
+      filterOptions={filterOptionsByLabel}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label="거래처"
+          placeholder="거래처 검색"
+          sx={{
+            "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+            "& input": { padding: "0 8px" },
+          }}
+        />
+      )}
+    />
+  );
+});
+
 // 인사 -> 현장관리 -> 현장 직원관리
 function AccountMemberSheet() {
   // =========================
@@ -39,13 +276,9 @@ function AccountMemberSheet() {
   const UTIL_ACCOUNT_ID = "2";
 
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [accountInput, setAccountInput] = useState("");
-  const [memberInput, setMemberInput] = useState("");
   const [memberSearchName, setMemberSearchName] = useState("");
   const [activeStatus, setActiveStatus] = useState("N");
   const accountInitRef = useRef(false);
-  // ✅ 직원 검색 직후 거래처 Autocomplete의 자동 reset 재입력을 막기 위한 플래그
-  const suppressAccountResetRef = useRef(false);
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -667,46 +900,21 @@ function AccountMemberSheet() {
     }
   };
 
-  const selectedAccountOption = useMemo(() => {
-    const v = String(selectedAccountId ?? "");
-    return accountOptions.find((o) => o.value === v) || null;
-  }, [accountOptions, selectedAccountId]);
-
-  const selectAccountByInput = useCallback(() => {
-    // ✅ 거래처 검색을 직접 수행하면 자동 reset 차단은 해제
-    suppressAccountResetRef.current = false;
-
-    // 거래처 검색이 실행되면 직원명 검색 필터는 해제
-    setMemberInput("");
+  const handleToolbarAccountSelect = useCallback((accountId) => {
+    setLoading(true);
     setMemberSearchName("");
+    setSelectedAccountId(accountId);
+  }, []);
 
-    const q = String(accountInput || "").trim();
-    if (!q) return;
-    const list = accountOptions || [];
-    const qLower = q.toLowerCase();
-    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
-    const partial =
-      exact ||
-      list.find((o) =>
-        String(o?.label || "")
-          .toLowerCase()
-          .includes(qLower)
-      );
-    if (partial) {
-      setSelectedAccountId(partial.value);
-      setAccountInput(partial.label || q);
-    }
-  }, [accountInput, accountOptions]);
+  const handleToolbarMemberSearch = useCallback((name) => {
+    setLoading(true);
+    setMemberSearchName(name);
+  }, []);
 
-  const selectMemberByInput = useCallback(() => {
-    const q = String(memberInput || "").trim();
-    // ✅ 직원 검색 직후에는 거래처 입력값 자동복원(reset)을 막음
-    suppressAccountResetRef.current = true;
-    // 직원 검색이 실행되면 거래처 검색 입력창은 비움
-    setAccountInput("");
-    setMemberInput(q);
-    setMemberSearchName(q);
-  }, [memberInput]);
+  const handleActiveStatusChange = useCallback((status) => {
+    setLoading(true);
+    setActiveStatus(status);
+  }, []);
 
   const columns = useMemo(
     () => [
@@ -1066,7 +1274,6 @@ function AccountMemberSheet() {
   const DISPATCH_TYPE = 6;
 
   const [dispatchAccountId, setDispatchAccountId] = useState("");
-  const [dispatchAccountInput, setDispatchAccountInput] = useState("");
 
   const selectedDispatchAccountOption = useMemo(() => {
     const v = String(dispatchAccountId ?? "");
@@ -1110,20 +1317,20 @@ function AccountMemberSheet() {
     };
   };
 
-  const normalizeDispatchDate = (dateStr) => {
+  const normalizeDispatchDate = useCallback((dateStr) => {
     const raw = String(dateStr ?? "").trim();
     if (!raw) return "";
     const d = dayjs(raw);
     return d.isValid() ? d.format("YYYY-MM-DD") : raw;
-  };
+  }, []);
 
-  const buildDispatchDuplicateKey = (row, fallbackMemberId = "") => {
-    const memberId = String(row?.member_id ?? fallbackMemberId ?? "").trim();
+  const buildDispatchDuplicateKey = (row) => {
     const ownerAccountId = String(row?.account_id ?? "").trim();
     const dispatchAccId = String(row?.dispatch_account_id ?? "").trim();
-    const recordDate = normalizeDispatchDate(row?.record_date);
-    if (!memberId || !ownerAccountId || !dispatchAccId || !recordDate) return "";
-    return [memberId, ownerAccountId, dispatchAccId, recordDate].join("|");
+    const { record_year, record_month, record_date } = splitRecordDate(row?.record_date);
+    if (!ownerAccountId || !dispatchAccId || !record_year || !record_month || !record_date) return "";
+    // ✅ 저장 payload와 동일하게 년/월/일 숫자 기준으로 중복키를 생성
+    return [ownerAccountId, dispatchAccId, record_year, record_month, record_date].join("|");
   };
 
   // ✅ 가운데 테이블에서 파견일자 수정용
@@ -1150,45 +1357,6 @@ function AccountMemberSheet() {
       rowIndex,
     });
   }, []);
-
-  // 가운데 매핑 목록 삭제
-  const handleDeleteDispatchMappingRow = useCallback(
-    async (rowIndex) => {
-      if (rowIndex == null) return;
-      const targetRow = dispatchMappingRows?.[rowIndex];
-      if (!targetRow) return;
-
-      const result = await Swal.fire({
-        title: "행 삭제",
-        text: "선택한 파출 매핑을 삭제할까요?",
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: "#d33",
-        cancelButtonColor: "#9e9e9e",
-        confirmButtonText: "삭제",
-        cancelButtonText: "취소",
-      });
-      if (!result.isConfirmed) return;
-
-      try {
-        await deleteDispatchMappingRow(targetRow);
-
-        setDispatchMappingRows((prev) => prev.filter((_, i) => i !== rowIndex));
-        setDispatchOriginalMappingRows((prev) => {
-          if (targetRow?.idx == null) return prev;
-          return (prev || []).filter((r) => String(r.idx ?? "") !== String(targetRow.idx ?? ""));
-        });
-        setDispatchSelectedMappingRowIndex(null);
-        closeDispatchCtxMenu();
-
-        Swal.fire("삭제", "삭제 처리되었습니다.", "success");
-      } catch (err) {
-        closeDispatchCtxMenu();
-        Swal.fire("삭제 실패", err?.message || "오류", "error");
-      }
-    },
-    [dispatchMappingRows, deleteDispatchMappingRow, closeDispatchCtxMenu]
-  );
 
   // ✅ (중요) API는 통합/유틸 관리와 동일하게 호출하되, year/month를 params에 포함
   //    서버가 year/month를 아직 안 받더라도 무시될 수 있으니 안전함
@@ -1231,6 +1399,97 @@ function AccountMemberSheet() {
     return Array.isArray(list) ? list : [];
   }, []);
 
+  // ✅ 매핑 행의 날짜를 숫자 기준 연/월/일과 화면 표시용 문자열로 함께 정규화
+  const buildDispatchRecordDateInfo = useCallback((row) => {
+    const rawDate = String(row?.record_date ?? row?.recordDate ?? "").trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      const parsed = dayjs(rawDate);
+      if (parsed.isValid()) {
+        return {
+          record_year: parsed.year(),
+          record_month: parsed.month() + 1,
+          record_date: parsed.date(),
+          display_date: parsed.format("YYYY-MM-DD"),
+        };
+      }
+    }
+
+    const record_year = Number(row?.record_year ?? row?.recordYear ?? NaN);
+    const record_month = Number(row?.record_month ?? row?.recordMonth ?? NaN);
+    const record_date = Number(row?.record_day ?? row?.recordDay ?? row?.day ?? row?.date ?? row?.record_date);
+
+    if (
+      Number.isFinite(record_year) &&
+      Number.isFinite(record_month) &&
+      Number.isFinite(record_date) &&
+      record_month >= 1 &&
+      record_month <= 12 &&
+      record_date >= 1 &&
+      record_date <= 31
+    ) {
+      return {
+        record_year,
+        record_month,
+        record_date,
+        display_date: `${String(record_year).padStart(4, "0")}-${String(record_month).padStart(
+          2,
+          "0"
+        )}-${String(record_date).padStart(2, "0")}`,
+      };
+    }
+
+    return {
+      record_year: null,
+      record_month: null,
+      record_date: null,
+      display_date: normalizeDispatchDate(rawDate),
+    };
+  }, [normalizeDispatchDate]);
+
+  // ✅ 매핑 조회 SQL에서 tb_account_record 시간을 이미 붙여주므로
+  //    화면에서는 날짜/타입만 정리해서 바로 사용
+  const normalizeDispatchMappings = useCallback(
+    async (mappings, memberRow) => {
+      const list = Array.isArray(mappings) ? mappings : [];
+      if (list.length === 0) return [];
+
+      return list.map((row) => {
+        const dateInfo = buildDispatchRecordDateInfo(row);
+
+        return {
+          ...row,
+          start_time: normalizeTime(row?.start_time ?? memberRow?.start_time ?? ""),
+          end_time: normalizeTime(row?.end_time ?? memberRow?.end_time ?? ""),
+          record_date: dateInfo.display_date || "",
+          // ✅ 직원파출관리 모달의 근무기록 타입은 항상 6(직원파출)로 고정
+          type: DISPATCH_TYPE,
+        };
+      });
+    },
+    [DISPATCH_TYPE, buildDispatchRecordDateInfo]
+  );
+
+  const handleDispatchAccountSelect = useCallback(
+    async (option) => {
+      if (!option) return;
+
+      setDispatchAccountId(option.value);
+      setDispatchSelectedMember(null);
+      setDispatchSelectedAccount(null);
+      setDispatchSelectedMappingRowIndex(null);
+      setDispatchMappingRows([]);
+      setDispatchOriginalMappingRows([]);
+
+      try {
+        const members = await fetchDispatchMemberList(option.value);
+        setDispatchMemberRows(members || []);
+      } catch (e) {
+        Swal.fire("조회 실패", e?.message || "오류", "error");
+      }
+    },
+    [fetchDispatchMemberList]
+  );
+
   const openDispatchModal = async () => {
     try {
       setDispatchSelectedMember(null);
@@ -1263,6 +1522,138 @@ function AccountMemberSheet() {
     closeDispatchCtxMenu();
   };
 
+  // ✅ 직원파출 시간 저장/삭제를 위해 매핑 행을 tb_account_record 저장 형식으로 변환
+  const buildDispatchRecordPayloadRow = useCallback(
+    (row, originalRow = null, overrideType = DISPATCH_TYPE) => {
+      const dateInfo = buildDispatchRecordDateInfo(row);
+      const originalDateInfo = originalRow ? buildDispatchRecordDateInfo(originalRow) : dateInfo;
+      const memberId = String(
+        row?.member_id ?? row?.memberId ?? originalRow?.member_id ?? originalRow?.memberId ?? dispatchSelectedMember?.member_id ?? ""
+      ).trim();
+      const dispatchAccountIdValue = String(
+        row?.dispatch_account_id ??
+        row?.dispatchAccountId ??
+        originalRow?.dispatch_account_id ??
+        originalRow?.dispatchAccountId ??
+        ""
+      ).trim();
+      const positionType = String(
+        row?.position_type ?? originalRow?.position_type ?? dispatchSelectedMember?.position_type ?? ""
+      ).trim();
+      const defaultStartTime = normalizeTime(dispatchSelectedMember?.start_time ?? "");
+      const defaultEndTime = normalizeTime(dispatchSelectedMember?.end_time ?? "");
+      const originalStartTime = normalizeTime(originalRow?.start_time ?? row?.start_time ?? defaultStartTime);
+      const originalEndTime = normalizeTime(originalRow?.end_time ?? row?.end_time ?? defaultEndTime);
+
+      if (
+        !memberId ||
+        !dispatchAccountIdValue ||
+        !dateInfo.record_year ||
+        !dateInfo.record_month ||
+        !dateInfo.record_date
+      ) {
+        return null;
+      }
+
+      return {
+        gubun: String(dispatchSelectedMember?.gubun ?? "nor").trim() || "nor",
+        account_id: dispatchAccountIdValue,
+        member_id: memberId,
+        position_type: positionType,
+        positionType: positionType,
+        record_year: dateInfo.record_year,
+        record_month: dateInfo.record_month,
+        record_date: dateInfo.record_date,
+        type: Number(overrideType),
+        is_present: Number(overrideType) === 0 ? "N" : "Y",
+        start_time: Number(overrideType) === 0 ? "" : normalizeTime(row?.start_time ?? defaultStartTime),
+        end_time: Number(overrideType) === 0 ? "" : normalizeTime(row?.end_time ?? defaultEndTime),
+        salary: Number.isFinite(Number(row?.salary)) ? Number(row.salary) : 0,
+        note: null,
+        position: row?.position ?? originalRow?.position ?? dispatchSelectedMember?.position ?? "",
+        org_start_time: originalStartTime,
+        org_end_time: originalEndTime,
+        old_account_id: String(
+          originalRow?.dispatch_account_id ??
+          originalRow?.dispatchAccountId ??
+          originalRow?.account_id ??
+          originalRow?.accountId ??
+          dispatchAccountIdValue
+        ).trim(),
+        old_member_id: String(originalRow?.member_id ?? originalRow?.memberId ?? memberId).trim(),
+        old_record_year: originalDateInfo.record_year ?? dateInfo.record_year,
+        old_record_month: originalDateInfo.record_month ?? dateInfo.record_month,
+        old_record_date: originalDateInfo.record_date ?? dateInfo.record_date,
+        old_type: originalRow ? Number(originalRow?.type ?? DISPATCH_TYPE) : null,
+      };
+    },
+    [DISPATCH_TYPE, buildDispatchRecordDateInfo, dispatchSelectedMember]
+  );
+
+  // ✅ 매핑 삭제 시 같은 일자의 tb_account_record 직원파출 시간도 같이 비움
+  const clearDispatchRecord = useCallback(
+    async (row) => {
+      if (!row || row?.idx == null) return;
+
+      const originalRow =
+        (dispatchOriginalMappingRows || []).find((item) => String(item?.idx ?? "") === String(row?.idx ?? "")) ||
+        row;
+      const recordRow = buildDispatchRecordPayloadRow(originalRow, originalRow, 0);
+      if (!recordRow) return;
+
+      const res = await api.post("/Account/AccountRecordSave", {
+        normalRecords: [recordRow],
+        disRecords: [],
+        recRecords: [],
+      });
+      const ok = res?.status === 200 || Number(res?.data?.code) === 200;
+      if (!ok) {
+        throw new Error(res?.data?.message || "직원파출 시간 삭제에 실패했습니다.");
+      }
+    },
+    [buildDispatchRecordPayloadRow, dispatchOriginalMappingRows]
+  );
+
+  // 가운데 매핑 목록 삭제
+  const handleDeleteDispatchMappingRow = useCallback(
+    async (rowIndex) => {
+      if (rowIndex == null) return;
+      const targetRow = dispatchMappingRows?.[rowIndex];
+      if (!targetRow) return;
+
+      const result = await Swal.fire({
+        title: "행 삭제",
+        text: "선택한 파출 매핑을 삭제할까요?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#9e9e9e",
+        confirmButtonText: "삭제",
+        cancelButtonText: "취소",
+      });
+      if (!result.isConfirmed) return;
+
+      try {
+        await clearDispatchRecord(targetRow);
+        await deleteDispatchMappingRow(targetRow);
+
+        setDispatchMappingRows((prev) => prev.filter((_, i) => i !== rowIndex));
+        setDispatchOriginalMappingRows((prev) => {
+          if (targetRow?.idx == null) return prev;
+          return (prev || []).filter((r) => String(r.idx ?? "") !== String(targetRow.idx ?? ""));
+        });
+        setDispatchSelectedMappingRowIndex(null);
+        closeDispatchCtxMenu();
+
+        Swal.fire("삭제", "삭제 처리되었습니다.", "success");
+      } catch (err) {
+        closeDispatchCtxMenu();
+        Swal.fire("삭제 실패", err?.message || "오류", "error");
+      }
+    },
+    [clearDispatchRecord, closeDispatchCtxMenu, deleteDispatchMappingRow, dispatchMappingRows]
+  );
+
   const handleSelectDispatchMember = async (row) => {
     try {
       setDispatchSelectedMember(row);
@@ -1276,31 +1667,7 @@ function AccountMemberSheet() {
       }
 
       const mappings = await fetchDispatchMappingList(memberId);
-
-      // ✅ 서버에서 record_date / record_year/record_month 형태가 뭐가 오든 UI용 record_date(YYYY-MM-DD)로 맞춤
-      const normalized = (mappings || []).map((x) => {
-        const date =
-          x.record_date ||
-          (x.record_year && x.record_month && x.record_day
-            ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
-              2,
-              "0"
-            )}-${String(x.record_day).padStart(2, "0")}`
-            : "");
-
-        return {
-          ...x,
-          // ✅ 직원 시간도 같이 보강(없으면 직원값으로)
-          start_time: normalizeTime(x.start_time ?? row.start_time),
-          end_time: normalizeTime(x.end_time ?? row.end_time),
-
-          // ✅ 파견일자 UI 필드
-          record_date: date ? dayjs(date).format("YYYY-MM-DD") : "",
-
-          // ✅ type 기본값
-          type: x.type ?? DISPATCH_TYPE,
-        };
-      });
+      const normalized = await normalizeDispatchMappings(mappings, row);
 
       setDispatchMappingRows(normalized);
       setDispatchOriginalMappingRows(normalized);
@@ -1330,19 +1697,6 @@ function AccountMemberSheet() {
 
     const newRecordDate = dayjs().format("YYYY-MM-DD");
 
-    // ✅ member_id + account_id + dispatch_account_id + record_date 중복 방지
-    const exists = (dispatchMappingRows || []).some(
-      (r) =>
-        String(r.member_id) === String(member_id) &&
-        String(r.account_id) === String(account_id) &&
-        String(r.dispatch_account_id) === String(dispatch_account_id) &&
-        normalizeDispatchDate(r.record_date) === normalizeDispatchDate(newRecordDate)
-    );
-    if (exists) {
-      Swal.fire("안내", "해당 파견일자에 이미 등록되어 있습니다.", "info");
-      return;
-    }
-
     const newRow = {
       idx: null, // 신규
       member_id,
@@ -1352,7 +1706,7 @@ function AccountMemberSheet() {
       account_id,
       dispatch_account_id,
 
-      // ✅ 직원 목록에서 시간 포함
+      // ✅ 최초 등록 시에는 tb_account_members(직원 기본시간)으로 시작
       start_time: normalizeTime(dispatchSelectedMember.start_time),
       end_time: normalizeTime(dispatchSelectedMember.end_time),
 
@@ -1374,19 +1728,25 @@ function AccountMemberSheet() {
       return;
     }
 
-    // ✅ 파견일자 필수 체크
-    const noDate = (dispatchMappingRows || []).some((r) => !r.record_date);
-    if (noDate) {
-      Swal.fire("안내", "가운데 매핑 목록에서 파견일자를 모두 선택해주세요.", "info");
-      return;
-    }
-
+    // ✅ del_yn='N' 활성 행만 저장 검증 대상으로 사용
     const rowsToValidate = (dispatchMappingRows || []).filter(
       (r) => String(r.del_yn ?? "N").toUpperCase() !== "Y"
     );
+
+    // ✅ 파견일자 필수/유효성 체크
+    const invalidDate = rowsToValidate.some((r) => {
+      if (!r.record_date) return true;
+      const { record_year, record_month, record_date } = splitRecordDate(r.record_date);
+      return !record_year || !record_month || !record_date;
+    });
+    if (invalidDate) {
+      Swal.fire("안내", "가운데 매핑 목록에서 파견일자를 올바르게 선택해주세요.", "info");
+      return;
+    }
+
     const seenDispatchKeys = new Set();
     const hasDuplicate = rowsToValidate.some((r) => {
-      const key = buildDispatchDuplicateKey(r, dispatchSelectedMember?.member_id);
+      const key = buildDispatchDuplicateKey(r);
       if (!key || seenDispatchKeys.has(key)) return seenDispatchKeys.has(key);
       seenDispatchKeys.add(key);
       return false;
@@ -1394,7 +1754,7 @@ function AccountMemberSheet() {
     if (hasDuplicate) {
       Swal.fire(
         "안내",
-        "같은 직원/소속업장/파견업장/파견일자 조합이 중복되었습니다. 중복 행을 정리해주세요.",
+        "같은 소속고객사/파견고객사/파견일자 조합이 중복되었습니다. 중복 행을 정리해주세요.",
         "info"
       );
       return;
@@ -1412,7 +1772,8 @@ function AccountMemberSheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      // ✅ del_yn='N' 매핑은 모두 저장(백엔드 AccountMemberRecordSave 연동 보장)
+      // ✅ 매핑 저장 payload에도 시간을 같이 실어 보내고,
+      //    실제 시간 반영은 tb_account_record 기준으로 처리
       const rowsToSave = (dispatchMappingRows || []).filter(
         (r) => String(r.del_yn ?? "N").toUpperCase() !== "Y"
       );
@@ -1439,10 +1800,8 @@ function AccountMemberSheet() {
           // ✅ 직원 정보
           name: r.name ?? dispatchSelectedMember.name,
           position_type: r.position_type ?? dispatchSelectedMember.position_type,
-
-          // ✅ 시간 포함
-          start_time: r.start_time ?? normalizeTime(dispatchSelectedMember.start_time),
-          end_time: r.end_time ?? normalizeTime(dispatchSelectedMember.end_time),
+          start_time: normalizeTime(r.start_time ?? dispatchSelectedMember.start_time),
+          end_time: normalizeTime(r.end_time ?? dispatchSelectedMember.end_time),
 
           // ✅ 저장용 날짜 3종
           record_year,
@@ -1466,27 +1825,10 @@ function AccountMemberSheet() {
         return;
       }
 
-      // 저장 후 가운데 재조회
+      // ✅ 백엔드 저장에서 tb_account_member_dispatch_mapping / tb_account_record를 같이 처리하므로
+      //    프런트는 저장 후 최신 목록만 다시 읽어 화면을 맞춤
       const latest = await fetchDispatchMappingList(dispatchSelectedMember.member_id);
-
-      const normalized = (latest || []).map((x) => {
-        const date =
-          x.record_date ||
-          (x.record_year && x.record_month && x.record_day
-            ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
-              2,
-              "0"
-            )}-${String(x.record_day).padStart(2, "0")}`
-            : "");
-
-        return {
-          ...x,
-          start_time: normalizeTime(x.start_time ?? dispatchSelectedMember.start_time),
-          end_time: normalizeTime(x.end_time ?? dispatchSelectedMember.end_time),
-          record_date: date ? dayjs(date).format("YYYY-MM-DD") : "",
-          type: x.type ?? DISPATCH_TYPE,
-        };
-      });
+      const normalized = await normalizeDispatchMappings(latest, dispatchSelectedMember);
 
       setDispatchMappingRows(normalized);
       setDispatchOriginalMappingRows(normalized);
@@ -1521,25 +1863,7 @@ function AccountMemberSheet() {
         // 가운데 매핑(선택된 직원이 있으면)
         if (dispatchSelectedMember?.member_id) {
           const mappings = await fetchDispatchMappingList(dispatchSelectedMember.member_id);
-
-          const normalized = (mappings || []).map((x) => {
-            const date =
-              x.record_date ||
-              (x.record_year && x.record_month && x.record_day
-                ? `${String(x.record_year).padStart(4, "0")}-${String(x.record_month).padStart(
-                  2,
-                  "0"
-                )}-${String(x.record_day).padStart(2, "0")}`
-                : "");
-
-            return {
-              ...x,
-              start_time: normalizeTime(x.start_time ?? dispatchSelectedMember.start_time),
-              end_time: normalizeTime(x.end_time ?? dispatchSelectedMember.end_time),
-              record_date: date ? dayjs(date).format("YYYY-MM-DD") : "",
-              type: x.type ?? DISPATCH_TYPE,
-            };
-          });
+          const normalized = await normalizeDispatchMappings(mappings, dispatchSelectedMember);
 
           setDispatchMappingRows(normalized);
           setDispatchOriginalMappingRows(normalized);
@@ -1558,6 +1882,7 @@ function AccountMemberSheet() {
     fetchDispatchMemberList,
     fetchDispatchAccountList,
     fetchDispatchMappingList,
+    normalizeDispatchMappings,
   ]);
 
   useEffect(() => {
@@ -1576,6 +1901,16 @@ function AccountMemberSheet() {
     });
     return m;
   }, [dispatchAccountRows]);
+
+  // ✅ 직원파출관리 모달에서 변경 여부를 즉시 표시하기 위한 원본 행 맵
+  const dispatchOriginalMappingRowMap = useMemo(() => {
+    const map = new Map();
+    (dispatchOriginalMappingRows || []).forEach((row) => {
+      if (row?.idx == null) return;
+      map.set(String(row.idx), row);
+    });
+    return map;
+  }, [dispatchOriginalMappingRows]);
 
   // ✅ 직원 소속 고객사(account_id) 이름 맵 (accountOptions 기반)
   const memberAccountNameMap = useMemo(() => {
@@ -2038,6 +2373,25 @@ function AccountMemberSheet() {
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
+                      onInput={
+                        isEditable &&
+                          !isSelect &&
+                          !isDate &&
+                          !isInsuranceDate &&
+                          canEditMaskedSensitiveField
+                          ? (e) => {
+                            let draftValue = e.currentTarget.innerText.trim();
+                            if (isNumeric) draftValue = parseNumber(draftValue);
+                            const normalizedDraft = isNumeric
+                              ? Number(draftValue ?? 0)
+                              : String(draftValue ?? "");
+                            e.currentTarget.classList.toggle(
+                              "edited-cell",
+                              normalizedDraft !== normOriginal
+                            );
+                          }
+                          : undefined
+                      }
                       onBlur={
                         isEditable &&
                           !isSelect &&
@@ -2370,144 +2724,24 @@ function AccountMemberSheet() {
 
   return (
     <>
-      {/* 상단 필터 + 버튼 (모바일 대응) */}
-      <MDBox
-        pt={1}
-        pb={1}
-        sx={{
-          display: "flex",
-          justifyContent: isMobile ? "space-between" : "flex-end",
-          alignItems: "center",
-          gap: isMobile ? 1 : 2,
-          flexWrap: isMobile ? "wrap" : "nowrap",
-          position: "sticky",
-          zIndex: 10,
-          top: 78,
-          backgroundColor: "#ffffff",
-        }}
-      >
-        <TextField
-          select
-          size="small"
-          value={activeStatus}
-          onChange={(e) => {
-            setLoading(true);
-            setActiveStatus(e.target.value);
-          }}
-          sx={{ minWidth: 150 }}
-          SelectProps={{ native: true }}
-        >
-          <option value="N">재직자</option>
-          <option value="Y">퇴사자</option>
-        </TextField>
-
-        <TextField
-          size="small"
-          value={memberInput}
-          onChange={(e) => setMemberInput(e.target.value)}
-          label="직원 검색"
-          placeholder="직원명을 입력"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              selectMemberByInput();
-            }
-          }}
-          sx={{
-            minWidth: 200,
-            "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-            "& input": { padding: "0 8px" },
-          }}
-        />
-
-        {/* ✅ (수정) 거래처 select → Autocomplete(검색 가능) */}
-        <Autocomplete
-          size="small"
-          sx={{ minWidth: 200 }}
-          options={accountOptions}
-          value={selectedAccountOption}
-          onChange={(_, opt) => {
-            if (!opt) return;
-            // ✅ 거래처를 직접 선택하면 자동 reset 차단은 해제
-            suppressAccountResetRef.current = false;
-            setLoading(true);
-            setMemberInput("");
-            setMemberSearchName("");
-            setSelectedAccountId(opt.value);
-          }}
-          inputValue={accountInput}
-          onInputChange={(_, newValue, reason) => {
-            // ✅ 직원 검색 직후 발생하는 내부 reset 이벤트는 무시
-            if (reason === "reset" && suppressAccountResetRef.current) return;
-            if (reason === "input" || reason === "clear") {
-              suppressAccountResetRef.current = false;
-            }
-            setAccountInput(newValue);
-          }}
-          getOptionLabel={(opt) => opt?.label ?? ""}
-          isOptionEqualToValue={(opt, val) => opt.value === val.value}
-          filterOptions={(options, state) => {
-            const q = (state.inputValue ?? "").trim().toLowerCase();
-            if (!q) return options;
-            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
-          }}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="거래처 검색"
-              placeholder="거래처명을 입력"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  selectAccountByInput();
-                }
-              }}
-              sx={{
-                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
-              }}
-            />
-          )}
-        />
-
-        <MDButton variant="gradient" color="warning" onClick={openWorkSystemModal}>
-          근무형태 관리
-        </MDButton>
-
-        {/* ✅ 통합/유틸 관리 버튼 추가 */}
-        <MDButton variant="gradient" color="warning" onClick={openUtilModal}>
-          통합/유틸 관리
-        </MDButton>
-
-        <MDButton variant="gradient" color="warning" onClick={openDispatchModal}>
-          직원파출관리
-        </MDButton>
-
-        <MDButton
-          variant="gradient"
-          color="dark"
-          onClick={handleExcelDownloadAllAccounts}
-          disabled={excelDownloading}
-        >
-          전체 거래처 엑셀
-        </MDButton>
-
-        <MDButton
-          variant="outlined"
-          color={maskingEnabled ? "dark" : "secondary"}
-          onClick={() => setMaskingEnabled((prev) => !prev)}
-        >
-          {maskingEnabled ? "* 해제" : "* 적용"}
-        </MDButton>
-
-        <MDButton variant="gradient" color="success" onClick={handleAddRow}>
-          행추가
-        </MDButton>
-
-        <MDButton variant="gradient" color="info" onClick={handleSave}>
-          저장
-        </MDButton>
-      </MDBox>
+      <AccountMemberToolbar
+        isMobile={isMobile}
+        activeStatus={activeStatus}
+        onActiveStatusChange={handleActiveStatusChange}
+        accountOptions={accountOptions}
+        selectedAccountId={selectedAccountId}
+        onSelectAccount={handleToolbarAccountSelect}
+        onSearchMember={handleToolbarMemberSearch}
+        onOpenWorkSystemModal={openWorkSystemModal}
+        onOpenUtilModal={openUtilModal}
+        onOpenDispatchModal={openDispatchModal}
+        onDownloadExcel={handleExcelDownloadAllAccounts}
+        excelDownloading={excelDownloading}
+        maskingEnabled={maskingEnabled}
+        onToggleMasking={() => setMaskingEnabled((prev) => !prev)}
+        onAddRow={handleAddRow}
+        onSave={handleSave}
+      />
 
       <MDBox pt={1} pb={3}>
         <Grid container spacing={6}>
@@ -2738,6 +2972,7 @@ function AccountMemberSheet() {
               p: 1.5,
               overflow: "hidden",
               bgcolor: "#fff",
+              "& .edited-cell": { color: "#d32f2f", fontWeight: 600 },
             }}
           >
             {/* 왼쪽 테이블 */}
@@ -2869,6 +3104,7 @@ function AccountMemberSheet() {
                   <tbody>
                     {(utilMappingRows || []).map((r, i) => {
                       const selected = utilSelectedMappingRowIndex === i;
+                      const isNewUtilRow = r?.idx == null;
                       const posLabel = getPositionLabel(r.position_type, r.position);
                       const accName = utilAccountNameMap.get(String(r.account_id ?? "")) ?? "";
                       const accText = accName;
@@ -2877,15 +3113,21 @@ function AccountMemberSheet() {
                         <tr
                           key={`${r.idx ?? "new"}-${r.account_id ?? "a"}-${i}`}
                           onClick={() => setUtilSelectedMappingRowIndex(i)}
+                          className={isNewUtilRow ? "edited-cell" : ""}
                           style={{
                             cursor: "pointer",
                             backgroundColor: selected ? "rgba(255,193,7,0.12)" : "#fff",
                           }}
                         >
-                          <td>{r.idx ?? ""}</td>
-                          <td style={{ textAlign: "left" }}>{accText}</td>
-                          <td>{r.name ?? ""}</td>
-                          <td>{posLabel}</td>
+                          <td className={isNewUtilRow ? "edited-cell" : ""}>{r.idx ?? ""}</td>
+                          <td
+                            className={isNewUtilRow ? "edited-cell" : ""}
+                            style={{ textAlign: "left" }}
+                          >
+                            {accText}
+                          </td>
+                          <td className={isNewUtilRow ? "edited-cell" : ""}>{r.name ?? ""}</td>
+                          <td className={isNewUtilRow ? "edited-cell" : ""}>{posLabel}</td>
                         </tr>
                       );
                     })}
@@ -3004,8 +3246,8 @@ function AccountMemberSheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: isMobile ? "98vw" : "95vw",
-            maxWidth: 1300,
+            width: isMobile ? "98vw" : "97vw",
+            maxWidth: 1500,
             height: isMobile ? "90vh" : "80vh",
             bgcolor: "background.paper",
             borderRadius: 2,
@@ -3036,53 +3278,10 @@ function AccountMemberSheet() {
             </MDBox>
 
             {/* ✅ 거래처 선택(왼쪽 직원목록 필터) */}
-            <Autocomplete
-              size="small"
-              sx={{ minWidth: 220 }}
-              options={accountOptions}
-              value={selectedDispatchAccountOption}
-              inputValue={dispatchAccountInput}
-              onInputChange={(_, v) => setDispatchAccountInput(v)}
-              onChange={async (_, opt) => {
-                if (!opt) return;
-
-                // 거래처 변경
-                setDispatchAccountId(opt.value);
-                setDispatchAccountInput(opt.label ?? "");
-
-                // 선택 초기화
-                setDispatchSelectedMember(null);
-                setDispatchSelectedAccount(null);
-                setDispatchSelectedMappingRowIndex(null);
-                setDispatchMappingRows([]);
-                setDispatchOriginalMappingRows([]);
-
-                // ✅ 왼쪽 직원목록 재조회
-                try {
-                  const members = await fetchDispatchMemberList(opt.value);
-                  setDispatchMemberRows(members || []);
-                } catch (e) {
-                  Swal.fire("조회 실패", e?.message || "오류", "error");
-                }
-              }}
-              getOptionLabel={(opt) => opt?.label ?? ""}
-              isOptionEqualToValue={(opt, val) => opt.value === val.value}
-              filterOptions={(options, state) => {
-                const q = (state.inputValue ?? "").trim().toLowerCase();
-                if (!q) return options;
-                return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="거래처"
-                  placeholder="거래처 검색"
-                  sx={{
-                    "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
-                  }}
-                />
-              )}
+            <DispatchAccountAutocomplete
+              accountOptions={accountOptions}
+              selectedOption={selectedDispatchAccountOption}
+              onChange={handleDispatchAccountSelect}
             />
 
             <MDBox display="flex" gap={1}>
@@ -3113,6 +3312,7 @@ function AccountMemberSheet() {
               p: 1.5,
               overflow: "hidden",
               bgcolor: "#fff",
+              "& .edited-cell": { color: "#d32f2f", fontWeight: 600 },
             }}
           >
             {/* 왼쪽 테이블 */}
@@ -3188,8 +3388,8 @@ function AccountMemberSheet() {
             {/* 가운데 테이블 */}
             <MDBox
               sx={{
-                flex: 1.7, // ✅ 더 크게
-                minWidth: 600, // ✅ 더 넓게
+                flex: 2.1, // ✅ 가운데 영역 가로폭 확대
+                minWidth: 760, // ✅ 가운데 영역 최소폭 확대
                 border: "1px solid #e0e0e0",
                 borderRadius: 1.5,
                 overflow: "hidden",
@@ -3231,9 +3431,9 @@ function AccountMemberSheet() {
                       <th style={{ width: 70 }}>순번</th>
                       <th style={{ width: 220 }}>소속 고객사</th>
                       <th style={{ width: 220 }}>파견 고객사</th>
-                      <th style={{ width: 130 }}>파견일자</th>
-                      <th style={{ width: 80 }}>시작</th>
-                      <th style={{ width: 80 }}>마감</th>
+                      <th style={{ width: 160 }}>파견일자</th>
+                      <th style={{ width: 120 }}>시작</th>
+                      <th style={{ width: 120 }}>마감</th>
                       <th style={{ width: 110 }}>성명</th>
                       <th style={{ width: 90 }}>직책</th>
                     </tr>
@@ -3241,6 +3441,21 @@ function AccountMemberSheet() {
                   <tbody>
                     {(dispatchMappingRows || []).map((r, i) => {
                       const selected = dispatchSelectedMappingRowIndex === i;
+                      const originalDispatchRow =
+                        r?.idx != null ? dispatchOriginalMappingRowMap.get(String(r.idx)) ?? null : null;
+                      const isNewDispatchRow = !originalDispatchRow;
+                      const changedDispatchDate =
+                        !isNewDispatchRow &&
+                        normalizeDispatchDate(r.record_date ?? "") !==
+                        normalizeDispatchDate(originalDispatchRow?.record_date ?? "");
+                      const changedDispatchStartTime =
+                        !isNewDispatchRow &&
+                        normalizeTime(r.start_time ?? "") !==
+                        normalizeTime(originalDispatchRow?.start_time ?? "");
+                      const changedDispatchEndTime =
+                        !isNewDispatchRow &&
+                        normalizeTime(r.end_time ?? "") !==
+                        normalizeTime(originalDispatchRow?.end_time ?? "");
 
                       const posLabel = getPositionLabel(r.position_type, r.position);
 
@@ -3257,23 +3472,35 @@ function AccountMemberSheet() {
                           key={`${r.idx ?? "new"}-${ownerAccId}-${dispAccId}-${i}`}
                           onClick={() => setDispatchSelectedMappingRowIndex(i)}
                           onContextMenu={(e) => handleDispatchMappingContextMenu(e, i)}
+                          className={isNewDispatchRow ? "edited-cell" : ""}
                           style={{
                             cursor: "pointer",
                             backgroundColor: selected ? "rgba(255,193,7,0.12)" : "#fff",
                           }}
                         >
-                          <td>{r.idx ?? ""}</td>
-                          <td style={{ textAlign: "left" }}>{ownerText}</td>
-                          <td style={{ textAlign: "left" }}>{dispText}</td>
+                          <td className={isNewDispatchRow ? "edited-cell" : ""}>{r.idx ?? ""}</td>
+                          <td
+                            className={isNewDispatchRow ? "edited-cell" : ""}
+                            style={{ textAlign: "left" }}
+                          >
+                            {ownerText}
+                          </td>
+                          <td
+                            className={isNewDispatchRow ? "edited-cell" : ""}
+                            style={{ textAlign: "left" }}
+                          >
+                            {dispText}
+                          </td>
 
                           {/* ✅ 파견일자: 달력 선택 */}
-                          <td>
+                          <td className={isNewDispatchRow || changedDispatchDate ? "edited-cell" : ""}>
                             <input
                               type="date"
                               value={r.record_date ?? ""}
                               onChange={(e) =>
                                 handleDispatchRowChange(i, "record_date", e.target.value)
                               }
+                              className={isNewDispatchRow || changedDispatchDate ? "edited-cell" : ""}
                               style={{
                                 width: "100%",
                                 fontSize: 12,
@@ -3285,12 +3512,62 @@ function AccountMemberSheet() {
                             />
                           </td>
 
-                          {/* ✅ 직원목록에서 들고온 시간 표시(필요하면 수정 가능하게 select로 바꿔도 됨) */}
-                          <td>{r.start_time ?? ""}</td>
-                          <td>{r.end_time ?? ""}</td>
+                          {/* ✅ 시작/마감 시간도 가운데 테이블에서 바로 수정 가능 */}
+                          <td
+                            className={isNewDispatchRow || changedDispatchStartTime ? "edited-cell" : ""}
+                          >
+                            <select
+                              value={normalizeTime(r.start_time ?? "")}
+                              onChange={(e) =>
+                                handleDispatchRowChange(i, "start_time", normalizeTime(e.target.value))
+                              }
+                              className={
+                                isNewDispatchRow || changedDispatchStartTime ? "edited-cell" : ""
+                              }
+                              style={{
+                                width: "100%",
+                                fontSize: 12,
+                                border: "none",
+                                background: "transparent",
+                                outline: "none",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <option value="">-</option>
+                              {startTimes.map((t) => (
+                                <option key={`dispatch-start-${t}`} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className={isNewDispatchRow || changedDispatchEndTime ? "edited-cell" : ""}>
+                            <select
+                              value={normalizeTime(r.end_time ?? "")}
+                              onChange={(e) =>
+                                handleDispatchRowChange(i, "end_time", normalizeTime(e.target.value))
+                              }
+                              className={isNewDispatchRow || changedDispatchEndTime ? "edited-cell" : ""}
+                              style={{
+                                width: "100%",
+                                fontSize: 12,
+                                border: "none",
+                                background: "transparent",
+                                outline: "none",
+                                cursor: "pointer",
+                              }}
+                            >
+                              <option value="">-</option>
+                              {endTimes.map((t) => (
+                                <option key={`dispatch-end-${t}`} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
 
-                          <td>{r.name ?? ""}</td>
-                          <td>{posLabel}</td>
+                          <td className={isNewDispatchRow ? "edited-cell" : ""}>{r.name ?? ""}</td>
+                          <td className={isNewDispatchRow ? "edited-cell" : ""}>{posLabel}</td>
                         </tr>
                       );
                     })}

@@ -241,8 +241,6 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
         dispatch_account_id: row.dispatch_account_id ?? null,
         name: row.name ?? "",
         position_type: row.position_type ?? null,
-        start_time: normalizeTime(row.start_time ?? ""),
-        end_time: normalizeTime(row.end_time ?? ""),
         record_year,
         record_month,
         record_date,

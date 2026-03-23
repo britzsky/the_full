@@ -65,6 +65,8 @@ export default function useCookWearManagerData() {
     try {
       const res = await api.get("/Business/CookWearOutList");
       const rows = (res.data || []).map((item) => ({
+        // 기존 row 저장 시 업데이트 키로 사용
+        idx: item.idx,
         type: item.type,
         type_name: item.type_name,
         account_id: item.account_id || (accountList[0]?.account_id ?? ""),

@@ -43,11 +43,17 @@ export const shouldMaskSensitiveField = (colKey, maskingEnabled = true, role = {
   // 기본 상태: 민감정보 전체 마스킹
   if (maskingEnabled) return true;
 
-  const fromStorage = getMaskingRoleFromStorage();
-  const department = role?.department ?? fromStorage.department;
-  const position = role?.position ?? fromStorage.position;
+  // role 값이 없는 경우에만 storage 조회(대량 셀 렌더링 성능 개선)
+  let department = toCode(role?.department);
+  let position = toCode(role?.position);
   // user_id 권한은 화면별 선택 적용을 위해 caller가 넘긴 값만 사용
-  const userId = role?.user_id ?? role?.userId ?? "";
+  const userId = toCode(role?.user_id ?? role?.userId ?? "");
+
+  if (!department || !position) {
+    const fromStorage = getMaskingRoleFromStorage();
+    if (!department) department = fromStorage.department;
+    if (!position) position = fromStorage.position;
+  }
 
   // 마스킹 해제 버튼 클릭 후:
   // user_id/부서/직책 중 하나라도 전체 해제 권한이면 민감정보 전체 노출

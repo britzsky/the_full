@@ -231,6 +231,27 @@ const DispatchAccountAutocomplete = React.memo(function DispatchAccountAutocompl
     setInputValue(selectedOption?.label ?? "");
   }, [selectedOption?.label, selectedOption?.value]);
 
+  // 직원파출관리 모달 Enter 검색
+  const selectDispatchAccountByInput = useCallback(() => {
+    const q = String(inputValue || "").trim();
+    if (!q) return;
+
+    const qLower = q.toLowerCase();
+    const exact = accountOptions.find((option) => String(option?.label ?? "").toLowerCase() === qLower);
+    const partial =
+      exact ||
+      accountOptions.find((option) =>
+        String(option?.label ?? "")
+          .toLowerCase()
+          .includes(qLower)
+      );
+
+    if (partial) {
+      setInputValue(partial.label || q);
+      onChange(partial);
+    }
+  }, [accountOptions, inputValue, onChange]);
+
   return (
     <Autocomplete
       size="small"
@@ -251,6 +272,16 @@ const DispatchAccountAutocomplete = React.memo(function DispatchAccountAutocompl
           {...params}
           label="거래처"
           placeholder="거래처 검색"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              selectDispatchAccountByInput();
+              // Enter 검색 직후 입력 포커스 해제
+              if (typeof e.target?.blur === "function") {
+                e.target.blur();
+              }
+            }
+          }}
           sx={{
             "& .MuiInputBase-root": { height: 35, fontSize: 12 },
             "& input": { padding: "0 8px" },

@@ -180,6 +180,25 @@ const getDispatchStatFromMap = (map, row) => {
   return null;
 };
 
+const pickLatestDispatchHistoryRowsByName = (rows) => {
+  const source = Array.isArray(rows) ? rows : [];
+  const seenNames = new Set();
+  const result = [];
+
+  source.forEach((row) => {
+    const nameKey = safeTrim(row?.name ?? "", "").toLowerCase();
+    if (!nameKey) {
+      result.push(row);
+      return;
+    }
+    if (seenNames.has(nameKey)) return;
+    seenNames.add(nameKey);
+    result.push(row);
+  });
+
+  return result;
+};
+
 const toNumberLike = (v) => {
   const s = String(v ?? "").replace(/[^0-9.-]/g, "");
   const n = Number(s);
@@ -796,7 +815,7 @@ function RecordSheet() {
   const [originalAttendanceRows, setOriginalAttendanceRows] = useState([]);
   const [defaultTimes, setDefaultTimes] = useState({});
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [accountInput, setAccountInput] = useState("");
+  const accountInputRef = useRef("");
 
   const [dispatchDelFilter, setDispatchDelFilter] = useState("N");
   const [dispatchMappingRows, setDispatchMappingRows] = useState([]);
@@ -808,6 +827,11 @@ function RecordSheet() {
 
   const { account_id } = useParams();
   const daysInMonth = dayjs(`${year}-${month}`).daysInMonth();
+  const currentViewKey = useMemo(() => {
+    const accId = String(selectedAccountId || "").trim();
+    if (!accId) return "";
+    return `${accId}_${year}_${month}`;
+  }, [selectedAccountId, year, month]);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -819,16 +843,17 @@ function RecordSheet() {
   const loginDepartmentCode = safeTrim(localStorage.getItem("department"), "");
   const canUseBulkExcelAndPay =
     ["0", "1"].includes(loginPositionCode) || ["3", "6"].includes(loginDepartmentCode);
-  // 파출이력 조회 버튼은 개발팀(department 6)만 노출
-  const canViewDispatchHistory = loginDepartmentCode === "6";
+  // ✅ 파출이력 조회 버튼 전체 노출
+  const canViewDispatchHistory = true;
 
   const [open, setOpen] = useState(false);
   const [dispatchImportOpen, setDispatchImportOpen] = useState(false);
   const [dispatchImportRows, setDispatchImportRows] = useState([]);
   const [dispatchImportLoading, setDispatchImportLoading] = useState(false);
   const handleModalOpen = () => setOpen(true);
-  // ✅ 민감정보 마스킹 토글(표시용)
-  const [maskingEnabled, setMaskingEnabled] = useState(true);
+  // ✅ 민감정보 마스킹 토글(파출정보 본문 / 파출이력 모달 분리)
+  const [dispatchMaskingEnabled, setDispatchMaskingEnabled] = useState(true);
+  const [dispatchImportMaskingEnabled, setDispatchImportMaskingEnabled] = useState(true);
 
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [excelRangeOpen, setExcelRangeOpen] = useState(false);
@@ -871,8 +896,8 @@ function RecordSheet() {
     [year, month]
   );
 
-  const selectAccountByInput = useCallback(() => {
-    const q = String(accountInput || "").trim();
+  const selectAccountByInput = useCallback((rawInput) => {
+    const q = String(rawInput ?? accountInputRef.current ?? "").trim();
     if (!q) return;
     const list = accountList || [];
     const qLower = q.toLowerCase();
@@ -886,15 +911,24 @@ function RecordSheet() {
       );
     if (partial) {
       setSelectedAccountId(partial.account_id);
-      setAccountInput(partial.account_name || q);
+      accountInputRef.current = partial.account_name || q;
     }
-  }, [accountInput, accountList]);
+  }, [accountList]);
 
   // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
   const [employeeRowsView, setEmployeeRowsView] = useState([]);
+  const [employeeLoadedViewKey, setEmployeeLoadedViewKey] = useState("");
   useEffect(() => {
+    if (!currentViewKey) {
+      setEmployeeRowsView([]);
+      setEmployeeLoadedViewKey("");
+      return;
+    }
+    if (loading) return;
+
     setEmployeeRowsView(Array.isArray(memberRows) ? memberRows : []);
-  }, [memberRows]);
+    setEmployeeLoadedViewKey(currentViewKey);
+  }, [memberRows, loading, currentViewKey]);
 
   // =========================
   // ✅ 1) payload 안전 처리 (문자열 JSON 파싱까지)
@@ -950,14 +984,14 @@ function RecordSheet() {
     (field, value) => {
       const raw = safeTrim(value, "");
       if (!raw) return "-";
-      return maskSensitiveFieldValue(field, raw, maskingEnabled, {
+      return maskSensitiveFieldValue(field, raw, dispatchImportMaskingEnabled, {
         user_id:
           typeof window !== "undefined" && window?.localStorage
             ? String(window.localStorage.getItem("user_id") ?? "").trim()
             : "",
       });
     },
-    [maskingEnabled]
+    [dispatchImportMaskingEnabled]
   );
 
   const isDispatchImportAlreadyRegistered = useCallback(
@@ -965,7 +999,7 @@ function RecordSheet() {
     []
   );
 
-  // ✅ 파출등록 이력 인원 불러오기: 현재 업장 기준으로 해당 월까지 등록된 인원만 조회
+  // ✅ 파출이력 조회: 현재 업장 기준으로 해당 월까지 등록된 인원만 조회
   const openDispatchImportModal = useCallback(async () => {
     if (!selectedAccountId) {
       Swal.fire("안내", "업장을 먼저 선택해주세요.", "info");
@@ -981,11 +1015,12 @@ function RecordSheet() {
         params: { account_id: selectedAccountId, year, month },
       });
       const list = extractArray(res.data);
+      const dedupedList = pickLatestDispatchHistoryRowsByName(list);
       // 조회중 문구가 먼저 사라지고 목록이 늦게 붙지 않도록 결과는 바로 반영
-      setDispatchImportRows(Array.isArray(list) ? list : []);
+      setDispatchImportRows(dedupedList);
     } catch (err) {
       setDispatchImportRows([]);
-      Swal.fire("조회 실패", err?.message || "파출인원 이력 조회 중 오류가 발생했습니다.", "error");
+      Swal.fire("조회 실패", err?.message || "파출이력 조회 중 오류가 발생했습니다.", "error");
     } finally {
       setDispatchImportLoading(false);
     }
@@ -1591,26 +1626,16 @@ function RecordSheet() {
 
   // ✅ 거래처 1개에 대한 모든 데이터 조회 (엑셀 전체다운용)
   const fetchBundleForAccount = async (accountId, y, m) => {
-    const sheetRes = await api.get("/Account/AccountRecordSheetList", {
-      params: { account_id: accountId, year: y, month: m },
-    });
-    const sheetRowsArg = extractArray(sheetRes.data);
-
-    const memberRes = await api.get("/Account/AccountRecordMemberList", {
-      params: { account_id: accountId, year: y, month: m },
-    });
-    const memberRowsArg = (extractArray(memberRes.data) || []).map((m) => ({
-      ...m,
-      member_id: safeTrim(m?.member_id ?? m?.memberId ?? "", ""),
-      cor_type: safeTrim(m?.cor_type ?? m?.corType ?? "", ""),
-    }));
-
-    const timeRes = await api.get("/Account/AccountMemberRecordTime", {
-      params: { account_id: accountId, year: y, month: m },
-    });
-    const timesRowsArg = extractArray(timeRes.data);
-
-    const [disN, disY] = await Promise.all([
+    const [sheetRes, memberRes, timeRes, disN, disY] = await Promise.all([
+      api.get("/Account/AccountRecordSheetList", {
+        params: { account_id: accountId, year: y, month: m },
+      }),
+      api.get("/Account/AccountRecordMemberList", {
+        params: { account_id: accountId, year: y, month: m },
+      }),
+      api.get("/Account/AccountMemberRecordTime", {
+        params: { account_id: accountId, year: y, month: m },
+      }),
       api.get("/Account/AccountRecordDispatchList", {
         params: { account_id: accountId, year: y, month: m, del_yn: "N" },
       }),
@@ -1618,6 +1643,14 @@ function RecordSheet() {
         params: { account_id: accountId, year: y, month: m, del_yn: "Y" },
       }),
     ]);
+
+    const sheetRowsArg = extractArray(sheetRes.data);
+    const memberRowsArg = (extractArray(memberRes.data) || []).map((m) => ({
+      ...m,
+      member_id: safeTrim(m?.member_id ?? m?.memberId ?? "", ""),
+      cor_type: safeTrim(m?.cor_type ?? m?.corType ?? "", ""),
+    }));
+    const timesRowsArg = extractArray(timeRes.data);
 
     const dispatchN = extractArray(disN.data);
     const dispatchY = extractArray(disY.data);
@@ -1768,6 +1801,20 @@ function RecordSheet() {
       const wsAttendSummary = wb.addWorksheet("출근현황요약");
       const wsDispatch = wb.addWorksheet("파출정보");
       const wsDispatchSummary = wb.addWorksheet("파출정보 요약");
+      const thinBorder = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+      const headerFill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFF0F0F0" },
+      };
+      const headerAlignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      const dataAlignment = { vertical: "top", horizontal: "left", wrapText: true };
+      const attendDataAlignment = { vertical: "middle", horizontal: "center", wrapText: true };
 
       const addSectionTitle = (ws, title, colCount) => {
         ws.addRow([title]);
@@ -1782,32 +1829,26 @@ function RecordSheet() {
       const styleHeaderRow = (ws, rowNum) => {
         const row = ws.getRow(rowNum);
         row.font = { bold: true };
-        row.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        row.alignment = headerAlignment;
         row.eachCell((cell) => {
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: "FFF0F0F0" },
-          };
+          cell.border = thinBorder;
+          cell.fill = headerFill;
         });
       };
 
       const styleDataRow = (ws, rowNum) => {
         const row = ws.getRow(rowNum);
-        row.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+        row.alignment = dataAlignment;
         row.eachCell((cell) => {
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
+          cell.border = thinBorder;
+        });
+      };
+
+      const styleAttendDataRow = (ws, rowNum) => {
+        const row = ws.getRow(rowNum);
+        row.alignment = attendDataAlignment;
+        row.eachCell((cell) => {
+          cell.border = thinBorder;
         });
       };
 
@@ -1827,8 +1868,21 @@ function RecordSheet() {
         dateList.push(dcur.clone());
         dcur = dcur.add(1, "day");
       }
+      const dateKeysInRange = dateList.map((d) => d.format("YYYY-MM-DD"));
+      const monthDateKeysMap = new Map(
+        monthsInRange.map(({ y, m }) => {
+          const paddedMonth = String(m).padStart(2, "0");
+          const daysInThisMonth = dayjs(`${y}-${paddedMonth}-01`).daysInMonth();
+          const keys = Array.from(
+            { length: daysInThisMonth },
+            (_, idx) => `${y}-${paddedMonth}-${String(idx + 1).padStart(2, "0")}`
+          );
+          return [`${y}-${paddedMonth}`, keys];
+        })
+      );
 
       const attendColCount = 2 + dateList.length;
+      const attendHeader = ["거래처", "직원명", ...dateList.map((d) => `${d.format("M/D")}`)];
       const attendRightHeader = [
         "업장",
         "직원명",
@@ -2004,19 +2058,9 @@ function RecordSheet() {
         const accNameOnly = safeTrim(acc.account_name ?? "", "");
 
         const employeeDispatchSummaryMap = new Map();
-        let dispatchMappingRowsArg = [];
-        try {
-          const mappingRes = await api.get("/Account/AccountMemberDispatchMappingList", {
-            params: { dispatch_account_id: accId, record_year: year, record_month: month, del_yn: "N" },
-          });
-          dispatchMappingRowsArg = extractArray(mappingRes.data);
-        } catch (err) {
-          console.error("직원파출 매핑 조회 실패(엑셀):", err);
-          dispatchMappingRowsArg = [];
-        }
+        let dispatchMappingRowsArg = null;
 
-        const header = ["거래처", "직원명", ...dateList.map((d) => `${d.format("M/D")}`)];
-        wsAttend.addRow(header);
+        wsAttend.addRow(attendHeader);
         styleHeaderRow(wsAttend, wsAttend.lastRow.number);
 
         const memberMap = new Map(); // 회원 아이디 → { 이름, 셀: { [날짜키]: 셀 } }
@@ -2063,7 +2107,9 @@ function RecordSheet() {
 
         for (let mi = 0; mi < monthsInRange.length; mi++) {
           const { y, m } = monthsInRange[mi];
-          const daysInThisMonth = dayjs(`${y}-${String(m).padStart(2, "0")}-01`).daysInMonth();
+          const monthKey = `${y}-${String(m).padStart(2, "0")}`;
+          const monthDateKeys = monthDateKeysMap.get(monthKey) || [];
+          const daysInThisMonth = monthDateKeys.length;
 
           const { sheetRowsArg, memberRowsArg, timesRowsArg, dispatchRowsArg } =
             await fetchBundleForAccount(accId, y, m);
@@ -2181,9 +2227,8 @@ function RecordSheet() {
             }
             for (let d = 1; d <= daysInThisMonth; d++) {
               const key = `day_${d}`;
-              const dateKey = dayjs(
-                `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-              ).format("YYYY-MM-DD");
+              const dateKey = monthDateKeys[d - 1];
+              if (!dateKey) continue;
               entry.cells[dateKey] = row[key];
             }
           });
@@ -2371,6 +2416,18 @@ function RecordSheet() {
         );
 
         if (employeeDispatchSummaryMap.size > 0) {
+          if (dispatchMappingRowsArg == null) {
+            try {
+              const mappingRes = await api.get("/Account/AccountMemberDispatchMappingList", {
+                params: { dispatch_account_id: accId, record_year: year, record_month: month, del_yn: "N" },
+              });
+              dispatchMappingRowsArg = extractArray(mappingRes.data);
+            } catch (err) {
+              console.error("직원파출 매핑 조회 실패(엑셀):", err);
+              dispatchMappingRowsArg = [];
+            }
+          }
+
           const employeeDispatchRowsForAccount = [];
           const seenKey = new Set();
           const seenMember = new Set();
@@ -2463,10 +2520,9 @@ function RecordSheet() {
             const r4 = ["", ""];
             const dayTypes = [];
 
-            dateList.forEach((d) => {
-              const key = d.format("YYYY-MM-DD");
+            dateKeysInRange.forEach((key) => {
               const cell = row.cells[key];
-              const [v1, v2, v3, v4] = splitDayCellAttend(row.cells[key]);
+              const [v1, v2, v3, v4] = splitDayCellAttend(cell);
               dayTypes.push(safeTrim(cell?.type ?? "", ""));
               r1.push(v1);
               r2.push(v2);
@@ -2475,20 +2531,13 @@ function RecordSheet() {
             });
 
             wsAttend.addRow(r1);
-            styleDataRow(wsAttend, wsAttend.lastRow.number);
+            styleAttendDataRow(wsAttend, wsAttend.lastRow.number);
             wsAttend.addRow(r2);
-            styleDataRow(wsAttend, wsAttend.lastRow.number);
+            styleAttendDataRow(wsAttend, wsAttend.lastRow.number);
             wsAttend.addRow(r3);
-            styleDataRow(wsAttend, wsAttend.lastRow.number);
+            styleAttendDataRow(wsAttend, wsAttend.lastRow.number);
             wsAttend.addRow(r4);
-            styleDataRow(wsAttend, wsAttend.lastRow.number);
-
-            for (let r = startRow; r <= startRow + 3; r++) {
-              for (let c = 3; c <= attendColCount; c++) {
-                const cell = wsAttend.getCell(r, c);
-                cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-              }
-            }
+            styleAttendDataRow(wsAttend, wsAttend.lastRow.number);
 
             // ✅ 전체 거래처 엑셀: 날짜 셀(4줄 블록) 배경색 적용
             dayTypes.forEach((type, idx) => {
@@ -2854,7 +2903,7 @@ function RecordSheet() {
       phone: "",
       rrn: "",
       account_number: "",
-      position_type: "4", // ✅ 추가: 기본값(조리사)
+      position_type: "5", // ✅ 기본값(조리원)
       dispatch_account: "",
       note: "",
     }),
@@ -2883,6 +2932,9 @@ function RecordSheet() {
   const [dispatchRows, setDispatchRows] = useState([]);
   const [originalDispatchRows, setOriginalDispatchRows] = useState([]);
   const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [dispatchLoadedViewKey, setDispatchLoadedViewKey] = useState("");
+  const [mappingLoadedViewKey, setMappingLoadedViewKey] = useState("");
+  const [attendanceLoadedViewKey, setAttendanceLoadedViewKey] = useState("");
   const dispatchReqSeqRef = useRef(0);
   const [dispatchMemoOpen, setDispatchMemoOpen] = useState({});
 
@@ -2906,6 +2958,7 @@ function RecordSheet() {
       if (!selectedAccountId) return;
 
       const del_yn = overrideDelYn ?? dispatchDelFilter;
+      const viewKey = `${String(selectedAccountId || "").trim()}_${year}_${month}`;
       const mySeq = ++dispatchReqSeqRef.current;
 
       setDispatchLoading(true);
@@ -2944,10 +2997,12 @@ function RecordSheet() {
           setOriginalDispatchRows(mapped.map((r) => ({ ...r })));
           setDispatchMemoOpen({});
         });
+        setDispatchLoadedViewKey(viewKey);
       } catch (err) {
         if (mySeq !== dispatchReqSeqRef.current) return;
 
         console.error("파출 재조회 실패:", err);
+        setDispatchLoadedViewKey(viewKey);
         Swal.fire({
           title: "오류",
           text: "파출직원 조회 중 오류가 발생했습니다.",
@@ -2967,9 +3022,11 @@ function RecordSheet() {
       startTransition(() => {
         setDispatchMappingRows([]);
       });
+      setMappingLoadedViewKey("");
       return;
     }
 
+    const viewKey = `${accId.trim()}_${year}_${month}`;
     const mySeq = ++dispatchMappingReqSeqRef.current;
     try {
       const res = await api.get("/Account/AccountMemberDispatchMappingList", {
@@ -2988,12 +3045,14 @@ function RecordSheet() {
       startTransition(() => {
         setDispatchMappingRows(Array.isArray(list) ? list : []);
       });
+      setMappingLoadedViewKey(viewKey);
     } catch (err) {
       if (mySeq !== dispatchMappingReqSeqRef.current) return;
       console.error("직원파출 매핑 조회 실패:", err);
       startTransition(() => {
         setDispatchMappingRows([]);
       });
+      setMappingLoadedViewKey(viewKey);
     }
   }, [selectedAccountId, year, month]);
 
@@ -3014,6 +3073,11 @@ function RecordSheet() {
         return;
       }
 
+      // ✅ 같은 조회키 재조회 시에도 전체 로딩을 유지하려면 완료 키를 먼저 비움
+      setEmployeeLoadedViewKey("");
+      setAttendanceLoadedViewKey("");
+      setDispatchLoadedViewKey("");
+      setMappingLoadedViewKey("");
       await Promise.all([fetchAllData?.(), fetchDispatchOnly(dispatchDelFilter), fetchDispatchMappingOnly()]);
     },
     [
@@ -3022,6 +3086,8 @@ function RecordSheet() {
       fetchDispatchOnly,
       dispatchDelFilter,
       fetchDispatchMappingOnly,
+      setEmployeeLoadedViewKey,
+      setAttendanceLoadedViewKey,
     ]
   );
 
@@ -3208,7 +3274,7 @@ function RecordSheet() {
     });
   }, []);
 
-  // ✅ 파출등록 모달/파출이력 조회 둘 다 같은 저장 로직을 타도록 공통 저장 함수로 통일
+  // ✅ 파출등록 모달/파출이력 조회 저장
   const saveDispatchMember = useCallback(
     async (
       source,
@@ -3226,7 +3292,7 @@ function RecordSheet() {
         phone: source?.phone ?? "",
         rrn: source?.rrn ?? "",
         account_number: source?.account_number ?? "",
-        position_type: safeTrim(source?.position_type, "") || "4",
+        position_type: safeTrim(source?.position_type, "") || "5",
         dispatch_account: source?.dispatch_account ?? "",
         note: source?.note ?? "",
         del_yn: "N",
@@ -3461,7 +3527,7 @@ function RecordSheet() {
         });
 
         if (response.data?.code === 200) {
-          await Swal.fire({
+          const result = await Swal.fire({
             title: "저장",
             text: `${actionLabel} 처리되었습니다.`,
             icon: "success",
@@ -3469,7 +3535,9 @@ function RecordSheet() {
             confirmButtonText: "확인",
           });
 
-          await refreshRecordSheetViews("dispatch");
+          if (result.isConfirmed) {
+            await refreshRecordSheetViews("all");
+          }
         } else {
           Swal.fire({
             title: "실패",
@@ -3509,7 +3577,7 @@ function RecordSheet() {
   const handleDispatchSave = useCallback(async () => {
     if (!selectedAccountId) return;
 
-    const editableFields = ["phone", "rrn", "account_number", "dispatch_account"];
+    const editableFields = ["phone", "rrn", "account_number", "dispatch_account", "note"];
 
     const changedRows = (dispatchRows || []).filter((row) => {
       const rid = String(row?._rid ?? "");
@@ -3538,6 +3606,7 @@ function RecordSheet() {
         fd.append("phone", r.phone || "");
         fd.append("account_number", r.account_number || "");
         fd.append("dispatch_account", r.dispatch_account || "");
+        fd.append("note", r.note ?? "");
         fd.append("total", r.total || "");
         fd.append("salary", r.salary ?? "");
         fd.append("del_yn", r.del_yn ?? "N");
@@ -3581,6 +3650,7 @@ function RecordSheet() {
       if (account_id && accountList.some((row) => row.account_id === account_id)) {
         return account_id;
       }
+      // ✅ 기본은 첫 거래처로 조회
       return accountList[0].account_id;
     });
   }, [accountList, account_id]);
@@ -3591,11 +3661,22 @@ function RecordSheet() {
 
   // ✅ 화면도 buildAttendanceRowsFromSheet 로 통일
   useEffect(() => {
+    if (!currentViewKey) {
+      setAttendanceRows([]);
+      setAttendanceSummaryRows([]);
+      setOriginalAttendanceRows([]);
+      setDefaultTimes({});
+      setAttendanceLoadedViewKey("");
+      return;
+    }
+    if (loading) return;
+
     if (!sheetRows || !sheetRows.length) {
       setAttendanceRows([]);
       setAttendanceSummaryRows([]);
       setOriginalAttendanceRows([]);
       setDefaultTimes({});
+      setAttendanceLoadedViewKey(currentViewKey);
       return;
     }
 
@@ -3616,7 +3697,8 @@ function RecordSheet() {
     setAttendanceSummaryRows(snapshotRows);
     setOriginalAttendanceRows(JSON.parse(JSON.stringify(visibleAttendanceRows)));
     setDefaultTimes(defaultTimesMap);
-  }, [sheetRows, memberRows, timesRows, daysInMonth, year, month]);
+    setAttendanceLoadedViewKey(currentViewKey);
+  }, [sheetRows, memberRows, timesRows, daysInMonth, year, month, loading, currentViewKey]);
 
   const getOrgTimes = (row, defaultTimesObj) => {
     const orgStart = row.day_default?.start_time || defaultTimesObj[row.member_id]?.start || "";
@@ -4118,7 +4200,11 @@ function RecordSheet() {
         accessorKey: "phone",
         size: "3%",
         cell: (props) => (
-          <DispatchEditableCell {...props} field="phone" maskingEnabled={maskingEnabled} />
+          <DispatchEditableCell
+            {...props}
+            field="phone"
+            maskingEnabled={dispatchMaskingEnabled}
+          />
         ),
       },
       {
@@ -4126,7 +4212,11 @@ function RecordSheet() {
         accessorKey: "rrn",
         size: "3%",
         cell: (props) => (
-          <DispatchEditableCell {...props} field="rrn" maskingEnabled={maskingEnabled} />
+          <DispatchEditableCell
+            {...props}
+            field="rrn"
+            maskingEnabled={dispatchMaskingEnabled}
+          />
         ),
       },
       {
@@ -4134,7 +4224,11 @@ function RecordSheet() {
         accessorKey: "account_number",
         size: "3%",
         cell: (props) => (
-          <DispatchEditableCell {...props} field="account_number" maskingEnabled={maskingEnabled} />
+          <DispatchEditableCell
+            {...props}
+            field="account_number"
+            maskingEnabled={dispatchMaskingEnabled}
+          />
         ),
       },
       {
@@ -4228,7 +4322,7 @@ function RecordSheet() {
       dispatchMemoOpen,
       toggleDispatchMemo,
       getDispatchRowKey,
-      maskingEnabled,
+      dispatchMaskingEnabled,
     ]
   );
 
@@ -4543,7 +4637,17 @@ function RecordSheet() {
     }
   };
 
-  if (loading) return <LoadingScreen />;
+  const isPageLoading =
+    Boolean(currentViewKey) &&
+    (
+      loading ||
+      employeeLoadedViewKey !== currentViewKey ||
+      attendanceLoadedViewKey !== currentViewKey ||
+      dispatchLoadedViewKey !== currentViewKey ||
+      mappingLoadedViewKey !== currentViewKey
+    );
+
+  if (isPageLoading) return <LoadingScreen />;
 
   return (
     <DashboardLayout>
@@ -4583,10 +4687,13 @@ function RecordSheet() {
               options={accountList || []}
               value={(accountList || []).find((a) => a.account_id === selectedAccountId) || null}
               onChange={(_, newVal) => {
+                if (!newVal) return;
                 setSelectedAccountId(newVal?.account_id || "");
+                accountInputRef.current = newVal?.account_name || "";
               }}
-              inputValue={accountInput}
-              onInputChange={(_, newValue) => setAccountInput(newValue)}
+              onInputChange={(_, newValue) => {
+                accountInputRef.current = String(newValue ?? "");
+              }}
               getOptionLabel={(opt) => opt?.account_name || ""}
               isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
               sx={{ minWidth: 200 }}
@@ -4597,8 +4704,9 @@ function RecordSheet() {
                   placeholder="거래처명을 입력"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
+                      if (e.nativeEvent?.isComposing) return;
                       e.preventDefault();
-                      selectAccountByInput();
+                      selectAccountByInput(e.currentTarget.value);
                     }
                   }}
                   sx={{
@@ -4688,25 +4796,23 @@ function RecordSheet() {
 
             <MDButton
               variant="outlined"
-              color={maskingEnabled ? "dark" : "secondary"}
-              onClick={() => setMaskingEnabled((prev) => !prev)}
+              color={dispatchMaskingEnabled ? "dark" : "secondary"}
+              onClick={() => setDispatchMaskingEnabled((prev) => !prev)}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
                 minWidth: isMobile ? 78 : 96,
                 px: isMobile ? 1 : 2,
               }}
             >
-              {maskingEnabled ? "* 해제" : "* 적용"}
+              {dispatchMaskingEnabled ? "* 해제" : "* 적용"}
             </MDButton>
 
             <MDButton
               variant="gradient"
               color="warning"
               onClick={async () => {
-                await fetchAllData?.();
-                // ✅ 조회 버튼 눌렀을 때 파출도 즉시 재조회 + 스냅샷 갱신(빨간글씨 초기화)
-                await fetchDispatchOnly(dispatchDelFilter);
-                await fetchDispatchMappingOnly();
+                // ✅ 전체 조회를 병렬로 묶어 완료 시점까지 로딩 유지
+                await refreshRecordSheetViews("all");
               }}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
@@ -5031,7 +5137,12 @@ function RecordSheet() {
                   {dispatchTable.getRowModel().rows.map((row) => {
                     const key = getDispatchRowKey(row.original);
                     const isOpen = !!dispatchMemoOpen?.[key];
-                    const note = safeTrim(row.original?.note ?? "", "");
+                    const rid = String(row.original?._rid ?? "");
+                    const note = row.original?.note ?? "";
+                    const originalNote = originalDispatchMap.get(rid)?.note ?? "";
+                    const isNoteChanged =
+                      normalizeDispatchValue("note", note) !==
+                      normalizeDispatchValue("note", originalNote);
                     return (
                       <React.Fragment key={row.id}>
                         <tr>
@@ -5062,7 +5173,45 @@ function RecordSheet() {
                                 padding: "6px 8px",
                               }}
                             >
-                              <b>메모</b> {note || "메모 없음"}
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  marginBottom: 4,
+                                }}
+                              >
+                                <b>메모</b>
+                                {!safeTrim(note, "") && (
+                                  <span style={{ color: "#9e9e9e", fontSize: "0.72rem" }}>
+                                    메모 없음
+                                  </span>
+                                )}
+                              </div>
+                              <input
+                                className="dispatch-centered-input"
+                                value={note}
+                                onChange={(e) => {
+                                  updateDispatchByRid(rid, { note: e.target.value });
+                                }}
+                                placeholder="메모를 입력하세요"
+                                style={{
+                                  width: "100%",
+                                  height: 20,
+                                  boxSizing: "border-box",
+                                  fontSize: "0.75rem",
+                                  lineHeight: 1.1,
+                                  textAlign: "center",
+                                  textAlignLast: "center",
+                                  direction: "ltr",
+                                  border: "1px solid #ccc",
+                                  borderRadius: 3,
+                                  padding: "0 2px",
+                                  color: isNoteChanged ? "red" : "black",
+                                  fontWeight: isNoteChanged ? 700 : 400,
+                                  background: "#fff",
+                                }}
+                              />
                             </td>
                           </tr>
                         )}
@@ -5141,7 +5290,7 @@ function RecordSheet() {
             fullWidth
             size="small"
             name="position_type" // ✅ 중요
-            defaultValue={dispatchFormDataRef.current.position_type || "4"}
+            defaultValue={dispatchFormDataRef.current.position_type || "5"}
             onChange={handleChange} // ✅ 중요 (공용 handleChange 사용)
             displayEmpty
             sx={{ mt: 2, height: 40 }}
@@ -5240,15 +5389,15 @@ function RecordSheet() {
           <Box display="flex" justifyContent="flex-end" gap={1}>
             <MDButton
               variant="outlined"
-              color={maskingEnabled ? "dark" : "secondary"}
-              onClick={() => setMaskingEnabled((prev) => !prev)}
+              color={dispatchImportMaskingEnabled ? "dark" : "secondary"}
+              onClick={() => setDispatchImportMaskingEnabled((prev) => !prev)}
               sx={{
                 fontSize: isMobile ? "0.7rem" : "0.8rem",
                 minWidth: isMobile ? 78 : 96,
                 px: isMobile ? 1 : 2,
               }}
             >
-              {maskingEnabled ? "* 해제" : "* 적용"}
+              {dispatchImportMaskingEnabled ? "* 해제" : "* 적용"}
             </MDButton>
             <Button
               variant="contained"
@@ -5440,7 +5589,13 @@ function RecordSheet() {
                           />
                         </td>
                         <td>{r.name || ""}</td>
-                        <td>{maskSensitiveFieldValue("phone", r.phone || "", maskingEnabled)}</td>
+                        <td>
+                          {maskSensitiveFieldValue(
+                            "phone",
+                            r.phone || "",
+                            dispatchMaskingEnabled
+                          )}
+                        </td>
                         <td>{formatMoneyLike(r.total_pay || 0)}</td>
                         <td>
                           {r.pay_status} {r.total_cnt > 0 ? `(${r.paid_cnt}/${r.total_cnt})` : ""}

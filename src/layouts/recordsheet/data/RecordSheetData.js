@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import api from "api/api";
 
 export default function useRecordsheetData(account_id, year, month) {
@@ -8,13 +8,18 @@ export default function useRecordsheetData(account_id, year, month) {
   const [timesRows, setTimesRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const fetchReqSeqRef = useRef(0);
 
   const safeStr = (v, fallback = "") => (v == null ? fallback : String(v));
   const safeTrim = (v, fallback = "") => safeStr(v, fallback).trim();
 
   // ✅ 전체 데이터 조회
   const fetchAllData = async () => {
-    if (!account_id) return;
+    const mySeq = ++fetchReqSeqRef.current;
+    if (!account_id) {
+      if (mySeq === fetchReqSeqRef.current) setLoading(false);
+      return;
+    }
     setLoading(true);
 
     try {
@@ -40,6 +45,7 @@ export default function useRecordsheetData(account_id, year, month) {
         timesReq,
         sheetReq,
       ]);
+      if (mySeq !== fetchReqSeqRef.current) return;
 
       // ✅ 직원정보
       setMemberRows(
@@ -200,9 +206,10 @@ export default function useRecordsheetData(account_id, year, month) {
 
       setSheetRows(rows);
     } catch (error) {
+      if (mySeq !== fetchReqSeqRef.current) return;
       console.error("데이터 조회 실패:", error);
     } finally {
-      setLoading(false);
+      if (mySeq === fetchReqSeqRef.current) setLoading(false);
     }
   };
 

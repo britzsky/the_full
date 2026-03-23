@@ -27,9 +27,97 @@ import {
   maskSensitiveFieldValue,
 } from "utils/maskingUtils";
 
+const NUMERIC_COLS = new Set(["salary"]);
+const IMAGE_FIELDS = new Set(["employment_contract", "id", "bankbook"]);
+
+const STICKY_COL_WIDTH = {
+  cor_type: 90,
+  name: 80,
+  rrn: 104,
+};
+
+const STICKY_LEFT = {
+  cor_type: 0,
+  name: STICKY_COL_WIDTH.cor_type,
+  rrn: STICKY_COL_WIDTH.cor_type + STICKY_COL_WIDTH.name,
+  account_id: STICKY_COL_WIDTH.cor_type + STICKY_COL_WIDTH.name + STICKY_COL_WIDTH.rrn,
+};
+
+const DEFAULT_JOIN_DATE_SORT = [{ id: "act_join_dt", desc: false }];
+const DATE_FIELDS = new Set(["act_join_dt"]);
+const SELECT_FIELDS = new Set([
+  "contract_type",
+  "position_type",
+  "start_time",
+  "end_time",
+  "account_id",
+  "idx",
+  "use_yn",
+  "cor_type",
+]);
+const NON_EDITABLE_COLS = new Set(["total"]);
+const CENTER_ALIGN_COLS = new Set([
+  "rrn",
+  "account_number",
+  "phone",
+  "contract_type",
+  "act_join_dt",
+  "idx",
+  "start_time",
+  "end_time",
+  "use_yn",
+]);
+
+const POSITION_OPTIONS = [
+  { value: "1", label: "영양사" },
+  { value: "2", label: "조리팀장" },
+  { value: "3", label: "조리장" },
+  { value: "4", label: "조리사" },
+  { value: "5", label: "조리원" },
+  { value: "6", label: "유틸" },
+  { value: "7", label: "통합" },
+];
+
+const CONTRACT_OPTIONS = [
+  { value: "1", label: "4대보험" },
+  { value: "2", label: "프리랜서" },
+];
+
+const USE_YN_OPTIONS = [
+  { value: "D", label: "진행중" },
+  { value: "Y", label: "채용확정" },
+  { value: "N", label: "채용취소" },
+];
+
+const COR_OPTIONS = [
+  { value: "1", label: "(주)더채움" },
+  { value: "2", label: "더채움" },
+];
+
+const generateTimeOptions = (startHHMM, endHHMM, stepMinutes = 30) => {
+  const toMinutes = (hhmm) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return h * 60 + m;
+  };
+  const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+  const start = toMinutes(startHHMM);
+  const end = toMinutes(endHHMM);
+  const arr = [];
+  for (let t = start; t <= end; t += stepMinutes) {
+    const hh = Math.floor(t / 60);
+    const mm = t % 60;
+    arr.push(`${hh}:${pad(mm)}`);
+  }
+  return arr;
+};
+
+const START_TIMES = generateTimeOptions("5:30", "16:00", 30);
+const END_TIMES = generateTimeOptions("10:00", "20:00", 30);
+
+// 운영 -> 채용관리 -> 현장 채용현황
 function AccountMemberRecSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [accountInput, setAccountInput] = useState("");
+  const accountInputRef = useRef("");
   const [activeStatus, setActiveStatus] = useState("Y");
   const tableContainerRef = useRef(null);
   const theme = useTheme();
@@ -59,18 +147,16 @@ function AccountMemberRecSheet() {
   } = useAccountMemberRecSheetData(selectedAccountId, activeStatus);
 
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   // ✅ 정렬 상태 (실입사일 -> 업장명)
-  const [sorting, setSorting] = useState([{ id: "act_join_dt", desc: false }]);
+  const [sorting, setSorting] = useState(DEFAULT_JOIN_DATE_SORT);
 
   // ✅ 스냅샷 갱신 트리거 (재조회/저장 성공 시 올려줌)
   const [snapshotTick, setSnapshotTick] = useState(0);
 
   // ✅ 이미지 뷰어
   const [viewImageSrc, setViewImageSrc] = useState(null);
-
-  const numericCols = ["salary"];
-  const imageFields = ["employment_contract", "id", "bankbook"];
 
   const normalizeTime = (t) => {
     if (!t) return "";
@@ -89,6 +175,13 @@ function AccountMemberRecSheet() {
 
     return { ...row, _rid: `NEW_${Date.now()}_${Math.random().toString(16).slice(2)}` };
   }, []);
+
+  // _rid가 없는 초기 조회 데이터도 안정적으로 같은 행으로 인식하기 위한 키
+  const getStableRowKey = useCallback(
+    (row, index = "") =>
+      String(row?._rid ?? row?.member_id ?? row?.rrn ?? (index !== "" ? `ROW_${index}` : "")),
+    []
+  );
 
   // 조회
   useEffect(() => {
@@ -129,52 +222,6 @@ function AccountMemberRecSheet() {
     setOriginalRows(updated.map((r) => ({ ...r })));
   }, [snapshotTick]); // ✅ 여기!
 
-  // 시간 옵션
-  const generateTimeOptions = (startHHMM, endHHMM, stepMinutes = 30) => {
-    const toMinutes = (hhmm) => {
-      const [h, m] = hhmm.split(":").map(Number);
-      return h * 60 + m;
-    };
-    const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
-    const start = toMinutes(startHHMM);
-    const end = toMinutes(endHHMM);
-    const arr = [];
-    for (let t = start; t <= end; t += stepMinutes) {
-      const hh = Math.floor(t / 60);
-      const mm = t % 60;
-      arr.push(`${hh}:${pad(mm)}`);
-    }
-    return arr;
-  };
-  const startTimes = generateTimeOptions("5:30", "16:00", 30);
-  const endTimes = generateTimeOptions("10:00", "20:00", 30);
-
-  const positionOptions = [
-    { value: "1", label: "영양사" },
-    { value: "2", label: "조리팀장" },
-    { value: "3", label: "조리장" },
-    { value: "4", label: "조리사" },
-    { value: "5", label: "조리원" },
-    { value: "6", label: "유틸" },
-    { value: "7", label: "통합" },
-  ];
-
-  const contractOptions = [
-    { value: "1", label: "4대보험" },
-    { value: "2", label: "프리랜서" },
-  ];
-
-  const useYnOptions = [
-    { value: "D", label: "진행중" },
-    { value: "Y", label: "채용확정" },
-    { value: "N", label: "채용취소" },
-  ];
-
-  const corOptions = [
-    { value: "1", label: "(주)더채움" },
-    { value: "2", label: "더채움" },
-  ];
-
   const formatDateForInput = (val) => {
     if (!val && val !== 0) return "";
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -207,9 +254,9 @@ function AccountMemberRecSheet() {
       };
 
       return [
-        { header: "구분", accessorKey: "cor_type", size: 50 },
-        { header: "성명", accessorKey: "name", size: 50 },
-        { header: "주민번호", accessorKey: "rrn", size: 100 },
+        { header: "구분", accessorKey: "cor_type", size: STICKY_COL_WIDTH.cor_type },
+        { header: "성명", accessorKey: "name", size: STICKY_COL_WIDTH.name },
+        { header: "주민번호", accessorKey: "rrn", size: STICKY_COL_WIDTH.rrn },
         { header: "업장명", accessorKey: "account_id", size: 150 },
         { header: "직책", accessorKey: "position_type", size: 65 },
         { header: "계좌번호", accessorKey: "account_number", size: 160 },
@@ -289,19 +336,50 @@ function AccountMemberRecSheet() {
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
+  const workSystemOptions = useMemo(
+    () =>
+      (workSystemList || []).map((w) => ({
+        value: String(w.idx),
+        label: w.work_system,
+      })),
+    [workSystemList]
+  );
+
+  const workSystemOptionMap = useMemo(
+    () => new Map((workSystemOptions || []).map((o) => [o.value, o])),
+    [workSystemOptions]
+  );
+
+  const accountSelectOptions = useMemo(
+    () =>
+      (accountList || []).map((acc) => ({
+        value: acc.account_id,
+        label: acc.account_name,
+      })),
+    [accountList]
+  );
+
+  // 거래처 검색 성능: 라벨 소문자 캐시(타이핑 시 매번 toLowerCase 반복 방지)
+  const accountOptionsIndexed = useMemo(
+    () =>
+      (accountOptions || []).map((o) => ({
+        ...o,
+        _labelLower: String(o?.label ?? "").toLowerCase(),
+      })),
+    [accountOptions]
+  );
+
   const selectAccountByInput = useCallback(() => {
-    const q = String(accountInput || "").trim();
+    const q = String(accountInputRef.current || "").trim();
     if (!q) return;
-    const list = accountOptions || [];
+    const list = accountOptionsIndexed || [];
     const qLower = q.toLowerCase();
-    const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
-    const partial =
-      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+    const exact = list.find((o) => o._labelLower === qLower);
+    const partial = exact || list.find((o) => o._labelLower.includes(qLower));
     if (partial) {
       setSelectedAccountId(partial.value);
-      setAccountInput(partial.label || q);
     }
-  }, [accountInput, accountOptions]);
+  }, [accountOptionsIndexed]);
 
   const table = useReactTable({
     data: activeRows,
@@ -310,19 +388,21 @@ function AccountMemberRecSheet() {
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
     state: { sorting },
-    getRowId: (row) => String(row?._rid ?? row?.member_id ?? row?.rrn ?? `ROW_${Math.random()}`),
+    getRowId: (row, index) => getStableRowKey(row, index),
   });
 
   // ✅ 원본을 _rid로 매칭
   const originalMap = useMemo(() => {
     const m = new Map();
-    (originalRows || []).forEach((r) => m.set(String(r._rid), r));
+    (originalRows || []).forEach((r, idx) => m.set(getStableRowKey(r, idx), r));
     return m;
-  }, [originalRows]);
+  }, [originalRows, getStableRowKey]);
 
   const updateRowByRid = (rid, patch) => {
     setActiveRows((prev) =>
-      (prev || []).map((r) => (String(r._rid) === String(rid) ? { ...r, ...patch } : r))
+      (prev || []).map((r, idx) =>
+        getStableRowKey(r, idx) === String(rid) ? { ...r, ...patch } : r
+      )
     );
   };
 
@@ -396,21 +476,25 @@ function AccountMemberRecSheet() {
   const normalizeKey = (v) => String(v ?? "").trim();
 
   const handleSave = async () => {
-    const originalByRid = new Map((originalRows || []).map((r) => [String(r._rid), r]));
+    if (saving) return;
 
-    const changedRows = (activeRows || []).filter((row) => {
-      const rid = String(row?._rid ?? "");
+    const originalByRid = new Map(
+      (originalRows || []).map((r, idx) => [getStableRowKey(r, idx), r])
+    );
+
+    const changedRows = (activeRows || []).filter((row, idx) => {
+      const rid = getStableRowKey(row, idx);
       const original = originalByRid.get(rid);
       if (!original) return true;
 
       return Object.keys(row).some((key) => {
-        if (imageFields.includes(key)) {
+        if (IMAGE_FIELDS.has(key)) {
           const v = row[key];
           const o = original[key];
           if (typeof v === "object" && v) return true;
           return String(v ?? "") !== String(o ?? "");
         }
-        if (numericCols.includes(key)) {
+        if (NUMERIC_COLS.has(key)) {
           return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
         }
         return String(row[key] ?? "") !== String(original[key] ?? "");
@@ -421,6 +505,9 @@ function AccountMemberRecSheet() {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
       return;
     }
+
+    setSaving(true);
+    setLoading(true);
 
     try {
       const userId = localStorage.getItem("user_id");
@@ -515,7 +602,7 @@ function AccountMemberRecSheet() {
         changedRows.map(async (row) => {
           const newRow = cleanRow(row);
 
-          for (const field of imageFields) {
+          for (const field of IMAGE_FIELDS) {
             if (newRow[field] && typeof newRow[field] === "object") {
               const uploadedPath = await uploadImage(newRow[field], field, newRow);
               newRow[field] = uploadedPath;
@@ -529,23 +616,29 @@ function AccountMemberRecSheet() {
       const res = await api.post("/Operate/AccountRecMembersSave", { data: processed });
 
       if (res.data.code === 200) {
-        Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
-
         // ✅ 저장 성공 후 재조회 + 스냅샷 갱신 트리거
-        setLoading(true);
         await fetchAccountMembersAllList();
         setSnapshotTick((t) => t + 1);
-        setLoading(false);
+        // ✅ 저장 완료 후에만 실입사일 정렬 재적용
+        setSorting(DEFAULT_JOIN_DATE_SORT);
+
+        await Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
       } else {
         Swal.fire("저장 실패", res.data.message || "서버 오류", "error");
       }
     } catch (err) {
-      setLoading(false);
       Swal.fire("저장 실패", err.message || String(err), "error");
+    } finally {
+      setSaving(false);
+      setLoading(false);
     }
   };
 
   const handleAddRow = () => {
+    // ✅ 행추가 직후에는 실입사일 정렬을 잠시 끄고 직접 입력에 집중
+    //    저장 완료 후(handleSave 성공) 다시 기본 정렬을 적용한다.
+    setSorting([]);
+
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
@@ -562,10 +655,10 @@ function AccountMemberRecSheet() {
       idx: defaultWorkSystemIdx,
       start_time: workSystemList?.[0]?.start_time
         ? normalizeTime(workSystemList[0].start_time)
-        : startTimes?.[0] ?? "5:30",
+        : START_TIMES?.[0] ?? "5:30",
       end_time: workSystemList?.[0]?.end_time
         ? normalizeTime(workSystemList[0].end_time)
-        : endTimes?.[0] ?? "10:00",
+        : END_TIMES?.[0] ?? "10:00",
       use_yn: "D",
       note: "",
       employment_contract: "",
@@ -579,19 +672,6 @@ function AccountMemberRecSheet() {
   };
 
   const renderTable = (tableInstance) => {
-    const dateFields = new Set(["act_join_dt"]);
-    const selectFields = new Set([
-      "contract_type",
-      "position_type",
-      "start_time",
-      "end_time",
-      "account_id",
-      "idx",
-      "use_yn",
-      "cor_type",
-    ]);
-    const nonEditableCols = new Set(["total"]);
-
     return (
       <MDBox
         ref={tableContainerRef}
@@ -615,8 +695,11 @@ function AccountMemberRecSheet() {
             textAlign: "center",
             padding: "4px",
             whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
             fontSize: "12px",
             verticalAlign: "middle",
+            boxSizing: "border-box",
           },
           "& th": {
             backgroundColor: "#f0f0f0",
@@ -626,30 +709,30 @@ function AccountMemberRecSheet() {
           },
           "& td:nth-of-type(1), & th:nth-of-type(1)": {
             position: "sticky",
-            left: 0,
+            left: STICKY_LEFT.cor_type,
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(2), & th:nth-of-type(2)": {
             position: "sticky",
-            left: "90px",
+            left: `${STICKY_LEFT.name}px`,
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(3), & th:nth-of-type(3)": {
             position: "sticky",
-            left: "170px",
+            left: `${STICKY_LEFT.rrn}px`,
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& td:nth-of-type(4), & th:nth-of-type(4)": {
             position: "sticky",
-            left: "274px",
+            left: `${STICKY_LEFT.account_id}px`,
             background: "#f0f0f0",
             zIndex: 3,
           },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
-          "td[contenteditable]": { minWidth: "80px", cursor: "text" },
+          "td[contenteditable]": { cursor: "text" },
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -673,18 +756,30 @@ function AccountMemberRecSheet() {
           <thead>
             {tableInstance.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} style={{ width: header.column.columnDef.size }}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const headerWidth =
+                    header.column.columnDef.size ?? header.column.columnDef.minWidth ?? 80;
+
+                  return (
+                    <th
+                      key={header.id}
+                      style={{
+                        width: headerWidth,
+                        minWidth: headerWidth,
+                        maxWidth: headerWidth,
+                      }}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
 
           <tbody>
             {tableInstance.getRowModel().rows.map((row) => {
-              const rid = String(row.original?._rid ?? "");
+              const rid = getStableRowKey(row.original, row.index);
               const isNewRow = rid.startsWith("NEW_");
 
               return (
@@ -692,12 +787,17 @@ function AccountMemberRecSheet() {
                   {row.getVisibleCells().map((cell) => {
                     const colKey = cell.column.columnDef.accessorKey;
                     const currentValue = row.getValue(colKey);
+                    const cellWidth =
+                      cell.column.columnDef.size ??
+                      cell.column.columnDef.minWidth ??
+                      80;
 
                     const originalRow = originalMap.get(rid) || {};
                     const originalValue = originalRow?.[colKey];
+                    const hasOriginal = originalMap.has(rid);
 
-                    const isNumeric = numericCols.includes(colKey);
-                    const isImage = imageFields.includes(colKey);
+                    const isNumeric = NUMERIC_COLS.has(colKey);
+                    const isImage = IMAGE_FIELDS.has(colKey);
 
                     const normCurrent = isImage
                       ? typeof currentValue === "object"
@@ -713,11 +813,11 @@ function AccountMemberRecSheet() {
                         ? Number(originalValue ?? 0)
                         : String(originalValue ?? "");
 
-                    const isChanged = normCurrent !== normOriginal;
+                    const isChanged = hasOriginal ? normCurrent !== normOriginal : false;
 
-                    const isEditable = !nonEditableCols.has(colKey);
-                    const isSelect = selectFields.has(colKey);
-                    const isDate = dateFields.has(colKey);
+                    const isEditable = !NON_EDITABLE_COLS.has(colKey);
+                    const isSelect = SELECT_FIELDS.has(colKey);
+                    const isDate = DATE_FIELDS.has(colKey);
                     const canEditMaskedSensitiveField = canEditSensitiveField(
                       colKey,
                       currentValue,
@@ -785,7 +885,7 @@ function AccountMemberRecSheet() {
                         <td
                           key={cell.id}
                           className={isChanged ? "edited-cell" : ""}
-                          style={{ textAlign: "center" }}
+                          style={{ textAlign: "center", width: cellWidth, minWidth: cellWidth }}
                         >
                           <input
                             type="file"
@@ -856,17 +956,10 @@ function AccountMemberRecSheet() {
                       <td
                         key={cell.id}
                         style={{
-                          textAlign: [
-                            "rrn",
-                            "account_number",
-                            "phone",
-                            "contract_type",
-                            "act_join_dt",
-                            "idx",
-                            "start_time",
-                            "end_time",
-                            "use_yn",
-                          ].includes(colKey)
+                          width: cellWidth,
+                          minWidth: cellWidth,
+                          maxWidth: cellWidth,
+                          textAlign: CENTER_ALIGN_COLS.has(colKey)
                             ? "center"
                             : colKey === "salary"
                               ? "right"
@@ -882,9 +975,9 @@ function AccountMemberRecSheet() {
                         className={isEditable && isChanged ? "edited-cell" : ""}
                         onBlur={
                           isEditable &&
-                          !isSelect &&
-                          !isDate &&
-                          canEditMaskedSensitiveField
+                            !isSelect &&
+                            !isDate &&
+                            canEditMaskedSensitiveField
                             ? (e) => {
                               let newValue = e.target.innerText.trim();
                               if (isNumeric) newValue = parseNumber(newValue);
@@ -898,17 +991,10 @@ function AccountMemberRecSheet() {
                           colKey === "idx" ? (
                             <Autocomplete
                               size="small"
-                              options={(workSystemList || []).map((w) => ({
-                                value: String(w.idx),
-                                label: w.work_system,
-                              }))}
+                              options={workSystemOptions}
                               value={(() => {
                                 const v = String(currentValue ?? "");
-                                return (
-                                  (workSystemList || [])
-                                    .map((w) => ({ value: String(w.idx), label: w.work_system }))
-                                    .find((o) => o.value === v) || null
-                                );
+                                return workSystemOptionMap.get(v) || null;
                               })()}
                               onChange={(_, opt) => handleCellChange(opt ? opt.value : "")}
                               getOptionLabel={(opt) => opt?.label ?? ""}
@@ -958,31 +1044,31 @@ function AccountMemberRecSheet() {
                               }}
                             >
                               {colKey === "cor_type" &&
-                                corOptions.map((opt) => (
+                                COR_OPTIONS.map((opt) => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </option>
                                 ))}
                               {colKey === "account_id" &&
-                                (accountList || []).map((acc) => (
-                                  <option key={acc.account_id} value={acc.account_id}>
-                                    {acc.account_name}
+                                accountSelectOptions.map((acc) => (
+                                  <option key={acc.value} value={acc.value}>
+                                    {acc.label}
                                   </option>
                                 ))}
                               {colKey === "use_yn" &&
-                                useYnOptions.map((opt) => (
+                                USE_YN_OPTIONS.map((opt) => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </option>
                                 ))}
                               {colKey === "position_type" &&
-                                positionOptions.map((opt) => (
+                                POSITION_OPTIONS.map((opt) => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </option>
                                 ))}
                               {colKey === "contract_type" &&
-                                contractOptions.map((opt) => (
+                                CONTRACT_OPTIONS.map((opt) => (
                                   <option key={opt.value} value={opt.value}>
                                     {opt.label}
                                   </option>
@@ -990,7 +1076,7 @@ function AccountMemberRecSheet() {
                               {colKey === "start_time" && (
                                 <>
                                   <option value="">없음</option>
-                                  {startTimes.map((t) => (
+                                  {START_TIMES.map((t) => (
                                     <option key={t} value={t}>
                                       {t}
                                     </option>
@@ -1000,7 +1086,7 @@ function AccountMemberRecSheet() {
                               {colKey === "end_time" && (
                                 <>
                                   <option value="">없음</option>
-                                  {endTimes.map((t) => (
+                                  {END_TIMES.map((t) => (
                                     <option key={t} value={t}>
                                       {t}
                                     </option>
@@ -1020,11 +1106,11 @@ function AccountMemberRecSheet() {
                           (isNumeric
                             ? formatNumber(currentValue)
                             : maskSensitiveFieldValue(
-                                colKey,
-                                currentValue,
-                                maskingEnabled,
-                                maskingRole
-                              )) ?? ""
+                              colKey,
+                              currentValue,
+                              maskingEnabled,
+                              maskingRole
+                            )) ?? ""
                         )}
                       </td>
                     );
@@ -1076,7 +1162,7 @@ function AccountMemberRecSheet() {
         <Autocomplete
           size="small"
           sx={{ minWidth: 200 }}
-          options={accountOptions}
+          options={accountOptionsIndexed}
           value={selectedAccountOption}
           onChange={(_, opt) => {
             // 입력 비움 시 거래처 선택 유지
@@ -1084,14 +1170,15 @@ function AccountMemberRecSheet() {
             setLoading(true);
             setSelectedAccountId(opt.value);
           }}
-          inputValue={accountInput}
-          onInputChange={(_, newValue) => setAccountInput(newValue)}
+          onInputChange={(_, newValue) => {
+            accountInputRef.current = newValue;
+          }}
           getOptionLabel={(opt) => opt?.label ?? ""}
           isOptionEqualToValue={(opt, val) => opt.value === val.value}
           filterOptions={(options, state) => {
             const q = (state.inputValue ?? "").trim().toLowerCase();
             if (!q) return options;
-            return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+            return options.filter((o) => o._labelLower.includes(q));
           }}
           renderInput={(params) => (
             <TextField
@@ -1124,8 +1211,8 @@ function AccountMemberRecSheet() {
           {maskingEnabled ? "* 해제" : "* 적용"}
         </MDButton>
 
-        <MDButton variant="gradient" color="info" onClick={handleSave}>
-          저장
+        <MDButton variant="gradient" color="info" onClick={handleSave} disabled={saving || loading}>
+          {saving ? "저장중..." : "저장"}
         </MDButton>
       </MDBox>
 

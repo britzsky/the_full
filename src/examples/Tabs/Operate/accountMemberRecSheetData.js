@@ -45,8 +45,6 @@ export default function useAccountMemberRecSheetData(account_id, activeStatus) {
     if (activeStatus) params.use_yn = activeStatus;
 
     setLoading(true);
-    const start = Date.now();
-
     try {
       const res = await api.get("/Operate/AccountRecMemberList", { params });
 
@@ -94,9 +92,7 @@ export default function useAccountMemberRecSheetData(account_id, activeStatus) {
       if (opts.snapshot) setOriginalRows([]);
       return [];
     } finally {
-      const elapsed = Date.now() - start;
-      const remain = Math.max(0, 1000 - elapsed);
-      setTimeout(() => setLoading(false), remain);
+      setLoading(false);
     }
   };
 

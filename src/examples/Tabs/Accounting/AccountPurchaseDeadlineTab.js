@@ -621,7 +621,18 @@ function AccountPurchaseDeadlineTab() {
   // ✅ 하단(상세) 변경감지/저장 빌드
   // =========================
   const DETAIL_SAVE_KEYS = useMemo(
-    () => ["saleDate", "name", "qty", "unitPrice", "vat", "amount", "taxType", "itemType", "note"],
+    () => [
+      "saleDate",
+      "name",
+      "qty",
+      "unitPrice",
+      "tax",
+      "vat",
+      "amount",
+      "taxType",
+      "itemType",
+      "note",
+    ],
     []
   );
 
@@ -1123,9 +1134,8 @@ function AccountPurchaseDeadlineTab() {
     ];
 
     const ymd = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-    const filename = `세금계산서_출력용_${getAccountName() || "전체"}_${filters.fromDate}_${
-      filters.toDate
-    }_${ymd}.xlsx`;
+    const filename = `세금계산서_출력용_${getAccountName() || "전체"}_${filters.fromDate}_${filters.toDate
+      }_${ymd}.xlsx`;
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -1556,7 +1566,7 @@ function AccountPurchaseDeadlineTab() {
         {/* =========================
           ✅ 상단(집계) 테이블
          ========================= */}
-        <MDBox pt={4.5} pb={2} sx={tableSx}>
+        <MDBox pt={3} pb={2} sx={tableSx}>
           <MDBox
             py={1}
             px={1}
@@ -2077,15 +2087,17 @@ function AccountPurchaseDeadlineTab() {
                               width: 110,
                               textAlign: "right",
                               ...getDetailCellStyle(i, "tax", r.tax),
-                              backgroundColor: "rgba(0,0,0,0.03)",
                             }}
-                            title="과세(tax)는 amount 기준으로 자동 계산됩니다."
+                            title="과세(tax)는 amount 기준 자동 계산되며, 필요 시 직접 수정할 수 있습니다."
                           >
                             <input
                               type="text"
                               value={r.tax ?? ""}
-                              readOnly
-                              tabIndex={-1}
+                              onChange={(e) => setDetailCell(i, "tax", e.target.value)}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "tax", formatted);
+                              }}
                               style={{
                                 width: "100%",
                                 textAlign: "right",
@@ -2094,7 +2106,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: "inherit",
-                                cursor: "not-allowed",
+                                cursor: "text",
                               }}
                             />
                           </td>
@@ -2104,15 +2116,17 @@ function AccountPurchaseDeadlineTab() {
                               width: 110,
                               textAlign: "right",
                               ...getDetailCellStyle(i, "vat", r.vat),
-                              backgroundColor: "rgba(0,0,0,0.03)",
                             }}
-                            title="부가세(vat)는 amount와 과세구분(taxType) 기준으로 자동 계산됩니다."
+                            title="부가세(vat)는 amount/taxType 기준 자동 계산되며, 필요 시 직접 수정할 수 있습니다."
                           >
                             <input
                               type="text"
                               value={r.vat ?? ""}
-                              readOnly
-                              tabIndex={-1}
+                              onChange={(e) => setDetailCell(i, "vat", e.target.value)}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "vat", formatted);
+                              }}
                               style={{
                                 width: "100%",
                                 textAlign: "right",
@@ -2121,7 +2135,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: "inherit",
-                                cursor: "not-allowed",
+                                cursor: "text",
                               }}
                             />
                           </td>

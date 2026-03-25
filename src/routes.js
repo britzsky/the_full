@@ -123,9 +123,7 @@ const routes = [
           "dh2", // 민다희 매니저
           "ys",  // 박이슬 매니저
           "db1", // 송다빈 매니저
-          "sm2", // 나선민 매니저
           "ww1", // 이원우 매니저
-          "sj7", // 정소진 매니저
           "iy1", // 최인영 매니저
           "me1", // 김맑음 매니저
 
@@ -187,6 +185,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/electronicpaymentmanager",
         component: <ElectronicPaymentManager />,
+        // allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
+        // allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
         allowedDepartments: [6], // 🔹 부서권한
         accessMode: "AND",
       },
@@ -347,6 +347,7 @@ const routes = [
     key: "accounting",
     icon: <Icon fontSize="small">table_view</Icon>,
     allowedDepartments: [0, 2, 6], // 🔹 부서권한
+    allowUserIds: ["yh2"], //   
     accessMode: "OR",
     collapse: [
       {
@@ -357,6 +358,7 @@ const routes = [
         route: "/purchaseDeadLineTally/purchasetally",
         component: <PurchaseDeadLineTally />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
       {
@@ -367,6 +369,7 @@ const routes = [
         route: "/purchase/headofficecorporatecard",
         component: <HeadOfficeCorporateCardManager />,
         allowedDepartments: [0, 2, 5, 6], // 🔹 부서권한
+        allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
       {
@@ -377,6 +380,7 @@ const routes = [
         route: "/purchase/accountcorporatecard",
         component: <AccountCorporateCardManager />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
       {
@@ -387,6 +391,7 @@ const routes = [
         route: "/purchase/accountpersonpurchase",
         component: <AccountPersonPurchaseManager />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
       {
@@ -397,6 +402,7 @@ const routes = [
         route: "/purchaseTally/purchasetally",
         component: <PurchaseTally />,
         allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
     ],

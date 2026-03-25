@@ -24,6 +24,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 import { canEditSensitiveField, maskSensitiveFieldValue } from "utils/maskingUtils";
 
+// 인사 -> 현장관리 -> 현장 직원관리
 // ✅ Autocomplete 검색어를 라벨 기준으로만 가볍게 필터링
 const filterOptionsByLabel = (options, state) => {
   const q = String(state?.inputValue ?? "")
@@ -292,7 +293,6 @@ const DispatchAccountAutocomplete = React.memo(function DispatchAccountAutocompl
   );
 });
 
-// 인사 -> 현장관리 -> 현장 직원관리
 function AccountMemberSheet() {
   // =========================
   // ✅ 통합이면 account_id=1 강제
@@ -332,6 +332,12 @@ function AccountMemberSheet() {
   } = useAccountMembersheetData(selectedAccountId, activeStatus, memberSearchName);
 
   const [loading, setLoading] = useState(true);
+  // 열 너비 고정 상태
+  const [isColumnWidthLocked, setIsColumnWidthLocked] = useState(false);
+  // 자동 측정 열 폭 캐시
+  const [measuredColWidths, setMeasuredColWidths] = useState({});
+  // 마스킹 전환 재고정 플래그
+  const [relockAfterMeasure, setRelockAfterMeasure] = useState(false);
 
   const applyUtilAccountId = useCallback(
     (rows) => {
@@ -514,10 +520,33 @@ function AccountMemberSheet() {
 
   const normalizeTime = (t) => {
     if (!t) return "";
-    return String(t)
-      .trim()
-      .replace(/^0(\d):/, "$1:");
+    const raw = String(t).trim();
+    if (!raw || raw === "-" || raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") {
+      return "";
+    }
+
+    const matched = raw.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/);
+    if (matched) {
+      const hh = Number(matched[1]);
+      const mm = Number(matched[2]);
+      if (Number.isFinite(hh) && Number.isFinite(mm) && hh >= 0 && hh <= 23 && mm >= 0 && mm <= 59) {
+        return `${hh}:${String(mm).padStart(2, "0")}`;
+      }
+    }
+
+    return raw.replace(/^0(\d):/, "$1:");
   };
+
+  const keepEditableTailVisible = useCallback((el) => {
+    if (!el) return;
+    window.requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth;
+    });
+  }, []);
+
+  const lockColumnsForEditing = useCallback(() => {
+    setIsColumnWidthLocked((prev) => (prev ? prev : true));
+  }, []);
 
   // hygiene와 동일하게 OperateImgUpload 사용
   const uploadImage = async (file, field, row) => {
@@ -555,6 +584,7 @@ function AccountMemberSheet() {
   useEffect(() => {
     if (!selectedAccountId && !memberSearchName) return;
 
+    setIsColumnWidthLocked(false);
     setLoading(true);
     Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
   }, [selectedAccountId, activeStatus, memberSearchName]);
@@ -947,6 +977,14 @@ function AccountMemberSheet() {
     setActiveStatus(status);
   }, []);
 
+  const handleToggleMasking = useCallback(() => {
+    setMaskingEnabled((prev) => !prev);
+    if (isColumnWidthLocked) {
+      setRelockAfterMeasure(true);
+      setIsColumnWidthLocked(false);
+    }
+  }, [isColumnWidthLocked]);
+
   const columns = useMemo(
     () => [
       { header: "구분", accessorKey: "cor_type", size: 100 },
@@ -996,6 +1034,40 @@ function AccountMemberSheet() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
+
+  useEffect(() => {
+    if (loading || isColumnWidthLocked) return;
+
+    const rafId = window.requestAnimationFrame(() => {
+      const tableEl = tableContainerRef.current?.querySelector("table");
+      if (!tableEl) return;
+
+      const headerCells = tableEl.querySelectorAll("thead th");
+      if (!headerCells || headerCells.length === 0) return;
+
+      const next = {};
+      table.getFlatHeaders().forEach((header, idx) => {
+        const el = headerCells[idx];
+        if (!el) return;
+        const width = Math.ceil(el.getBoundingClientRect().width);
+        if (width > 0) next[header.id] = width;
+      });
+
+      if (Object.keys(next).length > 0) {
+        setMeasuredColWidths(next);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [loading, isColumnWidthLocked, table, activeRows, maskingEnabled]);
+
+  useEffect(() => {
+    if (!relockAfterMeasure || isColumnWidthLocked) return;
+    if (Object.keys(measuredColWidths || {}).length === 0) return;
+
+    setIsColumnWidthLocked(true);
+    setRelockAfterMeasure(false);
+  }, [relockAfterMeasure, isColumnWidthLocked, measuredColWidths]);
 
   const handleSave = async () => {
     const changedRows = activeRows.filter((row, idx) => {
@@ -1068,6 +1140,7 @@ function AccountMemberSheet() {
         const fixedAll = applyUtilAccountId(activeRows);
         setOriginalRows([...fixedAll]);
         await fetchAccountMembersAllList();
+        setIsColumnWidthLocked(false);
       } else {
         Swal.fire("저장 실패", res.data.message || "서버 오류", "error");
       }
@@ -1486,11 +1559,14 @@ function AccountMemberSheet() {
 
       return list.map((row) => {
         const dateInfo = buildDispatchRecordDateInfo(row);
+        const hasIdx = row?.idx != null && String(row.idx).trim() !== "";
+        const fallbackStartTime = hasIdx ? "" : memberRow?.start_time ?? "";
+        const fallbackEndTime = hasIdx ? "" : memberRow?.end_time ?? "";
 
         return {
           ...row,
-          start_time: normalizeTime(row?.start_time ?? memberRow?.start_time ?? ""),
-          end_time: normalizeTime(row?.end_time ?? memberRow?.end_time ?? ""),
+          start_time: normalizeTime(row?.start_time ?? fallbackStartTime),
+          end_time: normalizeTime(row?.end_time ?? fallbackEndTime),
           record_date: dateInfo.display_date || "",
           // ✅ 직원파출관리 모달의 근무기록 타입은 항상 6(직원파출)로 고정
           type: DISPATCH_TYPE,
@@ -1571,8 +1647,11 @@ function AccountMemberSheet() {
       const positionType = String(
         row?.position_type ?? originalRow?.position_type ?? dispatchSelectedMember?.position_type ?? ""
       ).trim();
-      const defaultStartTime = normalizeTime(dispatchSelectedMember?.start_time ?? "");
-      const defaultEndTime = normalizeTime(dispatchSelectedMember?.end_time ?? "");
+      const hasIdx =
+        (row?.idx != null && String(row.idx).trim() !== "") ||
+        (originalRow?.idx != null && String(originalRow.idx).trim() !== "");
+      const defaultStartTime = hasIdx ? "" : normalizeTime(dispatchSelectedMember?.start_time ?? "");
+      const defaultEndTime = hasIdx ? "" : normalizeTime(dispatchSelectedMember?.end_time ?? "");
       const originalStartTime = normalizeTime(originalRow?.start_time ?? row?.start_time ?? defaultStartTime);
       const originalEndTime = normalizeTime(originalRow?.end_time ?? row?.end_time ?? defaultEndTime);
 
@@ -1817,6 +1896,9 @@ function AccountMemberSheet() {
 
       const payload = rowsToSave.map((r) => {
         const { record_year, record_month, record_date } = splitRecordDate(r.record_date);
+        const hasIdx = r?.idx != null && String(r.idx).trim() !== "";
+        const fallbackStartTime = hasIdx ? "" : dispatchSelectedMember.start_time;
+        const fallbackEndTime = hasIdx ? "" : dispatchSelectedMember.end_time;
 
         return {
           // 서버가 idx로 update 구분하면 같이 보내기
@@ -1831,8 +1913,8 @@ function AccountMemberSheet() {
           // ✅ 직원 정보
           name: r.name ?? dispatchSelectedMember.name,
           position_type: r.position_type ?? dispatchSelectedMember.position_type,
-          start_time: normalizeTime(r.start_time ?? dispatchSelectedMember.start_time),
-          end_time: normalizeTime(r.end_time ?? dispatchSelectedMember.end_time),
+          start_time: normalizeTime(r.start_time ?? fallbackStartTime),
+          end_time: normalizeTime(r.end_time ?? fallbackEndTime),
 
           // ✅ 저장용 날짜 3종
           record_year,
@@ -1953,6 +2035,7 @@ function AccountMemberSheet() {
   }, [accountOptions]);
 
   const handleAddRow = () => {
+    lockColumnsForEditing();
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
@@ -2048,7 +2131,7 @@ function AccountMemberSheet() {
             width: "max-content",
             minWidth: "100%",
             borderSpacing: 0,
-            tableLayout: "fixed",
+            tableLayout: isColumnWidthLocked ? "fixed" : "auto",
           },
           "& th, & td": {
             border: "1px solid #686D76",
@@ -2109,7 +2192,20 @@ function AccountMemberSheet() {
           },
           "thead th:nth-of-type(-n+7)": { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
-          "td[contenteditable]": { minWidth: "80px", cursor: "text" },
+          "td[contenteditable]": {
+            minWidth: "80px",
+            cursor: "text",
+            ...(isColumnWidthLocked
+              ? {
+                overflowX: "auto",
+                overflowY: "hidden",
+                whiteSpace: "nowrap",
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+              }
+              : {}),
+          },
+          "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -2133,11 +2229,24 @@ function AccountMemberSheet() {
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} style={{ width: header.column.columnDef.size }}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const headerWidth =
+                    header.column.columnDef.size ?? header.column.columnDef.minWidth ?? 80;
+                  const lockedHeaderWidth = measuredColWidths[header.id] ?? headerWidth;
+                  return (
+                    <th
+                      key={header.id}
+                      style={{
+                        width: isColumnWidthLocked ? lockedHeaderWidth : headerWidth,
+                        ...(isColumnWidthLocked
+                          ? { minWidth: lockedHeaderWidth, maxWidth: lockedHeaderWidth }
+                          : {}),
+                      }}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
@@ -2148,6 +2257,11 @@ function AccountMemberSheet() {
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
                   const currentValue = row.getValue(colKey);
+                  const cellWidth =
+                    measuredColWidths[cell.column.id] ??
+                    cell.column.columnDef.size ??
+                    cell.column.columnDef.minWidth ??
+                    80;
                   const originalValue = originals?.[rowIndex]?.[colKey];
                   const isNewRow = !String(row.original?.member_id ?? "").trim();
 
@@ -2190,6 +2304,7 @@ function AccountMemberSheet() {
                     colKey === "del_dt" && isRetiredRow && !formatDateForInput(currentValue);
 
                   const handleCellChange = (newValue) => {
+                    lockColumnsForEditing();
                     const updatedRows = rows.map((r, idx) => {
                       if (idx !== rowIndex) return r;
 
@@ -2267,7 +2382,12 @@ function AccountMemberSheet() {
                       <td
                         key={cell.id}
                         className={isChanged ? "edited-cell" : ""}
-                        style={{ textAlign: "center" }}
+                        style={{
+                          textAlign: "center",
+                          ...(isColumnWidthLocked
+                            ? { width: cellWidth, minWidth: cellWidth, maxWidth: cellWidth }
+                            : {}),
+                        }}
                       >
                         <input
                           type="file"
@@ -2370,6 +2490,9 @@ function AccountMemberSheet() {
                     <td
                       key={cell.id}
                       style={{
+                        ...(isColumnWidthLocked
+                          ? { width: cellWidth, minWidth: cellWidth, maxWidth: cellWidth }
+                          : {}),
                         textAlign: [
                           "rrn",
                           "account_number",
@@ -2404,6 +2527,18 @@ function AccountMemberSheet() {
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
+                      onFocus={
+                        isEditable &&
+                          !isSelect &&
+                          !isDate &&
+                          !isInsuranceDate &&
+                          canEditMaskedSensitiveField
+                          ? (e) => {
+                            lockColumnsForEditing();
+                            keepEditableTailVisible(e.currentTarget);
+                          }
+                          : undefined
+                      }
                       onInput={
                         isEditable &&
                           !isSelect &&
@@ -2411,6 +2546,8 @@ function AccountMemberSheet() {
                           !isInsuranceDate &&
                           canEditMaskedSensitiveField
                           ? (e) => {
+                            lockColumnsForEditing();
+                            keepEditableTailVisible(e.currentTarget);
                             let draftValue = e.currentTarget.innerText.trim();
                             if (isNumeric) draftValue = parseNumber(draftValue);
                             const normalizedDraft = isNumeric
@@ -2769,7 +2906,7 @@ function AccountMemberSheet() {
         onDownloadExcel={handleExcelDownloadAllAccounts}
         excelDownloading={excelDownloading}
         maskingEnabled={maskingEnabled}
-        onToggleMasking={() => setMaskingEnabled((prev) => !prev)}
+        onToggleMasking={handleToggleMasking}
         onAddRow={handleAddRow}
         onSave={handleSave}
       />
@@ -3497,6 +3634,18 @@ function AccountMemberSheet() {
                       const dispAccId = String(r.dispatch_account_id ?? "");
                       const dispAccName = dispatchAccountNameMap.get(dispAccId) ?? "";
                       const dispText = dispAccName;
+                      const normalizedStartTime = normalizeTime(r.start_time ?? "");
+                      const normalizedEndTime = normalizeTime(r.end_time ?? "");
+                      const startTimeOptions = startTimes.includes(normalizedStartTime)
+                        ? startTimes
+                        : normalizedStartTime
+                          ? [normalizedStartTime, ...startTimes]
+                          : startTimes;
+                      const endTimeOptions = endTimes.includes(normalizedEndTime)
+                        ? endTimes
+                        : normalizedEndTime
+                          ? [normalizedEndTime, ...endTimes]
+                          : endTimes;
 
                       return (
                         <tr
@@ -3548,7 +3697,7 @@ function AccountMemberSheet() {
                             className={isNewDispatchRow || changedDispatchStartTime ? "edited-cell" : ""}
                           >
                             <select
-                              value={normalizeTime(r.start_time ?? "")}
+                              value={normalizedStartTime}
                               onChange={(e) =>
                                 handleDispatchRowChange(i, "start_time", normalizeTime(e.target.value))
                               }
@@ -3565,7 +3714,7 @@ function AccountMemberSheet() {
                               }}
                             >
                               <option value="">-</option>
-                              {startTimes.map((t) => (
+                              {startTimeOptions.map((t) => (
                                 <option key={`dispatch-start-${t}`} value={t}>
                                   {t}
                                 </option>
@@ -3574,7 +3723,7 @@ function AccountMemberSheet() {
                           </td>
                           <td className={isNewDispatchRow || changedDispatchEndTime ? "edited-cell" : ""}>
                             <select
-                              value={normalizeTime(r.end_time ?? "")}
+                              value={normalizedEndTime}
                               onChange={(e) =>
                                 handleDispatchRowChange(i, "end_time", normalizeTime(e.target.value))
                               }
@@ -3589,7 +3738,7 @@ function AccountMemberSheet() {
                               }}
                             >
                               <option value="">-</option>
-                              {endTimes.map((t) => (
+                              {endTimeOptions.map((t) => (
                                 <option key={`dispatch-end-${t}`} value={t}>
                                   {t}
                                 </option>

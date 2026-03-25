@@ -64,6 +64,12 @@ function AccountMemberSheet() {
   } = useAccountMembersheetData(selectedAccountId, activeStatus, memberSearchName);
 
   const [loading, setLoading] = useState(true);
+  // 열 너비 고정 상태
+  const [isColumnWidthLocked, setIsColumnWidthLocked] = useState(false);
+  // 자동 측정 열 폭 캐시
+  const [measuredColWidths, setMeasuredColWidths] = useState({});
+  // 마스킹 전환 재고정 플래그
+  const [relockAfterMeasure, setRelockAfterMeasure] = useState(false);
 
   // =========================
   // ✅ 근무형태 관리 Modal 상태
@@ -112,6 +118,17 @@ function AccountMemberSheet() {
       .trim()
       .replace(/^0(\d):/, "$1:");
   };
+
+  const keepEditableTailVisible = useCallback((el) => {
+    if (!el) return;
+    window.requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth;
+    });
+  }, []);
+
+  const lockColumnsForEditing = useCallback(() => {
+    setIsColumnWidthLocked((prev) => (prev ? prev : true));
+  }, []);
 
   // hygiene와 동일하게 OperateImgUpload 사용
   const uploadImage = async (file, field, row) => {
@@ -190,6 +207,7 @@ function AccountMemberSheet() {
   useEffect(() => {
     if (!selectedAccountId && !memberSearchName) return;
 
+    setIsColumnWidthLocked(false);
     setLoading(true);
     Promise.resolve(fetchAccountMembersAllList()).finally(() => setLoading(false));
   }, [selectedAccountId, activeStatus, memberSearchName]);
@@ -338,6 +356,14 @@ function AccountMemberSheet() {
     setMemberSearchName(q);
   }, [memberInput]);
 
+  const handleToggleMasking = useCallback(() => {
+    setMaskingEnabled((prev) => !prev);
+    if (isColumnWidthLocked) {
+      setRelockAfterMeasure(true);
+      setIsColumnWidthLocked(false);
+    }
+  }, [isColumnWidthLocked]);
+
   const columns = useMemo(
     () => [
       { header: "구분", accessorKey: "cor_type", size: 100 },
@@ -385,6 +411,40 @@ function AccountMemberSheet() {
     columns,
     getCoreRowModel: getCoreRowModel(),
   });
+
+  useEffect(() => {
+    if (loading || isColumnWidthLocked) return;
+
+    const rafId = window.requestAnimationFrame(() => {
+      const tableEl = tableContainerRef.current?.querySelector("table");
+      if (!tableEl) return;
+
+      const headerCells = tableEl.querySelectorAll("thead th");
+      if (!headerCells || headerCells.length === 0) return;
+
+      const next = {};
+      table.getFlatHeaders().forEach((header, idx) => {
+        const el = headerCells[idx];
+        if (!el) return;
+        const width = Math.ceil(el.getBoundingClientRect().width);
+        if (width > 0) next[header.id] = width;
+      });
+
+      if (Object.keys(next).length > 0) {
+        setMeasuredColWidths(next);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [loading, isColumnWidthLocked, table, activeRows, maskingEnabled]);
+
+  useEffect(() => {
+    if (!relockAfterMeasure || isColumnWidthLocked) return;
+    if (Object.keys(measuredColWidths || {}).length === 0) return;
+
+    setIsColumnWidthLocked(true);
+    setRelockAfterMeasure(false);
+  }, [relockAfterMeasure, isColumnWidthLocked, measuredColWidths]);
 
   // ✅ 저장 로직: 최종 payload에서도 유틸 account_id=2 강제
   const handleSave = async () => {
@@ -458,6 +518,7 @@ function AccountMemberSheet() {
         setOriginalRows(fixedAll);
 
         await fetchAccountMembersAllList();
+        setIsColumnWidthLocked(false);
       } else {
         Swal.fire("저장 실패", res.data.message || "서버 오류", "error");
       }
@@ -675,6 +736,7 @@ function AccountMemberSheet() {
   // ✅ 행추가: 기본 직책 1.
   //    통합(7)은 account_id=1, 유틸(6)은 account_id=2 고정
   const handleAddRow = () => {
+    lockColumnsForEditing();
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
 
@@ -769,7 +831,7 @@ function AccountMemberSheet() {
             width: "max-content",
             minWidth: "100%",
             borderSpacing: 0,
-            tableLayout: "fixed",
+            tableLayout: isColumnWidthLocked ? "fixed" : "auto",
           },
           "& th, & td": {
             border: "1px solid #686D76",
@@ -829,7 +891,20 @@ function AccountMemberSheet() {
           },
           "thead th:nth-of-type(-n+7)": { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
-          "td[contenteditable]": { minWidth: "80px", cursor: "text" },
+          "td[contenteditable]": {
+            minWidth: "80px",
+            cursor: "text",
+            ...(isColumnWidthLocked
+              ? {
+                overflowX: "auto",
+                overflowY: "hidden",
+                whiteSpace: "nowrap",
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+              }
+              : {}),
+          },
+          "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -853,11 +928,24 @@ function AccountMemberSheet() {
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <th key={header.id} style={{ width: header.column.columnDef.size }}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
+                {headerGroup.headers.map((header) => {
+                  const headerWidth =
+                    header.column.columnDef.size ?? header.column.columnDef.minWidth ?? 80;
+                  const lockedHeaderWidth = measuredColWidths[header.id] ?? headerWidth;
+                  return (
+                    <th
+                      key={header.id}
+                      style={{
+                        width: isColumnWidthLocked ? lockedHeaderWidth : headerWidth,
+                        ...(isColumnWidthLocked
+                          ? { minWidth: lockedHeaderWidth, maxWidth: lockedHeaderWidth }
+                          : {}),
+                      }}
+                    >
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
@@ -868,6 +956,11 @@ function AccountMemberSheet() {
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
                   const currentValue = row.getValue(colKey);
+                  const cellWidth =
+                    measuredColWidths[cell.column.id] ??
+                    cell.column.columnDef.size ??
+                    cell.column.columnDef.minWidth ??
+                    80;
                   const originalValue = originals?.[rowIndex]?.[colKey];
                   const isNewRow = !String(row.original?.member_id ?? "").trim();
 
@@ -903,6 +996,7 @@ function AccountMemberSheet() {
                   );
 
                   const handleCellChange = (newValue) => {
+                    lockColumnsForEditing();
                     const updatedRows = rows.map((r, idx) => {
                       if (idx !== rowIndex) return r;
 
@@ -977,7 +1071,12 @@ function AccountMemberSheet() {
                       <td
                         key={cell.id}
                         className={isChanged ? "edited-cell" : ""}
-                        style={{ textAlign: "center" }}
+                        style={{
+                          textAlign: "center",
+                          ...(isColumnWidthLocked
+                            ? { width: cellWidth, minWidth: cellWidth, maxWidth: cellWidth }
+                            : {}),
+                        }}
                       >
                         <input
                           type="file"
@@ -1080,6 +1179,9 @@ function AccountMemberSheet() {
                     <td
                       key={cell.id}
                       style={{
+                        ...(isColumnWidthLocked
+                          ? { width: cellWidth, minWidth: cellWidth, maxWidth: cellWidth }
+                          : {}),
                         textAlign: [
                           "rrn",
                           "account_number",
@@ -1113,6 +1215,29 @@ function AccountMemberSheet() {
                       }
                       suppressContentEditableWarning
                       className={isEditable && isChanged ? "edited-cell" : ""}
+                      onFocus={
+                        isEditable &&
+                        !isSelect &&
+                        !isDate &&
+                        !isInsuranceDate &&
+                        canEditMaskedSensitiveField
+                          ? (e) => {
+                            lockColumnsForEditing();
+                            keepEditableTailVisible(e.currentTarget);
+                          }
+                          : undefined
+                      }
+                      onInput={
+                        isEditable &&
+                        !isSelect &&
+                        !isDate &&
+                        !isInsuranceDate &&
+                        canEditMaskedSensitiveField
+                          ? (e) => {
+                            keepEditableTailVisible(e.currentTarget);
+                          }
+                          : undefined
+                      }
                       onBlur={
                         isEditable &&
                         !isSelect &&
@@ -1500,7 +1625,7 @@ function AccountMemberSheet() {
         <MDButton
           variant="outlined"
           color={maskingEnabled ? "dark" : "secondary"}
-          onClick={() => setMaskingEnabled((prev) => !prev)}
+          onClick={handleToggleMasking}
         >
           {maskingEnabled ? "* 해제" : "* 적용"}
         </MDButton>

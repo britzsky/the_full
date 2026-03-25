@@ -148,6 +148,9 @@ function AccountMemberRecSheet() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [isColumnWidthLocked, setIsColumnWidthLocked] = useState(false);
+  const [measuredColWidths, setMeasuredColWidths] = useState({});
+  const [relockAfterMeasure, setRelockAfterMeasure] = useState(false);
 
   // ✅ 정렬 상태 (실입사일 -> 업장명)
   const [sorting, setSorting] = useState(DEFAULT_JOIN_DATE_SORT);
@@ -164,6 +167,17 @@ function AccountMemberRecSheet() {
       .trim()
       .replace(/^0(\d):/, "$1:");
   };
+
+  const keepEditableTailVisible = useCallback((el) => {
+    if (!el) return;
+    window.requestAnimationFrame(() => {
+      el.scrollLeft = el.scrollWidth;
+    });
+  }, []);
+
+  const lockColumnsForEditing = useCallback(() => {
+    setIsColumnWidthLocked((prev) => (prev ? prev : true));
+  }, []);
 
   // ✅ row 고정키(_rid) 보장: 정렬해도 원본매칭/수정대상 식별 유지
   const ensureRowId = useCallback((row) => {
@@ -185,6 +199,8 @@ function AccountMemberRecSheet() {
 
   // 조회
   useEffect(() => {
+    // ✅ 조회 상태는 항상 전체 텍스트 노출(열 자동 확장)
+    setIsColumnWidthLocked(false);
     setLoading(true);
     fetchAccountMembersAllList()
       .then(() => {
@@ -381,6 +397,17 @@ function AccountMemberRecSheet() {
     }
   }, [accountOptionsIndexed]);
 
+  const handleToggleMasking = useCallback(() => {
+    setMaskingEnabled((prev) => !prev);
+
+    // 수정중(고정폭)에서 마스킹 상태가 바뀌면
+    // 새 표시 기준으로 자동폭 재측정 후 다시 고정한다.
+    if (isColumnWidthLocked) {
+      setRelockAfterMeasure(true);
+      setIsColumnWidthLocked(false);
+    }
+  }, [isColumnWidthLocked]);
+
   const table = useReactTable({
     data: activeRows,
     columns,
@@ -390,6 +417,41 @@ function AccountMemberRecSheet() {
     state: { sorting },
     getRowId: (row, index) => getStableRowKey(row, index),
   });
+
+  // 조회/저장 후(auto 모드) 실제 렌더링된 헤더 너비를 기준 폭으로 저장
+  useEffect(() => {
+    if (loading || isColumnWidthLocked) return;
+
+    const rafId = window.requestAnimationFrame(() => {
+      const tableEl = tableContainerRef.current?.querySelector("table");
+      if (!tableEl) return;
+
+      const headerCells = tableEl.querySelectorAll("thead th");
+      if (!headerCells || headerCells.length === 0) return;
+
+      const next = {};
+      table.getFlatHeaders().forEach((header, idx) => {
+        const el = headerCells[idx];
+        if (!el) return;
+        const w = Math.ceil(el.getBoundingClientRect().width);
+        if (w > 0) next[header.id] = w;
+      });
+
+      if (Object.keys(next).length > 0) {
+        setMeasuredColWidths(next);
+      }
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [loading, isColumnWidthLocked, table, activeRows, sorting, maskingEnabled]);
+
+  useEffect(() => {
+    if (!relockAfterMeasure || isColumnWidthLocked) return;
+    if (Object.keys(measuredColWidths || {}).length === 0) return;
+
+    setIsColumnWidthLocked(true);
+    setRelockAfterMeasure(false);
+  }, [relockAfterMeasure, isColumnWidthLocked, measuredColWidths]);
 
   // ✅ 원본을 _rid로 매칭
   const originalMap = useMemo(() => {
@@ -621,6 +683,8 @@ function AccountMemberRecSheet() {
         setSnapshotTick((t) => t + 1);
         // ✅ 저장 완료 후에만 실입사일 정렬 재적용
         setSorting(DEFAULT_JOIN_DATE_SORT);
+        // ✅ 저장 성공 후에는 고정 폭 해제 (내용 길이만큼 열 확장)
+        setIsColumnWidthLocked(false);
 
         await Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
       } else {
@@ -638,6 +702,7 @@ function AccountMemberRecSheet() {
     // ✅ 행추가 직후에는 실입사일 정렬을 잠시 끄고 직접 입력에 집중
     //    저장 완료 후(handleSave 성공) 다시 기본 정렬을 적용한다.
     setSorting([]);
+    lockColumnsForEditing();
 
     const defaultAccountId = selectedAccountId || (accountList?.[0]?.account_id ?? "");
     const defaultWorkSystemIdx = workSystemList?.[0]?.idx ? String(workSystemList[0].idx) : "";
@@ -688,18 +753,15 @@ function AccountMemberRecSheet() {
             width: "max-content",
             minWidth: "100%",
             borderSpacing: 0,
-            tableLayout: "fixed",
+            tableLayout: isColumnWidthLocked ? "fixed" : "auto",
           },
           "& th, & td": {
             border: "1px solid #686D76",
             textAlign: "center",
             padding: "4px",
             whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
             fontSize: "12px",
             verticalAlign: "middle",
-            boxSizing: "border-box",
           },
           "& th": {
             backgroundColor: "#f0f0f0",
@@ -731,8 +793,22 @@ function AccountMemberRecSheet() {
             background: "#f0f0f0",
             zIndex: 3,
           },
+          "thead th:nth-of-type(-n+4)": { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
-          "td[contenteditable]": { cursor: "text" },
+          "td[contenteditable]": {
+            minWidth: "80px",
+            cursor: "text",
+            ...(isColumnWidthLocked
+              ? {
+                overflowX: "auto",
+                overflowY: "hidden",
+                whiteSpace: "nowrap",
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+              }
+              : {}),
+          },
+          "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
           "& select": {
             fontSize: "12px",
             padding: "4px",
@@ -759,14 +835,16 @@ function AccountMemberRecSheet() {
                 {headerGroup.headers.map((header) => {
                   const headerWidth =
                     header.column.columnDef.size ?? header.column.columnDef.minWidth ?? 80;
+                  const lockedHeaderWidth = measuredColWidths[header.id] ?? headerWidth;
 
                   return (
                     <th
                       key={header.id}
                       style={{
-                        width: headerWidth,
-                        minWidth: headerWidth,
-                        maxWidth: headerWidth,
+                        width: isColumnWidthLocked ? lockedHeaderWidth : headerWidth,
+                        ...(isColumnWidthLocked
+                          ? { minWidth: lockedHeaderWidth, maxWidth: lockedHeaderWidth }
+                          : {}),
                       }}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
@@ -788,6 +866,7 @@ function AccountMemberRecSheet() {
                     const colKey = cell.column.columnDef.accessorKey;
                     const currentValue = row.getValue(colKey);
                     const cellWidth =
+                      measuredColWidths[cell.column.id] ??
                       cell.column.columnDef.size ??
                       cell.column.columnDef.minWidth ??
                       80;
@@ -842,12 +921,28 @@ function AccountMemberRecSheet() {
 
                         const next = { idx: newValue, start_time, end_time };
 
+                        const sameIdx = String(row.original?.idx ?? "") === String(next.idx ?? "");
+                        const sameStart =
+                          String(row.original?.start_time ?? "") === String(next.start_time ?? "");
+                        const sameEnd =
+                          String(row.original?.end_time ?? "") === String(next.end_time ?? "");
+                        if (sameIdx && sameStart && sameEnd) return;
+
+                        lockColumnsForEditing();
+
                         updateRowByRid(rid, {
                           ...next,
                           total: calculateTotal({ ...row.original, ...next }),
                         });
                         return;
                       }
+
+                      const sameValue = isNumeric
+                        ? Number(row.original?.[colKey] ?? 0) === Number(newValue ?? 0)
+                        : String(row.original?.[colKey] ?? "") === String(newValue ?? "");
+                      if (sameValue) return;
+
+                      lockColumnsForEditing();
 
                       const patch = { [colKey]: newValue };
                       updateRowByRid(rid, {
@@ -885,7 +980,12 @@ function AccountMemberRecSheet() {
                         <td
                           key={cell.id}
                           className={isChanged ? "edited-cell" : ""}
-                          style={{ textAlign: "center", width: cellWidth, minWidth: cellWidth }}
+                          style={{
+                            textAlign: "center",
+                            ...(isColumnWidthLocked
+                              ? { width: cellWidth, minWidth: cellWidth, maxWidth: cellWidth }
+                              : {}),
+                          }}
                         >
                           <input
                             type="file"
@@ -956,9 +1056,9 @@ function AccountMemberRecSheet() {
                       <td
                         key={cell.id}
                         style={{
-                          width: cellWidth,
-                          minWidth: cellWidth,
-                          maxWidth: cellWidth,
+                          ...(isColumnWidthLocked
+                            ? { width: cellWidth, minWidth: cellWidth, maxWidth: cellWidth }
+                            : {}),
                           textAlign: CENTER_ALIGN_COLS.has(colKey)
                             ? "center"
                             : colKey === "salary"
@@ -973,6 +1073,25 @@ function AccountMemberRecSheet() {
                         }
                         suppressContentEditableWarning
                         className={isEditable && isChanged ? "edited-cell" : ""}
+                        onFocus={
+                          isEditable &&
+                          !isSelect &&
+                          !isDate &&
+                          canEditMaskedSensitiveField
+                            ? (e) => {
+                              lockColumnsForEditing();
+                              keepEditableTailVisible(e.currentTarget);
+                            }
+                            : undefined
+                        }
+                        onInput={
+                          isEditable &&
+                          !isSelect &&
+                          !isDate &&
+                          canEditMaskedSensitiveField
+                            ? (e) => keepEditableTailVisible(e.currentTarget)
+                            : undefined
+                        }
                         onBlur={
                           isEditable &&
                             !isSelect &&
@@ -1206,7 +1325,7 @@ function AccountMemberRecSheet() {
         <MDButton
           variant="outlined"
           color={maskingEnabled ? "dark" : "secondary"}
-          onClick={() => setMaskingEnabled((prev) => !prev)}
+          onClick={handleToggleMasking}
         >
           {maskingEnabled ? "* 해제" : "* 적용"}
         </MDButton>

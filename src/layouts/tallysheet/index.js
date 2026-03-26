@@ -785,6 +785,7 @@ function TallySheet() {
   const handleCardReceiptFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.currentTarget.value = "";
 
     setCardForm((p) => ({ ...p, receipt_image: file }));
     const url = URL.createObjectURL(file);
@@ -1185,6 +1186,7 @@ function TallySheet() {
   const handleCashReceiptFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.currentTarget.value = "";
 
     setCashForm((p) => ({ ...p, receipt_image: file }));
     const url = URL.createObjectURL(file);
@@ -1534,6 +1536,7 @@ function TallySheet() {
   const handleOtherReceiptFileChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.currentTarget.value = "";
 
     setOtherForm((p) => ({ ...p, receipt_image: file }));
     const url = URL.createObjectURL(file);
@@ -4123,8 +4126,13 @@ function TallySheet() {
                             flexWrap: "wrap",
                           }}
                         >
-                          <MDButton component="label" variant="contained" color="info" size="small">
-                            파일
+                          <MDButton
+                            component="label"
+                            variant="contained"
+                            color="info"
+                            size="small"
+                            sx={{ color: "#fff !important" }}
+                          >
                             <input
                               type="file"
                               hidden
@@ -4149,6 +4157,7 @@ function TallySheet() {
                                 e.target.value = "";
                               }}
                             />
+                            파일
                           </MDButton>
 
                           {previewSrc && (
@@ -4586,7 +4595,13 @@ function TallySheet() {
                             flexWrap: "wrap",
                           }}
                         >
-                          <MDButton component="label" variant="contained" color="info" size="small">
+                          <MDButton
+                            component="label"
+                            variant="contained"
+                            color="info"
+                            size="small"
+                            sx={{ color: "#fff !important" }}
+                          >
                             파일
                             <input
                               type="file"
@@ -4907,7 +4922,12 @@ function TallySheet() {
                             flexWrap: "wrap",
                           }}
                         >
-                          <Button component="label" size="small" variant="contained">
+                          <Button
+                            component="label"
+                            size="small"
+                            variant="contained"
+                            sx={{ color: "#fff !important" }}
+                          >
                             파일
                             <input
                               type="file"
@@ -5187,6 +5207,9 @@ function TallySheet() {
                     type="file"
                     hidden
                     accept="image/*"
+                    onClick={(e) => {
+                      e.currentTarget.value = "";
+                    }}
                     onChange={handleCardReceiptFileChange}
                   />
                 </MDButton>
@@ -5374,6 +5397,9 @@ function TallySheet() {
                     type="file"
                     hidden
                     accept="image/*"
+                    onClick={(e) => {
+                      e.currentTarget.value = "";
+                    }}
                     onChange={handleCashReceiptFileChange}
                   />
                 </MDButton>
@@ -5523,6 +5549,9 @@ function TallySheet() {
                     type="file"
                     hidden
                     accept="image/*"
+                    onClick={(e) => {
+                      e.currentTarget.value = "";
+                    }}
                     onChange={handleOtherReceiptFileChange}
                   />
                 </MDButton>

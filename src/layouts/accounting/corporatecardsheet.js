@@ -41,6 +41,7 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useCorporateCardData from "./data/CorporateCardData";
 
+// 회계 -> 본사 법인카드
 // ========================= 상수/유틸 =========================
 const DEFAULT_CARD_BRAND = "IBK기업은행";
 
@@ -65,7 +66,29 @@ const RECEIPT_TYPES = [
   { value: "11post", label: "11번가" },
   { value: "naver", label: "네이버" },
   { value: "homeplus", label: "홈플러스" },
+  { value: "auction", label: "옥션" },
 ];
+
+// ✅ 영수증 타입 값 정규화(버튼 업로드 시 API로 안정적으로 전달)
+const RECEIPT_TYPE_SET = new Set(RECEIPT_TYPES.map((it) => String(it.value)));
+const normalizeReceiptTypeVal = (v) => {
+  const s = String(v ?? "")
+    .replace(/\u00A0/g, " ")
+    .trim()
+    .toLowerCase();
+
+  if (RECEIPT_TYPE_SET.has(s)) return s;
+
+  // 라벨/변형 입력 방어
+  if (s.includes("옥션") || s.includes("auction")) return "auction";
+  if (s.includes("11번가") || s.includes("11st") || s.includes("11post")) return "11post";
+  if (s.includes("g마켓") || s.includes("gmarket")) return "gmarket";
+  if (s.includes("쿠팡") || s.includes("coupang")) return "coupang";
+  if (s.includes("네이버") || s.includes("naver")) return "naver";
+  if (s.includes("홈플러스") || s.includes("homeplus")) return "homeplus";
+
+  return "coupang";
+};
 
 // ✅ 하단 셀렉트 옵션
 const TAX_TYPES = [
@@ -528,7 +551,7 @@ function CorporateCardSheet() {
     row?.cardBrand ?? row?.card_brand ?? row?.cardbrand ?? DEFAULT_CARD_BRAND;
 
   const getRowReceiptType = (row) =>
-    String(row?.receipt_type ?? row?.receiptType ?? row?.type ?? "coupang");
+    normalizeReceiptTypeVal(row?.receipt_type ?? row?.receiptType ?? row?.type);
 
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
@@ -711,7 +734,7 @@ function CorporateCardSheet() {
       const accountId = String(row.account_id || "");
       const cardNoDigits = getRowCardNoDigits(row);
       const cardBrand = getRowCardBrand(row);
-      const receiptType = getRowReceiptType(row);
+      const receiptType = normalizeReceiptTypeVal(getRowReceiptType(row));
 
       console.log("SCAN payload", {
         accountId,
@@ -726,13 +749,13 @@ function CorporateCardSheet() {
         prev.map((r, i) =>
           i === rowIndex
             ? {
-                ...r,
-                __dirty: true,
-                __imgTouchedAt: Date.now(),
-                __pendingFile: null,
-                __pendingPreviewUrl: "",
-                __pendingAt: 0,
-              }
+              ...r,
+              __dirty: true,
+              __imgTouchedAt: Date.now(),
+              __pendingFile: null,
+              __pendingPreviewUrl: "",
+              __pendingAt: 0,
+            }
             : r
         )
       );
@@ -786,8 +809,8 @@ function CorporateCardSheet() {
         }
 
         const data = res.data || {};
-        const main = data.main || {};
-        const items = data.item || [];
+        const main = data.main || data || {};
+        const items = Array.isArray(data.item) ? data.item : [];
 
         const patch = {
           ...(main.sale_id != null ? { sale_id: main.sale_id } : {}),
@@ -850,21 +873,7 @@ function CorporateCardSheet() {
         }
 
         Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
-
-        skipPendingNewMergeRef.current = true;
-        await handleFetchMaster();
-
-        const newSaleId = main.sale_id;
-        const newAcct = patch.account_id ?? row.account_id;
-        const newPayDt = patch.payment_dt ?? row.payment_dt;
-
-        if (newSaleId) {
-          await fetchHeadOfficeCorporateCardPaymentDetailList({
-            sale_id: newSaleId,
-            account_id: newAcct,
-            payment_dt: newPayDt,
-          });
-        }
+        // 재업로드 직후 강제 재조회는 상세창 초기화를 유발하므로 여기서는 조회하지 않는다.
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
@@ -886,7 +895,7 @@ function CorporateCardSheet() {
     const row = cleanMasterRow(r);
 
     // ✅ receipt_type 항상 포함
-    row.receipt_type = String(row.receipt_type ?? r.receipt_type ?? "coupang");
+    row.receipt_type = normalizeReceiptTypeVal(row.receipt_type ?? r.receipt_type ?? "coupang");
 
     MASTER_NUMBER_KEYS.forEach((k) => {
       if (row[k] !== undefined) row[k] = parseNumber(row[k]);
@@ -952,10 +961,10 @@ function CorporateCardSheet() {
 
         return changed
           ? {
-              ...cleanDetailRow(r),
-              account_id: topAccountId,
-              payment_dt: topPaymentDt,
-            }
+            ...cleanDetailRow(r),
+            account_id: topAccountId,
+            payment_dt: topPaymentDt,
+          }
           : null;
       })
       .filter(Boolean)
@@ -1482,8 +1491,8 @@ function CorporateCardSheet() {
     const masterKey = selectedMaster.sale_id
       ? { type: "sale_id", value: String(selectedMaster.sale_id) }
       : selectedMaster.client_id
-      ? { type: "client_id", value: String(selectedMaster.client_id) }
-      : null;
+        ? { type: "client_id", value: String(selectedMaster.client_id) }
+        : null;
 
     if (!masterKey) return;
 
@@ -1552,13 +1561,13 @@ function CorporateCardSheet() {
     setSelectedMaster((prevSel) =>
       prevSel
         ? {
-            ...prevSel,
-            total: nextTotal,
-            tax: nextTax,
-            vat: nextVat,
-            taxFree: nextTaxFree,
-            __dirty: true,
-          }
+          ...prevSel,
+          total: nextTotal,
+          tax: nextTax,
+          vat: nextVat,
+          taxFree: nextTaxFree,
+          __dirty: true,
+        }
         : prevSel
     );
   }, [detailRows, selectedMaster]);
@@ -1752,8 +1761,8 @@ function CorporateCardSheet() {
                   style={{
                     background:
                       selectedMaster?.sale_id &&
-                      selectedMaster?.sale_id === row.sale_id &&
-                      row.sale_id
+                        selectedMaster?.sale_id === row.sale_id &&
+                        row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1787,12 +1796,12 @@ function CorporateCardSheet() {
                     const changed = row.isNew
                       ? true
                       : pending
-                      ? true
-                      : row.__dirty
-                      ? true
-                      : MASTER_NUMBER_KEYS.includes(key)
-                      ? parseNumber(origRaw) !== parseNumber(rawVal)
-                      : isChangedValue(origRaw, rawVal);
+                        ? true
+                        : row.__dirty
+                          ? true
+                          : MASTER_NUMBER_KEYS.includes(key)
+                            ? parseNumber(origRaw) !== parseNumber(rawVal)
+                            : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
                       const acctName =
@@ -1879,9 +1888,13 @@ function CorporateCardSheet() {
                           <Select
                             size="small"
                             fullWidth
-                            value={String(row.receipt_type ?? "coupang")}
+                            value={normalizeReceiptTypeVal(row.receipt_type)}
                             onChange={(e) =>
-                              handleMasterCellChange(rowIndex, "receipt_type", e.target.value)
+                              handleMasterCellChange(
+                                rowIndex,
+                                "receipt_type",
+                                normalizeReceiptTypeVal(e.target.value)
+                              )
                             }
                             onClick={(ev) => ev.stopPropagation()}
                             displayEmpty
@@ -1929,9 +1942,11 @@ function CorporateCardSheet() {
                                 if (el) fileInputRefs.current[inputId] = el;
                               }}
                               onClick={(e) => {
+                                e.stopPropagation();
                                 e.currentTarget.value = ""; // ✅ 파일창 뜨기 직전에 초기화 (같은 파일도 change 뜸)
                               }}
                               onChange={(e) => {
+                                e.stopPropagation();
                                 const f = e.target.files?.[0];
                                 console.log("file picked:", f);
                                 e.currentTarget.value = ""; // ✅ 이것도 빈 문자열로
@@ -1981,9 +1996,11 @@ function CorporateCardSheet() {
 
                                 {/* ✅ label 제거하고 ref로 click */}
                                 <MDButton
+                                  type="button"
                                   size="small"
                                   color="info"
                                   onClick={(ev) => {
+                                    ev.preventDefault();
                                     ev.stopPropagation();
                                     const el = fileInputRefs.current[inputId];
                                     if (el) {
@@ -2003,9 +2020,11 @@ function CorporateCardSheet() {
                               </>
                             ) : (
                               <MDButton
+                                type="button"
                                 size="small"
                                 color="info"
                                 onClick={(ev) => {
+                                  ev.preventDefault();
                                   ev.stopPropagation();
                                   const el = fileInputRefs.current[inputId];
                                   if (el) {
@@ -2179,8 +2198,8 @@ function CorporateCardSheet() {
                       const changed = row?.isNew
                         ? true
                         : isForcedRedRow(row)
-                        ? true
-                        : isDetailFieldChanged(key, orig, rawVal);
+                          ? true
+                          : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");

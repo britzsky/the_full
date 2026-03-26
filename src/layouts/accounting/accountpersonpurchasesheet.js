@@ -636,6 +636,9 @@ function AccountCorporateCardSheet() {
         formData.append("account_id", row.account_id);
         formData.append("saleDate", row.saleDate);
         formData.append("saveType", "person");
+        if (row.sale_id) {
+          formData.append("sale_id", String(row.sale_id));
+        }
 
         const res = await api.post("/receipt-scanV5", formData, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
@@ -649,8 +652,8 @@ function AccountCorporateCardSheet() {
         }
 
         const data = res.data || {};
-        const main = data.main || {};
-        const items = data.item || [];
+        const main = data.main || data || {};
+        const items = Array.isArray(data.item) ? data.item : [];
 
         const patch = {
           ...(main.sale_id != null ? { sale_id: main.sale_id } : {}),
@@ -685,6 +688,7 @@ function AccountCorporateCardSheet() {
               account_id: patch.account_id !== undefined ? patch.account_id : r.account_id ?? "",
               cardNo: digits,
               cardBrand: patch.cardBrand ?? r.cardBrand ?? DEFAULT_CARD_BRAND,
+              __dirty: true,
             };
 
             // ✅ 혹시라도 파서 결과로 사용처가 들어오더라도, 특정 거래처면 고정
@@ -723,21 +727,7 @@ function AccountCorporateCardSheet() {
         }
 
         Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
-
-        skipPendingNewMergeRef.current = true;
-        await handleFetchMaster();
-
-        const newSaleId = main.sale_id;
-        const newAcct = patch.account_id ?? row.account_id;
-        const newPayDt = patch.saleDate ?? row.saleDate;
-
-        if (newSaleId) {
-          await fetchAccountCorporateCardPaymentDetailList({
-            sale_id: newSaleId,
-            account_id: newAcct,
-            saleDate: newPayDt,
-          });
-        }
+        // 재업로드 직후 강제 재조회는 상세창 초기화를 유발하므로 여기서는 조회하지 않는다.
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
@@ -1374,6 +1364,8 @@ function AccountCorporateCardSheet() {
                     const origRaw = origMasterRows[rowIndex]?.[key];
                     const changed = row.isNew
                       ? true
+                      : row.__dirty
+                      ? true
                       : MASTER_NUMBER_KEYS.includes(key)
                       ? parseNumber(origRaw) !== parseNumber(rawVal)
                       : isChangedValue(origRaw, rawVal);
@@ -1651,6 +1643,7 @@ function AccountCorporateCardSheet() {
                       const has = !!rawVal;
                       const inputId = `receipt-${row.client_id || row.sale_id || rowIndex}`;
                       const uploadBlocked = isSpecialAccount(row.account_id);
+                      const iconColor = changed ? "red" : fileIconSx.color;
 
                       return (
                         <td key={key} style={{ width: c.size }}>
@@ -1668,7 +1661,12 @@ function AccountCorporateCardSheet() {
                               id={inputId}
                               style={{ display: "none" }}
                               disabled={uploadBlocked}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.currentTarget.value = "";
+                              }}
                               onChange={(e) => {
+                                e.stopPropagation();
                                 const f = e.target.files?.[0];
                                 handleImageUpload(f, rowIndex);
                                 e.target.value = "";
@@ -1680,7 +1678,7 @@ function AccountCorporateCardSheet() {
                                 <Tooltip title="다운로드">
                                   <IconButton
                                     size="small"
-                                    sx={fileIconSx}
+                                    sx={{ color: iconColor }}
                                     onClick={(ev) => {
                                       ev.stopPropagation();
                                       handleDownload(rawVal);
@@ -1693,7 +1691,7 @@ function AccountCorporateCardSheet() {
                                 <Tooltip title="미리보기(창)">
                                   <IconButton
                                     size="small"
-                                    sx={fileIconSx}
+                                    sx={{ color: iconColor }}
                                     onClick={(ev) => {
                                       ev.stopPropagation();
                                       handleViewImage(rawVal);

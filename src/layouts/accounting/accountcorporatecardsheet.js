@@ -40,6 +40,8 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useAccountCorporateCardData from "./data/AccountCorporateCardData";
 
+
+// 회계 -> 현장법인카드
 // ========================= 상수/유틸 =========================
 const DEFAULT_CARD_BRAND = "IBK기업은행";
 
@@ -674,6 +676,9 @@ function AccountCorporateCardSheet() {
         formData.append("cardNo", row.cardNo);
         formData.append("cardBrand", row.cardBrand);
         formData.append("saveType", "account");
+        if (row.sale_id) {
+          formData.append("sale_id", String(row.sale_id));
+        }
 
         const res = await api.post("/card-receipt/parse", formData, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
@@ -687,8 +692,8 @@ function AccountCorporateCardSheet() {
         }
 
         const data = res.data || {};
-        const main = data.main || {};
-        const items = data.item || [];
+        const main = data.main || data || {};
+        const items = Array.isArray(data.item) ? data.item : [];
 
         const patch = {
           ...(main.sale_id != null ? { sale_id: main.sale_id } : {}),
@@ -728,6 +733,7 @@ function AccountCorporateCardSheet() {
               account_id: patch.account_id !== undefined ? patch.account_id : r.account_id ?? "",
               cardNo: digits,
               card_idx: mappedIdx || r.card_idx || "",
+              __dirty: true,
             };
           })
         );
@@ -759,21 +765,7 @@ function AccountCorporateCardSheet() {
         }
 
         Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
-
-        skipPendingNewMergeRef.current = true;
-        await handleFetchMaster();
-
-        const newSaleId = main.sale_id;
-        const newAcct = patch.account_id ?? row.account_id;
-        const newPayDt = patch.payment_dt ?? row.payment_dt;
-
-        if (newSaleId) {
-          await fetchAccountCorporateCardPaymentDetailList({
-            sale_id: newSaleId,
-            account_id: newAcct,
-            payment_dt: newPayDt,
-          });
-        }
+        // 재업로드 직후 강제 재조회는 상세창 초기화를 유발하므로 여기서는 조회하지 않는다.
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
@@ -1182,8 +1174,8 @@ function AccountCorporateCardSheet() {
     const masterKey = selectedMaster.sale_id
       ? { type: "sale_id", value: String(selectedMaster.sale_id) }
       : selectedMaster.client_id
-      ? { type: "client_id", value: String(selectedMaster.client_id) }
-      : null;
+        ? { type: "client_id", value: String(selectedMaster.client_id) }
+        : null;
 
     if (!masterKey) return;
 
@@ -1425,8 +1417,8 @@ function AccountCorporateCardSheet() {
                   style={{
                     background:
                       selectedMaster?.sale_id &&
-                      selectedMaster?.sale_id === row.sale_id &&
-                      row.sale_id
+                        selectedMaster?.sale_id === row.sale_id &&
+                        row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
@@ -1455,9 +1447,11 @@ function AccountCorporateCardSheet() {
                     const origRaw = origMasterRows[rowIndex]?.[key];
                     const changed = row.isNew
                       ? true
+                      : row.__dirty
+                        ? true
                       : MASTER_NUMBER_KEYS.includes(key)
-                      ? parseNumber(origRaw) !== parseNumber(rawVal)
-                      : isChangedValue(origRaw, rawVal);
+                        ? parseNumber(origRaw) !== parseNumber(rawVal)
+                        : isChangedValue(origRaw, rawVal);
 
                     if (key === "account_id") {
                       const acctName =
@@ -1519,8 +1513,8 @@ function AccountCorporateCardSheet() {
                                 {!acctKey
                                   ? "거래처 선택"
                                   : options.length === 0
-                                  ? "등록된 카드 없음"
-                                  : "카드 선택"}
+                                    ? "등록된 카드 없음"
+                                    : "카드 선택"}
                               </em>
                             </MenuItem>
 
@@ -1574,6 +1568,7 @@ function AccountCorporateCardSheet() {
                     if (key === "receipt_image") {
                       const has = !!rawVal;
                       const inputId = `receipt-${row.client_id || row.sale_id || rowIndex}`;
+                      const iconColor = changed ? "red" : fileIconSx.color;
 
                       return (
                         <td key={key} style={{ width: c.size }}>
@@ -1590,7 +1585,12 @@ function AccountCorporateCardSheet() {
                               accept="image/*"
                               id={inputId}
                               style={{ display: "none" }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                e.currentTarget.value = "";
+                              }}
                               onChange={(e) => {
+                                e.stopPropagation();
                                 const f = e.target.files?.[0];
                                 handleImageUpload(f, rowIndex);
                                 e.target.value = "";
@@ -1602,7 +1602,7 @@ function AccountCorporateCardSheet() {
                                 <Tooltip title="다운로드">
                                   <IconButton
                                     size="small"
-                                    sx={fileIconSx}
+                                    sx={{ color: iconColor }}
                                     onClick={(ev) => {
                                       ev.stopPropagation();
                                       handleDownload(rawVal);
@@ -1615,7 +1615,7 @@ function AccountCorporateCardSheet() {
                                 <Tooltip title="미리보기(창)">
                                   <IconButton
                                     size="small"
-                                    sx={fileIconSx}
+                                    sx={{ color: iconColor }}
                                     onClick={(ev) => {
                                       ev.stopPropagation();
                                       handleViewImage(rawVal);
@@ -1811,8 +1811,8 @@ function AccountCorporateCardSheet() {
                       const changed = row?.isNew
                         ? true
                         : isForcedRedRow(row)
-                        ? true
-                        : isDetailFieldChanged(key, orig, rawVal);
+                          ? true
+                          : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");

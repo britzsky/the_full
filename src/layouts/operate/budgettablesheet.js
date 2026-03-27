@@ -21,6 +21,8 @@ export default function BudgetTableTab() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
+  // ✅ 숫자 입력 중에는 raw 문자열을 유지해서 커서 점프 방지
+  const [budgetGrantDrafts, setBudgetGrantDrafts] = useState({});
   // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
   const [accountSortKey, setAccountSortKey] = useState("account_name");
 
@@ -157,6 +159,8 @@ export default function BudgetTableTab() {
     }
   };
 
+  const getDraftKey = (rowKey, field) => `${rowKey}__${field}`;
+
   // ✅ 입력 핸들러 (budget_grant: 숫자, note: 문자열)
   const handleInputChange = (rowKey, field, value) => {
     const newRows = [...editRows];
@@ -168,13 +172,40 @@ export default function BudgetTableTab() {
         value === "" || value === null
           ? null
           : Number(String(value).replace(/,/g, ""));
-      newRows[targetIdx][field] = numericValue;
+      newRows[targetIdx][field] = Number.isNaN(numericValue) ? null : numericValue;
     } else {
       // note 등 문자열
       newRows[targetIdx][field] = value;
     }
 
     setEditRows(newRows);
+  };
+
+  const handleBudgetGrantFocus = (rowKey, value) => {
+    const draftKey = getDraftKey(rowKey, "budget_grant");
+    setBudgetGrantDrafts((prev) => ({
+      ...prev,
+      [draftKey]: value == null ? "" : String(value),
+    }));
+  };
+
+  const handleBudgetGrantChange = (rowKey, value) => {
+    const draftKey = getDraftKey(rowKey, "budget_grant");
+    setBudgetGrantDrafts((prev) => ({
+      ...prev,
+      [draftKey]: value,
+    }));
+    handleInputChange(rowKey, "budget_grant", value);
+  };
+
+  const handleBudgetGrantBlur = (rowKey) => {
+    const draftKey = getDraftKey(rowKey, "budget_grant");
+    setBudgetGrantDrafts((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, draftKey)) return prev;
+      const next = { ...prev };
+      delete next[draftKey];
+      return next;
+    });
   };
 
   const handleYearChange = (e) => setYear(Number(e.target.value));
@@ -540,6 +571,15 @@ export default function BudgetTableTab() {
                             }
 
                             // ✅ editable (budget_grant, 숫자)
+                            const draftKey = getDraftKey(row._rowKey, field);
+                            const hasDraft = Object.prototype.hasOwnProperty.call(
+                              budgetGrantDrafts,
+                              draftKey
+                            );
+                            const inputValue = hasDraft
+                              ? budgetGrantDrafts[draftKey]
+                              : displayValue;
+
                             return (
                               <td
                                 key={field}
@@ -548,7 +588,7 @@ export default function BudgetTableTab() {
                               >
                                 <input
                                   type="text"
-                                  value={displayValue}
+                                  value={inputValue}
                                   style={{
                                     width: "80px",
                                     height: "20px",
@@ -559,12 +599,12 @@ export default function BudgetTableTab() {
                                     background: "transparent",
                                     color: isChanged ? "red" : "black",
                                   }}
+                                  onFocus={() =>
+                                    handleBudgetGrantFocus(row._rowKey, current)
+                                  }
+                                  onBlur={() => handleBudgetGrantBlur(row._rowKey)}
                                   onChange={(e) =>
-                                    handleInputChange(
-                                      row._rowKey,
-                                      field,
-                                      e.target.value
-                                    )
+                                    handleBudgetGrantChange(row._rowKey, e.target.value)
                                   }
                                 />
                               </td>

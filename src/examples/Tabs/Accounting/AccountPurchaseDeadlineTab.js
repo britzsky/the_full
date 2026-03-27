@@ -63,7 +63,7 @@ function AccountPurchaseDeadlineTab() {
 
   // 🔹 상단 거래처(사업장) select용 리스트
   const [accountList, setAccountList] = useState([]);
-  const [accountInput, setAccountInput] = useState("");
+  const accountInputRef = useRef("");
 
   // ✅ 타입(요양원/산업체/학교) 옵션: 거래처(account_id) 기준으로 서버에서 받기
   const [typeOptions, setTypeOptions] = useState([]); // [{value, label}]
@@ -160,6 +160,8 @@ function AccountPurchaseDeadlineTab() {
 
   const [selectedSaleId, setSelectedSaleId] = useState("");
   const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
+  const [masterTableKey, setMasterTableKey] = useState(0);
+  const [detailTableKey, setDetailTableKey] = useState(0);
 
   // =========================================
   // ✅ 금액 키들: 화면에는 콤마, 저장은 콤마 제거
@@ -342,6 +344,12 @@ function AccountPurchaseDeadlineTab() {
   // ✅ 조회 버튼 클릭
   const handleSearch = async () => {
     try {
+      // 조회 시 미저장 수정값은 즉시 폐기하고 화면 DOM도 새로 마운트
+      setRows((originalRows || []).map((r) => ({ ...r })));
+      setDetailRows((originalDetailRows || []).map((r) => ({ ...r })));
+      setMasterTableKey((k) => k + 1);
+      setDetailTableKey((k) => k + 1);
+
       setSelectedSaleId("");
       setSelectedMasterIndex(-1);
       setDetailRows([]);
@@ -711,7 +719,7 @@ function AccountPurchaseDeadlineTab() {
 
   // ✅ 상단 행 클릭 → 하단 조회 (중복 account_id 제거)
   const handleMasterRowClick = useCallback(
-    async (row, rowIndex) => {
+    (row, rowIndex) => {
       const saleId = row?.sale_id;
       if (!saleId) return;
 
@@ -719,15 +727,14 @@ function AccountPurchaseDeadlineTab() {
       setDetailRows([]);
       setOriginalDetailRows([]);
 
-      setSelectedSaleId(String(saleId));
-      setSelectedMasterIndex(rowIndex);
-
-      await fetchPurchaseDetailList({
-        sale_id: saleId,
-        account_id: row?.account_id || filters.account_id,
-      });
+      if (String(selectedSaleId) !== String(saleId)) {
+        setSelectedSaleId(String(saleId));
+      }
+      if (selectedMasterIndex !== rowIndex) {
+        setSelectedMasterIndex(rowIndex);
+      }
     },
-    [fetchPurchaseDetailList, filters.account_id, setDetailRows, setOriginalDetailRows]
+    [selectedSaleId, selectedMasterIndex, setDetailRows, setOriginalDetailRows]
   );
 
   // ✅ 하단 행추가 버튼
@@ -1378,8 +1385,8 @@ function AccountPurchaseDeadlineTab() {
     return found ? { value: String(found.account_id), label: found.account_name } : null;
   }, [filters.account_id, accountList]);
 
-  const selectAccountByInput = useCallback(() => {
-    const q = String(accountInput || "").trim();
+  const selectAccountByInput = useCallback((inputText) => {
+    const q = String(inputText ?? accountInputRef.current ?? "").trim();
     if (!q) return;
     const list = accountOptions || [];
     const qLower = q.toLowerCase();
@@ -1393,9 +1400,8 @@ function AccountPurchaseDeadlineTab() {
       );
     if (partial) {
       handleAccountChange(null, partial);
-      setAccountInput(partial.label || q);
     }
-  }, [accountInput, accountOptions, handleAccountChange]);
+  }, [accountOptions, handleAccountChange]);
 
   if (loading) return <LoadingScreen />;
 
@@ -1494,8 +1500,9 @@ function AccountPurchaseDeadlineTab() {
             options={accountOptions}
             value={selectedAccountOption}
             onChange={handleAccountChange}
-            inputValue={accountInput}
-            onInputChange={(_, newValue) => setAccountInput(newValue)}
+            onInputChange={(_, newValue) => {
+              accountInputRef.current = newValue || "";
+            }}
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
             filterOptions={(options, state) => {
@@ -1511,7 +1518,7 @@ function AccountPurchaseDeadlineTab() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
-                    selectAccountByInput();
+                    selectAccountByInput(e.currentTarget.value);
                   }
                 }}
                 sx={{
@@ -1587,7 +1594,7 @@ function AccountPurchaseDeadlineTab() {
 
           <Grid container spacing={3}>
             <Grid item xs={12}>
-              <table>
+              <table key={`master-${masterTableKey}`}>
                 <thead>
                   <tr>
                     {columns.map((col) => (
@@ -1889,7 +1896,7 @@ function AccountPurchaseDeadlineTab() {
 
           <Grid container spacing={3}>
             <Grid item xs={12}>
-              <table>
+              <table key={`detail-${selectedSaleId || "none"}-${detailTableKey}`}>
                 <thead>
                   <tr>
                     {[

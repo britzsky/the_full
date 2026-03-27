@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+﻿/* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -90,6 +90,7 @@ const ITEM_TYPES = [
 ];
 
 const onlyDigits = (v = "") => String(v).replace(/\D/g, "");
+const RECEIPT_UPLOAD_BTN_WIDTH = 78;
 
 const formatCardNoFull = (digits) => {
   const d = onlyDigits(digits).slice(0, 16);
@@ -105,7 +106,7 @@ const maskCardNo = (digits) => {
   if (!d) return "";
   const first = d.slice(0, 4);
   const last = d.slice(Math.max(d.length - 4, 0));
-  return `${first}-********-${last}`;
+  return `${first}-****-****-${last}`;
 };
 
 const normalize = (v) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim() : v);
@@ -216,6 +217,21 @@ const selectAllContent = (el) => {
   sel.addRange(range);
 };
 
+const keepEditableTailVisible = (el) => {
+  if (!el) return;
+  requestAnimationFrame(() => {
+    if (!el || !el.isConnected) return;
+    el.scrollLeft = el.scrollWidth;
+  });
+};
+
+const fixedColStyle = (size, extra = {}) => ({
+  width: size,
+  minWidth: size,
+  maxWidth: size,
+  ...extra,
+});
+
 function AccountCorporateCardSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -243,10 +259,13 @@ function AccountCorporateCardSheet() {
   const [origDetailRows, setOrigDetailRows] = useState([]);
 
   const [selectedMaster, setSelectedMaster] = useState(null);
+  const detailEditedRef = useRef(false);
+  const masterFetchStateRef = useRef({ key: "", promise: null });
+  const lastCardFetchAccountRef = useRef("");
 
   // ✅ 거래처 검색조건 (string id 유지)
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [accountInput, setAccountInput] = useState("");
+  const accountInputRef = useRef("");
 
   // ✅ 스캔된 상세 item 은 무조건 빨간 글씨
   const isForcedRedRow = (row) => !!row?.isForcedRed;
@@ -307,6 +326,7 @@ function AccountCorporateCardSheet() {
   // ✅ 잔상(행추가) 제거 + contentEditable DOM 잔상 제거
   // ============================================================
   const skipPendingNewMergeRef = useRef(false);
+  const forceServerSyncRef = useRef(false);
   const [masterRenderKey, setMasterRenderKey] = useState(0);
   const [detailRenderKey, setDetailRenderKey] = useState(0);
 
@@ -351,8 +371,8 @@ function AccountCorporateCardSheet() {
     return accountOptions.find((o) => o.account_id === id) || null;
   }, [accountOptions, selectedAccountId]);
 
-  const selectAccountByInput = useCallback(() => {
-    const q = String(accountInput || "").trim();
+  const selectAccountByInput = useCallback((inputText) => {
+    const q = String(inputText ?? accountInputRef.current ?? "").trim();
     if (!q) return;
     const list = accountOptions || [];
     const qLower = q.toLowerCase();
@@ -366,29 +386,75 @@ function AccountCorporateCardSheet() {
       );
     if (partial) {
       setSelectedAccountId(partial.account_id);
-      setAccountInput(partial.account_name || q);
     }
-  }, [accountInput, accountOptions]);
+  }, [accountOptions]);
 
   // ========================= 조회 =========================
-  const handleFetchMaster = useCallback(async () => {
+  const handleFetchMaster = useCallback(async (opts = {}) => {
+    const force = !!opts.force;
     if (!selectedAccountId) return;
-    await fetchAccountCorporateCardPaymentList({ year, month, account_id: selectedAccountId });
+    const key = `${selectedAccountId}|${year}|${month}`;
+    const inflight = masterFetchStateRef.current;
+
+    if (!force && inflight.promise && inflight.key === key) {
+      await inflight.promise;
+      return;
+    }
+
+    const requestPromise = fetchAccountCorporateCardPaymentList({
+      year,
+      month,
+      account_id: selectedAccountId,
+    });
+    masterFetchStateRef.current = { key, promise: requestPromise };
+
+    try {
+      await requestPromise;
+    } finally {
+      const cur = masterFetchStateRef.current;
+      if (cur.promise === requestPromise) {
+        masterFetchStateRef.current = { key, promise: null };
+      }
+    }
   }, [fetchAccountCorporateCardPaymentList, year, month, selectedAccountId]);
 
-  // ✅ 거래처/연/월 변경 시 자동 조회 + 카드목록도 재조회
+  const handleSearchMaster = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setSelectedMaster(null);
+    setDetailRows([]);
+    setOrigDetailRows([]);
+    detailEditedRef.current = false;
+    forceServerSyncRef.current = true;
+    skipPendingNewMergeRef.current = true;
+    await handleFetchMaster();
+  }, [selectedAccountId, handleFetchMaster]);
+
+  // ✅ 거래처 변경 시 카드목록만 조회 (연/월 변경에는 재호출하지 않음)
+  useEffect(() => {
+    if (!selectedAccountId) {
+      lastCardFetchAccountRef.current = "";
+      return;
+    }
+    const accountKey = String(selectedAccountId);
+    if (lastCardFetchAccountRef.current === accountKey) return;
+    lastCardFetchAccountRef.current = accountKey;
+    fetchAccountCorporateCardList(selectedAccountId);
+  }, [selectedAccountId, fetchAccountCorporateCardList]);
+
+  // ✅ 거래처/연/월 변경 시 자동 조회
   useEffect(() => {
     if (!selectedAccountId) return;
 
     setSelectedMaster(null);
     setDetailRows([]);
     setOrigDetailRows([]);
+    detailEditedRef.current = false;
 
+    forceServerSyncRef.current = true;
     skipPendingNewMergeRef.current = true;
 
-    fetchAccountCorporateCardList(selectedAccountId);
     handleFetchMaster();
-  }, [selectedAccountId, year, month, fetchAccountCorporateCardList, handleFetchMaster]);
+  }, [selectedAccountId, year, month, handleFetchMaster]);
 
   // ✅ 카드 목록을 거래처(account_id)별로 그룹 (String key로!)
   // ✅ idx(카드 PK) 기반으로 select 매핑되게 idx 포함
@@ -464,9 +530,11 @@ function AccountCorporateCardSheet() {
       });
 
     setMasterRows((prev) => {
-      const keepNew = !skipPendingNewMergeRef.current;
+      const forceSync = forceServerSyncRef.current;
+      const keepNew = !skipPendingNewMergeRef.current && !forceSync;
       const pendingNew = keepNew ? (prev || []).filter((x) => x?.isNew) : [];
       skipPendingNewMergeRef.current = false;
+      forceServerSyncRef.current = false;
       return [...serverRows, ...pendingNew];
     });
 
@@ -489,6 +557,7 @@ function AccountCorporateCardSheet() {
     }));
     setDetailRows(copy);
     setOrigDetailRows(copy);
+    detailEditedRef.current = false;
 
     setDetailRenderKey((k) => k + 1);
   }, [paymentDetailRows, saveDetailScroll]);
@@ -531,6 +600,7 @@ function AccountCorporateCardSheet() {
           ? parseNumMaybe(nextRaw) ?? 0
           : nextRaw;
 
+      detailEditedRef.current = true;
       return prev.map((r, i) => (i === rowIndex ? { ...r, [key]: nextVal } : r));
     });
   }, []);
@@ -559,6 +629,16 @@ function AccountCorporateCardSheet() {
     },
     [cardsByAccount, selectedAccountId]
   );
+
+  const canOpenReceiptFilePicker = useCallback((row) => {
+    const cardNoDigits = onlyDigits(row?.cardNo ?? row?.card_no ?? "");
+    // ✅ 현장법인카드는 16자리 강제 검증 대신, 카드번호 선택 여부만 본다.
+    if (!cardNoDigits) {
+      Swal.fire("안내", "카드번호를 먼저 선택하세요.", "info");
+      return false;
+    }
+    return true;
+  }, []);
 
   // ✅ 행추가(상단)
   const addMasterRow = useCallback(() => {
@@ -631,6 +711,7 @@ function AccountCorporateCardSheet() {
 
     setDetailRows((prev) => [...(prev || []), newDetail]);
     setOrigDetailRows((prev) => [...(prev || []), {}]);
+    detailEditedRef.current = true;
     setDetailRenderKey((k) => k + 1);
 
     requestAnimationFrame(() => scrollDetailToBottom(true));
@@ -643,7 +724,8 @@ function AccountCorporateCardSheet() {
 
       const row = masterRows[rowIndex] || {};
       const acctOk = !!String(row.account_id || "");
-      const cardOk = !!onlyDigits(row.cardNo);
+      const cardNoDigits = onlyDigits(row.cardNo);
+      const cardOk = !!cardNoDigits;
       const typeOk = !!String(row.receipt_type || ""); // ✅ 타입 필수
 
       if (!acctOk || !cardOk) {
@@ -657,7 +739,6 @@ function AccountCorporateCardSheet() {
       if (!typeOk) {
         return Swal.fire("경고", "영수증타입을 선택해주세요.", "warning");
       }
-
       try {
         Swal.fire({
           title: "영수증 확인 중 입니다.",
@@ -694,6 +775,9 @@ function AccountCorporateCardSheet() {
         const data = res.data || {};
         const main = data.main || data || {};
         const items = Array.isArray(data.item) ? data.item : [];
+        const parsedCardNoDigits = onlyDigits(main.cardNo);
+        // ✅ 파서가 카드번호를 못주거나 비정상으로 주면, 기존 선택 카드번호를 유지한다.
+        const safeCardNo = parsedCardNoDigits || onlyDigits(row.cardNo);
 
         const patch = {
           ...(main.sale_id != null ? { sale_id: main.sale_id } : {}),
@@ -707,7 +791,7 @@ function AccountCorporateCardSheet() {
           ...(main.vat != null ? { vat: parseNumber(main.vat) } : {}),
           ...(main.taxFree != null ? { taxFree: parseNumber(main.taxFree) } : {}),
           ...(main.totalCard != null ? { totalCard: parseNumber(main.totalCard) } : {}),
-          ...(main.cardNo != null ? { cardNo: onlyDigits(main.cardNo) } : {}),
+          ...(main.cardNo != null ? { cardNo: safeCardNo } : {}),
           ...(main.cardBrand != null ? { cardBrand: main.cardBrand } : {}),
           ...(main.receipt_image != null ? { receipt_image: main.receipt_image } : {}),
           ...(main.receipt_type != null
@@ -753,7 +837,7 @@ function AccountCorporateCardSheet() {
           }));
 
           const patchedSelected = {
-            ...(masterRows[rowIndex] || {}),
+            ...row,
             ...patch,
             account_id: patch.account_id !== undefined ? patch.account_id : row.account_id ?? "",
           };
@@ -761,23 +845,42 @@ function AccountCorporateCardSheet() {
 
           setDetailRows(normalized);
           setOrigDetailRows(normalized.map((x) => ({ ...x })));
+          detailEditedRef.current = false;
           setDetailRenderKey((k) => k + 1);
         }
 
+        const nextSaleId = String(main.sale_id || row.sale_id || "").trim();
+        const nextAccountId = String(
+          patch.account_id !== undefined ? patch.account_id : row.account_id || ""
+        );
+        const nextPaymentDt = String(
+          patch.payment_dt !== undefined ? patch.payment_dt : row.payment_dt || ""
+        );
+
+        forceServerSyncRef.current = true;
+        skipPendingNewMergeRef.current = true;
+        await handleFetchMaster();
+
+        if (nextSaleId) {
+          await fetchAccountCorporateCardPaymentDetailList({
+            sale_id: nextSaleId,
+            account_id: nextAccountId,
+            payment_dt: nextPaymentDt,
+          });
+          setSelectedMaster({
+            sale_id: nextSaleId,
+            account_id: nextAccountId,
+            payment_dt: nextPaymentDt,
+          });
+        }
+
         Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
-        // 재업로드 직후 강제 재조회는 상세창 초기화를 유발하므로 여기서는 조회하지 않는다.
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [
-      masterRows,
-      handleFetchMaster,
-      fetchAccountCorporateCardPaymentDetailList,
-      cardsByAccount,
-      selectedAccountId,
-    ]
+    [masterRows, handleFetchMaster, fetchAccountCorporateCardPaymentDetailList, cardsByAccount]
   );
 
   // ========================= 저장: main + item 한 번에 =========================
@@ -813,23 +916,70 @@ function AccountCorporateCardSheet() {
     return row;
   }, []);
 
+  const calcMasterTotalsFromDetail = useCallback((rows) => {
+    const list = rows || [];
+    let total = 0;
+    let tax = 0;
+    let vat = 0;
+    let taxFree = 0;
+
+    list.forEach((r) => {
+      const amt = parseNumber(r?.amount);
+      const tt = parseNumMaybe(r?.taxType);
+      total += amt;
+
+      if (tt === 1) {
+        const supply = Math.round(amt / 1.1);
+        tax += supply;
+        vat += amt - supply;
+      } else if (tt === 2) {
+        taxFree += amt;
+      }
+    });
+
+    return { total, tax, vat, taxFree };
+  }, []);
+
   const saveAll = useCallback(async () => {
     const userId = localStorage.getItem("user_id") || "";
+    const selectedSaleId = String(selectedMaster?.sale_id || "").trim();
+    const selectedTopRow =
+      (selectedSaleId
+        ? (masterRows || []).find((r) => String(r.sale_id || "") === selectedSaleId)
+        : null) || selectedMaster;
+    const topAccountId = selectedTopRow?.account_id ?? "";
+    const topPaymentDt = selectedTopRow?.payment_dt ?? "";
+    const derivedTopTotals =
+      selectedTopRow && (detailRows || []).length > 0
+        ? calcMasterTotalsFromDetail(detailRows)
+        : null;
+
+    const isSelectedMasterRow = (row) => {
+      const sid = String(selectedTopRow?.sale_id || selectedMaster?.sale_id || "").trim();
+      if (sid) return String(row?.sale_id || "").trim() === sid;
+      const cid = String(selectedTopRow?.client_id || selectedMaster?.client_id || "").trim();
+      return !!cid && String(row?.client_id || "").trim() === cid;
+    };
 
     const main = masterRows
       .map((r) => {
-        if (r.isNew) return normalizeMasterForSave(r);
+        const rowForCalc =
+          derivedTopTotals && isSelectedMasterRow(r) ? { ...r, ...derivedTopTotals } : r;
 
-        const sid = String(r.sale_id || "");
+        if (rowForCalc.isNew) return normalizeMasterForSave(rowForCalc);
+
+        const sid = String(rowForCalc.sale_id || "");
         const o = sid ? origMasterBySaleId.get(sid) : null;
-        if (!o) return normalizeMasterForSave(r);
+        if (!o) return normalizeMasterForSave(rowForCalc);
 
-        const changed = Object.keys(r).some((k) => {
-          if (MASTER_NUMBER_KEYS.includes(k)) return parseNumber(o[k]) !== parseNumber(r[k]);
-          return isChangedValue(o[k], r[k]);
+        const changed = Object.keys(rowForCalc).some((k) => {
+          if (MASTER_NUMBER_KEYS.includes(k)) {
+            return parseNumber(o[k]) !== parseNumber(rowForCalc[k]);
+          }
+          return isChangedValue(o[k], rowForCalc[k]);
         });
 
-        return changed ? normalizeMasterForSave(r) : null;
+        return changed ? normalizeMasterForSave(rowForCalc) : null;
       })
       .filter(Boolean)
       .map((r) => ({ ...r, user_id: userId }));
@@ -848,6 +998,14 @@ function AccountCorporateCardSheet() {
 
     if (main.length === 0 && item.length === 0) {
       return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
+    }
+
+    if (item.length > 0 && (!topAccountId || !topPaymentDt)) {
+      return Swal.fire(
+        "안내",
+        "하단 상세 저장을 위해 상단 결제내역을 먼저 클릭해서 선택해주세요.",
+        "info"
+      );
     }
 
     try {
@@ -872,6 +1030,7 @@ function AccountCorporateCardSheet() {
 
       Swal.close();
       Swal.fire("성공", "저장되었습니다.", "success");
+      detailEditedRef.current = false;
 
       skipPendingNewMergeRef.current = true;
       await handleFetchMaster();
@@ -885,6 +1044,7 @@ function AccountCorporateCardSheet() {
       } else {
         setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
         setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
+        detailEditedRef.current = false;
         setDetailRenderKey((k) => k + 1);
       }
     } catch (e) {
@@ -900,6 +1060,7 @@ function AccountCorporateCardSheet() {
     fetchAccountCorporateCardPaymentDetailList,
     origMasterBySaleId,
     normalizeMasterForSave,
+    calcMasterTotalsFromDetail,
   ]);
 
   // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
@@ -1093,7 +1254,7 @@ function AccountCorporateCardSheet() {
       { header: "부가세", key: "vat", editable: true, size: 90 },
       { header: "면세", key: "taxFree", editable: true, size: 90 },
       { header: "합계금액", key: "total", editable: true, size: 110 },
-      { header: "카드번호", key: "cardNo", editable: false, size: 200 }, // ✅ 표시 컬럼은 cardNo지만, select value는 card_idx로 매핑
+      { header: "카드번호", key: "cardNo", editable: false, size: 220 }, // ✅ 카드번호 전체가 보이도록 폭 여유를 둔다.
       { header: "카드사", key: "cardBrand", editable: false, size: 130 },
       {
         header: "영수증타입",
@@ -1103,7 +1264,7 @@ function AccountCorporateCardSheet() {
         type: "select",
         options: RECEIPT_TYPES,
       },
-      { header: "영수증사진", key: "receipt_image", editable: false, size: 110 },
+      { header: "영수증사진", key: "receipt_image", editable: false, size: 180 },
       { header: "비고", key: "note", editable: true, size: 160 },
       { header: "등록일자", key: "reg_dt", editable: false, size: 110 },
     ],
@@ -1169,6 +1330,7 @@ function AccountCorporateCardSheet() {
 
     // ✅ 핵심: 하단 행이 없으면 상단 합계를 절대 건드리지 않음
     if (!detailRows || detailRows.length === 0) return;
+    if (!detailEditedRef.current) return;
 
     // 상단에서 저장된 행이면 sale_id로, 신규면 client_id로 매칭
     const masterKey = selectedMaster.sale_id
@@ -1224,9 +1386,16 @@ function AccountCorporateCardSheet() {
       return next;
     });
 
-    setSelectedMaster((prev) =>
-      prev ? { ...prev, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree } : prev
-    );
+    setSelectedMaster((prev) => {
+      if (!prev) return prev;
+      const sameSelected =
+        parseNumber(prev.total) === nextTotal &&
+        parseNumber(prev.tax) === nextTax &&
+        parseNumber(prev.vat) === nextVat &&
+        parseNumber(prev.taxFree) === nextTaxFree;
+      if (sameSelected) return prev;
+      return { ...prev, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree };
+    });
   }, [detailRows, sumDetailAmount, selectedMaster]);
 
   if (loading) return <LoadingScreen />;
@@ -1277,8 +1446,9 @@ function AccountCorporateCardSheet() {
               options={accountOptions}
               value={selectedAccountOption}
               onChange={(_, newValue) => setSelectedAccountId(newValue?.account_id || "")}
-              inputValue={accountInput}
-              onInputChange={(_, newValue) => setAccountInput(newValue)}
+              onInputChange={(_, newValue) => {
+                accountInputRef.current = newValue || "";
+              }}
               getOptionLabel={(opt) => opt?.account_name || ""}
               isOptionEqualToValue={(opt, val) => String(opt.account_id) === String(val.account_id)}
               disablePortal
@@ -1292,7 +1462,7 @@ function AccountCorporateCardSheet() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      selectAccountByInput();
+                      selectAccountByInput(e.currentTarget.value);
                     }
                   }}
                   sx={{
@@ -1333,7 +1503,7 @@ function AccountCorporateCardSheet() {
               행추가
             </MDButton>
 
-            <MDButton color="info" onClick={handleFetchMaster} sx={{ minWidth: 80 }}>
+            <MDButton color="info" onClick={handleSearchMaster} sx={{ minWidth: 80 }}>
               조회
             </MDButton>
 
@@ -1376,6 +1546,7 @@ function AccountCorporateCardSheet() {
               width: "max-content",
               minWidth: "100%",
               borderSpacing: 0,
+              tableLayout: "fixed",
             },
             "& tfoot td": {
               backgroundColor: "#fafafa",
@@ -1390,6 +1561,7 @@ function AccountCorporateCardSheet() {
               whiteSpace: "nowrap",
               fontSize: "12px",
               padding: "4px",
+              boxSizing: "border-box",
             },
             "& th": {
               backgroundColor: "#f0f0f0",
@@ -1397,13 +1569,21 @@ function AccountCorporateCardSheet() {
               top: 0,
               zIndex: 2,
             },
+            "td[contenteditable]": {
+              overflowX: "auto",
+              overflowY: "hidden",
+              whiteSpace: "nowrap",
+              msOverflowStyle: "none",
+              scrollbarWidth: "none",
+            },
+            "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
           }}
         >
           <table key={`master-${selectedAccountId}-${year}-${month}-${masterRenderKey}`}>
             <thead>
               <tr>
                 {masterColumns.map((c) => (
-                  <th key={c.key} style={{ width: c.size }}>
+                  <th key={c.key} style={fixedColStyle(c.size)}>
                     {c.header}
                   </th>
                 ))}
@@ -1457,7 +1637,7 @@ function AccountCorporateCardSheet() {
                       const acctName =
                         accountNameById.get(String(row.account_id)) || String(row.account_id || "");
                       return (
-                        <td key={key} style={{ width: c.size, color: changed ? "red" : "black" }}>
+                        <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
                           {acctName}
                         </td>
                       );
@@ -1466,7 +1646,7 @@ function AccountCorporateCardSheet() {
                     if (key === "payment_dt") {
                       const dateVal = toDateInputValue(rawVal);
                       return (
-                        <td key={key} style={{ width: c.size }}>
+                        <td key={key} style={fixedColStyle(c.size)}>
                           <TextField
                             type="date"
                             size="small"
@@ -1497,7 +1677,7 @@ function AccountCorporateCardSheet() {
                       const disabled = !acctKey || options.length === 0;
 
                       return (
-                        <td key={key} style={{ width: c.size }}>
+                        <td key={key} style={fixedColStyle(c.size)}>
                           <Select
                             size="small"
                             fullWidth
@@ -1520,7 +1700,8 @@ function AccountCorporateCardSheet() {
 
                             {options.map((opt) => (
                               <MenuItem key={String(opt.idx)} value={String(opt.idx)}>
-                                {opt.card_brand} / {maskCardNo(opt.card_no)}
+                                {/* 요청사항: 카드 선택 목록은 "카드번호"만 보여준다(카드사 제외). */}
+                                {formatCardNoFull(opt.card_no)}
                               </MenuItem>
                             ))}
                           </Select>
@@ -1530,7 +1711,7 @@ function AccountCorporateCardSheet() {
 
                     if (key === "cardBrand") {
                       return (
-                        <td key={key} style={{ width: c.size, color: changed ? "red" : "black" }}>
+                        <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
                           {row.cardBrand || ""}
                         </td>
                       );
@@ -1538,7 +1719,7 @@ function AccountCorporateCardSheet() {
 
                     if (key === "receipt_type") {
                       return (
-                        <td key={key} style={{ width: c.size }}>
+                        <td key={key} style={fixedColStyle(c.size)}>
                           <Select
                             size="small"
                             fullWidth
@@ -1571,13 +1752,15 @@ function AccountCorporateCardSheet() {
                       const iconColor = changed ? "red" : fileIconSx.color;
 
                       return (
-                        <td key={key} style={{ width: c.size }}>
+                        <td key={key} style={fixedColStyle(c.size)}>
                           <Box
                             sx={{
                               display: "flex",
                               alignItems: "center",
                               justifyContent: "center",
-                              gap: 1,
+                              gap: 0.5,
+                              width: "100%",
+                              flexWrap: "wrap",
                             }}
                           >
                             <input
@@ -1625,15 +1808,49 @@ function AccountCorporateCardSheet() {
                                   </IconButton>
                                 </Tooltip>
 
-                                <label htmlFor={inputId} onClick={(ev) => ev.stopPropagation()}>
-                                  <MDButton component="span" size="small" color="info">
+                                <label
+                                  htmlFor={inputId}
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    if (canOpenReceiptFilePicker(row)) return;
+                                    ev.preventDefault();
+                                  }}
+                                >
+                                  <MDButton
+                                    component="span"
+                                    size="small"
+                                    color="info"
+                                    sx={{
+                                      minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
+                                      width: RECEIPT_UPLOAD_BTN_WIDTH,
+                                      px: 0.5,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
                                     재업로드
                                   </MDButton>
                                 </label>
                               </>
                             ) : (
-                              <label htmlFor={inputId} onClick={(ev) => ev.stopPropagation()}>
-                                <MDButton component="span" size="small" color="info">
+                              <label
+                                htmlFor={inputId}
+                                onClick={(ev) => {
+                                  ev.stopPropagation();
+                                  if (canOpenReceiptFilePicker(row)) return;
+                                  ev.preventDefault();
+                                }}
+                              >
+                                <MDButton
+                                  component="span"
+                                  size="small"
+                                  color="info"
+                                  sx={{
+                                    minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
+                                    width: RECEIPT_UPLOAD_BTN_WIDTH,
+                                    px: 0.5,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
                                   업로드
                                 </MDButton>
                               </label>
@@ -1649,7 +1866,9 @@ function AccountCorporateCardSheet() {
                           key={key}
                           contentEditable
                           suppressContentEditableWarning
-                          style={{ width: c.size, color: changed ? "red" : "black" }}
+                          style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
+                          onFocus={(ev) => keepEditableTailVisible(ev.currentTarget)}
+                          onInput={(ev) => keepEditableTailVisible(ev.currentTarget)}
                           onBlur={(e) => {
                             const text = e.currentTarget.innerText.trim();
 
@@ -1670,7 +1889,7 @@ function AccountCorporateCardSheet() {
                     }
 
                     return (
-                      <td key={key} style={{ width: c.size, color: changed ? "red" : "black" }}>
+                      <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
                         {val}
                       </td>
                     );
@@ -1684,7 +1903,7 @@ function AccountCorporateCardSheet() {
                   // 첫 칸에 라벨
                   if (i === 0) {
                     return (
-                      <td key={c.key} style={{ width: c.size }}>
+                      <td key={c.key} style={fixedColStyle(c.size)}>
                         합계
                       </td>
                     );
@@ -1693,35 +1912,35 @@ function AccountCorporateCardSheet() {
                   // 합계 표시할 컬럼만 값 넣기
                   if (c.key === "tax") {
                     return (
-                      <td key={c.key} style={{ width: c.size }}>
+                      <td key={c.key} style={fixedColStyle(c.size)}>
                         {formatNumber(sumMasterTax)}
                       </td>
                     );
                   }
                   if (c.key === "vat") {
                     return (
-                      <td key={c.key} style={{ width: c.size }}>
+                      <td key={c.key} style={fixedColStyle(c.size)}>
                         {formatNumber(sumMasterVat)}
                       </td>
                     );
                   }
                   if (c.key === "taxFree") {
                     return (
-                      <td key={c.key} style={{ width: c.size }}>
+                      <td key={c.key} style={fixedColStyle(c.size)}>
                         {formatNumber(sumMasterTaxFree)}
                       </td>
                     );
                   }
                   if (c.key === "total") {
                     return (
-                      <td key={c.key} style={{ width: c.size }}>
+                      <td key={c.key} style={fixedColStyle(c.size)}>
                         {formatNumber(sumMasterTotal)}
                       </td>
                     );
                   }
 
                   // 나머지는 빈칸
-                  return <td key={c.key} style={{ width: c.size }} />;
+                  return <td key={c.key} style={fixedColStyle(c.size)} />;
                 })}
               </tr>
             </tfoot>
@@ -1767,6 +1986,7 @@ function AccountCorporateCardSheet() {
                 width: "max-content",
                 minWidth: "100%",
                 borderSpacing: 0,
+                tableLayout: "fixed",
               },
               "& tfoot td": {
                 backgroundColor: "#fafafa",
@@ -1781,6 +2001,7 @@ function AccountCorporateCardSheet() {
                 whiteSpace: "nowrap",
                 fontSize: "12px",
                 padding: "4px",
+                boxSizing: "border-box",
               },
               "& th": {
                 backgroundColor: "#f0f0f0",
@@ -1788,13 +2009,21 @@ function AccountCorporateCardSheet() {
                 top: 0,
                 zIndex: 2,
               },
+              "td[contenteditable]": {
+                overflowX: "auto",
+                overflowY: "hidden",
+                whiteSpace: "nowrap",
+                msOverflowStyle: "none",
+                scrollbarWidth: "none",
+              },
+              "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
             }}
           >
             <table key={`detail-${selectedMaster?.sale_id || "new"}-${detailRenderKey}`}>
               <thead>
                 <tr>
                   {detailColumns.map((c) => (
-                    <th key={c.key} style={{ width: c.size }}>
+                    <th key={c.key} style={fixedColStyle(c.size)}>
                       {c.header}
                     </th>
                   ))}
@@ -1822,7 +2051,7 @@ function AccountCorporateCardSheet() {
                         const curStr = curNum == null ? "" : String(curNum);
 
                         return (
-                          <td key={key} style={{ width: c.size }}>
+                          <td key={key} style={fixedColStyle(c.size)}>
                             <Select
                               size="small"
                               fullWidth
@@ -1858,7 +2087,7 @@ function AccountCorporateCardSheet() {
                             key={key}
                             contentEditable
                             suppressContentEditableWarning
-                            style={{ width: c.size, color: changed ? "red" : "black" }}
+                            style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
                             onMouseDown={(ev) => {
                               if (!isNumCol) return;
 
@@ -1879,14 +2108,20 @@ function AccountCorporateCardSheet() {
                               });
                             }}
                             onFocus={(ev) => {
-                              if (!isNumCol) return;
                               const el = ev.currentTarget;
+                              if (!isNumCol) {
+                                keepEditableTailVisible(el);
+                                return;
+                              }
 
                               el.innerText = String(parseNumber(el.innerText) || "");
                               requestAnimationFrame(() => {
                                 if (!el || !el.isConnected) return;
                                 selectAllContent(el);
                               });
+                            }}
+                            onInput={(ev) => {
+                              if (!isNumCol) keepEditableTailVisible(ev.currentTarget);
                             }}
                             onClick={(ev) => ev.stopPropagation()}
                             onBlur={(e) => {
@@ -1907,7 +2142,7 @@ function AccountCorporateCardSheet() {
                       }
 
                       return (
-                        <td key={key} style={{ width: c.size, color: changed ? "red" : "black" }}>
+                        <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
                           {displayVal}
                         </td>
                       );
@@ -1920,7 +2155,7 @@ function AccountCorporateCardSheet() {
                   {detailColumns.map((c, i) => {
                     if (i === 0) {
                       return (
-                        <td key={c.key} style={{ width: c.size }}>
+                        <td key={c.key} style={fixedColStyle(c.size)}>
                           합계
                         </td>
                       );
@@ -1928,7 +2163,7 @@ function AccountCorporateCardSheet() {
 
                     if (c.key === "qty") {
                       return (
-                        <td key={c.key} style={{ width: c.size }}>
+                        <td key={c.key} style={fixedColStyle(c.size)}>
                           {formatNumber(sumDetailQty)}
                         </td>
                       );
@@ -1936,13 +2171,13 @@ function AccountCorporateCardSheet() {
 
                     if (c.key === "amount") {
                       return (
-                        <td key={c.key} style={{ width: c.size }}>
+                        <td key={c.key} style={fixedColStyle(c.size)}>
                           {formatNumber(sumDetailAmount)}
                         </td>
                       );
                     }
 
-                    return <td key={c.key} style={{ width: c.size }} />;
+                    return <td key={c.key} style={fixedColStyle(c.size)} />;
                   })}
                 </tr>
               </tfoot>
@@ -2387,3 +2622,4 @@ function AccountCorporateCardSheet() {
 }
 
 export default AccountCorporateCardSheet;
+

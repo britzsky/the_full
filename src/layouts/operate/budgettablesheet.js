@@ -130,12 +130,23 @@ export default function BudgetTableTab() {
           }
         });
 
+        // ✅ 계산용 상태값(status_yn)
+        // - 예산부여(budget_grant) 값이 원본과 다르면 "Y"
+        // - 예산부여가 같으면 "N"
+        const originalBudgetGrantNorm = Number(row._original.budget_grant ?? 0);
+        const currentBudgetGrantNorm = Number(row.budget_grant ?? 0);
+        const budgetGrantChanged = originalBudgetGrantNorm !== currentBudgetGrantNorm;
+
         if (Object.keys(changedFields).length > 0) {
           return {
             account_id: row.account_id,
             year,
             month: row.month, // DB에서 가져온 month 사용
             ...changedFields,
+            // ✅ "status_yn"로 분기할 수 있도록 전달
+            //    - budget_grant 변경 있음: "Y"
+            //    - note만 변경/미변경: "N"
+            status_yn: budgetGrantChanged ? "Y" : "N",
           };
         }
         return null;

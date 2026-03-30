@@ -24,16 +24,49 @@ export default function useElectronicPaymentSheetData() {
         const res = await api.get("/HeadOffice/HeadOfficeElectronicPaymentTypeList");
         const data = Array.isArray(res.data) ? res.data : [res.data];
 
-        const rows = (data || [])
+        const fetchedRows = (data || [])
           .filter(Boolean)
-          .map((it) => ({
-            doc_type: it.doc_type,
-            doc_name: it.doc_name,
-            position: Number(it.position ?? 0), // ✅ 0/1/2
-          }))
-          .sort((a, b) => Number(a.position ?? 0) - Number(b.position ?? 0));
+          .map((it) => {
+            const docType = String(it?.doc_type ?? "")
+              .trim()
+              .toUpperCase();
+            const docName = String(it?.doc_name ?? "").trim();
+            if (!docType || !docName) return null;
+            return {
+              doc_type: docType,
+              doc_name: docName,
+              position: Number(it?.position ?? 0),
+            };
+          })
+          .filter(Boolean);
 
-        setDocTypeList(rows);
+        const byType = new Map();
+        fetchedRows.forEach((row) => {
+          const key = String(row?.doc_type ?? "").trim().toUpperCase();
+          if (!key) return;
+          if (!byType.has(key)) {
+            byType.set(key, row);
+          }
+        });
+
+        const rows = Array.from(byType.values()).sort((a, b) => {
+          const posDiff = Number(a.position ?? 0) - Number(b.position ?? 0);
+          if (posDiff !== 0) return posDiff;
+          return String(a.doc_type).localeCompare(String(b.doc_type));
+        });
+
+        const byName = new Set();
+        const uniqueRows = rows.filter((row) => {
+          const nameKey = String(row?.doc_name ?? "")
+            .replace(/\s+/g, "")
+            .trim();
+          if (!nameKey) return false;
+          if (byName.has(nameKey)) return false;
+          byName.add(nameKey);
+          return true;
+        });
+
+        setDocTypeList(uniqueRows);
       } catch (err) {
         console.error("문서 타입 조회 실패:", err);
         setDocTypeList([]);

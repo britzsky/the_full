@@ -39,8 +39,8 @@ function HeadOfficeTab() {
         }}
       >
         {/* 🔹 공통 헤더 사용 */}
-        {/* <HeaderWithLogout showMenuButton title="📊관리표" /> */}
-        <DashboardNavbar title="📊관리표" />
+        {/* <HeaderWithLogout showMenuButton title="📊 관리표" /> */}
+        <DashboardNavbar title="📊 관리표" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}

@@ -1,35 +1,76 @@
 import React, { useState } from "react";
 import { Tabs, Tab, Box, Card, Grid } from "@mui/material";
 import MDBox from "components/MDBox";
+import { useLocation, useNavigate } from "react-router-dom";
 
 // 탭용 서브 컴포넌트 import
 import ElectronicPayment from "./HeadOffice/ElectronicPaymentSheetTab";
+import ElectronicPaymentManageTab from "./HeadOffice/ElectronicPaymentManageTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 function HeadOfficeTab_2() {
   const [tabIndex, setTabIndex] = useState(0);
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  const handleTabChange = (_, newValue) => setTabIndex(newValue);
-  // ✅ 숫자 이모지 아이콘
-  const numberIcons = ["📝", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+  const paymentIdParam = searchParams.get("payment_id") || "";
+  const openTsParam = searchParams.get("open_ts") || "";
 
-  const tabLabels = ["전자결재 작성", "손익표", "거래처 통계"];
+  React.useEffect(() => {
+    const next = tabParam === "1" ? 1 : 0;
+    setTabIndex(next);
+  }, [tabParam]);
 
-  const tabComponents = [<ElectronicPayment key="electronicpayment" />];
+  const handleTabChange = (_, newValue) => {
+    setTabIndex(newValue);
+
+    const nextParams = new URLSearchParams(location.search);
+    if (newValue === 1) {
+      nextParams.set("tab", "1");
+    } else {
+      nextParams.delete("tab");
+      nextParams.delete("payment_id");
+      nextParams.delete("open_ts");
+    }
+
+    const nextSearch = nextParams.toString();
+    navigate(
+      { pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : "" },
+      { replace: true }
+    );
+  };
+  // ✅ 이모지 아이콘
+  const numberIcons = ["📝", "📋", "3️⃣", "4️⃣", "5️⃣"];
+
+  const tabLabels = [
+    "전자결재 작성",
+    "전자결재 관리",
+  ];
+
+  const tabComponents = [
+    <ElectronicPayment key="electronicpayment" />,
+    <ElectronicPaymentManageTab
+      key="electronicpaymentmanage"
+      initialPaymentId={paymentIdParam}
+      initialOpenToken={openTsParam}
+    />,
+  ];
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
       <MDBox
         sx={{
           position: "sticky",
-          top: 20, // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
+          top: 0, // PeopleCounting 탭과 동일한 상단 기준
           zIndex: 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}
       >
         {/* 🔹 공통 헤더 사용 */}
-        {/* <HeaderWithLogout showMenuButton title="📊관리표" /> */}
-        <DashboardNavbar title="📊관리표" />
+        {/* <HeaderWithLogout showMenuButton title="📝관리표" /> */}
+        <DashboardNavbar title="📝 전자결재 관리" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}
@@ -72,7 +113,7 @@ function HeadOfficeTab_2() {
         </Tabs>
       </MDBox>
       {/* 탭 내용 */}
-      <MDBox p={2}>{tabComponents[tabIndex]}</MDBox>
+      <MDBox px={2} pb={2} pt={2}>{tabComponents[tabIndex]}</MDBox>
     </Card>
   );
 }

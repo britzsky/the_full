@@ -173,6 +173,35 @@ function AccountInfoSheet() {
     fetchAllData,
   } = useAccountInfosheetData(selectedAccountId);
 
+  const selectedAccountOption = useMemo(
+    () =>
+      (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null,
+    [accountList, selectedAccountId]
+  );
+
+  const isDeletedAccount = String(selectedAccountOption?.del_yn ?? "N").toUpperCase() === "Y";
+
+  const showDeletedAccountReadonlyAlert = useCallback(() => {
+    if (Swal.isVisible()) return;
+    Swal.fire("안내", "삭제업장은 수정할 수 없습니다.", "info");
+  }, []);
+
+  const handleBlockedMouseAction = useCallback(
+    (e) => {
+      if (!isDeletedAccount) return;
+      e.preventDefault();
+      e.stopPropagation();
+      showDeletedAccountReadonlyAlert();
+    },
+    [isDeletedAccount, showDeletedAccountReadonlyAlert]
+  );
+
+  useEffect(() => {
+    if (isDeletedAccount && extraDietModalOpen) {
+      setExtraDietModalOpen(false);
+    }
+  }, [isDeletedAccount, extraDietModalOpen]);
+
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
     if (!q) return;
@@ -481,6 +510,10 @@ function AccountInfoSheet() {
 
   // 버튼 클릭 시 input 클릭
   const handleFileSelect = (type) => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
     document.getElementById(type).click();
   };
 
@@ -489,6 +522,12 @@ function AccountInfoSheet() {
 
   // input 변경 시 파일 상태 업데이트
   const handleFileChange = (type, e) => {
+    if (isDeletedAccount) {
+      e.target.value = "";
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     const file = e.target.files?.[0] || null;
 
     // 같은 파일 다시 선택 가능하도록 value 초기화
@@ -535,6 +574,11 @@ function AccountInfoSheet() {
 
   // 한 번에 업로드 (✅ dirty만)
   const handleFileUpload = async () => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     const formData = new FormData();
     const account_id = basicInfo.account_id;
     formData.append("account_id", account_id);
@@ -718,6 +762,7 @@ function AccountInfoSheet() {
 
   // 값 변경 핸들러
   const handleChange = (field, value) => {
+    if (isDeletedAccount) return;
     setFormData((prev) => ({
       ...prev,
       [field]: value,
@@ -726,11 +771,13 @@ function AccountInfoSheet() {
 
   // 🔹 식단가명 변경
   const handleExtraNameChange = (index, value) => {
+    if (isDeletedAccount) return;
     setExtraDiet((prev) => prev.map((item, i) => (i === index ? { ...item, name: value } : item)));
   };
 
   // 🔹 식단가 가격(숫자만, 자동콤마)
   const handleExtraPriceChange = (index, rawValue) => {
+    if (isDeletedAccount) return;
     const numeric = rawValue.replace(/[^\d]/g, "");
     setExtraDiet((prev) =>
       prev.map((item, i) => (i === index ? { ...item, price: numeric } : item))
@@ -979,11 +1026,15 @@ function AccountInfoSheet() {
     event_note: "33%",
     dishwasher_cnt: "2%",
     water_puri_cnt: "2%",
-    food_process_type: "5%",
+    food_process_type: "170px",
     birthday_note: "2%",
     group_feed_yn: "2%",
     nutritionist_room_yn: "2%",
     chef_lounge_yn: "2%",
+  };
+
+  const columnMinWidths = {
+    food_process_type: "170px",
   };
 
   // ----------------- 공통 테이블 렌더 -----------------
@@ -1019,7 +1070,7 @@ function AccountInfoSheet() {
       <MDBox
         sx={{
           overflowX: "auto",
-          "& table": { borderCollapse: "collapse", width: "100%" },
+          "& table": { borderCollapse: "collapse", width: "max-content", minWidth: "100%" },
           "& th, & td": {
             border: "1px solid #686D76",
             textAlign: "center",
@@ -1077,16 +1128,17 @@ function AccountInfoSheet() {
                   return (
                     <td
                       key={cell.id}
-                      contentEditable={!nonEditableCols.includes(colKey)}
+                      contentEditable={!isDeletedAccount && !nonEditableCols.includes(colKey)}
                       suppressContentEditableWarning
                       style={{
                         color: changed ? "red" : "black",
                         padding: "3px",
                         width: columnWidths[colKey] || "auto",
-                        minWidth: "40px",
+                        minWidth: columnMinWidths[colKey] || "40px",
+                        backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
                       }}
                       onBlur={(e) => {
-                        if (nonEditableCols.includes(colKey)) return;
+                        if (isDeletedAccount || nonEditableCols.includes(colKey)) return;
 
                         let newValue = e.target.innerText.trim();
                         if (isNumeric) {
@@ -1104,9 +1156,12 @@ function AccountInfoSheet() {
                       {isSelectNumber ? (
                         <select
                           value={currentValue ?? 0}
+                          disabled={isDeletedAccount}
                           style={{
-                            width: "100%",
+                            width: colKey === "food_process_type" ? "170px" : "100%",
+                            minWidth: colKey === "food_process_type" ? "170px" : undefined,
                             color: String(currentValue) === String(originalValue) ? "black" : "red",
+                            backgroundColor: isDeletedAccount ? "#f2f2f2" : undefined,
                           }}
                           onChange={(e) => {
                             const v = Number(e.target.value);
@@ -1125,9 +1180,11 @@ function AccountInfoSheet() {
                       ) : isSelectYN ? (
                         <select
                           value={String(currentValue || "N")}
+                          disabled={isDeletedAccount}
                           style={{
                             width: "100%",
                             color: String(currentValue) === String(originalValue) ? "black" : "red",
+                            backgroundColor: isDeletedAccount ? "#f2f2f2" : undefined,
                           }}
                           onChange={(e) => {
                             const v = e.target.value; // "N" or "Y"
@@ -1182,6 +1239,11 @@ function AccountInfoSheet() {
 
   // ----------------- 전체 저장 -----------------
   const handleSave = async () => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     const user_id = localStorage.getItem("user_id") || "";
 
     // ✅ formData에 user_id 주입
@@ -1227,6 +1289,11 @@ function AccountInfoSheet() {
 
   // 🔹 식단가 추가 버튼 클릭 시: Business/AccountEctDietList 조회 후 모달 오픈
   const handleOpenExtraDietModal = async () => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     if (!selectedAccountId) {
       Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
       return;
@@ -1262,6 +1329,11 @@ function AccountInfoSheet() {
   };
 
   const handleApplyExtraDiet = async () => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     const payload = buildPayloadWithExtraDiet();
     try {
       const res = await api.post("/Business/AccountEctDietSave", payload);
@@ -1314,7 +1386,17 @@ function AccountInfoSheet() {
         }}
       >
         {/* ✅ 왼쪽: 업로드 버튼 + input */}
-        <MDBox sx={{ display: "flex", gap: 0.5, alignItems: "center", flexWrap: "wrap" }}>
+        <MDBox
+          onMouseDownCapture={isDeletedAccount ? handleBlockedMouseAction : undefined}
+          onClickCapture={isDeletedAccount ? handleBlockedMouseAction : undefined}
+          sx={{
+            display: "flex",
+            gap: 0.5,
+            alignItems: "center",
+            flexWrap: "wrap",
+            ...(isDeletedAccount ? { cursor: "not-allowed" } : {}),
+          }}
+        >
           {FILE_TYPES.map(({ key: type, label }) => {
             const v = selectedFiles[type];
             const hasPreview =
@@ -1363,6 +1445,7 @@ function AccountInfoSheet() {
                   type="file"
                   id={type}
                   style={{ display: "none" }}
+                  disabled={isDeletedAccount}
                   onChange={(e) => handleFileChange(type, e)}
                 />
               </React.Fragment>
@@ -1393,11 +1476,7 @@ function AccountInfoSheet() {
               size="small"
               sx={{ minWidth: 220 }}
               options={accountList || []}
-              value={
-                (accountList || []).find(
-                  (a) => String(a.account_id) === String(selectedAccountId)
-                ) || null
-              }
+              value={selectedAccountOption}
               onChange={(_, newValue) => {
                 // 입력 비움 시 거래처 선택 유지
                 if (!newValue) return;
@@ -1412,6 +1491,18 @@ function AccountInfoSheet() {
               isOptionEqualToValue={(option, value) =>
                 String(option?.account_id) === String(value?.account_id)
               }
+              renderOption={(optionProps, option) => (
+                <li
+                  {...optionProps}
+                  key={option.account_id}
+                  style={{
+                    ...(optionProps.style || {}),
+                    color: String(option?.del_yn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
+                  }}
+                >
+                  {option?.account_name ?? ""}
+                </li>
+              )}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -1426,7 +1517,10 @@ function AccountInfoSheet() {
                   }}
                   sx={{
                     "& .MuiInputBase-root": { height: 32, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
+                    "& input": {
+                      padding: "0 8px",
+                      color: isDeletedAccount ? "#d32f2f" : "inherit",
+                    },
                   }}
                 />
               )}
@@ -1445,8 +1539,23 @@ function AccountInfoSheet() {
         </MDBox>
       </MDBox>
 
-      {/* 상단 기본 정보 */}
-      <Card sx={{ p: 2, mb: 1 }}>
+      <MDBox sx={{ position: "relative" }}>
+        {isDeletedAccount && (
+          <Box
+            onMouseDown={handleBlockedMouseAction}
+            onClick={handleBlockedMouseAction}
+            sx={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 20,
+              cursor: "not-allowed",
+              backgroundColor: "transparent",
+            }}
+          />
+        )}
+
+        {/* 상단 기본 정보 */}
+        <Card sx={{ p: 2, mb: 1 }}>
         <Grid container spacing={2}>
           {/* 왼쪽 */}
           <Grid item xs={12} md={6}>
@@ -1473,6 +1582,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.account_name || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("account_name", e.target.value)}
                 />
                 <MDTypography
@@ -1491,6 +1601,7 @@ function AccountInfoSheet() {
                   value={contractStartText}
                   dateFormat="yyyy-MM-dd"
                   placeholderText="YYYY-MM-DD"
+                  disabled={isDeletedAccount}
                   customInput={
                     <DatePickerTextInput
                       placeholder="YYYY-MM-DD"
@@ -1503,12 +1614,14 @@ function AccountInfoSheet() {
                     />
                   }
                   onChange={(date) => {
+                    if (isDeletedAccount) return;
                     setStartDate(date);
                     const ymd = date ? formatDateObj(date) : "";
                     setContractStartText(ymd);
                     handleChange("contract_start", ymd);
                   }}
                   onChangeRaw={(e) => {
+                    if (isDeletedAccount) return;
                     const formatted = formatYMDInput(e.target.value);
                     setContractStartText(formatted);
                     handleChange("contract_start", formatted);
@@ -1529,6 +1642,7 @@ function AccountInfoSheet() {
                   value={contractEndText}
                   dateFormat="yyyy-MM-dd"
                   placeholderText="YYYY-MM-DD"
+                  disabled={isDeletedAccount}
                   customInput={
                     <DatePickerTextInput
                       placeholder="YYYY-MM-DD"
@@ -1540,12 +1654,14 @@ function AccountInfoSheet() {
                     />
                   }
                   onChange={(date) => {
+                    if (isDeletedAccount) return;
                     setEndDate(date);
                     const ymd = date ? formatDateObj(date) : "";
                     setContractEndText(ymd);
                     handleChange("contract_end", ymd);
                   }}
                   onChangeRaw={(e) => {
+                    if (isDeletedAccount) return;
                     const formatted = formatYMDInput(e.target.value);
                     setContractEndText(formatted);
                     handleChange("contract_end", formatted);
@@ -1593,6 +1709,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.account_address || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("account_address", e.target.value)}
                 />
                 <MDInput
@@ -1605,6 +1722,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.account_address_detail || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("account_address_detail", e.target.value)}
                 />
               </Grid>
@@ -1640,6 +1758,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.manager_name || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("manager_name", e.target.value)}
                 />
                 <MDTypography
@@ -1662,6 +1781,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.manager_tel || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("manager_tel", e.target.value)}
                 />
 
@@ -1680,6 +1800,7 @@ function AccountInfoSheet() {
                   select
                   size="small"
                   value={formData.account_type || ""}
+                  disabled={isDeletedAccount}
                   onChange={(e) => handleChange("account_type", e.target.value)}
                   sx={{
                     width: 130,
@@ -1724,6 +1845,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.manager_name2 || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("manager_name2", e.target.value)}
                 />
                 <MDTypography
@@ -1746,6 +1868,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.manager_tel2 || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("manager_tel2", e.target.value)}
                 />
 
@@ -1764,6 +1887,7 @@ function AccountInfoSheet() {
                   select
                   size="small"
                   value={formData.meal_type || ""}
+                  disabled={isDeletedAccount}
                   onChange={(e) => handleChange("meal_type", e.target.value)}
                   sx={{
                     width: 130,
@@ -1809,6 +1933,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.closing_name || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("closing_name", e.target.value)}
                 />
                 <MDTypography sx={{ fontSize: "13px", textAlign: "right", fontWeight: "bold" }}>
@@ -1824,6 +1949,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.closing_tel || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("closing_tel", e.target.value)}
                 />
               </Grid>
@@ -1861,6 +1987,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.property_note || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("property_note", e.target.value)}
                 />
                 <MDTypography
@@ -1885,6 +2012,7 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.property_as_note || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("property_as_note", e.target.value)}
                 />
               </Grid>
@@ -1917,6 +2045,7 @@ function AccountInfoSheet() {
                       },
                     }}
                     value={formData.business_note || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
                     onChange={(e) => handleChange("business_note", e.target.value)}
                   />
                 </Grid>
@@ -1937,6 +2066,7 @@ function AccountInfoSheet() {
                     rows={12}
                     sx={{ width: "100%", textAlign: "center" }}
                     value={formData.industry_note || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
                     onChange={(e) => handleChange("industry_note", e.target.value)}
                   />
                 </Grid>
@@ -1964,16 +2094,17 @@ function AccountInfoSheet() {
                     },
                   }}
                   value={formData.business_note || ""}
+                  inputProps={{ readOnly: isDeletedAccount }}
                   onChange={(e) => handleChange("business_note", e.target.value)}
                 />
               </>
             )}
           </Grid>
         </Grid>
-      </Card>
+        </Card>
 
-      {/* 하단 테이블 */}
-      <Card sx={{ p: 1, mb: 1 }}>
+        {/* 하단 테이블 */}
+        <Card sx={{ p: 1, mb: 1 }}>
         <MDBox sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}>
           {isExtraDietEnabled && (
             <MDButton
@@ -1987,15 +2118,16 @@ function AccountInfoSheet() {
           )}
         </MDBox>
         {renderTable(priceData, setPriceData, "price", priceTableColumns)}
-      </Card>
+        </Card>
 
-      <Card sx={{ p: 1, mb: 1 }}>{renderTable(etcData, setEtcData, "etc", etcTableColumns)}</Card>
-      <Card sx={{ p: 1, mb: 1 }}>
-        {renderTable(managerData, setManagerData, "manager", managerTableColumns)}
-      </Card>
-      <Card sx={{ p: 1, mb: 1 }}>
-        {renderTable(eventData, setEventData, "event", eventTableColumns)}
-      </Card>
+        <Card sx={{ p: 1, mb: 1 }}>{renderTable(etcData, setEtcData, "etc", etcTableColumns)}</Card>
+        <Card sx={{ p: 1, mb: 1 }}>
+          {renderTable(managerData, setManagerData, "manager", managerTableColumns)}
+        </Card>
+        <Card sx={{ p: 1, mb: 1 }}>
+          {renderTable(eventData, setEventData, "event", eventTableColumns)}
+        </Card>
+      </MDBox>
 
       {/* ========================= ✅ 떠있는 창 미리보기: 뒤 입력 가능 ========================= */}
       {viewerOpen && (
@@ -2258,6 +2390,7 @@ function AccountInfoSheet() {
                   value={item.name}
                   onChange={(e) => handleExtraNameChange(index, e.target.value)}
                   fullWidth
+                  inputProps={{ readOnly: isDeletedAccount }}
                 />
               </Grid>
               <Grid item xs={6}>
@@ -2266,7 +2399,7 @@ function AccountInfoSheet() {
                   value={formatNumber(item.price)}
                   onChange={(e) => handleExtraPriceChange(index, e.target.value)}
                   fullWidth
-                  inputProps={{ style: { textAlign: "right" } }}
+                  inputProps={{ style: { textAlign: "right" }, readOnly: isDeletedAccount }}
                 />
               </Grid>
             </Grid>
@@ -2281,7 +2414,12 @@ function AccountInfoSheet() {
             >
               닫기
             </MDButton>
-            <MDButton variant="gradient" color="info" size="small" onClick={handleApplyExtraDiet}>
+            <MDButton
+              variant="gradient"
+              color="info"
+              size="small"
+              onClick={handleApplyExtraDiet}
+            >
               적용
             </MDButton>
           </MDBox>

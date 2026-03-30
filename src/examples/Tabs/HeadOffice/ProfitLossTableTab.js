@@ -871,7 +871,7 @@ export default function ProfitLossTableTab() {
       if (!isAllMonth) {
         // ✅ 전체 거래처 + 특정 월
         if (isAllAccount) {
-          const res = await excelApi.get("/HeadOffice/ExcelDaownMonthProfitLossTableList", {
+          const res = await excelApi.get("/HeadOffice/ExcelDownMonthProfitLossTableList", {
             params: { account_id: selectedAccountId, year, month: queryMonth },
             responseType: "arraybuffer",
             headers: {
@@ -972,7 +972,7 @@ export default function ProfitLossTableTab() {
         if (!mode) return;
 
         if (mode === "account") {
-          const res = await excelApi.get("/HeadOffice/ExcelDaownProfitLossTableList", {
+          const res = await excelApi.get("/HeadOffice/ExcelDownProfitLossTableList", {
             params: { year, month: queryMonth },
             responseType: "arraybuffer",
             headers: {
@@ -1032,7 +1032,7 @@ export default function ProfitLossTableTab() {
         }
 
         if (mode === "month") {
-          const res = await excelApi.get("/HeadOffice/ExcelDaownMonthProfitLossTableList", {
+          const res = await excelApi.get("/HeadOffice/ExcelDownMonthProfitLossTableList", {
             params: { account_id: selectedAccountId, year, month: queryMonth },
             responseType: "arraybuffer",
             headers: {

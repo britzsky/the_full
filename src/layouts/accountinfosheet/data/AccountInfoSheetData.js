@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
 import api from "api/api"; // ✅ axios 대신 공통 client import
+import { sortAccountRows } from "utils/accountSort";
+
+const normalizeDelYn = (value) =>
+  String(value ?? "N")
+    .trim()
+    .toUpperCase() === "Y"
+    ? "Y"
+    : "N";
 
 export default function useAccountInfosheetData(initialAccountId) {
   const [basicInfo, setBasicInfo] = useState({});
@@ -47,13 +55,56 @@ export default function useAccountInfosheetData(initialAccountId) {
 
   // ✅ 계정 목록 최초 1회 조회
   useEffect(() => {
-    api
-      .get("/Account/AccountList", { params: { account_type: "0" } })
-      .then((res) => {
-        const rows = (res.data || []).map((item) => ({
-          account_id: item.account_id,
-          account_name: item.account_name,
-        }));
+    const toList = (payload) => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      return [];
+    };
+
+    Promise.allSettled([
+      api.get("/Account/AccountList", { params: { account_type: "0" } }),
+      api.get("/Account/AccountList", { params: { account_type: "0", del_yn: "Y" } }),
+    ])
+      .then(([activeRes, deletedRes]) => {
+        const activeRows =
+          activeRes.status === "fulfilled" ? toList(activeRes.value?.data) : [];
+        const deletedRows =
+          deletedRes.status === "fulfilled" ? toList(deletedRes.value?.data) : [];
+
+        if (activeRes.status === "rejected") {
+          console.error("데이터 조회 실패 (AccountList active):", activeRes.reason);
+        }
+        if (deletedRes.status === "rejected") {
+          console.warn("데이터 조회 실패 (AccountList del_yn=Y):", deletedRes.reason);
+        }
+
+        const mergedMap = new Map();
+
+        const mergeRows = (rows, fallbackDelYn = "N") => {
+          rows.forEach((item) => {
+            const accountId = String(item?.account_id ?? "");
+            if (!accountId) return;
+
+            const nextRow = {
+              account_id: item.account_id,
+              account_name: item.account_name,
+              del_yn: normalizeDelYn(item?.del_yn ?? fallbackDelYn),
+            };
+
+            const prev = mergedMap.get(accountId);
+            if (!prev || prev.del_yn === "Y") {
+              mergedMap.set(accountId, nextRow);
+            }
+          });
+        };
+
+        mergeRows(activeRows, "N");
+        mergeRows(deletedRows, "Y");
+
+        const rows = sortAccountRows(Array.from(mergedMap.values()), {
+          sortKey: "account_name",
+          keepAllOnTop: true,
+        });
         setAccountList(rows);
       })
       .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));

@@ -27,6 +27,38 @@ const ItemRow = React.memo(function ItemRow({
         ? onChangeItem
         : () => {};
   const handleBlurItem = typeof onBlurItem === "function" ? onBlurItem : () => {};
+  const qtyInputRef = React.useRef(null);
+  const qtySelectionRef = React.useRef(null);
+
+  // 수량 입력값은 숫자만 남기기 때문에 입력 직전의 숫자 위치를 기억해
+  // 상태 반영 후에도 커서가 같은 자리로 돌아오도록 맞춘다.
+  React.useLayoutEffect(() => {
+    const nextSelection = qtySelectionRef.current;
+    const inputElement = qtyInputRef.current;
+    if (!nextSelection || !inputElement) return;
+
+    const maxPosition = String(row?.qty ?? "").length;
+    const start = Math.min(nextSelection.start, maxPosition);
+    const end = Math.min(nextSelection.end, maxPosition);
+    inputElement.setSelectionRange(start, end);
+    qtySelectionRef.current = null;
+  }, [row?.qty]);
+
+  const handleChangeQty = React.useCallback(
+    (e) => {
+      const rawValue = String(e.target.value ?? "");
+      const selectionStart = Number(e.target.selectionStart ?? rawValue.length);
+      const selectionEnd = Number(e.target.selectionEnd ?? selectionStart);
+
+      qtySelectionRef.current = {
+        start: rawValue.slice(0, selectionStart).replace(/[^\d]/g, "").length,
+        end: rawValue.slice(0, selectionEnd).replace(/[^\d]/g, "").length,
+      };
+
+      handleChangeItem(idx, "qty", rawValue);
+    },
+    [handleChangeItem, idx]
+  );
 
   return (
     <tr>
@@ -49,9 +81,10 @@ const ItemRow = React.memo(function ItemRow({
           size="small"
           value={row.qty}
           // 수량은 숫자 키패드 유도 + 입력값은 숫자만 유지
-          onChange={(e) => handleChangeItem(idx, "qty", e.target.value)}
+          onChange={handleChangeQty}
           onBlur={handleBlurItem}
           fullWidth
+          inputRef={qtyInputRef}
           inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
           sx={gridInputStyle}
         />

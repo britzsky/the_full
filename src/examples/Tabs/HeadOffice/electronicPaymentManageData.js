@@ -172,8 +172,13 @@ export default function useElectronicPaymentManageData() {
         .filter(Boolean)
         .map((row) => ({
           doc_type: toDocTypeKey(row?.doc_type),
+          large_type: asText(row?.large_type),
+          middle_type: asText(row?.middle_type),
+          small_type: asText(row?.small_type),
           doc_name: asText(row?.doc_name),
-          position: Number(row?.position ?? 0),
+          // 타입 테이블의 결재선 기준 컬럼은 approval_position으로 통일한다.
+          approval_position: Number(row?.approval_position ?? 0),
+          position: Number(row?.approval_position ?? 0),
         }))
         .filter((row) => !!row.doc_type && !!row.doc_name);
 

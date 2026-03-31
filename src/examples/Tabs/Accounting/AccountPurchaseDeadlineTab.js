@@ -12,12 +12,8 @@ import {
   Typography,
 } from "@mui/material";
 
-import ReactDOM from "react-dom";
 import Autocomplete from "@mui/material/Autocomplete";
 
-import Paper from "@mui/material/Paper";
-import Draggable from "react-draggable";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import dayjs from "dayjs";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
@@ -28,10 +24,6 @@ import "dayjs/locale/ko";
 import { koKR } from "@mui/x-date-pickers/locales";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
-import CloseIcon from "@mui/icons-material/Close";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
@@ -40,6 +32,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import { API_BASE_URL } from "config";
 import ExcelJS from "exceljs";
+import PreviewOverlay from "utils/PreviewOverlay";
 import useAccountPurchaseDeadlineData from "./accountPurchaseDeadlineData";
 
 // ✅ 하단(상세) 훅 추가
@@ -463,6 +456,16 @@ function AccountPurchaseDeadlineTab() {
     return `${base}${p}`;
   }, []);
 
+  // 저장된 증빙파일은 정적 /image 경로 대신 전용 조회 API로 미리보기한다.
+  const buildFilePreviewUrl = useCallback((path) => {
+    if (!path) return "";
+    if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+    const base = String(API_BASE_URL || "").replace(/\/+$/, "");
+    const params = new URLSearchParams();
+    params.set("file_path", String(path).startsWith("/") ? String(path) : `/${path}`);
+    return `${base}/Account/AccountStoredFileView?${params.toString()}`;
+  }, []);
+
   const getExt = (p = "") => {
     const clean = String(p).split("?")[0].split("#")[0];
     return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
@@ -477,12 +480,12 @@ function AccountPurchaseDeadlineTab() {
         const path = r.receipt_image;
         return {
           path,
-          src: buildFileUrl(path),
-          title: `${r.name || ""} ${r.saleDate || ""}`.trim(),
-          isPdf: isPdfFile(path),
+          url: buildFilePreviewUrl(path),
+          name: `${r.name || ""} ${r.saleDate || ""}`.trim(),
+          kind: isPdfFile(path) ? "pdf" : "image",
         };
       });
-  }, [rows, buildFileUrl]);
+  }, [rows, buildFilePreviewUrl]);
 
   const handleNoImageAlert = () => {
     Swal.fire("이미지 없음", "등록된 증빙자료가 없습니다.", "warning");
@@ -514,14 +517,7 @@ function AccountPurchaseDeadlineTab() {
   // =========================
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
-  const viewerNodeRef = useRef(null);
   const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
-
-  // ✅ 여기서 계산 (viewerIndex 선언 이후!)
-  const currentFile = useMemo(
-    () => (fileItems.length ? fileItems[viewerIndex] : null),
-    [fileItems, viewerIndex]
-  );
 
   const handleViewImage = useCallback(
     (path) => {
@@ -533,14 +529,6 @@ function AccountPurchaseDeadlineTab() {
     [fileItems]
   );
 
-  const goPrev = useCallback(() => {
-    setViewerIndex((i) => (fileItems.length ? (i - 1 + fileItems.length) % fileItems.length : 0));
-  }, [fileItems.length]);
-
-  const goNext = useCallback(() => {
-    setViewerIndex((i) => (fileItems.length ? (i + 1) % fileItems.length : 0));
-  }, [fileItems.length]);
-
   useEffect(() => {
     if (!viewerOpen) return;
     if (!fileItems.length) {
@@ -549,23 +537,6 @@ function AccountPurchaseDeadlineTab() {
     }
     if (viewerIndex > fileItems.length - 1) setViewerIndex(fileItems.length - 1);
   }, [viewerOpen, fileItems.length, viewerIndex]);
-
-  useEffect(() => {
-    if (!viewerOpen) return;
-
-    const onKeyDown = (e) => {
-      const tag = (e.target?.tagName || "").toLowerCase();
-      const isTyping = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
-      if (isTyping) return;
-
-      if (e.key === "Escape") handleCloseViewer();
-      if (e.key === "ArrowLeft") goPrev();
-      if (e.key === "ArrowRight") goNext();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
 
   // =========================
   // ✅ 저장 관련 (상단)
@@ -2322,211 +2293,14 @@ function AccountPurchaseDeadlineTab() {
           </Grid>
         </MDBox>
 
-        {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
-        {viewerOpen &&
-          ReactDOM.createPortal(
-            <Box sx={{ position: "fixed", inset: 0, zIndex: 18000, pointerEvents: "none" }}>
-              <Draggable
-                nodeRef={viewerNodeRef}
-                handle="#receipt-viewer-titlebar"
-                bounds="parent"
-                cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
-              >
-                <Paper
-                  ref={viewerNodeRef}
-                  sx={{
-                    position: "absolute",
-                    top: 120,
-                    left: 120,
-                    m: 0,
-                    width: "450px",
-                    height: "650px",
-                    maxWidth: "95vw",
-                    maxHeight: "90vh",
-                    borderRadius: 1.2,
-                    border: "1px solid rgba(0,0,0,0.25)",
-                    boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                    overflow: "hidden",
-                    resize: "both",
-                    pointerEvents: "auto",
-                    backgroundColor: "#000",
-                    zIndex: 19000,
-                  }}
-                >
-                  <Box
-                    id="receipt-viewer-titlebar"
-                    sx={{
-                      height: 42,
-                      bgcolor: "#1b1b1b",
-                      color: "#fff",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 1,
-                      px: 1,
-                      cursor: "move",
-                      userSelect: "none",
-                    }}
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        flex: 1,
-                        whiteSpace: "nowrap",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        pr: 1,
-                      }}
-                    >
-                      {currentFile?.title || "영수증 미리보기"}
-                      {fileItems.length ? `  (${viewerIndex + 1}/${fileItems.length})` : ""}
-                    </Typography>
-
-                    <Tooltip title="이전(←)">
-                      <span>
-                        <IconButton
-                          size="small"
-                          sx={{ color: "#fff" }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            goPrev();
-                          }}
-                          disabled={fileItems.length <= 1}
-                        >
-                          <ChevronLeftIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-
-                    <Tooltip title="다음(→)">
-                      <span>
-                        <IconButton
-                          size="small"
-                          sx={{ color: "#fff" }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            goNext();
-                          }}
-                          disabled={fileItems.length <= 1}
-                        >
-                          <ChevronRightIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-
-                    <Tooltip title="새 탭으로 열기">
-                      <span>
-                        <IconButton
-                          size="small"
-                          sx={{ color: "#fff" }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const src = currentFile?.src;
-                            if (src) window.open(src, "_blank", "noopener,noreferrer");
-                          }}
-                          disabled={!currentFile?.src}
-                        >
-                          <OpenInNewIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-
-                    <Tooltip title="다운로드">
-                      <span>
-                        <IconButton
-                          size="small"
-                          sx={{ color: "#fff" }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const path = currentFile?.path;
-                            if (path) handleDownload(path);
-                          }}
-                          disabled={!currentFile?.path}
-                        >
-                          <DownloadIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-
-                    <Tooltip title="닫기(ESC)">
-                      <IconButton
-                        size="small"
-                        sx={{ color: "#fff" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCloseViewer();
-                        }}
-                      >
-                        <CloseIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
-
-                  <Box sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}>
-                    {currentFile?.src ? (
-                      currentFile.isPdf ? (
-                        <Box sx={{ width: "100%", height: "100%", bgcolor: "#111" }}>
-                          <iframe
-                            title="pdf-preview"
-                            src={currentFile.src}
-                            style={{ width: "100%", height: "100%", border: 0 }}
-                          />
-                        </Box>
-                      ) : (
-                        <TransformWrapper
-                          initialScale={1}
-                          minScale={0.5}
-                          maxScale={6}
-                          centerOnInit
-                          wheel={{ step: 0.12 }}
-                          doubleClick={{ mode: "zoomIn" }}
-                        >
-                          {({ zoomIn, zoomOut, resetTransform }) => (
-                            <>
-                              {/* 기존 줌 버튼들 그대로 */}
-                              <TransformComponent
-                                wrapperStyle={{ width: "100%", height: "100%" }}
-                                contentStyle={{ width: "100%", height: "100%" }}
-                              >
-                                <Box
-                                  sx={{
-                                    width: "100%",
-                                    height: "100%",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
-                                >
-                                  <img
-                                    src={currentFile.src}
-                                    alt="미리보기"
-                                    onError={() =>
-                                      Swal.fire(
-                                        "미리보기 실패",
-                                        "이미지 경로 또는 서버 응답을 확인해주세요.",
-                                        "error"
-                                      )
-                                    }
-                                    style={{
-                                      maxWidth: "95%",
-                                      maxHeight: "95%",
-                                      userSelect: "none",
-                                    }}
-                                  />
-                                </Box>
-                              </TransformComponent>
-                            </>
-                          )}
-                        </TransformWrapper>
-                      )
-                    ) : (
-                      <Typography sx={{ color: "#fff", p: 2 }}>파일이 없습니다.</Typography>
-                    )}
-                  </Box>
-                </Paper>
-              </Draggable>
-            </Box>,
-            document.body
-          )}
+        {/* 저장된 증빙자료를 공용 오버레이로 미리보는 영역 */}
+        <PreviewOverlay
+          open={viewerOpen}
+          files={fileItems}
+          currentIndex={viewerIndex}
+          onChangeIndex={setViewerIndex}
+          onClose={handleCloseViewer}
+        />
       </DashboardLayout>
     </LocalizationProvider>
   );

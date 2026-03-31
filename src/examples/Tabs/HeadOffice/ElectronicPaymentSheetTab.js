@@ -52,6 +52,16 @@ const DEFAULT_ACCESS_LEVEL = "1";
 const MIN_DOC_TYPE_LOADING_MS = 220;
 // TODO: 소모품 구매 품의서 결재자 고정 ID는 운영 정책에 맞춰 변경 가능
 const EXPENDABLE_FIXED_PAYER_USER_ID = "iy1";
+const DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT = "hh2";
+
+const DEFAULT_PAYER_DOC_TYPE_META = Object.freeze({
+  largeType: "공통",
+  middleType: "결의서",
+  smallType: "지출결의서(소모품)",
+  docName: "지출결의서",
+  position: 2,
+});
+const REQUEST_NO_SEQUENCE_LENGTH = 3;
 
 const PAYMENT_DOC_FORM_CONFIG = {
   title: "지출결의서",
@@ -87,6 +97,48 @@ const DOC_FORM_CONFIG_BY_KIND = {
 
 function toDocTypeKey(value) {
   return String(value ?? "").trim().toUpperCase();
+}
+
+// 기안일자에서 문서번호 일자 비교용 키를 만든다.
+function resolveRequestNoDateKey(value) {
+  const targetDate = dayjs(value);
+  if (!targetDate.isValid()) return "";
+  return targetDate.format("YYYYMMDD");
+}
+
+// 문서번호 본문에는 기안일자의 시분초(YYYYMMDDHHmmss)까지만 사용한다.
+function resolveRequestNoBaseStamp(value) {
+  const targetDate = dayjs(value);
+  if (!targetDate.isValid()) return "";
+  return targetDate.format("YYYYMMDDHHmmss");
+}
+
+// 문서번호는 doc_type-YYYYMMDDHHmmss001 형식으로 만든다.
+function buildRequestNo(docType, draftDateTimeValue, sequence = 1) {
+  const docTypeKey = toDocTypeKey(docType);
+  const baseStamp = resolveRequestNoBaseStamp(draftDateTimeValue);
+  if (!docTypeKey) return "";
+  if (!baseStamp) return `${docTypeKey}-`;
+
+  const safeSequence = Math.max(Number(sequence) || 1, 1);
+  return `${docTypeKey}-${baseStamp}${String(safeSequence).padStart(REQUEST_NO_SEQUENCE_LENGTH, "0")}`;
+}
+
+// 관리 목록의 기안일자가 현재 문서와 같은 날짜인지 비교한다.
+function isSameRequestNoDate(value, requestDateKey) {
+  return resolveRequestNoDateKey(value) === String(requestDateKey ?? "").trim();
+}
+
+function isDefaultPayerDocTypeRow(row) {
+  if (!row) return false;
+
+  return (
+    String(row?.large_type ?? "").trim() === DEFAULT_PAYER_DOC_TYPE_META.largeType &&
+    String(row?.middle_type ?? "").trim() === DEFAULT_PAYER_DOC_TYPE_META.middleType &&
+    String(row?.small_type ?? "").trim() === DEFAULT_PAYER_DOC_TYPE_META.smallType &&
+    String(row?.doc_name ?? "").trim() === DEFAULT_PAYER_DOC_TYPE_META.docName &&
+    Number(row?.approval_position ?? row?.position ?? -1) === DEFAULT_PAYER_DOC_TYPE_META.position
+  );
 }
 
 function getDocFormConfig(docType, docTypeList) {
@@ -137,6 +189,8 @@ const createEmptyDraftSheet = () => ({
   amount: "",
   tax: "",
   total: "",
+  place: "",
+  use_note: "",
   account_number: "",
   biz_no: "",
   account_name: "",
@@ -148,8 +202,7 @@ const createEmptyDraftSheet = () => ({
   transfer_receipt_text: "",
   auto_text: "",
   other_text: "",
-  line_date: "",
-  request_date: "",
+  request_dt: "",
   detail_rows: [],
 });
 
@@ -288,6 +341,8 @@ export default function ElectronicPaymentSheetTab() {
   );
 
   const [docType, setDocType] = useState("");
+  const [selectedLargeType, setSelectedLargeType] = useState("");
+  const [selectedMiddleType, setSelectedMiddleType] = useState("");
   const currentDocTypeKey = useMemo(() => toDocTypeKey(docType), [docType]);
   const currentDocKind = useMemo(
     () => getDocKindByType(currentDocTypeKey, docTypeList),
@@ -303,10 +358,34 @@ export default function ElectronicPaymentSheetTab() {
     () => (docTypeList || []).find((d) => toDocTypeKey(d.doc_type) === currentDocTypeKey),
     [docTypeList, currentDocTypeKey]
   );
+  const isCurrentDefaultPayerDoc = useMemo(
+    () => isDefaultPayerDocTypeRow(selectedDocMeta),
+    [selectedDocMeta]
+  );
+  const largeTypeOptions = useMemo(
+    () => uniqueTextList((docTypeList || []).map((row) => row?.large_type)),
+    [docTypeList]
+  );
+  const middleTypeOptions = useMemo(() => {
+    if (!selectedLargeType) return [];
+    return uniqueTextList(
+      (docTypeList || [])
+        .filter((row) => String(row?.large_type ?? "").trim() === selectedLargeType)
+        .map((row) => row?.middle_type)
+    );
+  }, [docTypeList, selectedLargeType]);
+  const smallTypeOptions = useMemo(() => {
+    if (!selectedLargeType || !selectedMiddleType) return [];
+    return (docTypeList || []).filter(
+      (row) =>
+        String(row?.large_type ?? "").trim() === selectedLargeType &&
+        String(row?.middle_type ?? "").trim() === selectedMiddleType
+    );
+  }, [docTypeList, selectedLargeType, selectedMiddleType]);
   const requiredRoles = useMemo(() => {
     // 소모품 구매 품의서는 결재자 1명(고정)만 사용한다.
     if (isCurrentExpendableDoc) return ["payer"];
-    return getRequiredRoles(Number(selectedDocMeta?.position ?? -1));
+    return getRequiredRoles(Number(selectedDocMeta?.approval_position ?? selectedDocMeta?.position ?? -1));
   }, [isCurrentExpendableDoc, selectedDocMeta]);
   const inputStyle = useMemo(() => inputSx(isMobile), [isMobile]);
   const gridInputStyle = useMemo(() => gridInputSx(isMobile), [isMobile]);
@@ -369,6 +448,16 @@ export default function ElectronicPaymentSheetTab() {
   const onPaymentNoteBufferChange = useCallback((nextPaymentNote) => {
     paymentNoteBufferRef.current = String(nextPaymentNote ?? "");
   }, []);
+
+  useEffect(() => {
+    if (!selectedDocMeta) return;
+
+    const nextLargeType = String(selectedDocMeta.large_type ?? "").trim();
+    const nextMiddleType = String(selectedDocMeta.middle_type ?? "").trim();
+
+    setSelectedLargeType((prev) => (prev === nextLargeType ? prev : nextLargeType));
+    setSelectedMiddleType((prev) => (prev === nextMiddleType ? prev : nextMiddleType));
+  }, [selectedDocMeta]);
 
   const onSelectPaymentDocFiles = useCallback(
     (fileList) => {
@@ -521,6 +610,33 @@ export default function ElectronicPaymentSheetTab() {
     [currentDocTypeKey, docTypeList, onChangeDocType, resetDocumentBufferOnDocTypeChange]
   );
 
+  const onChangeLargeType = useCallback(
+    (nextLargeTypeRaw) => {
+      const nextLargeType = String(nextLargeTypeRaw ?? "").trim();
+      if (nextLargeType === selectedLargeType) return;
+
+      closeDocTypeLoadingPopup();
+      setSelectedLargeType(nextLargeType);
+      setSelectedMiddleType("");
+      setDocType("");
+      resetDocumentBufferOnDocTypeChange();
+    },
+    [closeDocTypeLoadingPopup, resetDocumentBufferOnDocTypeChange, selectedLargeType]
+  );
+
+  const onChangeMiddleType = useCallback(
+    (nextMiddleTypeRaw) => {
+      const nextMiddleType = String(nextMiddleTypeRaw ?? "").trim();
+      if (nextMiddleType === selectedMiddleType) return;
+
+      closeDocTypeLoadingPopup();
+      setSelectedMiddleType(nextMiddleType);
+      setDocType("");
+      resetDocumentBufferOnDocTypeChange();
+    },
+    [closeDocTypeLoadingPopup, resetDocumentBufferOnDocTypeChange, selectedMiddleType]
+  );
+
   useEffect(
     () => () => {
       closeDocTypeLoadingPopup();
@@ -605,6 +721,7 @@ export default function ElectronicPaymentSheetTab() {
         const mappedDetailRows = checkedItems
           .map((item) => {
             const name = String(item?.item_name ?? "").trim();
+            const vendorName = String(item?.use_name ?? "").trim();
             const qty = Math.max(0, Math.round(parseAmountNumber(item?.qty)));
             const rowTotal = parseAmountNumber(item?.price);
             const { amount: rowAmount, tax: rowTax, total: normalizedRowTotal } =
@@ -616,6 +733,8 @@ export default function ElectronicPaymentSheetTab() {
             return {
               detail_text: detailText,
               qty: qty > 0 ? qty : 1,
+              // 소모품 연결 시 결제업체명도 세부내역 행 단위로 함께 가져온다.
+              use_note: vendorName,
               amount: rowAmount,
               tax: rowTax,
               total: normalizedRowTotal,
@@ -646,7 +765,7 @@ export default function ElectronicPaymentSheetTab() {
           amount: amount !== 0 ? amount.toLocaleString("ko-KR") : "",
           tax: tax !== 0 ? tax.toLocaleString("ko-KR") : "",
           total: total !== 0 ? total.toLocaleString("ko-KR") : "",
-          account_name: vendorText,
+          use_note: vendorText,
           detail_rows: mappedDetailRows,
         };
 
@@ -702,14 +821,60 @@ export default function ElectronicPaymentSheetTab() {
   const [payerLineAdded, setPayerLineAdded] = useState(false);
   const payerRequiredByDocType = requiredRoles.includes("payer");
   const needPayerStep = payerRequiredByDocType || payerLineAdded;
+  const requestDateKey = useMemo(() => resolveRequestNoDateKey(draftDt), [draftDt]);
+  const [requestNo, setRequestNo] = useState("");
 
-  // ✅ 요청번호
-  const requestNo = useMemo(() => {
-    if (!currentDocTypeKey) return "";
-    const d = dayjs(draftDt);
-    if (!d.isValid()) return `${currentDocTypeKey}-`;
-    return `${currentDocTypeKey}-${d.format("YYYYMMDDHHmmss")}00`;
-  }, [currentDocTypeKey, draftDt]);
+  // 같은 문서타입과 같은 기안일자의 기존 문서 수를 세어 마지막 3자리 순번을 만든다.
+  const fetchNextRequestNo = useCallback(
+    async (targetDocTypeKey, targetDraftDt) => {
+      const safeDocTypeKey = toDocTypeKey(targetDocTypeKey);
+      const safeRequestDateKey = resolveRequestNoDateKey(targetDraftDt);
+      const fallbackRequestNo = buildRequestNo(safeDocTypeKey, targetDraftDt, 1);
+      if (!safeDocTypeKey) return "";
+
+      const lookupUserId = String(loginUserId || writerId || "").trim();
+      if (!lookupUserId) return fallbackRequestNo;
+
+      try {
+        const res = await api.get("/HeadOffice/ElectronicPaymentManageList", {
+          params: { user_id: lookupUserId },
+        });
+        const rows = Array.isArray(res.data) ? res.data : Array.isArray(res.data?.list) ? res.data.list : [];
+
+        const nextSequence =
+          (rows || []).filter(
+            (row) =>
+              toDocTypeKey(row?.doc_type) === safeDocTypeKey &&
+              isSameRequestNoDate(row?.draft_dt, safeRequestDateKey)
+          ).length + 1;
+
+        return buildRequestNo(safeDocTypeKey, targetDraftDt, nextSequence);
+      } catch (err) {
+        console.error("문서번호 순번 조회 실패:", err);
+        return fallbackRequestNo;
+      }
+    },
+    [loginUserId, writerId]
+  );
+
+  useEffect(() => {
+    const fallbackRequestNo = buildRequestNo(currentDocTypeKey, draftDt, 1);
+    setRequestNo(fallbackRequestNo);
+
+    if (!currentDocTypeKey || !requestDateKey) return;
+
+    let cancelled = false;
+
+    (async () => {
+      const nextRequestNo = await fetchNextRequestNo(currentDocTypeKey, draftDt);
+      if (cancelled) return;
+      setRequestNo(nextRequestNo || fallbackRequestNo);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDocTypeKey, requestDateKey, draftDt, fetchNextRequestNo]);
 
   // ✅ 부서 목록 로드
   useEffect(() => {
@@ -824,7 +989,7 @@ export default function ElectronicPaymentSheetTab() {
   }, [requiredRoles, fetchCompanyTree, approvalLine.ceo_user]);
 
   // 문서 타입이 바뀌면 결재자 추가 상태를 기본값으로 되돌린다.
-  // - 기본 규칙은 type.position 기준
+  // - 기본 규칙은 type.approval_position 기준
   // - 결재자(payer)는 "결재라인 추가" 시에만 선택적으로 활성화
   useEffect(() => {
     if (isCurrentExpendableDoc) {
@@ -864,12 +1029,49 @@ export default function ElectronicPaymentSheetTab() {
       return;
     }
 
+    if (isCurrentDefaultPayerDoc) {
+      setPayerLineAdded(false);
+      setApprovalLine((prev) => ({
+        ...prev,
+        payer_user: DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT,
+        payer_user_name:
+          prev.payer_user === DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT &&
+          prev.payer_user_name
+            ? prev.payer_user_name
+            : DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT,
+      }));
+
+      (async () => {
+        const tree = await fetchCompanyTree();
+        let defaultPayerName = "";
+        for (const dept of tree || []) {
+          const users = dept.users || dept.user_list || [];
+          const found = (users || []).find(
+            (u) =>
+              String(u.user_id ?? u.id ?? "") === DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT
+          );
+          if (found) {
+            defaultPayerName = String(found.user_name ?? found.name ?? "").trim();
+            break;
+          }
+        }
+        if (!defaultPayerName) return;
+
+        setApprovalLine((prev) => {
+          if (prev.payer_user !== DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT) return prev;
+          if (prev.payer_user_name === defaultPayerName) return prev;
+          return { ...prev, payer_user_name: defaultPayerName };
+        });
+      })();
+      return;
+    }
+
     setPayerLineAdded(false);
     setApprovalLine((prev) => {
       if (!prev.payer_user && !prev.payer_user_name) return prev;
       return { ...prev, payer_user: "", payer_user_name: "" };
     });
-  }, [isCurrentExpendableDoc, fetchCompanyTree]);
+  }, [isCurrentExpendableDoc, isCurrentDefaultPayerDoc, fetchCompanyTree]);
 
   const onChangeItem = useCallback((idx, key, value) => {
     let nextValue = value;
@@ -905,7 +1107,7 @@ export default function ElectronicPaymentSheetTab() {
 
   const openApprovalModal = async () => {
     if (!docType) {
-      Swal.fire({ title: "확인", text: "문서 타입을 먼저 선택해주세요.", icon: "info" });
+      Swal.fire({ title: "확인", text: "소분류를 먼저 선택해주세요.", icon: "info" });
       return;
     }
     if (isCurrentExpendableDoc) {
@@ -942,11 +1144,13 @@ export default function ElectronicPaymentSheetTab() {
     setOpenLineModal(false);
   };
 
-  // 저장 완료 후 초기 화면(문서타입 선택)으로 복귀
+  // 저장 완료 후 초기 화면(대분류/중분류/소분류 선택)으로 복귀
   const resetToDocTypeSelect = useCallback(() => {
     const emptyItems = createEmptyItems();
     const emptyDraftSheet = createEmptyDraftSheet();
     setDocType("");
+    setSelectedLargeType("");
+    setSelectedMiddleType("");
     setDepartment(loginDepartment || "");
     setWriterId(loginUserId || "");
     setWriterList([]);
@@ -978,7 +1182,7 @@ export default function ElectronicPaymentSheetTab() {
   // ✅ 상신 payload: main / item 분리
   const handleSave = async () => {
     if (!docType) {
-      Swal.fire({ title: "확인", text: "문서 타입을 선택해주세요.", icon: "warning" });
+      Swal.fire({ title: "확인", text: "소분류까지 선택해주세요.", icon: "warning" });
       return;
     }
     if (!department) {
@@ -1034,9 +1238,12 @@ export default function ElectronicPaymentSheetTab() {
     });
     if (!submitConfirm.isConfirmed) return;
 
+    const resolvedRequestNo =
+      (await fetchNextRequestNo(docTypeKey, draftDt)) || buildRequestNo(docTypeKey, draftDt, 1);
+    setRequestNo(resolvedRequestNo);
+
     const clean = (v) => String(v ?? "").trim();
-    const currentPaymentNote = String(paymentNoteBufferRef.current ?? "");
-    const currentPaymentNoteClean = clean(currentPaymentNote);
+    const currentPaymentNoteClean = clean(paymentNoteBufferRef.current ?? "");
     const toIntOrNull = (v) => {
       const raw = String(v ?? "").replace(/,/g, "").trim();
       if (!raw) return null;
@@ -1065,13 +1272,9 @@ export default function ElectronicPaymentSheetTab() {
       filteredItems = [
         {
           no: 1,
-          item_name: draftTitle,
-          qty: null,
-          price: null,
-          use_note: draftDetail,
-          link: "",
+          title: draftTitle,
+          details: draftDetail,
           note: draftNote,
-          payment_note: currentPaymentNoteClean,
         },
       ];
     } else if (isPaymentDocType(docTypeKey, docTypeList)) {
@@ -1084,25 +1287,19 @@ export default function ElectronicPaymentSheetTab() {
       // - item_name : 세부내역(행 단위)
       const paymentUseName = clean(currentPaymentDoc.item_name);
       // 현장은 기본값 본사를 강제하지 않고 사용자가 입력한 값만 저장한다.
-      const paymentPlace = clean(currentPaymentDoc.site_name);
-      const paymentContent = clean(currentPaymentDoc.content || currentPaymentDoc.detail);
-      const paymentVendorName = clean(currentPaymentDoc.account_name || currentPaymentDoc.note);
+      const paymentPlace = clean(currentPaymentDoc.place);
+      const paymentContent = clean(currentPaymentDoc.content);
+      const paymentVendorName = clean(currentPaymentDoc.use_note);
       const paymentAccountNumber = clean(currentPaymentDoc.account_number);
       const paymentBizNo = clean(currentPaymentDoc.biz_no);
-      const paymentDepositorName = clean(currentPaymentDoc.depositor_name);
+      const paymentDepositorName = clean(currentPaymentDoc.account_name);
       const paymentMethod = normalizePaymentMethod(
         currentPaymentDoc.payment_type,
         currentPaymentDoc.payment_method
       );
       const paymentType = Number(currentPaymentDoc.payment_type) || PAYMENT_TYPE_BY_METHOD[paymentMethod] || 2;
       const paymentTypeDetail = resolvePaymentTypeDetailByMethod(paymentMethod, currentPaymentDoc);
-      const cardTail = clean(currentPaymentDoc.card_tail);
-      const cashReceiptText = clean(currentPaymentDoc.cash_receipt_text);
-      const transferReceiptText = clean(currentPaymentDoc.transfer_receipt_text);
-      const autoText = clean(currentPaymentDoc.auto_text);
-      const otherText = clean(currentPaymentDoc.other_text);
-      const lineDate = clean(currentPaymentDoc.line_date);
-      const requestDate = clean(currentPaymentDoc.request_date);
+      const requestDt = clean(currentPaymentDoc.request_dt) || dayjs(startDt).format("YYYY-MM-DD");
       const detailRows = Array.isArray(currentPaymentDoc.detail_rows)
         ? currentPaymentDoc.detail_rows
         : [];
@@ -1149,6 +1346,7 @@ export default function ElectronicPaymentSheetTab() {
           const rowTotal = toIntOrNull(row?.total) ?? toIntOrNull(row?.price) ?? rowAmount + rowTax;
           const rowQtyRaw = toIntOrNull(row?.qty);
           const rowQty = rowQtyRaw && rowQtyRaw > 0 ? rowQtyRaw : 1;
+          const rowVendorName = clean(row?.use_note || paymentVendorName);
           // 세부내역 합계는 음수도 허용하므로 price에도 그대로 반영한다.
           const rowPrice = rowTotal;
 
@@ -1157,7 +1355,8 @@ export default function ElectronicPaymentSheetTab() {
             title: paymentTitle,
             place: paymentPlace,
             use_name: paymentUseName,
-            use_note: paymentVendorName,
+            // 결제업체명은 문서 공통값이 있더라도 세부내역 행 값이 있으면 우선 저장한다.
+            use_note: rowVendorName,
             item_name: detailText,
             qty: rowQty,
             price: rowPrice,
@@ -1168,18 +1367,10 @@ export default function ElectronicPaymentSheetTab() {
             account_number: paymentAccountNumber,
             biz_no: paymentBizNo,
             // tb_headoffice_payment_doc.account_name 은 예금주 용도로 저장
-            account_name: paymentDepositorName || paymentVendorName,
+            account_name: paymentDepositorName || rowVendorName || paymentVendorName,
             payment_type: paymentType,
             payment_type_detail: paymentTypeDetail,
-            payment_method: paymentMethod,
-            card_tail: cardTail,
-            cash_receipt_text: cashReceiptText,
-            transfer_receipt_text: transferReceiptText,
-            auto_text: autoText,
-            other_text: otherText,
-            line_date: lineDate,
-            request_date: requestDate,
-            payment_note: currentPaymentNoteClean,
+            request_dt: requestDt,
           };
         })
         .filter(Boolean);
@@ -1203,14 +1394,15 @@ export default function ElectronicPaymentSheetTab() {
 
     const payload = {
       main: {
+        // 문서타입 테이블의 doc_type 값을 그대로 저장한다.
         doc_type: docTypeKey,
-        request_no: requestNo,
+        // 전자결재 메인 테이블 payment_id에 문서번호 형식을 그대로 사용한다.
+        payment_id: resolvedRequestNo,
 
         department,
         user_id: writerId, // 작성자 user_id
         draft_dt: dayjs(draftDt).format("YYYY-MM-DD HH:mm:ss"),
         start_dt: dayjs(startDt).format("YYYY-MM-DD HH:mm:ss"),
-        payment_note: currentPaymentNote,
         retention_dt: Number(retentionDt),
         access_level: Number(accessLevel),
 
@@ -1218,11 +1410,6 @@ export default function ElectronicPaymentSheetTab() {
         tm_user: isExpendableDoc ? "" : requiredRoles.includes("tm") ? approvalLine.tm_user : "",
         payer_user: needPayerStep ? resolvedPayerUser : "",
         ceo_user: isExpendableDoc ? "" : requiredRoles.includes("ceo") ? approvalLine.ceo_user : "",
-
-        // 작성 화면에서는 결재 상태를 선택하지 않고, 관리 화면에서만 처리한다.
-        tm_status: "",
-        payer_status: "",
-        ceo_status: "",
 
         // 작성자(user_id)와 등록자(reg_user_id)를 동일하게 저장
         reg_user_id: writerId,
@@ -1248,13 +1435,13 @@ export default function ElectronicPaymentSheetTab() {
       return;
     }
 
-    if (requestNo) {
+    if (resolvedRequestNo) {
       try {
         // 문서 메인/아이템 저장이 성공한 뒤에만 첨부파일 동기화를 수행한다.
         // 즉, 사용자가 파일을 선택해도 "상신 전"에는 DB에 저장되지 않는다.
         await syncHeadOfficeDocumentImages({
           api,
-          paymentId: requestNo,
+          paymentId: resolvedRequestNo,
           deletedImages: deletedImagesToApply,
           pendingFiles: pendingFilesToUpload,
         });
@@ -1286,7 +1473,7 @@ export default function ElectronicPaymentSheetTab() {
   const renderByDocType = () => {
     const formConfig = getDocFormConfig(docType, docTypeList);
     if (formConfig) return renderDocumentForm(formConfig);
-    if (!docType) return renderEmptyState("문서 타입을 선택하면 화면이 표시됩니다.");
+    if (!docType) return renderEmptyState("대분류, 중분류, 소분류를 선택하면 화면이 표시됩니다.");
     return renderEmptyState(`"${docType}" 타입 화면은 아직 템플릿이 없습니다. (추가 예정)`);
   };
 
@@ -1777,21 +1964,61 @@ export default function ElectronicPaymentSheetTab() {
         }}
       >
         <MDBox sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
-          {/* 문서 타입 select */}
+          {/* 대분류 select */}
+          <TextField
+            select
+            size="small"
+            value={selectedLargeType}
+            onChange={(e) => onChangeLargeType(e.target.value)}
+            SelectProps={{ native: true }}
+            sx={{ minWidth: isMobile ? 140 : 180 }}
+          >
+            <option value="" disabled>
+              대분류
+            </option>
+            {largeTypeOptions.map((largeType) => (
+              <option key={largeType} value={largeType}>
+                {largeType}
+              </option>
+            ))}
+          </TextField>
+
+          {/* 중분류 select */}
+          <TextField
+            select
+            size="small"
+            value={selectedMiddleType}
+            onChange={(e) => onChangeMiddleType(e.target.value)}
+            SelectProps={{ native: true }}
+            sx={{ minWidth: isMobile ? 140 : 180 }}
+            disabled={!selectedLargeType}
+          >
+            <option value="" disabled>
+              중분류
+            </option>
+            {middleTypeOptions.map((middleType) => (
+              <option key={middleType} value={middleType}>
+                {middleType}
+              </option>
+            ))}
+          </TextField>
+
+          {/* 소분류 select */}
           <TextField
             select
             size="small"
             value={docType}
             onChange={(e) => onChangeDocTypeBySelect(e.target.value)}
             SelectProps={{ native: true }}
-            sx={{ minWidth: isMobile ? 170 : 240 }}
+            sx={{ minWidth: isMobile ? 170 : 220 }}
+            disabled={!selectedLargeType || !selectedMiddleType}
           >
             <option value="" disabled>
-              문서 선택
+              소분류
             </option>
-            {(docTypeList || []).map((d) => (
+            {smallTypeOptions.map((d) => (
               <option key={String(d.doc_type)} value={String(d.doc_type)}>
-                {String(d.doc_name)}
+                {String(d.small_type || d.doc_name)}
               </option>
             ))}
           </TextField>

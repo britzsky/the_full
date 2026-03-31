@@ -5,14 +5,14 @@ import MDBox from "components/MDBox";
 
 // 기안서(D) 관리 상세 본문
 // - 백엔드에서 전달된 detailItems 첫 행을 본문 데이터로 사용
-// - (title/item_name, detail/use_note, note/note) 매핑을 화면에 고정 출력
+// - 스키마 컬럼(title/details/note)을 우선 사용하고, 기존 응답 포맷도 함께 허용한다.
 function DraftDetailModalContent({ detailItems, asText, sectionSx, sectionTitleSx, thCell, tdCell }) {
   // 기안서는 단건 본문이므로 0번 행만 읽는다.
   const draftContent = useMemo(() => {
     const first = (detailItems || [])[0] || {};
     return {
-      title: asText(first.item_name),
-      detail: asText(first.use_note),
+      title: asText(first.title) || asText(first.item_name),
+      detail: asText(first.details) || asText(first.use_note),
       note: asText(first.note),
     };
   }, [asText, detailItems]);

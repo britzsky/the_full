@@ -49,6 +49,22 @@ const toFileExtension = (nameText) => {
   if (!fileName.includes(".")) return "";
   return toLowerText(fileName.split(".").pop());
 };
+const decodeUriRepeatedly = (value) => {
+  let current = toText(value);
+  if (!current) return "";
+
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const next = decodeURI(current);
+      if (next === current) break;
+      current = next;
+    } catch {
+      break;
+    }
+  }
+
+  return current;
+};
 const getCandidateFileName = (target) =>
   toText(target?.name || target?.image_name || target?.file_name || toFileNameFromPath(target?.path || target?.image_path || target?.url));
 const getCandidateMimeType = (target) =>
@@ -70,13 +86,15 @@ export const buildHeadOfficeDocumentFileUrl = (pathOrUrl, apiBaseUrl = "") => {
 };
 
 // 브라우저 렌더링(이미지/iframe/fetch)에 사용할 URL 인코딩 값을 만든다.
-// - 한글/공백 파일명은 DB에 원문으로 저장되므로 인코딩하지 않으면 PDF 미리보기가 깨질 수 있다.
+// - 한글/공백 파일명은 인코딩이 필요하다.
+// - 이미 %EB... 형태로 저장된 경로를 다시 인코딩하면 %25EB...가 되므로
+//   먼저 반복 decode 후 마지막에 한 번만 encode 한다.
 // - blob:/data: URL은 인코딩하면 오히려 깨질 수 있어 원문 그대로 사용한다.
 export const toHeadOfficeDocumentViewUrl = (pathOrUrl, apiBaseUrl = "") => {
   const absoluteUrl = buildHeadOfficeDocumentFileUrl(pathOrUrl, apiBaseUrl);
   if (!absoluteUrl) return "";
   if (/^(blob:|data:)/i.test(absoluteUrl)) return absoluteUrl;
-  return encodeURI(absoluteUrl);
+  return encodeURI(decodeUriRepeatedly(absoluteUrl));
 };
 
 // 첨부파일이 이미지인지 판정한다. (미리보기 가능 여부)

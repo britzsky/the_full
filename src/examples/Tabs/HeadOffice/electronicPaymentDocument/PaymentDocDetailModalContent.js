@@ -4,10 +4,9 @@ import { Download } from "lucide-react";
 
 import MDBox from "components/MDBox";
 import { API_BASE_URL } from "config";
+import api from "api/api";
 import {
-  buildHeadOfficeDocumentFileUrl,
   getHeadOfficeDocumentPreviewKind,
-  toHeadOfficeDocumentViewUrl,
 } from "utils/headOfficeDocumentImageUtils";
 import PreviewOverlay from "utils/PreviewOverlay";
 // 작성 화면과 동일한 행 높이 기준
@@ -33,6 +32,13 @@ const attachmentThumbBoxSx = {
   alignItems: "center",
   justifyContent: "center",
 };
+
+// PDF 파일은 목록에서 첫 페이지를 축소해서 보여준다.
+function toPdfThumbSrc(fileUrl) {
+  const baseUrl = String(fileUrl ?? "").trim();
+  if (!baseUrl) return "";
+  return `${baseUrl}#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0`;
+}
 
 // 금액 문자열 숫자 변환
 function toNumberValue(v) {
@@ -67,27 +73,20 @@ function toPaymentTypeDetailText(typeCode, rawDetail) {
   return `****-****-****-${tail}`;
 }
 
-// 오늘 날짜 YYYY-MM-DD 포맷
-function formatTodayYmd() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-// PDF 썸네일 iframe src 생성
-// - 목록에서 첫 페이지를 축소 노출해 DB 경로 파일도 즉시 확인할 수 있도록 처리한다.
-function toPdfThumbSrc(fileUrl) {
-  const baseUrl = String(fileUrl ?? "").trim();
-  if (!baseUrl) return "";
-  return `${baseUrl}#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0`;
+// 날짜/일시 문자열을 화면용 YYYY-MM-DD로 정리한다.
+function toDateText(v) {
+  const text = String(v ?? "").trim();
+  const matched = text.match(/^(\d{4})[-./]?(\d{2})[-./]?(\d{2})/);
+  if (!matched) return "";
+  return `${matched[1]}-${matched[2]}-${matched[3]}`;
 }
 
 // 지출결의서 상세 본문 컴포넌트
 function PaymentDocDetailModalContent({
   detailItems,
   detailFiles,
+  detailMain,
+  viewerUserId,
   asText,
   sectionSx,
   sectionTitleSx,
@@ -125,6 +124,7 @@ function PaymentDocDetailModalContent({
           biz_no: asText(row?.biz_no),
           account_name: asText(row?.account_name),
           total: toNumberValue(row?.total),
+          request_dt: asText(row?.request_dt),
           payment_type: toNumberValue(row?.payment_type),
           payment_type_detail: asText(row?.payment_type_detail),
         };
@@ -146,14 +146,20 @@ function PaymentDocDetailModalContent({
       account_number: first.account_number || "-",
       biz_no: first.biz_no || "-",
       account_name: first.account_name || "-",
-      vendor_name: first.use_note || "-",
+      vendor_display_name: first.use_note || "-",
       amountSum,
       taxSum,
       docTotal,
+      request_dt: asText(first.request_dt),
       payment_type: toNumberValue(first.payment_type),
       payment_type_detail: asText(first.payment_type_detail) || asText(first.biz_no),
     };
   }, [paymentDocRows]);
+  const draftDateText = useMemo(() => toDateText(detailMain?.draft_dt), [detailMain?.draft_dt]);
+  const requestDateText = useMemo(
+    () => toDateText(paymentDoc.request_dt) || toDateText(detailMain?.start_dt),
+    [paymentDoc.request_dt, detailMain?.start_dt]
+  );
 
   const orderedDetailFiles = useMemo(
     () =>
@@ -166,16 +172,35 @@ function PaymentDocDetailModalContent({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewList, setPreviewList] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  // 전자결재 첨부파일은 정적 /image 경로 대신
+  // payment_id + image_order 기준 전용 스트림 API로 조회한다.
+  const toStoredFileUrl = useCallback(
+    (file) => {
+      const paymentIdText = asText(file?.payment_id);
+      const imageOrder = Number(file?.image_order);
+      const userIdText = asText(viewerUserId);
+      if (!paymentIdText || !Number.isFinite(imageOrder) || imageOrder <= 0 || !userIdText) {
+        return "";
+      }
+
+      const params = new URLSearchParams();
+      params.set("payment_id", paymentIdText);
+      params.set("image_order", String(imageOrder));
+      params.set("user_id", userIdText);
+
+      const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
+      return `${apiBase}/HeadOffice/ElectronicPaymentDocumentFileView?${params.toString()}`;
+    },
+    [asText, viewerUserId]
+  );
   // 서버 첨부파일을 미리보기 목록으로 변환한다. (이미지/PDF/엑셀)
   const detailFilePreviewList = useMemo(
     () =>
       orderedDetailFiles
         .map((file) => ({
-          // DB(image_path) 상대경로를 API 절대경로로 만든 뒤 인코딩해
-          // 관리 상세 모달에서도 PDF/이미지 미리보기가 깨지지 않도록 처리한다.
-          url: toHeadOfficeDocumentViewUrl(
-            buildHeadOfficeDocumentFileUrl(asText(file?.image_path), API_BASE_URL)
-          ),
+          // DB image_path는 한글 파일명/공백이 섞일 수 있어
+          // 파일명 대신 전용 조회 API를 사용해 인코딩 문제를 제거한다.
+          url: toStoredFileUrl(file),
           name: asText(file?.image_name) || "-",
           order: Number(file?.image_order || 0),
           kind: getHeadOfficeDocumentPreviewKind({
@@ -186,7 +211,7 @@ function PaymentDocDetailModalContent({
         .filter(
           (file) => file.kind === "image" || file.kind === "pdf" || file.kind === "excel"
         ),
-    [orderedDetailFiles, asText]
+    [orderedDetailFiles, asText, toStoredFileUrl]
   );
   // 파일명 클릭 시 미리보기 열기
   const openFilePreview = useCallback(
@@ -201,9 +226,45 @@ function PaymentDocDetailModalContent({
     },
     [detailFilePreviewList]
   );
+  const handleDownloadFile = useCallback(async (file) => {
+    const fileUrl = toStoredFileUrl(file);
+    if (!fileUrl) return;
 
-  // 표시 날짜 문자열 계산
-  const todayText = useMemo(() => formatTodayYmd(), []);
+    const fallbackPath = asText(file?.image_path);
+    const filename = asText(file?.image_name) || fallbackPath.split("/").pop() || "download";
+
+    try {
+      const res = await api.get(fileUrl, { responseType: "blob" });
+      const blobUrl = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+    } catch (err) {
+      console.error("전자결재 첨부파일 다운로드 실패:", err);
+      const a = document.createElement("a");
+      a.href = fileUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  }, [asText, toStoredFileUrl]);
+  const handleAttachmentPreview = useCallback((file) => {
+    const previewKind = getHeadOfficeDocumentPreviewKind({
+      image_name: file?.image_name,
+      image_path: file?.image_path,
+    });
+
+    // PDF도 이미지와 동일한 PreviewOverlay 흐름으로 연다.
+    if (previewKind === "image" || previewKind === "pdf" || previewKind === "excel") {
+      openFilePreview(file?.image_order);
+    }
+  }, [openFilePreview]);
+
   // 표 최소 너비 기준값 정의
   const minTableWidth = 1200;
   // 세부내역 대표값(작성 폼 rowSpan 표시용) 계산
@@ -399,7 +460,7 @@ function PaymentDocDetailModalContent({
                 <tr key={row.key}>
                   {index === 0 && (
                     <td style={td2CellCenter} rowSpan={paymentDocRows.length}>
-                      {todayText}
+                      {draftDateText || requestDateText || "-"}
                     </td>
                   )}
                   {index === 0 && (
@@ -414,11 +475,7 @@ function PaymentDocDetailModalContent({
                   )}
                   <td style={td2CellWrap}>{row.item_name || "-"}</td>
                   <td style={td2CellCenter}>{row.qty > 0 ? row.qty.toLocaleString("ko-KR") : "-"}</td>
-                  {index === 0 && (
-                    <td style={td2CellCenter} rowSpan={paymentDocRows.length}>
-                      {firstDetailRow?.use_note || "-"}
-                    </td>
-                  )}
+                  <td style={td2CellCenter}>{row.use_note || paymentDoc.vendor_display_name || "-"}</td>
                   <td style={td2CellCenter}>{toAmountText(row.amount) || "-"}</td>
                   <td style={td2CellCenter}>{toAmountText(row.tax) || "-"}</td>
                   <td style={td2CellCenter}>{toAmountText(row.rowTotal) || "-"}</td>
@@ -479,19 +536,16 @@ function PaymentDocDetailModalContent({
                     <MDBox sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
                       {orderedDetailFiles.map((file) => {
                         const fileName = asText(file.image_name) || "-";
-                        const fileOpenUrl = buildHeadOfficeDocumentFileUrl(
-                          asText(file.image_path),
-                          API_BASE_URL
-                        );
-                        const fileViewUrl = toHeadOfficeDocumentViewUrl(fileOpenUrl);
+                        const fileViewUrl = toStoredFileUrl(file);
                         const previewKind = getHeadOfficeDocumentPreviewKind({
                           image_name: file?.image_name,
                           image_path: file?.image_path,
                         });
-                        // PDF는 목록에서 iframe을 쓰지 않고 라벨 썸네일만 쓰되,
-                        // 클릭 시 오버레이에서 blob 미리보기로 연다.
+                        // PDF는 membersheet와 동일하게 DB 경로를 직접 iframe에 태우지 않고
+                        // 목록에서는 라벨만 보여준 뒤 blob 미리보기만 호출한다.
                         const canPreview =
-                          previewKind === "image" || previewKind === "pdf" || previewKind === "excel";
+                          !!fileViewUrl &&
+                          (previewKind === "image" || previewKind === "pdf" || previewKind === "excel");
                         const thumbLabel =
                           previewKind === "pdf"
                             ? "PDF"
@@ -520,7 +574,15 @@ function PaymentDocDetailModalContent({
                                 <MDBox
                                   component={canPreview ? "button" : "span"}
                                   type={canPreview ? "button" : undefined}
-                                  onClick={canPreview ? () => openFilePreview(file.image_order) : undefined}
+                                  onClick={
+                                   canPreview
+                                      ? (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleAttachmentPreview(file);
+                                      }
+                                      : undefined
+                                  }
                                   sx={{
                                     border: "none",
                                     background: "none",
@@ -545,7 +607,15 @@ function PaymentDocDetailModalContent({
                                 <MDBox
                                   component={canPreview ? "button" : "span"}
                                   type={canPreview ? "button" : undefined}
-                                  onClick={canPreview ? () => openFilePreview(file.image_order) : undefined}
+                                  onClick={
+                                    canPreview
+                                      ? (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        handleAttachmentPreview(file);
+                                      }
+                                      : undefined
+                                  }
                                   sx={{
                                     border: "none",
                                     width: "100%",
@@ -592,7 +662,11 @@ function PaymentDocDetailModalContent({
                                 <MDBox
                                   component="button"
                                   type="button"
-                                  onClick={() => openFilePreview(file.image_order)}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleAttachmentPreview(file);
+                                  }}
                                   sx={{
                                     border: "none",
                                     width: "100%",
@@ -628,7 +702,11 @@ function PaymentDocDetailModalContent({
                             {canPreview ? (
                               <button
                                 type="button"
-                                onClick={() => openFilePreview(file.image_order)}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleAttachmentPreview(file);
+                                }}
                                 style={{
                                   border: "none",
                                   background: "none",
@@ -647,11 +725,17 @@ function PaymentDocDetailModalContent({
                                 {fileName}
                               </button>
                             ) : (
-                              <a
-                                href={fileViewUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  handleDownloadFile(file);
+                                }}
                                 style={{
+                                  border: "none",
+                                  background: "none",
+                                  padding: 0,
                                   fontSize: "12px",
                                   color: "#1f4e79",
                                   textDecoration: "underline",
@@ -660,17 +744,21 @@ function PaymentDocDetailModalContent({
                                   whiteSpace: "nowrap",
                                   flex: 1,
                                   textAlign: "left",
+                                  cursor: "pointer",
                                 }}
                               >
                                 {fileName}
-                              </a>
+                              </button>
                             )}
-                            <a
-                              href={fileViewUrl}
-                              download
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleDownloadFile(file);
+                              }}
                               style={{
+                                border: "1px solid #c7d2e6",
                                 color: "#1f4e79",
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -678,14 +766,14 @@ function PaymentDocDetailModalContent({
                                 width: "30px",
                                 height: "30px",
                                 borderRadius: "8px",
-                                border: "1px solid #c7d2e6",
                                 backgroundColor: "#f5f8ff",
                                 marginRight: "8px",
                                 flexShrink: 0,
+                                cursor: "pointer",
                               }}
                             >
                               <Download size={17} />
-                            </a>
+                            </button>
                           </MDBox>
                         );
                       })}
@@ -701,14 +789,14 @@ function PaymentDocDetailModalContent({
             {/* 지급요청일자/은행계좌 행 */}
             <tr>
               <td style={{ ...thCell, height: ROW_H }}>지급요청일자</td>
-              <td style={{ ...tdCell, height: ROW_H }}>{todayText}</td>
+              <td style={{ ...tdCell, height: ROW_H }}>{requestDateText || "-"}</td>
               <td style={{ ...thCell, height: ROW_H }}>은행계좌</td>
               <td style={{ ...tdCell, height: ROW_H }}>{paymentDoc.account_number || "-"}</td>
             </tr>
             {/* 거래처/예금주 행 (작성 화면과 동일 포맷) */}
             <tr>
               <td style={{ ...thCell, height: ROW_H }}>거 래 처</td>
-              <td style={{ ...tdCell, height: ROW_H }}>{paymentDoc.vendor_name || "-"}</td>
+              <td style={{ ...tdCell, height: ROW_H }}>{paymentDoc.vendor_display_name || "-"}</td>
               <td style={{ ...thCell, height: ROW_H }}>예 금 주</td>
               <td style={{ ...tdCell, height: ROW_H }}>{paymentDoc.account_name || "-"}</td>
             </tr>
@@ -740,6 +828,8 @@ function PaymentDocDetailModalContent({
 PaymentDocDetailModalContent.propTypes = {
   detailItems: PropTypes.arrayOf(PropTypes.object).isRequired,
   detailFiles: PropTypes.arrayOf(PropTypes.object),
+  detailMain: PropTypes.object,
+  viewerUserId: PropTypes.string,
   asText: PropTypes.func.isRequired,
   sectionSx: PropTypes.object.isRequired,
   sectionTitleSx: PropTypes.object.isRequired,
@@ -752,6 +842,8 @@ PaymentDocDetailModalContent.propTypes = {
 
 PaymentDocDetailModalContent.defaultProps = {
   detailFiles: [],
+  detailMain: null,
+  viewerUserId: "",
 };
 
 export default React.memo(PaymentDocDetailModalContent);

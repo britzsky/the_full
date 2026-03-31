@@ -27,15 +27,20 @@ export default function useElectronicPaymentSheetData() {
         const fetchedRows = (data || [])
           .filter(Boolean)
           .map((it) => {
-            const docType = String(it?.doc_type ?? "")
-              .trim()
-              .toUpperCase();
+            // 타입 테이블의 원본 타입코드(doc_type)를 화면 식별값으로 사용한다.
+            const docType = String(it?.doc_type ?? "").trim().toUpperCase();
             const docName = String(it?.doc_name ?? "").trim();
             if (!docType || !docName) return null;
             return {
+              doc_id: String(it?.doc_id ?? "").trim(),
               doc_type: docType,
+              large_type: String(it?.large_type ?? "").trim(),
+              middle_type: String(it?.middle_type ?? "").trim(),
+              small_type: String(it?.small_type ?? "").trim(),
               doc_name: docName,
-              position: Number(it?.position ?? 0),
+              // 결재선 기준값은 approval_position 원본 컬럼을 사용한다.
+              approval_position: Number(it?.approval_position ?? 0),
+              position: Number(it?.approval_position ?? 0),
             };
           })
           .filter(Boolean);
@@ -50,23 +55,16 @@ export default function useElectronicPaymentSheetData() {
         });
 
         const rows = Array.from(byType.values()).sort((a, b) => {
-          const posDiff = Number(a.position ?? 0) - Number(b.position ?? 0);
-          if (posDiff !== 0) return posDiff;
+          const largeDiff = String(a.large_type || "").localeCompare(String(b.large_type || ""));
+          if (largeDiff !== 0) return largeDiff;
+          const middleDiff = String(a.middle_type || "").localeCompare(String(b.middle_type || ""));
+          if (middleDiff !== 0) return middleDiff;
+          const smallDiff = String(a.small_type || "").localeCompare(String(b.small_type || ""));
+          if (smallDiff !== 0) return smallDiff;
           return String(a.doc_type).localeCompare(String(b.doc_type));
         });
 
-        const byName = new Set();
-        const uniqueRows = rows.filter((row) => {
-          const nameKey = String(row?.doc_name ?? "")
-            .replace(/\s+/g, "")
-            .trim();
-          if (!nameKey) return false;
-          if (byName.has(nameKey)) return false;
-          byName.add(nameKey);
-          return true;
-        });
-
-        setDocTypeList(uniqueRows);
+        setDocTypeList(rows);
       } catch (err) {
         console.error("문서 타입 조회 실패:", err);
         setDocTypeList([]);

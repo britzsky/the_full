@@ -246,6 +246,7 @@ function normalizeRows(detailRows, content) {
   if (src.length > 0) {
     const rows = src.map((r) => {
       const detailText = String(r?.detail_text ?? r?.text ?? "").trim();
+      const vendorName = String(r?.use_note ?? "").trim();
       const qtyRaw = qtyNum(r?.qty);
       const qty = qtyRaw > 0 ? qtyRaw : 1;
       const total = num(r?.total);
@@ -261,16 +262,18 @@ function normalizeRows(detailRows, content) {
         amount = 0;
         tax = 0;
       }
-      return { detail_text: detailText, qty, amount, tax, total };
+      return { detail_text: detailText, qty, use_note: vendorName, amount, tax, total };
     });
-    return rows.length > 0 ? rows : [{ detail_text: "", qty: 1, amount: 0, tax: 0, total: 0 }];
+    return rows.length > 0
+      ? rows
+      : [{ detail_text: "", qty: 1, use_note: "", amount: 0, tax: 0, total: 0 }];
   }
   const lines = String(content ?? "")
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean);
-  if (lines.length === 0) return [{ detail_text: "", qty: 1, amount: 0, tax: 0, total: 0 }];
-  return lines.map((x) => ({ detail_text: x, qty: 1, amount: 0, tax: 0, total: 0 }));
+  if (lines.length === 0) return [{ detail_text: "", qty: 1, use_note: "", amount: 0, tax: 0, total: 0 }];
+  return lines.map((x) => ({ detail_text: x, qty: 1, use_note: "", amount: 0, tax: 0, total: 0 }));
 }
 
 // 지출결의서 시트 데이터 표준 구조 정규화
@@ -292,6 +295,10 @@ function normalizeSheet(s) {
     payment_method === METHOD.CARD
       ? cardTail(paymentTypeDetailText) || cardTail(s?.card_tail) || cardTail(s?.biz_no)
       : "";
+  const normalizedRows = normalizeRows(s?.detail_rows, s?.content);
+  const commonVendorName =
+    String(s?.use_note ?? "").trim() ||
+    String(normalizedRows.find((row) => String(row?.use_note ?? "").trim())?.use_note ?? "").trim();
 
   return {
     title: String(s?.title ?? ""),
@@ -301,9 +308,11 @@ function normalizeSheet(s) {
     tax: tax !== 0 ? tax.toLocaleString("ko-KR") : "",
     total: total !== 0 ? total.toLocaleString("ko-KR") : "",
     account_number: String(s?.account_number ?? ""),
+    // account_name은 지급문서 DB에서 예금주 컬럼으로 사용한다.
     account_name: String(s?.account_name ?? ""),
-    depositor_name: String(s?.depositor_name ?? ""),
-    site_name: String(s?.site_name ?? s?.place ?? ""),
+    // 거래처명은 세부내역 use_note의 공통 입력값으로 사용한다.
+    use_note: commonVendorName,
+    place: String(s?.place ?? ""),
     biz_no: String(s?.biz_no ?? ""),
     payment_type,
     payment_type_detail: paymentTypeDetailText,
@@ -317,9 +326,8 @@ function normalizeSheet(s) {
       payment_method === METHOD.AUTO ? paymentTypeDetailText || String(s?.auto_text ?? "") : String(s?.auto_text ?? ""),
     other_text:
       payment_method === METHOD.OTHER ? paymentTypeDetailText || String(s?.other_text ?? "") : String(s?.other_text ?? ""),
-    line_date: toDate(s?.line_date),
-    request_date: toDate(s?.request_date),
-    detail_rows: normalizeRows(s?.detail_rows, s?.content),
+    request_dt: toDate(s?.request_dt),
+    detail_rows: normalizedRows,
   };
 }
 
@@ -330,6 +338,7 @@ const keyOf = (sheet) =>
     detail_rows: (Array.isArray(sheet?.detail_rows) ? sheet.detail_rows : []).map((r) => ({
       detail_text: String(r?.detail_text ?? ""),
       qty: qtyNum(r?.qty),
+      use_note: String(r?.use_note ?? ""),
       amount: num(r?.amount),
       tax: num(r?.tax),
       total: num(r?.total),
@@ -470,7 +479,7 @@ function PaymentDocWriteDocumentForm({
   // 법인카드 끝 4자리 목록 상태
   const [cardOptions, setCardOptions] = useState([]);
   // 날짜 선택기 DOM id 상태
-  const [lineDateId] = useState(() => `paymentdoc_line_${Math.random().toString(36).slice(2)}`);
+  const [draftDateId] = useState(() => `paymentdoc_draft_${Math.random().toString(36).slice(2)}`);
   const [requestDateId] = useState(() => `paymentdoc_req_${Math.random().toString(36).slice(2)}`);
 
   // 외부 draftSheet -> 로컬 편집 상태 동기화
@@ -508,8 +517,8 @@ function PaymentDocWriteDocumentForm({
   }, [local, onDraftSheetBufferChange]);
 
   // 화면 표시 기준 날짜 계산
-  const lineDate = useMemo(() => local.line_date || toDate(draftDt) || toDate(new Date().toISOString()), [local.line_date, draftDt]);
-  const requestDate = useMemo(() => local.request_date || toDate(startDt) || lineDate, [local.request_date, startDt, lineDate]);
+  const draftDate = useMemo(() => toDate(draftDt) || toDate(new Date().toISOString()), [draftDt]);
+  const requestDate = useMemo(() => local.request_dt || toDate(startDt) || draftDate, [local.request_dt, startDt, draftDate]);
   // 상세행 표시 목록 계산
   const rows = useMemo(() => normalizeRows(local.detail_rows, local.content), [local.detail_rows, local.content]);
 
@@ -686,7 +695,10 @@ function PaymentDocWriteDocumentForm({
   const addDetailRow = useCallback(() => {
     setLocal((prev) => {
       const baseRows = Array.isArray(prev.detail_rows) ? prev.detail_rows : [];
-      const nextRows = [...baseRows, { detail_text: "", qty: 1, amount: 0, tax: 0, total: 0 }];
+      const nextRows = [
+        ...baseRows,
+        { detail_text: "", qty: 1, use_note: "", amount: 0, tax: 0, total: 0 },
+      ];
       const next = { ...prev, detail_rows: nextRows };
       commitBuffer(next);
       return next;
@@ -781,22 +793,17 @@ function PaymentDocWriteDocumentForm({
     [local.payment_method]
   );
 
-  // 상세표 일자 변경 처리
-  const onChangeLineDate = useCallback((d) => {
-    setLocal((prev) => {
-      const next = { ...prev, line_date: d };
-      commitBuffer(next);
-      return next;
-    });
+  // 상세표 일자는 메인 기안일자(draft_dt)의 날짜 부분을 그대로 사용한다.
+  const onChangeDraftDate = useCallback((d) => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(d) && typeof setDraftDt === "function") {
       setDraftDt((prev) => mergeDateToDateTime(d, prev || draftDt));
     }
-  }, [draftDt, setDraftDt, commitBuffer]);
+  }, [draftDt, setDraftDt]);
 
   // 하단 지급요청일자 변경 처리
   const onChangeRequestDate = useCallback((d) => {
     setLocal((prev) => {
-      const next = { ...prev, request_date: d };
+      const next = { ...prev, request_dt: d };
       commitBuffer(next);
       return next;
     });
@@ -914,12 +921,20 @@ function PaymentDocWriteDocumentForm({
           <tbody>
             {rows.map((row, index) => (
               <tr key={`row-${index}`}>
-                {index === 0 && <td style={td2CellCenter} rowSpan={rows.length}><DatePickerText id={lineDateId} value={lineDate} onChange={onChangeLineDate} inputStyle={inputStyle} inputWidthCh={15} /></td>}
-                {index === 0 && <td style={td2CellCenter} rowSpan={rows.length}><BufferedTextField size="small" value={local.site_name} onCommit={(v) => setField("site_name", v)} fullWidth sx={inputStyle} /></td>}
+                {index === 0 && <td style={td2CellCenter} rowSpan={rows.length}><DatePickerText id={draftDateId} value={draftDate} onChange={onChangeDraftDate} inputStyle={inputStyle} inputWidthCh={15} /></td>}
+                {index === 0 && <td style={td2CellCenter} rowSpan={rows.length}><BufferedTextField size="small" value={local.place} onCommit={(v) => setField("place", v)} fullWidth sx={inputStyle} /></td>}
                 {index === 0 && <td style={td2CellCenter} rowSpan={rows.length}><BufferedTextField size="small" value={local.item_name} onCommit={(v) => setField("item_name", v)} fullWidth sx={inputStyle} /></td>}
                 <td style={{ ...td2Cell, textAlign: "center" }}><BufferedTextField size="small" value={String(row.detail_text || "")} onCommit={(v) => setDetailRowField(index, "detail_text", v)} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "center" } }} /></td>
                 <td style={td2CellCenter}><BufferedTextField size="small" value={toQtyText(row.qty)} onCommit={(v) => setDetailRowField(index, "qty", v)} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "center" } }} inputProps={{ inputMode: "numeric" }} /></td>
-                {index === 0 && <td style={td2CellCenter} rowSpan={rows.length}><BufferedTextField size="small" value={local.account_name} onCommit={(v) => setField("account_name", v)} fullWidth sx={inputStyle} /></td>}
+                <td style={td2CellCenter}>
+                  <BufferedTextField
+                    size="small"
+                    value={String(row.use_note || local.use_note || "")}
+                    onCommit={(v) => setDetailRowField(index, "use_note", v)}
+                    fullWidth
+                    sx={inputStyle}
+                  />
+                </td>
                 <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.amount)} onCommit={(v) => setDetailRowField(index, "amount", num(v))} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "numeric" }} /></td>
                 <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.tax)} onCommit={(v) => setDetailRowField(index, "tax", num(v))} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "numeric" }} /></td>
                 <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.total)} onCommit={(v) => setDetailRowField(index, "total", v)} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "text" }} /></td>
@@ -1470,7 +1485,7 @@ function PaymentDocWriteDocumentForm({
               </td>
             </tr>
             <tr><td style={{ ...thCell, height: ROW_H }}>지급요청일자</td><td style={{ ...tdCell, height: ROW_H }}><DatePickerText id={requestDateId} value={requestDate} onChange={onChangeRequestDate} inputStyle={inputStyle} inputWidthCh={15} /></td><td style={{ ...thCell, height: ROW_H }}>은행계좌</td><td style={{ ...tdCell, height: ROW_H }}><BufferedTextField size="small" value={local.account_number} onCommit={(v) => setField("account_number", v)} fullWidth sx={inputStyle} /></td></tr>
-            <tr><td style={{ ...thCell, height: ROW_H }}>거 래 처</td><td style={{ ...tdCell, height: ROW_H }}><BufferedTextField size="small" value={local.account_name} onCommit={(v) => setField("account_name", v)} fullWidth sx={inputStyle} /></td><td style={{ ...thCell, height: ROW_H }}>예 금 주</td><td style={{ ...tdCell, height: ROW_H }}><BufferedTextField size="small" value={local.depositor_name} onCommit={(v) => setField("depositor_name", v)} fullWidth sx={inputStyle} /></td></tr>
+            <tr><td style={{ ...thCell, height: ROW_H }}>거 래 처</td><td style={{ ...tdCell, height: ROW_H }}><BufferedTextField size="small" value={local.use_note} onCommit={(v) => setField("use_note", v)} fullWidth sx={inputStyle} /></td><td style={{ ...thCell, height: ROW_H }}>예 금 주</td><td style={{ ...tdCell, height: ROW_H }}><BufferedTextField size="small" value={local.account_name} onCommit={(v) => setField("account_name", v)} fullWidth sx={inputStyle} /></td></tr>
             <tr><td style={{ ...thCell, height: ROW_H }}>금 액</td><td style={{ ...tdCell, fontWeight: 700, height: ROW_H }}><MDBox component="span">{toWonText(local.total)}</MDBox></td><td style={{ ...thCell, height: ROW_H }} /><td style={{ ...tdCell, height: ROW_H }} /></tr>
           </tbody>
         </table>

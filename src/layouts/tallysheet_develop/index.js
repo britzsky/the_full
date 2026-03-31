@@ -3,7 +3,6 @@
 // ==============================
 /* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
-import ReactDOM from "react-dom";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import {
   Modal,
@@ -33,10 +32,10 @@ import useTallysheetData, { parseNumber, formatNumber } from "./data/TallySheetD
 import Swal from "sweetalert2";
 import api from "api/api";
 import PropTypes from "prop-types";
-import Draggable from "react-draggable";
 import { API_BASE_URL } from "config";
 import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
+import PreviewOverlay from "utils/PreviewOverlay";
 
 /**
  * ✅✅ IMPORTANT
@@ -57,88 +56,42 @@ const ENDPOINT_CASH_LIST = "/Account/AccountPurchaseTallyPaymentList"; // TODO: 
 const ENDPOINT_OTHER_SAVE = "/receipt-scan-develop";
 const ENDPOINT_OTHER_LIST = "/Account/AccountPurchaseTallyPaymentList";
 
-// ======================== ✅ Floating(비차단) 이미지 미리보기 ========================
-function FloatingImagePreview({ open, src, title = "미리보기", onClose }) {
-  const [mounted, setMounted] = useState(false);
+const isPdfFileLike = (value) => {
+  if (!value) return false;
+  if (typeof value === "object") {
+    const type = String(value.type || "").toLowerCase();
+    const name = String(value.name || "").toLowerCase();
+    return type.includes("pdf") || name.endsWith(".pdf");
+  }
+  const s = String(value).toLowerCase();
+  return s.startsWith("data:application/pdf") || /\.pdf($|[?#])/i.test(s);
+};
 
-  useEffect(() => setMounted(true), []);
+const extractDisplayFileName = (value) => {
+  if (!value) return "";
+  if (typeof value === "object") return String(value.name || "");
+  const raw = String(value).split("?")[0].split("#")[0];
+  const idx = raw.lastIndexOf("/");
+  return decodeURIComponent(idx >= 0 ? raw.slice(idx + 1) : raw);
+};
 
-  useEffect(() => {
-    if (!open) return;
+const normalizeStoredPreviewPath = (value) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  if (/^(blob:|data:|https?:\/\/)/i.test(raw)) return raw;
 
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") onClose?.();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  const normalized = raw.replace(/\\/g, "/");
+  const lower = normalized.toLowerCase();
+  const imageIdx = lower.indexOf("/image/");
+  if (imageIdx >= 0) return normalized.slice(imageIdx);
+  if (lower.startsWith("image/")) return `/${normalized}`;
+  return normalized;
+};
 
-  if (!mounted || !open || !src) return null;
-
-  return ReactDOM.createPortal(
-    <Draggable handle=".drag-handle" bounds="parent">
-      <Box
-        sx={{
-          position: "fixed",
-          top: 120,
-          left: 120,
-          zIndex: 4000,
-          width: 460,
-          maxWidth: "92vw",
-          bgcolor: "background.paper",
-          borderRadius: 2,
-          boxShadow: 24,
-          p: 1,
-          pointerEvents: "auto",
-          border: "1px solid #ddd",
-          overflow: "hidden",
-        }}
-      >
-        <Box
-          className="drag-handle"
-          sx={{
-            cursor: "move",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            userSelect: "none",
-            px: 1,
-            py: 0.75,
-            borderRadius: 1,
-            bgcolor: "#f5f5f5",
-            borderBottom: "1px solid #e5e5e5",
-          }}
-        >
-          <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#333" }}>{title}</Typography>
-          <MDButton variant="contained" color="error" onClick={onClose}>
-            닫기
-          </MDButton>
-        </Box>
-
-        <Box sx={{ mt: 1, maxHeight: "75vh", overflow: "auto" }}>
-          <img
-            src={src}
-            alt="preview"
-            style={{
-              width: "100%",
-              height: "auto",
-              borderRadius: 10,
-              objectFit: "contain",
-              display: "block",
-            }}
-          />
-        </Box>
-      </Box>
-    </Draggable>,
-    document.body
-  );
-}
-
-FloatingImagePreview.propTypes = {
-  open: PropTypes.bool.isRequired,
-  src: PropTypes.string,
-  title: PropTypes.string,
-  onClose: PropTypes.func.isRequired,
+const getPreviewFileKind = (value) => {
+  if (isPdfFileLike(value)) return "pdf";
+  return "image";
 };
 
 // ======================== ✅ 상단 예산/사용/비율 표시 바 (모바일 UI로 통일) ========================
@@ -565,18 +518,76 @@ function TallySheet() {
   // ======================== ✅ Floating Preview 상태 ========================
   const [floatingPreview, setFloatingPreview] = useState({
     open: false,
-    src: null,
-    title: "미리보기",
+    files: [],
+    currentIndex: 0,
+    revokeUrls: [],
   });
 
-  const openFloatingPreview = useCallback((src, title = "미리보기") => {
-    if (!src) return;
-    setFloatingPreview({ open: true, src, title });
+  const releasePreviewBlobUrls = useCallback((previewState) => {
+    (previewState?.revokeUrls || []).forEach((previewUrl) => {
+      if (String(previewUrl || "").startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    });
   }, []);
 
+  const openFloatingPreview = useCallback(
+    (src, title = "미리보기") => {
+      if (!src) return;
+
+      setFloatingPreview((prev) => {
+        releasePreviewBlobUrls(prev);
+        const revokeUrls = [];
+        const previewUrl =
+          typeof src === "object"
+            ? (() => {
+                const nextBlobUrl = URL.createObjectURL(src);
+                revokeUrls.push(nextBlobUrl);
+                return nextBlobUrl;
+              })()
+            : (() => {
+                const normalizedSrc = normalizeStoredPreviewPath(src);
+                if (!normalizedSrc) return String(src);
+                if (/^(blob:|data:|https?:\/\/)/i.test(normalizedSrc)) return normalizedSrc;
+                const base = String(API_BASE_URL || "").replace(/\/$/, "");
+                const params = new URLSearchParams();
+                params.set("file_path", normalizedSrc.startsWith("/") ? normalizedSrc : `/${normalizedSrc}`);
+                return `${base}/Account/AccountStoredFileView?${params.toString()}`;
+              })();
+
+        return {
+          open: true,
+          files: [
+            {
+              url: previewUrl,
+              name: title || extractDisplayFileName(src) || "미리보기",
+              kind: getPreviewFileKind(src),
+            },
+          ],
+          currentIndex: 0,
+          revokeUrls,
+        };
+      });
+    },
+    [releasePreviewBlobUrls]
+  );
+
   const closeFloatingPreview = useCallback(() => {
-    setFloatingPreview((p) => ({ ...p, open: false }));
+    setFloatingPreview((prev) => {
+      releasePreviewBlobUrls(prev);
+      return { ...prev, open: false, files: [], currentIndex: 0, revokeUrls: [] };
+    });
+  }, [releasePreviewBlobUrls]);
+
+  const handleFloatingPreviewIndexChange = useCallback((nextIndex) => {
+    setFloatingPreview((prev) => ({
+      ...prev,
+      currentIndex:
+        typeof nextIndex === "function" ? nextIndex(prev.currentIndex) : Number(nextIndex) || 0,
+    }));
   }, []);
+
+  useEffect(() => () => releasePreviewBlobUrls(floatingPreview), [releasePreviewBlobUrls, floatingPreview]);
 
   // ======================== ✅ "클릭된 셀/행" 하이라이트 상태 (요청 반영) ========================
   const [activeCell, setActiveCell] = useState({
@@ -586,13 +597,26 @@ function TallySheet() {
   });
 
   // ======================== 공통 util ========================
+  const toAbsolutePreviewUrl = useCallback((value) => {
+    const raw = normalizeStoredPreviewPath(value);
+    if (!raw) return "";
+    if (/^https?:\/\//i.test(raw)) return raw;
+
+    const base = String(API_BASE_URL || "").replace(/\/$/, "");
+    const params = new URLSearchParams();
+    params.set("file_path", raw.startsWith("/") ? raw : `/${raw}`);
+    return `${base}/Account/AccountStoredFileView?${params.toString()}`;
+  }, []);
+
   const toPreviewUrl = useCallback((path) => {
     if (!path) return null;
-    const s = String(path);
+    const s = normalizeStoredPreviewPath(path);
+    if (!s) return null;
     if (s.startsWith("blob:")) return s;
     if (s.startsWith("http")) return s;
-    return `${API_BASE_URL}${s}`;
-  }, []);
+    if (s.startsWith("data:")) return s;
+    return toAbsolutePreviewUrl(s);
+  }, [toAbsolutePreviewUrl]);
 
   // ✅✅ FIX: 날짜는 항상 dayjs로 확정해서 YYYY-MM-DD 만들기
   const buildCellDate = useCallback((y, m, dayIdx) => {
@@ -2386,17 +2410,8 @@ function TallySheet() {
 
   const [formData, setFormData] = useState(initialForm);
   const [imagePreviews, setImagePreviews] = useState({ bank_image: null, biz_image: null });
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewImage, setPreviewImage] = useState(null);
-
-  const handleImagePreviewOpen = (src) => {
-    setPreviewImage(src);
-    setPreviewOpen(true);
-  };
-
-  const handleImagePreviewClose = () => {
-    setPreviewOpen(false);
-    setPreviewImage(null);
+  const handleImagePreviewOpen = (src, title = "파일 미리보기") => {
+    openFloatingPreview(src, title);
   };
 
   const handleModalOpen2 = async () => setOpen2(true);
@@ -2450,14 +2465,51 @@ function TallySheet() {
     setFormData((prev) => ({ ...prev, tel: formatPhone(value) }));
   };
 
-  const handleImageUploadPreview = (e) => {
+  const uploadAccountFileImmediately = useCallback(
+    async (field, file) => {
+      const formDataToSend = new FormData();
+      formDataToSend.append("user_id", localUserId);
+      formDataToSend.append("file", file);
+      formDataToSend.append("type", "account");
+      formDataToSend.append("gubun", field);
+      formDataToSend.append("folder", selectedAccountId || "common");
+
+      const res = await api.post("/Operate/OperateImgUpload", formDataToSend, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      if (res.data?.code === 200) return res.data.image_path;
+      throw new Error(res.data?.message || "파일 업로드 실패");
+    },
+    [localUserId, selectedAccountId]
+  );
+
+  const handleImageUploadPreview = async (e) => {
     const { name, files } = e.target;
     const file = files?.[0];
     if (!file) return;
 
     const previewUrl = URL.createObjectURL(file);
-    setImagePreviews((prev) => ({ ...prev, [name]: previewUrl }));
+    setImagePreviews((prev) => {
+      const oldPreview = prev?.[name];
+      if (oldPreview && String(oldPreview).startsWith("blob:")) URL.revokeObjectURL(oldPreview);
+      return { ...prev, [name]: previewUrl };
+    });
     setFormData((prev) => ({ ...prev, [name]: file }));
+
+    try {
+      const uploadedPath = await uploadAccountFileImmediately(name, file);
+      setFormData((prev) => ({ ...prev, [name]: uploadedPath }));
+      setImagePreviews((prev) => {
+        const oldPreview = prev?.[name];
+        if (oldPreview && String(oldPreview).startsWith("blob:")) URL.revokeObjectURL(oldPreview);
+        return { ...prev, [name]: toPreviewUrl(uploadedPath) || uploadedPath };
+      });
+    } catch (err) {
+      Swal.fire("업로드 실패", err.message || "파일 업로드 중 오류가 발생했습니다.", "error");
+    } finally {
+      e.target.value = "";
+    }
   };
 
   const handleSubmit2 = async () => {
@@ -2718,10 +2770,11 @@ function TallySheet() {
   // ==============================
   return (
     <DashboardLayout>
-      <FloatingImagePreview
+      <PreviewOverlay
         open={floatingPreview.open}
-        src={floatingPreview.src}
-        title={floatingPreview.title}
+        files={floatingPreview.files}
+        currentIndex={floatingPreview.currentIndex}
+        onChangeIndex={handleFloatingPreviewIndexChange}
         onClose={closeFloatingPreview}
       />
 
@@ -3197,7 +3250,7 @@ function TallySheet() {
               >
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   name="bank_image"
                   onChange={handleImageUploadPreview}
                 />
@@ -3205,22 +3258,54 @@ function TallySheet() {
 
               {imagePreviews.bank_image && (
                 <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
-                  <img
-                    src={imagePreviews.bank_image}
-                    alt="bank_image"
-                    style={{
-                      width: 100,
-                      height: 100,
-                      objectFit: "cover",
-                      borderRadius: 4,
-                      border: "1px solid #ddd",
-                      cursor: "pointer",
-                      transition: "transform 0.2s",
-                    }}
-                    onClick={() => handleImagePreviewOpen(imagePreviews.bank_image)}
-                  />
+                  {isPdfFileLike(formData.bank_image || imagePreviews.bank_image) ? (
+                    <Box
+                      sx={{
+                        width: 100,
+                        height: 100,
+                        borderRadius: 1,
+                        border: "1px solid #ddd",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "#d32f2f",
+                        cursor: "pointer",
+                        bgcolor: "#fafafa",
+                      }}
+                      onClick={() =>
+                        handleImagePreviewOpen(
+                          formData.bank_image || imagePreviews.bank_image,
+                          "통장사본 미리보기"
+                        )
+                      }
+                    >
+                      PDF
+                    </Box>
+                  ) : (
+                    <img
+                      src={imagePreviews.bank_image}
+                      alt="bank_image"
+                      style={{
+                        width: 100,
+                        height: 100,
+                        objectFit: "cover",
+                        borderRadius: 4,
+                        border: "1px solid #ddd",
+                        cursor: "pointer",
+                        transition: "transform 0.2s",
+                      }}
+                      onClick={() =>
+                        handleImagePreviewOpen(
+                          formData.bank_image || imagePreviews.bank_image,
+                          "통장사본 미리보기"
+                        )
+                      }
+                    />
+                  )}
                   <Typography variant="caption" sx={{ fontSize: "11px" }}>
-                    {formData.bank_image?.name || "업로드 완료"}
+                    {extractDisplayFileName(formData.bank_image) || "업로드 완료"}
                   </Typography>
                 </Box>
               )}
@@ -3245,7 +3330,7 @@ function TallySheet() {
               >
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,application/pdf"
                   name="biz_image"
                   onChange={handleImageUploadPreview}
                 />
@@ -3253,22 +3338,54 @@ function TallySheet() {
 
               {imagePreviews.biz_image && (
                 <Box sx={{ mt: 1, display: "flex", alignItems: "center", gap: 1 }}>
-                  <img
-                    src={imagePreviews.biz_image}
-                    alt="biz_image"
-                    style={{
-                      width: 100,
-                      height: 100,
-                      objectFit: "cover",
-                      borderRadius: 4,
-                      border: "1px solid #ddd",
-                      cursor: "pointer",
-                      transition: "transform 0.2s",
-                    }}
-                    onClick={() => handleImagePreviewOpen(imagePreviews.biz_image)}
-                  />
+                  {isPdfFileLike(formData.biz_image || imagePreviews.biz_image) ? (
+                    <Box
+                      sx={{
+                        width: 100,
+                        height: 100,
+                        borderRadius: 1,
+                        border: "1px solid #ddd",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "#d32f2f",
+                        cursor: "pointer",
+                        bgcolor: "#fafafa",
+                      }}
+                      onClick={() =>
+                        handleImagePreviewOpen(
+                          formData.biz_image || imagePreviews.biz_image,
+                          "사업자등록증 미리보기"
+                        )
+                      }
+                    >
+                      PDF
+                    </Box>
+                  ) : (
+                    <img
+                      src={imagePreviews.biz_image}
+                      alt="biz_image"
+                      style={{
+                        width: 100,
+                        height: 100,
+                        objectFit: "cover",
+                        borderRadius: 4,
+                        border: "1px solid #ddd",
+                        cursor: "pointer",
+                        transition: "transform 0.2s",
+                      }}
+                      onClick={() =>
+                        handleImagePreviewOpen(
+                          formData.biz_image || imagePreviews.biz_image,
+                          "사업자등록증 미리보기"
+                        )
+                      }
+                    />
+                  )}
                   <Typography variant="caption" sx={{ fontSize: "11px" }}>
-                    {formData.biz_image?.name || "업로드 완료"}
+                    {extractDisplayFileName(formData.biz_image) || "업로드 완료"}
                   </Typography>
                 </Box>
               )}
@@ -3291,30 +3408,6 @@ function TallySheet() {
               저장
             </Button>
           </Box>
-        </Box>
-      </Modal>
-
-      {/* 🔍 이미지 확대 미리보기 모달(거래처 등록용) */}
-      <Modal open={previewOpen} onClose={handleImagePreviewClose}>
-        <Box
-          sx={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            bgcolor: "background.paper",
-            borderRadius: 2,
-            boxShadow: 24,
-            p: 2,
-          }}
-        >
-          {previewImage && (
-            <img
-              src={previewImage}
-              alt="미리보기"
-              style={{ maxWidth: "90vw", maxHeight: "80vh", borderRadius: 8, objectFit: "contain" }}
-            />
-          )}
         </Box>
       </Modal>
 
@@ -3543,7 +3636,7 @@ function TallySheet() {
                             <input
                               type="file"
                               hidden
-                              accept="image/*"
+                              accept="image/*,application/pdf"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
@@ -3573,7 +3666,10 @@ function TallySheet() {
                               size="small"
                               onClick={(ev) => {
                                 ev.stopPropagation();
-                                openFloatingPreview(previewSrc, "(법인카드) 영수증 미리보기");
+                                openFloatingPreview(
+                                  fileInfo?.file || previewSrc,
+                                  "(법인카드) 영수증 미리보기"
+                                );
                               }}
                             >
                               미리보기
@@ -4006,7 +4102,7 @@ function TallySheet() {
                             <input
                               type="file"
                               hidden
-                              accept="image/*"
+                              accept="image/*,application/pdf"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
@@ -4035,7 +4131,10 @@ function TallySheet() {
                               size="small"
                               onClick={(ev) => {
                                 ev.stopPropagation();
-                                openFloatingPreview(previewSrc, "(1008) 영수증 미리보기");
+                                openFloatingPreview(
+                                  fileInfo?.file || previewSrc,
+                                  "(1008) 영수증 미리보기"
+                                );
                               }}
                             >
                               미리보기
@@ -4327,7 +4426,7 @@ function TallySheet() {
                             <input
                               type="file"
                               hidden
-                              accept="image/*"
+                              accept="image/*,application/pdf"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
@@ -4356,7 +4455,10 @@ function TallySheet() {
                               size="small"
                               onClick={(ev) => {
                                 ev.stopPropagation();
-                                openFloatingPreview(previewSrc, "(기타) 영수증 미리보기");
+                                openFloatingPreview(
+                                  fileInfo?.file || previewSrc,
+                                  "(기타) 영수증 미리보기"
+                                );
                               }}
                             >
                               미리보기
@@ -4601,7 +4703,7 @@ function TallySheet() {
                     ref={cardFileRef}
                     type="file"
                     hidden
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                     onChange={handleCardReceiptFileChange}
                   />
                 </MDButton>
@@ -4612,7 +4714,10 @@ function TallySheet() {
                     color="error"
                     size="small"
                     onClick={() =>
-                      openFloatingPreview(cardReceiptPreview, "(법인카드) 영수증 미리보기")
+                      openFloatingPreview(
+                        cardForm.receipt_image || cardReceiptPreview,
+                        "(법인카드) 영수증 미리보기"
+                      )
                     }
                   >
                     미리보기
@@ -4788,7 +4893,7 @@ function TallySheet() {
                     ref={cashFileRef}
                     type="file"
                     hidden
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                     onChange={handleCashReceiptFileChange}
                   />
                 </MDButton>
@@ -4799,7 +4904,10 @@ function TallySheet() {
                     color="error"
                     size="small"
                     onClick={() =>
-                      openFloatingPreview(cashReceiptPreview, "(1008) 영수증 미리보기")
+                      openFloatingPreview(
+                        cashForm.receipt_image || cashReceiptPreview,
+                        "(1008) 영수증 미리보기"
+                      )
                     }
                   >
                     미리보기
@@ -4937,7 +5045,7 @@ function TallySheet() {
                     ref={otherFileRef}
                     type="file"
                     hidden
-                    accept="image/*"
+                    accept="image/*,application/pdf"
                     onChange={handleOtherReceiptFileChange}
                   />
                 </MDButton>
@@ -4948,7 +5056,10 @@ function TallySheet() {
                     color="error"
                     size="small"
                     onClick={() =>
-                      openFloatingPreview(otherReceiptPreview, "(기타) 영수증 미리보기")
+                      openFloatingPreview(
+                        otherForm.receipt_image || otherReceiptPreview,
+                        "(기타) 영수증 미리보기"
+                      )
                     }
                   >
                     미리보기

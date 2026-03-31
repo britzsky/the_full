@@ -146,6 +146,7 @@ const cleanMasterRow = (r) => {
     isNew,
     client_id,
     __dirty,
+    __receiptImageDirty,
     __imgTouchedAt,
     __pendingFile,
     __pendingPreviewUrl,
@@ -267,6 +268,54 @@ const keepEditableTailVisible = (el) => {
 
 // ✅ (추가) pending 판단 유틸(여기서 통일)
 const isPendingRow = (r) => !!r?.__pendingFile || !!r?.__pendingPreviewUrl || !!r?.__pendingAt;
+
+// ✅ 기존 저장행에서 영수증만 다시 올린 상태인지 구분
+const isReceiptImageOnlyDirtyRow = (row) => !row?.isNew && !!row?.__receiptImageDirty;
+
+// ✅ 영수증 재업로드 전 이미 다른 컬럼 수정이 있었는지 확인
+const hasMasterNonReceiptChange = (row, origRow) => {
+  if (!row || row?.__receiptImageDirty) return false;
+  if (!origRow) return false;
+
+  const skipKeys = new Set([
+    "isNew",
+    "client_id",
+    "__dirty",
+    "__receiptImageDirty",
+    "__imgTouchedAt",
+    "__pendingFile",
+    "__pendingPreviewUrl",
+    "__pendingAt",
+    "receipt_image",
+  ]);
+
+  const keys = new Set([...Object.keys(origRow || {}), ...Object.keys(row || {})]);
+  for (const key of keys) {
+    if (skipKeys.has(key)) continue;
+
+    if (MASTER_NUMBER_KEYS.includes(key)) {
+      if (parseNumber(origRow[key]) !== parseNumber(row[key])) return true;
+      continue;
+    }
+
+    if (isChangedValue(origRow[key], row[key])) return true;
+  }
+
+  return false;
+};
+
+// ✅ 신규 업로드는 전체 빨강, 기존 재업로드는 영수증 칼럼만 빨강 처리
+const isMasterCellChanged = (row, origRow, key) => {
+  if (row?.isNew) return true;
+  if (isReceiptImageOnlyDirtyRow(row)) return key === "receipt_image";
+  if (row?.__dirty) return true;
+
+  if (MASTER_NUMBER_KEYS.includes(key)) {
+    return parseNumber(origRow?.[key]) !== parseNumber(row?.[key]);
+  }
+
+  return isChangedValue(origRow?.[key], row?.[key]);
+};
 
 const fixedColStyle = (size, extra = {}) => ({
   width: size,
@@ -645,7 +694,11 @@ function CorporateCardSheet() {
 
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
-    setMasterRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r)));
+    setMasterRows((prev) =>
+      prev.map((r, i) =>
+        i === rowIndex ? { ...r, [key]: value, __receiptImageDirty: false } : r
+      )
+    );
   }, []);
 
   const handleDetailCellChange = useCallback(
@@ -684,6 +737,7 @@ function CorporateCardSheet() {
             ...r,
             cardNo: picked?.card_no || digits,
             cardBrand: picked?.card_brand || r.cardBrand || DEFAULT_CARD_BRAND,
+            __receiptImageDirty: false,
           };
         });
       });
@@ -729,6 +783,7 @@ function CorporateCardSheet() {
       __pendingFile: null,
       __pendingPreviewUrl: "",
       __pendingAt: 0,
+      __receiptImageDirty: false,
 
       isNew: true,
     };
@@ -783,6 +838,12 @@ function CorporateCardSheet() {
       const cardNoDigits = getRowCardNoDigits(row);
       const cardBrand = getRowCardBrand(row);
       const receiptType = normalizeReceiptTypeVal(getRowReceiptType(row));
+      const saleId = String(row.sale_id || "").trim();
+      const origRow = saleId
+        ? (origMasterRows || []).find((r) => String(r?.sale_id || "").trim() === saleId)
+        : null;
+      const highlightReceiptOnly =
+        !!row.__receiptImageDirty || (!row.isNew && !hasMasterNonReceiptChange(row, origRow));
       // ✅ 본사 법인카드는 기존과 동일하게 모든 타입을 /Corporate/receipt-scan 으로 처리한다.
       const parseEndpoint = "/Corporate/receipt-scan";
 
@@ -815,6 +876,7 @@ function CorporateCardSheet() {
             ? {
               ...r,
               __dirty: true,
+              __receiptImageDirty: highlightReceiptOnly,
               __imgTouchedAt: Date.now(),
               __pendingFile: null,
               __pendingPreviewUrl: "",
@@ -857,7 +919,7 @@ function CorporateCardSheet() {
 
         Swal.close();
 
-      if (res.status !== 200) {
+        if (res.status !== 200) {
           return Swal.fire("실패", res.data?.message || "영수증 인식에 실패했습니다.", "error");
         }
 
@@ -897,6 +959,7 @@ function CorporateCardSheet() {
               ...patch,
               account_id: patch.account_id !== undefined ? patch.account_id : r.account_id ?? "",
               __dirty: true,
+              __receiptImageDirty: highlightReceiptOnly,
               __imgTouchedAt: Date.now(),
             };
           })
@@ -921,6 +984,7 @@ function CorporateCardSheet() {
             ...row,
             ...patch,
             account_id: patch.account_id !== undefined ? patch.account_id : row.account_id ?? "",
+            __receiptImageDirty: highlightReceiptOnly,
           };
           setSelectedMaster(patchedSelected);
 
@@ -961,7 +1025,7 @@ function CorporateCardSheet() {
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [handleFetchMaster, fetchHeadOfficeCorporateCardPaymentDetailList]
+    [handleFetchMaster, fetchHeadOfficeCorporateCardPaymentDetailList, origMasterRows]
   );
 
   // ========================= 저장: main + item + (재업로드 pending files) =========================
@@ -999,9 +1063,10 @@ function CorporateCardSheet() {
       total += amt;
 
       if (tt === 1) {
-        const supply = Math.round(amt / 1.1);
-        tax += supply;
-        vat += amt - supply;
+        const rowVat = Math.floor(amt / 11);
+        const rowTax = amt - rowVat;
+        tax += rowTax;
+        vat += rowVat;
       } else if (tt === 2) {
         taxFree += amt;
       }
@@ -1201,10 +1266,12 @@ function CorporateCardSheet() {
             }
           }
 
-          const { __pendingFile, __pendingPreviewUrl, __pendingAt, ...rest } = r;
+          const { __pendingFile, __pendingPreviewUrl, __pendingAt, __receiptImageDirty, ...rest } =
+            r;
           return {
             ...rest,
             __dirty: false,
+            __receiptImageDirty: false,
             isNew: false,
           };
         })
@@ -1626,7 +1693,7 @@ function CorporateCardSheet() {
     const nextTotal = (detailRows || []).reduce((acc, r) => acc + parseNumber(r?.amount), 0);
 
     // 2) taxType 기준으로 과세/면세 자동 분리
-    //    - 과세(1): 공급가 = amount/1.1, 부가세 = amount - 공급가
+    //    - 과세(1): 부가세 = amount/11 버림, 과세 = amount - 부가세
     //    - 면세(2): taxFree에 누적
     let nextTax = 0;
     let nextVat = 0;
@@ -1637,10 +1704,10 @@ function CorporateCardSheet() {
       const tt = parseNumMaybe(r?.taxType); // 1/2/3 or null
 
       if (tt === 1) {
-        const supply = Math.round(amt / 1.1);
-        const vat = amt - supply;
-        nextTax += supply;
-        nextVat += vat;
+        const rowVat = Math.floor(amt / 11);
+        const rowTax = amt - rowVat;
+        nextTax += rowTax;
+        nextVat += rowVat;
       } else if (tt === 2) {
         nextTaxFree += amt;
       } else {
@@ -1927,19 +1994,12 @@ function CorporateCardSheet() {
 
                     const rawVal = row[key] ?? "";
                     const val = MASTER_NUMBER_KEYS.includes(key) ? formatNumber(rawVal) : rawVal;
-
-                    const origRaw = origMasterRows[rowIndex]?.[key];
+                    const origRow = origMasterRows[rowIndex] || {};
 
                     const pending = isPendingRow(row);
 
                     // ✅ 변경여부
-                    const changed = row.isNew
-                      ? true
-                      : row.__dirty
-                        ? true
-                        : MASTER_NUMBER_KEYS.includes(key)
-                          ? parseNumber(origRaw) !== parseNumber(rawVal)
-                          : isChangedValue(origRaw, rawVal);
+                    const changed = isMasterCellChanged(row, origRow, key);
 
                     if (key === "account_id") {
                       const acctName =

@@ -315,7 +315,7 @@ const getTableStructure = (
           { label: "2층 주간보호(어르신)", colSpan: 3 },
           { label: "3층-5층 요양원(어르신)", colSpan: 3 },
           { label: "경관식", rowSpan: 2 },
-          { label: "2층 주간보호(직원조식)", rowSpan: 2 },
+          { label: "직원중식", rowSpan: 2 },
           { label: "요양원직원", colSpan: 2 },
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },

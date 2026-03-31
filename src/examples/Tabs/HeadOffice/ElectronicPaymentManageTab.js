@@ -19,6 +19,13 @@ import useElectronicPaymentManageData, {
 
 // TODO: 소모품 고정 결재자/특수 조회 사용자 ID는 운영 정책에 맞춰 변경 가능
 const EXPENDABLE_SPECIAL_USER_ID = "iy1";
+const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
+  largeType: "공통",
+  middleType: "결의서",
+  smallType: "지출결의서-소모품",
+  docName: "지출결의서",
+  approvalPosition: 2,
+});
 
 // 공백/undefined 안전 문자열 변환
 function asText(v) {
@@ -51,7 +58,7 @@ function toPositionText(positionCode) {
   return "";
 }
 
-// 문서타입별 결재권자 범위를 type.position 값으로 계산한다.
+// 문서타입별 결재권자 범위를 type.approval_position 값으로 계산한다.
 // - 0: 팀장 -> 대표
 // - 1: 팀장
 // - 2: 결재자
@@ -63,6 +70,23 @@ function getRequiredRolesByDocPosition(pos, docType, docTypeList) {
   if (pos === 1) return ["tm"];
   if (pos === 2) return ["payer"];
   return [];
+}
+
+// 소모품 문서에서 지출결의서를 생성할 때는
+// 결재자 기본값(hh2)이 걸린 "지출결의서(소모품)" 타입을 우선 사용한다.
+function getLinkedPaymentDocType(docTypeList) {
+  const rows = Array.isArray(docTypeList) ? docTypeList : [];
+  const matchedRow = rows.find(
+    (row) =>
+      asText(row?.large_type) === EXPENDABLE_LINKED_PAYMENT_DOC_META.largeType &&
+      asText(row?.middle_type) === EXPENDABLE_LINKED_PAYMENT_DOC_META.middleType &&
+      asText(row?.small_type) === EXPENDABLE_LINKED_PAYMENT_DOC_META.smallType &&
+      asText(row?.doc_name) === EXPENDABLE_LINKED_PAYMENT_DOC_META.docName &&
+      Number(row?.approval_position ?? row?.position ?? -1) ===
+      EXPENDABLE_LINKED_PAYMENT_DOC_META.approvalPosition
+  );
+
+  return asText(matchedRow?.doc_type) || getDocTypeByKind(rows, DOC_KIND.PAYMENT);
 }
 
 const DEPARTMENT_NAME_BY_CODE = {
@@ -190,7 +214,11 @@ function getProgressStatusText(main, requiredRoles) {
 
 // 목록 행 결재권자 필요 단계 계산
 function getRowRequiredRoleFlags(row, docTypeList) {
-  const rowRequiredRoles = getRequiredRolesByDocPosition(Number(row?.position ?? -1), row?.doc_type, docTypeList);
+  const rowRequiredRoles = getRequiredRolesByDocPosition(
+    Number(row?.approval_position ?? row?.position ?? -1),
+    row?.doc_type,
+    docTypeList
+  );
   const hasRowRoleMapping = rowRequiredRoles.length > 0;
   const hasRowTMUser = !!asText(row?.tm_user);
   const hasRowPayerUser = !!asText(row?.payer_user);
@@ -308,7 +336,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
 
   // 타입테이블에서 지출결의서/소모품 문서의 실제 doc_type 코드를 조회한다.
   const paymentDocType = useMemo(
-    () => getDocTypeByKind(docTypeList, DOC_KIND.PAYMENT),
+    () => getLinkedPaymentDocType(docTypeList),
     [docTypeList]
   );
 
@@ -537,8 +565,13 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
 
   // 상세 결재권자 역할 목록 계산
   const detailRequiredRoles = useMemo(
-    () => getRequiredRolesByDocPosition(Number(detailMain?.position ?? -1), detailMain?.doc_type, docTypeList),
-    [detailMain?.position, detailMain?.doc_type, docTypeList]
+    () =>
+      getRequiredRolesByDocPosition(
+        Number(detailMain?.approval_position ?? detailMain?.position ?? -1),
+        detailMain?.doc_type,
+        docTypeList
+      ),
+    [detailMain?.approval_position, detailMain?.position, detailMain?.doc_type, docTypeList]
   );
   const hasDetailRoleMapping = detailRequiredRoles.length > 0;
   const hasDetailTMUser = !!asText(detailMain?.tm_user);
@@ -1118,8 +1151,10 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                 </MDBox>
 
                 <DetailDocumentComponent
+                  detailMain={detailMain}
                   detailItems={detailItems}
                   detailFiles={detailFiles}
+                  viewerUserId={loginUserId}
                   asText={asText}
                   sectionSx={sectionSx}
                   sectionTitleSx={sectionTitleSx}

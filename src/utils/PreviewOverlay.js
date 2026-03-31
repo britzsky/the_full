@@ -6,24 +6,78 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import * as XLSX from "xlsx";
 import MDBox from "components/MDBox";
+import api from "api/api";
+
+// 파일 종류별 미리보기 창 비율을 계산한다.
+function getViewerFrameRatio(isMobile, fileKind) {
+  const kind = String(fileKind || "").trim().toLowerCase();
+  if (kind === "pdf") {
+    return isMobile ? { widthRatio: 0.8, heightRatio: 0.84 } : { widthRatio: 0.46, heightRatio: 0.82 };
+  }
+  return isMobile ? { widthRatio: 0.68, heightRatio: 0.92 } : { widthRatio: 0.34, heightRatio: 0.88 };
+}
 
 // 화면 정중앙 기준 기본 좌표를 계산한다.
-function getCenteredViewerPos(isMobile) {
+function getCenteredViewerPos(isMobile, fileKind) {
   if (typeof window === "undefined") return { x: 0, y: 0 };
   const w = window.innerWidth;
   const h = window.innerHeight;
-  const modalW = isMobile ? w * 0.92 : w * 0.58;
-  const modalH = isMobile ? h * 0.92 : h * 0.88;
+  const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, fileKind);
+  const modalW = w * widthRatio;
+  const modalH = h * heightRatio;
   return {
     x: Math.max(0, (w - modalW) / 2),
     y: Math.max(0, (h - modalH) / 2),
   };
 }
 
-// 파일 미리보기 fetch 공통 함수
-// - 상세 모달(DB 경로)에서는 인증 쿠키가 필요한 경우가 있어 credentials 포함 호출을 우선한다.
-// - 실패 시 일반 fetch로 한 번 더 시도해 환경별 차이를 흡수한다.
-async function fetchPreviewResponse(url) {
+// DB image_path 기반 파일은 캐시 응답(304)로 들어오면 본문이 비어
+// PDF/엑셀 미리보기가 깨질 수 있어 재요청용 쿼리를 붙일 수 있게 만든다.
+function appendPreviewCacheBust(url) {
+  const targetUrl = String(url ?? "").trim();
+  if (!targetUrl || /^(blob:|data:)/i.test(targetUrl)) return targetUrl;
+
+  try {
+    const parsed = new URL(targetUrl);
+    parsed.searchParams.set("_preview_ts", String(Date.now()));
+    return parsed.toString();
+  } catch {
+    const separator = targetUrl.includes("?") ? "&" : "?";
+    return `${targetUrl}${separator}_preview_ts=${Date.now()}`;
+  }
+}
+
+function decodeUriRepeatedly(value) {
+  let current = String(value ?? "").trim();
+  if (!current) return "";
+
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const next = decodeURI(current);
+      if (next === current) break;
+      current = next;
+    } catch {
+      break;
+    }
+  }
+
+  return current;
+}
+
+// 전자결재 상세와 동일하게 PDF는 좌측 페이지 패널을 접은 기본 뷰로 연다.
+function buildPdfViewerUrl(url) {
+  const targetUrl = String(url ?? "").trim();
+  if (!targetUrl) return "";
+
+  const [baseUrl] = targetUrl.split("#");
+  return `${baseUrl}#page=1&view=FitH&pagemode=none&navpanes=0&toolbar=1`;
+}
+
+// 파일 미리보기 blob 로드 공통 함수
+// - AccountMemberSheetTab과 동일하게 axios blob 요청을 우선 사용한다.
+// - 304/캐시 문제로 본문이 비면 cache bust URL로 한 번 더 재요청한다.
+// - 마지막에는 fetch fallback으로 환경별 차이를 흡수한다.
+async function fetchPreviewBlob(url) {
   const targetUrl = String(url ?? "").trim();
   if (!targetUrl) throw new Error("미리보기 URL이 비어있습니다.");
 
@@ -35,27 +89,44 @@ async function fetchPreviewResponse(url) {
     }
   })();
 
-  const candidates = Array.from(new Set([targetUrl, fallbackDecodedUrl].filter(Boolean)));
+  const baseCandidates = Array.from(new Set([targetUrl, fallbackDecodedUrl].filter(Boolean)));
+  const candidates = baseCandidates.flatMap((candidateUrl) => {
+    const bustUrl = appendPreviewCacheBust(candidateUrl);
+    return bustUrl && bustUrl !== candidateUrl ? [candidateUrl, bustUrl] : [candidateUrl];
+  });
 
   for (let i = 0; i < candidates.length; i += 1) {
     const candidateUrl = candidates[i];
     const isLocalUrl = /^(blob:|data:)/i.test(candidateUrl);
     if (isLocalUrl) {
       const localResponse = await fetch(candidateUrl);
-      if (localResponse.ok) return localResponse;
+      if (!localResponse.ok) continue;
+      const localBlob = await localResponse.blob();
+      if (localBlob.size > 0) return localBlob;
       continue;
     }
 
     try {
-      const withCredentials = await fetch(candidateUrl, { credentials: "include" });
-      if (withCredentials.ok) return withCredentials;
+      const response = await api.get(candidateUrl, {
+        responseType: "blob",
+        withCredentials: true,
+      });
+      const responseBlob = response?.data;
+      if (responseBlob instanceof Blob && responseBlob.size > 0) {
+        return responseBlob;
+      }
     } catch {
-      // 다음 fallback(fetch without credentials)으로 진행
+      // 다음 fallback(fetch)으로 진행
     }
 
     try {
-      const fallback = await fetch(candidateUrl);
-      if (fallback.ok) return fallback;
+      const withCredentials = await fetch(candidateUrl, {
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (!withCredentials.ok) continue;
+      const fallbackBlob = await withCredentials.blob();
+      if (fallbackBlob.size > 0) return fallbackBlob;
     } catch {
       // 다음 candidateUrl로 진행
     }
@@ -103,13 +174,17 @@ function PreviewOverlay({
   const maxIndex = Math.max(previewFiles.length - 1, 0);
   const safeIndex = Math.min(Math.max(Number(currentIndex) || 0, 0), maxIndex);
   const currentFile = previewFiles[safeIndex] || null;
-  // 미리보기 URL은 한글/공백 경로 대응을 위해 인코딩하되,
-  // blob/data URL은 브라우저 내부 리소스이므로 원문을 유지한다.
+  // 첨부파일 URL은 image_path 기준으로 이미 한 번 인코딩된 값이 들어올 수 있으므로
+  // decode -> encode 한 번만 적용해 %25 형태의 이중 인코딩을 막는다.
   const currentFileViewUrl = useMemo(() => {
     const rawUrl = String(currentFile?.url ?? "").trim();
     if (!rawUrl) return "";
     if (/^(blob:|data:)/i.test(rawUrl)) return rawUrl;
-    return encodeURI(rawUrl);
+    try {
+      return encodeURI(decodeUriRepeatedly(rawUrl));
+    } catch {
+      return encodeURI(rawUrl);
+    }
   }, [currentFile?.url]);
   const canGoPrev = safeIndex > 0;
   const canGoNext = safeIndex < maxIndex;
@@ -123,8 +198,24 @@ function PreviewOverlay({
   // 오버레이를 열 때 화면 중앙 위치로 기본 배치
   useEffect(() => {
     if (!open) return;
-    setViewerPos(getCenteredViewerPos(isMobile));
-  }, [open, isMobile, safeIndex]);
+    setViewerPos(getCenteredViewerPos(isMobile, currentFile?.kind));
+  }, [open, isMobile, safeIndex, currentFile?.kind]);
+
+  // 오버레이가 열린 동안은 바깥 페이지 스크롤을 잠가
+  // PDF 주변에 브라우저 기본 스크롤이 노출되지 않게 한다.
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = prevBodyOverflow;
+      document.documentElement.style.overflow = prevHtmlOverflow;
+    };
+  }, [open]);
 
   const handleDragStart = useCallback(
     (e) => {
@@ -144,8 +235,9 @@ function PreviewOverlay({
       if (!dragging) return;
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const modalW = isMobile ? w * 0.92 : w * 0.58;
-      const modalH = isMobile ? h * 0.92 : h * 0.88;
+      const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, currentFile?.kind);
+      const modalW = w * widthRatio;
+      const modalH = h * heightRatio;
       const nextX = e.clientX - dragOffsetRef.current.x;
       const nextY = e.clientY - dragOffsetRef.current.y;
       setViewerPos({
@@ -153,7 +245,7 @@ function PreviewOverlay({
         y: Math.min(Math.max(0, nextY), Math.max(0, h - modalH)),
       });
     },
-    [dragging, isMobile]
+    [dragging, isMobile, currentFile?.kind]
   );
 
   const handleDragEnd = useCallback(() => {
@@ -208,23 +300,28 @@ function PreviewOverlay({
       }
 
       setPdfPreview({ loading: true, blobUrl: "", directUrl: "", error: "" });
+
+      if (/^(blob:|data:)/i.test(currentFileViewUrl)) {
+        setPdfPreview({
+          loading: false,
+          blobUrl: "",
+          directUrl: currentFileViewUrl,
+          error: "",
+        });
+        return;
+      }
+
       try {
-        const response = await fetchPreviewResponse(currentFileViewUrl);
-        const buffer = await response.arrayBuffer();
+        const previewBlob = await fetchPreviewBlob(currentFileViewUrl);
         if (cancelled) return;
 
-        if (!buffer || buffer.byteLength === 0) {
-          throw new Error("빈 PDF 파일입니다.");
-        }
-        const headerBytes = new Uint8Array(buffer.slice(0, 5));
-        const headerText = String.fromCharCode(...headerBytes);
-        if (headerText !== "%PDF-") {
-          throw new Error("PDF 형식이 아닌 응답입니다.");
-        }
-
-        const blob = new Blob([buffer], { type: "application/pdf" });
+        const nextPdfBlob = String(previewBlob?.type || "")
+          .toLowerCase()
+          .includes("pdf")
+          ? previewBlob
+          : new Blob([previewBlob], { type: "application/pdf" });
         clearPdfBlobUrl();
-        const nextBlobUrl = URL.createObjectURL(blob);
+        const nextBlobUrl = URL.createObjectURL(nextPdfBlob);
         pdfBlobUrlRef.current = nextBlobUrl;
         setPdfPreview({ loading: false, blobUrl: nextBlobUrl, directUrl: "", error: "" });
       } catch {
@@ -233,7 +330,6 @@ function PreviewOverlay({
         setPdfPreview({
           loading: false,
           blobUrl: "",
-          // blob 변환이 실패하면 DB 경로 원본 URL로 한 번 더 렌더링을 시도한다.
           directUrl: currentFileViewUrl,
           error: "",
         });
@@ -262,8 +358,8 @@ function PreviewOverlay({
 
       setExcelPreview({ loading: true, sheetName: "", rows: [], error: "" });
       try {
-        const response = await fetchPreviewResponse(currentFileViewUrl);
-        const buffer = await response.arrayBuffer();
+        const previewBlob = await fetchPreviewBlob(currentFileViewUrl);
+        const buffer = await previewBlob.arrayBuffer();
         if (cancelled) return;
 
         const workbook = XLSX.read(buffer, { type: "array" });
@@ -303,14 +399,17 @@ function PreviewOverlay({
   }, [open, currentFile?.kind, currentFileViewUrl]);
 
   const panelStyle = useMemo(
-    () => ({
-      position: "absolute",
-      left: viewerPos.x,
-      top: viewerPos.y,
-      width: isMobile ? "92vw" : "58vw",
-      height: isMobile ? "92vh" : "88vh",
-    }),
-    [viewerPos.x, viewerPos.y, isMobile]
+    () => {
+      const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, currentFile?.kind);
+      return {
+        position: "absolute",
+        left: viewerPos.x,
+        top: viewerPos.y,
+        width: `${widthRatio * 100}vw`,
+        height: `${heightRatio * 100}vh`,
+      };
+    },
+    [viewerPos.x, viewerPos.y, isMobile, currentFile?.kind]
   );
 
   if (!open || !currentFile) return null;
@@ -448,47 +547,12 @@ function PreviewOverlay({
                 bgcolor: "#111",
                 overflow: "auto",
                 position: "relative",
+                scrollbarWidth: "none",
+                "&::-webkit-scrollbar": {
+                  display: "none",
+                },
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 8,
-                  right: 8,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                  zIndex: 1000,
-                }}
-              >
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPdfScale((prev) => Math.min(prev + 0.1, 2.5));
-                  }}
-                  style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}
-                >
-                  +
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPdfScale((prev) => Math.max(prev - 0.1, 0.5));
-                  }}
-                  style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}
-                >
-                  -
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPdfScale(1);
-                  }}
-                  style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}
-                >
-                  ⟳
-                </button>
-              </div>
               {pdfPreview.loading ? (
                 <MDBox sx={{ p: 2, color: "#fff", fontSize: 12 }}>PDF 미리보기 로딩 중...</MDBox>
               ) : pdfPreview.error ? (
@@ -504,7 +568,7 @@ function PreviewOverlay({
                 >
                   <iframe
                     title="pdf-preview"
-                    src={`${pdfPreview.blobUrl || pdfPreview.directUrl}#view=FitH`}
+                    src={buildPdfViewerUrl(pdfPreview.blobUrl || pdfPreview.directUrl)}
                     style={{ width: "100%", height: "100%", border: 0 }}
                   />
                 </div>

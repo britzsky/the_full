@@ -713,6 +713,11 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     (isAdmin ? pendingCount : 0);
   // TEMP_INQUIRY_PENDING_OFF_20260330: 문의답변 대기 카운트 임시 제외
   // + inquiryPendingCount;
+  // 사용자 승인대기 / 문의 답변대기 / 전자결재 알림이 있으면 네비 알림 뱃지를 강조한다.
+  const shouldBlinkNotificationBadge =
+    (isAdmin && pendingCount > 0) ||
+    inquiryPendingCount > 0 ||
+    electronicPaymentNotifCount > 0;
 
     const renderMenu = () => {
       const showApprovalSection = isAdmin && pendingCount > 0; // ✅ 있을 때만
@@ -1012,7 +1017,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                     max={99}
                     invisible={totalBadgeCount === 0}
                     sx={
-                      (isAdmin && pendingCount > 0) || inquiryPendingCount > 0
+                      shouldBlinkNotificationBadge
                         ? {
                           "& .MuiBadge-badge": {
                             animation: "approveBlink 1.1s infinite",

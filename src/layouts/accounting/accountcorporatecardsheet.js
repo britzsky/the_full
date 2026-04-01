@@ -1019,7 +1019,11 @@ function AccountCorporateCardSheet() {
 
       const res = await api.post(
         "/Account/AccountCorporateCardPaymentAllSave",
-        { main, item },
+        {
+          user_id: userId,
+          main,
+          item,
+        },
         { headers: { "Content-Type": "application/json" } }
       );
 
@@ -1225,7 +1229,7 @@ function AccountCorporateCardSheet() {
         account_id: String(r.account_id || ""),
         card_no: onlyDigits(r.card_no),
         del_yn: r.del_yn ?? "N",
-        user_id: localStorage.getItem("user_id"),
+        user_id: localStorage.getItem("user_id") || "",
       }));
 
       const res = await api.post("/Account/AccountCorporateCardSave", payload, {

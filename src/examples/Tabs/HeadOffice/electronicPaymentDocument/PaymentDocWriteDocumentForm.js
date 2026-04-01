@@ -126,6 +126,33 @@ const toAmountText = (v) => (num(v) !== 0 ? num(v).toLocaleString("ko-KR") : "")
 const toQtyText = (v) => (qtyNum(v) > 0 ? String(qtyNum(v)) : "");
 // 합계 표시 문자열 변환(원 단위)
 const toWonText = (v) => (num(v) !== 0 ? `₩\u00A0\u00A0${num(v).toLocaleString("ko-KR")}` : "-");
+// 금액 입력 중 문자열을 천단위 포맷으로 정리한다.
+function formatAmountTypingText(v) {
+  const raw = String(v ?? "").replace(/,/g, "").trim();
+  if (!raw) return "";
+
+  const hasMinus = raw.startsWith("-");
+  const digitsOnly = raw.replace(/[^\d]/g, "");
+  if (!digitsOnly) return hasMinus ? "-" : "";
+
+  const formattedDigits = Number(digitsOnly).toLocaleString("ko-KR");
+  return hasMinus ? `-${formattedDigits}` : formattedDigits;
+}
+
+// 숫자 기준 커서 위치를 현재 문자열 인덱스로 환산한다.
+function getDigitCursorPosition(text, digitCount, keepAfterSign = false) {
+  const safeText = String(text ?? "");
+  const signOffset = safeText.startsWith("-") ? 1 : 0;
+  if (digitCount <= 0) return keepAfterSign ? signOffset : 0;
+
+  let seenDigits = 0;
+  for (let index = 0; index < safeText.length; index += 1) {
+    if (/\d/.test(safeText[index])) seenDigits += 1;
+    if (seenDigits >= digitCount) return index + 1;
+  }
+
+  return safeText.length;
+}
 // 파일 확장자 라벨 추출
 const toFileExtLabel = (fileName) => {
   const text = String(fileName ?? "").trim();
@@ -145,6 +172,17 @@ const cardTail = (v) => {
   const d = digits(v);
   return d.length >= 4 ? d.slice(-4) : "";
 };
+
+// 법인카드 번호는 DB 저장값과 동일하게 숫자만 남겨 관리한다.
+const normalizeCorporateCardNumber = (v) => digits(v);
+
+// 카드번호 후보가 여러 개면 가장 정보가 많은 값(전체번호)을 우선 사용한다.
+function resolveCorporateCardNumber(...values) {
+  return values.reduce((best, current) => {
+    const normalized = normalizeCorporateCardNumber(current);
+    return normalized.length > best.length ? normalized : best;
+  }, "");
+}
 
 // DB 코드/문자열 지급구분을 화면 지급구분 키로 정규화
 function toMethodFromTypeOrMethod(typeValue, methodValue) {
@@ -167,7 +205,7 @@ function toMethodDetailText(sheetLike) {
   const s = sheetLike || {};
   const method = toMethodFromTypeOrMethod(s.payment_type, s.payment_method);
   if (method === METHOD.CASH) return String(s.cash_receipt_text ?? "");
-  if (method === METHOD.CARD) return cardTail(s.card_tail) || String(s.card_tail ?? "");
+  if (method === METHOD.CARD) return resolveCorporateCardNumber(s.card_tail, s.payment_type_detail);
   if (method === METHOD.TRANSFER) return String(s.transfer_receipt_text ?? "");
   if (method === METHOD.AUTO) return String(s.auto_text ?? "");
   if (method === METHOD.OTHER) return String(s.other_text ?? "");
@@ -291,9 +329,9 @@ function normalizeSheet(s) {
   // 신규 컬럼(payment_type_detail) 우선 사용, 없으면 기존 상세 필드에서 역추론한다.
   const paymentTypeDetailText =
     String(s?.payment_type_detail ?? "").trim() || String(toMethodDetailText(s)).trim();
-  const normalizedCardTail =
+  const normalizedCardNumber =
     payment_method === METHOD.CARD
-      ? cardTail(paymentTypeDetailText) || cardTail(s?.card_tail) || cardTail(s?.biz_no)
+      ? resolveCorporateCardNumber(paymentTypeDetailText, s?.card_tail, s?.biz_no)
       : "";
   const normalizedRows = normalizeRows(s?.detail_rows, s?.content);
   const commonVendorName =
@@ -315,9 +353,9 @@ function normalizeSheet(s) {
     place: String(s?.place ?? ""),
     biz_no: String(s?.biz_no ?? ""),
     payment_type,
-    payment_type_detail: paymentTypeDetailText,
+    payment_type_detail: payment_method === METHOD.CARD ? normalizedCardNumber : paymentTypeDetailText,
     payment_method,
-    card_tail: normalizedCardTail,
+    card_tail: normalizedCardNumber,
     cash_receipt_text:
       payment_method === METHOD.CASH ? paymentTypeDetailText || String(s?.cash_receipt_text ?? "") : String(s?.cash_receipt_text ?? ""),
     transfer_receipt_text:
@@ -381,20 +419,62 @@ function BufferedTextField({
   value,
   onCommit,
   commitOnEnter,
+  formatOnChange,
+  restoreFormattedCursor,
   onBlur: userOnBlur,
   onKeyDown: userOnKeyDown,
   ...props
 }) {
   const normalizedValue = useMemo(() => String(value ?? ""), [value]);
   const [inputValue, setInputValue] = useState(normalizedValue);
+  const inputRef = useRef(null);
+  const selectionRef = useRef(null);
 
   useEffect(() => {
     setInputValue((prev) => (prev === normalizedValue ? prev : normalizedValue));
   }, [normalizedValue]);
 
+  // 천단위 포맷이 다시 적용된 뒤에도 입력 중인 숫자 위치로 커서를 복원한다.
+  React.useLayoutEffect(() => {
+    if (!restoreFormattedCursor) return;
+
+    const nextSelection = selectionRef.current;
+    const inputElement = inputRef.current;
+    if (!nextSelection || !inputElement) return;
+
+    const start = getDigitCursorPosition(inputValue, nextSelection.startDigits, nextSelection.startAfterSign);
+    const end = getDigitCursorPosition(inputValue, nextSelection.endDigits, nextSelection.endAfterSign);
+    inputElement.setSelectionRange(start, end);
+    selectionRef.current = null;
+  }, [inputValue, restoreFormattedCursor]);
+
   const commitValue = useCallback(() => {
     if (typeof onCommit === "function") onCommit(inputValue);
   }, [onCommit, inputValue]);
+
+  const handleChange = useCallback(
+    (e) => {
+      const rawValue = String(e.target.value ?? "");
+      if (typeof formatOnChange !== "function") {
+        setInputValue(rawValue);
+        return;
+      }
+
+      const selectionStart = Number(e.target.selectionStart ?? rawValue.length);
+      const selectionEnd = Number(e.target.selectionEnd ?? selectionStart);
+      if (restoreFormattedCursor) {
+        selectionRef.current = {
+          startDigits: rawValue.slice(0, selectionStart).replace(/[^\d]/g, "").length,
+          endDigits: rawValue.slice(0, selectionEnd).replace(/[^\d]/g, "").length,
+          startAfterSign: rawValue.startsWith("-") && selectionStart > 0,
+          endAfterSign: rawValue.startsWith("-") && selectionEnd > 0,
+        };
+      }
+
+      setInputValue(formatOnChange(rawValue));
+    },
+    [formatOnChange, restoreFormattedCursor]
+  );
 
   const handleBlur = useCallback(
     (e) => {
@@ -418,8 +498,9 @@ function BufferedTextField({
   return (
     <TextField
       {...props}
+      inputRef={inputRef}
       value={inputValue}
-      onChange={(e) => setInputValue(e.target.value)}
+      onChange={handleChange}
       onBlur={handleBlur}
       onKeyDown={handleKeyDown}
     />
@@ -430,6 +511,8 @@ BufferedTextField.propTypes = {
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onCommit: PropTypes.func,
   commitOnEnter: PropTypes.bool,
+  formatOnChange: PropTypes.func,
+  restoreFormattedCursor: PropTypes.bool,
   onBlur: PropTypes.func,
   onKeyDown: PropTypes.func,
 };
@@ -438,6 +521,8 @@ BufferedTextField.defaultProps = {
   value: "",
   onCommit: null,
   commitOnEnter: true,
+  formatOnChange: null,
+  restoreFormattedCursor: false,
   onBlur: null,
   onKeyDown: null,
 };
@@ -476,7 +561,7 @@ function PaymentDocWriteDocumentForm({
     if (Array.isArray(next.detail_rows) && next.detail_rows.length > 0) next.content = "";
     return next;
   });
-  // 법인카드 끝 4자리 목록 상태
+  // 법인카드 전체 번호 목록 상태
   const [cardOptions, setCardOptions] = useState([]);
   // 날짜 선택기 DOM id 상태
   const [draftDateId] = useState(() => `paymentdoc_draft_${Math.random().toString(36).slice(2)}`);
@@ -496,7 +581,13 @@ function PaymentDocWriteDocumentForm({
       try {
         const res = await api.get("/Account/HeadOfficeCorporateCardList");
         if (cancelled) return;
-        const list = Array.from(new Set((Array.isArray(res?.data) ? res.data : []).map((r) => cardTail(r?.card_no)).filter(Boolean)));
+        const list = Array.from(
+          new Set(
+            (Array.isArray(res?.data) ? res.data : [])
+              .map((r) => normalizeCorporateCardNumber(r?.card_no))
+              .filter(Boolean)
+          )
+        );
         setCardOptions(list);
       } catch (e) {
         if (!cancelled) setCardOptions([]);
@@ -732,7 +823,10 @@ function PaymentDocWriteDocumentForm({
   // 지급구분 우측 값 변경 반영 처리
   const setMethodDetail = useCallback((key, value) => {
     setLocal((prev) => {
-      const next = { ...prev, [key]: key === "card_tail" ? digits(value).slice(-4) : String(value ?? "") };
+      const next = {
+        ...prev,
+        [key]: key === "card_tail" ? normalizeCorporateCardNumber(value) : String(value ?? ""),
+      };
       const normalized = applyPaymentTypeMeta(next);
       commitBuffer(normalized);
       return normalized;
@@ -757,22 +851,28 @@ function PaymentDocWriteDocumentForm({
     });
   }, [applyPaymentTypeMeta, commitBuffer]);
 
+  // 카드 선택값은 전체 번호를 유지하고, 화면 표시만 끝 4자리로 사용한다.
+  const selectedCardNumber = useMemo(
+    () => resolveCorporateCardNumber(local.card_tail, local.payment_type_detail),
+    [local.card_tail, local.payment_type_detail]
+  );
+
   // 카드번호 끝 4자리 표시값 계산
   const selectedTail = useMemo(() => {
-    if (cardTail(local.card_tail)) return cardTail(local.card_tail);
+    if (cardTail(selectedCardNumber)) return cardTail(selectedCardNumber);
     return "";
-  }, [local.card_tail]);
+  }, [selectedCardNumber]);
 
   // 카드 지급구분 선택 시 카드번호가 바뀌면 지급구분상세도 함께 동기화한다.
   useEffect(() => {
     if (local.payment_method !== METHOD.CARD) return;
     setLocal((prev) => {
       if (prev.payment_method !== METHOD.CARD) return prev;
-      const nextCardTail = selectedTail;
-      if (prev.card_tail === nextCardTail) return prev;
-      return applyPaymentTypeMeta({ ...prev, card_tail: nextCardTail });
+      const nextCardNumber = selectedCardNumber;
+      if (prev.card_tail === nextCardNumber) return prev;
+      return applyPaymentTypeMeta({ ...prev, card_tail: nextCardNumber });
     });
-  }, [local.payment_method, selectedTail, applyPaymentTypeMeta]);
+  }, [local.payment_method, selectedCardNumber, applyPaymentTypeMeta]);
 
   // 자동 지출명 패턴인 경우, 기안일자/카드끝4자리 변경 시 제목을 자동 동기화한다.
   // - 사용자가 수동으로 다른 형식으로 수정한 제목은 덮어쓰지 않는다.
@@ -841,7 +941,7 @@ function PaymentDocWriteDocumentForm({
                     </tr>
                     <tr style={{ height: ROW_H, backgroundColor: isMethodSelected(METHOD.CARD) ? "#eaf2ff" : "#fff" }} onClick={() => setMethod(METHOD.CARD)}>
                       <td style={thCell}>법인카드</td><td style={tdCell}>카드전표</td>
-                      <td style={{ ...tdCell, borderRight: "none", borderLeft: "none" }}><TextField select size="small" value={selectedTail} onChange={(e) => setMethodDetail("card_tail", e.target.value)} SelectProps={{ native: true }} fullWidth sx={isMethodSelected(METHOD.CARD) ? { ...inputStyle, ...methodInputSelectedSx } : { ...inputStyle, ...disabledNotAllowedInputSx }} disabled={!isMethodSelected(METHOD.CARD)}><option value="">선택</option>{cardOptions.map((x) => <option key={cardTail(x)} value={cardTail(x)}>{toMaskedCardText(x)}</option>)}</TextField></td>
+                      <td style={{ ...tdCell, borderRight: "none", borderLeft: "none" }}><TextField select size="small" value={selectedCardNumber} onChange={(e) => setMethodDetail("card_tail", e.target.value)} SelectProps={{ native: true }} fullWidth sx={isMethodSelected(METHOD.CARD) ? { ...inputStyle, ...methodInputSelectedSx } : { ...inputStyle, ...disabledNotAllowedInputSx }} disabled={!isMethodSelected(METHOD.CARD)}><option value="">선택</option>{selectedCardNumber && !cardOptions.includes(selectedCardNumber) && <option value={selectedCardNumber}>{toMaskedCardText(selectedCardNumber)}</option>}{cardOptions.map((x) => <option key={x} value={x}>{toMaskedCardText(x)}</option>)}</TextField></td>
                     </tr>
                     <tr style={{ height: ROW_H, backgroundColor: isMethodSelected(METHOD.TRANSFER) ? "#eaf2ff" : "#fff" }} onClick={() => setMethod(METHOD.TRANSFER)}>
                       <td style={thCell}>계좌이체</td><td style={tdCell}>세금계산서</td>
@@ -935,9 +1035,9 @@ function PaymentDocWriteDocumentForm({
                     sx={inputStyle}
                   />
                 </td>
-                <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.amount)} onCommit={(v) => setDetailRowField(index, "amount", num(v))} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "numeric" }} /></td>
-                <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.tax)} onCommit={(v) => setDetailRowField(index, "tax", num(v))} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "numeric" }} /></td>
-                <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.total)} onCommit={(v) => setDetailRowField(index, "total", v)} fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "text" }} /></td>
+                <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.amount)} onCommit={(v) => setDetailRowField(index, "amount", num(v))} formatOnChange={formatAmountTypingText} restoreFormattedCursor fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "numeric" }} /></td>
+                <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.tax)} onCommit={(v) => setDetailRowField(index, "tax", num(v))} formatOnChange={formatAmountTypingText} restoreFormattedCursor fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "numeric" }} /></td>
+                <td style={td2CellCenter}><BufferedTextField size="small" value={toAmountText(row.total)} onCommit={(v) => setDetailRowField(index, "total", v)} formatOnChange={formatAmountTypingText} restoreFormattedCursor fullWidth sx={{ ...inputStyle, "& .MuiInputBase-input": { textAlign: "right" } }} inputProps={{ inputMode: "text" }} /></td>
               </tr>
             ))}
             <tr><td style={{ ...th2Cell, height: ROW_H }} colSpan={6}>합계</td><td style={{ ...td2CellCenter, height: ROW_H }}><MDBox sx={{ fontWeight: 800 }}>{toWonText(totals.amount)}</MDBox></td><td style={{ ...td2CellCenter, height: ROW_H }}><MDBox sx={{ fontWeight: 800 }}>{toWonText(totals.tax)}</MDBox></td><td style={{ ...td2CellCenter, height: ROW_H }}><MDBox sx={{ fontWeight: 800 }}>{toWonText(totals.total)}</MDBox></td></tr>

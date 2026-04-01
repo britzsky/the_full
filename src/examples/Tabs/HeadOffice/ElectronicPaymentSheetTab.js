@@ -57,7 +57,7 @@ const DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT = "hh2";
 const DEFAULT_PAYER_DOC_TYPE_META = Object.freeze({
   largeType: "공통",
   middleType: "결의서",
-  smallType: "지출결의서(소모품)",
+  smallType: "지출결의서-소모품",
   docName: "지출결의서",
   position: 2,
 });
@@ -236,10 +236,14 @@ function normalizePaymentMethod(typeValue, methodValue) {
 function resolvePaymentTypeDetailByMethod(method, paymentDoc) {
   const current = paymentDoc || {};
   const explicitDetail = String(current.payment_type_detail ?? "").trim();
+  if (method === "card") {
+    const currentCardNo = resolveCorporateCardNumber(current.card_tail, explicitDetail);
+    if (currentCardNo) return currentCardNo;
+  }
   if (explicitDetail) return explicitDetail;
 
   if (method === "cash") return String(current.cash_receipt_text ?? "").trim();
-  if (method === "card") return String(current.card_tail ?? "").replace(/[^\d]/g, "").slice(-4);
+  if (method === "card") return resolveCorporateCardNumber(current.card_tail);
   if (method === "transfer") return String(current.transfer_receipt_text ?? "").trim();
   if (method === "auto") return String(current.auto_text ?? "").trim();
   if (method === "other") return String(current.other_text ?? "").trim();
@@ -252,6 +256,19 @@ const getDefaultStartDt = () => dayjs().add(1, "day").format("YYYY-MM-DDTHH:mm:s
 // 숫자만 남긴 문자열로 정리
 function formatDigitsInput(value) {
   return String(value ?? "").replace(/[^\d]/g, "");
+}
+
+// 법인카드 번호는 DB 저장 형식에 맞춰 숫자만 유지한다.
+function normalizeCorporateCardNumber(value) {
+  return formatDigitsInput(value);
+}
+
+// 카드번호 후보가 여러 개면 가장 정보가 많은 값(전체번호)을 우선 사용한다.
+function resolveCorporateCardNumber(...values) {
+  return values.reduce((best, current) => {
+    const normalized = normalizeCorporateCardNumber(current);
+    return normalized.length > best.length ? normalized : best;
+  }, "");
 }
 
 // 금액 입력값을 숫자만 남긴 뒤 1,234 형식으로 변환
@@ -1036,7 +1053,7 @@ export default function ElectronicPaymentSheetTab() {
         payer_user: DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT,
         payer_user_name:
           prev.payer_user === DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT &&
-          prev.payer_user_name
+            prev.payer_user_name
             ? prev.payer_user_name
             : DEFAULT_PAYER_USER_ID_FOR_EXPENDABLE_PAYMENT,
       }));
@@ -2287,4 +2304,3 @@ const gridInputSx = (isMobile) => ({
     padding: isMobile ? "6px 8px" : "6px 10px",
   },
 });
-

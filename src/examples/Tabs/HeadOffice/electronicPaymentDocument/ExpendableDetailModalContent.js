@@ -28,6 +28,10 @@ function toYnValue(v) {
   return String(v ?? "").trim().toUpperCase() === "Y";
 }
 
+function toBuyYnText(v) {
+  return toYnValue(v) ? "구매" : "미구매";
+}
+
 const tableCellCenterInnerSx = {
   width: "100%",
   minHeight: 34,
@@ -111,9 +115,9 @@ function ExpendableDetailModalContent({
               <col style={{ width: "16%" }} />
               <col style={{ width: 62 }} />
               <col style={{ width: 88 }} />
-              <col style={{ width: "16%" }} />
+              <col style={{ width: "14%" }} />
               <col style={{ width: "11%" }} />
-              <col style={{ width: "26%" }} />
+              <col style={{ width: "28%" }} />
               <col style={{ width: "14%" }} />
               {showBuyYnColumn && <col style={{ width: 86 }} />}
             </colgroup>
@@ -177,20 +181,25 @@ function ExpendableDetailModalContent({
                       {showBuyYnColumn && (
                         <td style={td2CellCenter}>
                           <MDBox sx={tableCellCenterInnerSx}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              style={{
-                                ...nativeCheckboxCenterStyle,
-                                cursor: !editableBuyYn || isSaving ? "not-allowed" : "pointer",
-                              }}
-                              disabled={!editableBuyYn || isSaving}
-                              onChange={(e) => {
-                                if (!editableBuyYn) return;
-                                if (typeof onToggleBuyYn !== "function") return;
-                                onToggleBuyYn(it, e.target.checked);
-                              }}
-                            />
+                            {editableBuyYn ? (
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                style={{
+                                  ...nativeCheckboxCenterStyle,
+                                  cursor: isSaving ? "not-allowed" : "pointer",
+                                }}
+                                disabled={isSaving}
+                                onChange={(e) => {
+                                  if (typeof onToggleBuyYn !== "function") return;
+                                  onToggleBuyYn(it, e.target.checked);
+                                }}
+                              />
+                            ) : (
+                              <MDBox component="span" sx={{ fontWeight: 700, color: isChecked ? "#1f4e79" : "#6b7280" }}>
+                                {toBuyYnText(it.buy_yn)}
+                              </MDBox>
+                            )}
                           </MDBox>
                         </td>
                       )}

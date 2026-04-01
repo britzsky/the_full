@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { createPortal } from "react-dom";
 import { useTheme, useMediaQuery } from "@mui/material";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, Minus, Plus, RefreshCw, X } from "lucide-react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import * as XLSX from "xlsx";
 import MDBox from "components/MDBox";
@@ -149,6 +149,8 @@ function PreviewOverlay({
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   // PDF는 iframe 렌더링이라 이미지 줌 라이브러리와 분리해 배율을 직접 제어한다.
   const [pdfScale, setPdfScale] = useState(1);
+  // 이미지는 회전값을 별도 상태로 관리해 확대/축소와 함께 사용한다.
+  const [imageRotation, setImageRotation] = useState(0);
   // 오버레이 창 드래그 위치(좌상단 기준 px)
   const [viewerPos, setViewerPos] = useState(() => getCenteredViewerPos(isMobile));
   // 드래그 상태/오프셋을 분리해 마우스 이동마다 불필요한 계산을 줄인다.
@@ -190,13 +192,14 @@ function PreviewOverlay({
   const canGoNext = safeIndex < maxIndex;
 
   // 파일을 바꿀 때 이전 배율이 남아 있으면 사용성이 떨어져 기본 배율로 초기화한다.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setPdfScale(1);
+    setImageRotation(0);
   }, [open, safeIndex]);
 
   // 오버레이를 열 때 화면 중앙 위치로 기본 배치
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     setViewerPos(getCenteredViewerPos(isMobile, currentFile?.kind));
   }, [open, isMobile, safeIndex, currentFile?.kind]);
@@ -412,7 +415,78 @@ function PreviewOverlay({
     [viewerPos.x, viewerPos.y, isMobile, currentFile?.kind]
   );
 
+  const titlebarIconButtonStyle = useMemo(
+    () => ({
+      width: isMobile ? 26 : 28,
+      height: isMobile ? 26 : 28,
+      borderRadius: 6,
+      border: "none",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "transparent",
+      color: "#fff",
+      cursor: "pointer",
+      transition: "all 0.18s ease",
+    }),
+    [isMobile]
+  );
+
+  const imageToolButtonStyle = useMemo(
+    () => ({
+      width: isMobile ? 28 : 30,
+      height: isMobile ? 28 : 30,
+      borderRadius: 8,
+      border: "none",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(255,255,255,0.15)",
+      color: "#fff",
+      cursor: "pointer",
+    }),
+    [isMobile]
+  );
+
+  const isQuarterRotation = Math.abs(imageRotation % 180) === 90;
+
+  const imageFrameSize = useMemo(() => {
+    if (typeof window === "undefined") {
+      return { width: 240, height: 240 };
+    }
+
+    const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, "image");
+    const availableWidth = Math.max(180, (window.innerWidth * widthRatio) - (isMobile ? 48 : 72));
+    const availableHeight = Math.max(180, (window.innerHeight * heightRatio) - (isMobile ? 84 : 96));
+
+    return {
+      width: Math.max(120, Math.round(availableWidth)),
+      height: Math.max(120, Math.round(availableHeight)),
+    };
+  }, [isMobile, isQuarterRotation]);
+
+  const rotatedImageStyle = useMemo(
+    () => ({
+      width: isQuarterRotation ? imageFrameSize.height : imageFrameSize.width,
+      height: isQuarterRotation ? imageFrameSize.width : imageFrameSize.height,
+      borderRadius: 12,
+      display: "block",
+      objectFit: "contain",
+      transform: `rotate(${imageRotation}deg)`,
+      transformOrigin: "center center",
+      boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
+    }),
+    [imageFrameSize.height, imageFrameSize.width, imageRotation, isQuarterRotation]
+  );
+
   if (!open || !currentFile) return null;
+
+  const currentPreviewUrl =
+    currentFile.kind === "pdf"
+      ? pdfPreview.blobUrl || pdfPreview.directUrl || currentFileViewUrl
+      : currentFileViewUrl;
+
+  const viewerTitleText = `${currentFile?.name || "첨부 미리보기"}${previewFiles.length ? `  (${safeIndex + 1}/${previewFiles.length})` : ""}`;
 
   const overlayElement = (
     // 배경 클릭으로 닫기: 모달 외부 클릭 닫힘 UX를 기본으로 제공
@@ -435,8 +509,10 @@ function PreviewOverlay({
           style={{
             position: "absolute",
             inset: 0,
-            backgroundColor: "rgba(0,0,0,0.72)",
-            borderRadius: 8,
+            backgroundColor: "#000",
+            borderRadius: 10,
+            border: "1px solid rgba(0,0,0,0.25)",
+            boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
           }}
         />
 
@@ -446,86 +522,112 @@ function PreviewOverlay({
             top: 0,
             left: 0,
             right: 0,
-            height: 32,
+            height: 42,
             cursor: "move",
             zIndex: 1002,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            gap: 8,
             padding: "0 8px",
             color: "#fff",
             fontSize: 12,
             userSelect: "none",
+            backgroundColor: "#1b1b1b",
+            borderTopLeftRadius: 10,
+            borderTopRightRadius: 10,
           }}
           onMouseDown={handleDragStart}
         >
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "80%" }}>
-            {currentFile?.name || "미리보기"}
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 8 }}>
+            {viewerTitleText}
           </span>
+
           <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              movePrev(e);
+            }}
+            disabled={!canGoPrev}
+            style={{
+              ...titlebarIconButtonStyle,
+              opacity: canGoPrev ? 1 : 0.45,
+              cursor: canGoPrev ? "pointer" : "not-allowed",
+            }}
+            title="이전(←)"
+          >
+            <ChevronLeft size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              moveNext(e);
+            }}
+            disabled={!canGoNext}
+            style={{
+              ...titlebarIconButtonStyle,
+              opacity: canGoNext ? 1 : 0.45,
+              cursor: canGoNext ? "pointer" : "not-allowed",
+            }}
+            title="다음(→)"
+          >
+            <ChevronRight size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!currentPreviewUrl) return;
+              window.open(currentPreviewUrl, "_blank", "noopener,noreferrer");
+            }}
+            disabled={!currentPreviewUrl}
+            style={{
+              ...titlebarIconButtonStyle,
+              opacity: currentPreviewUrl ? 1 : 0.45,
+              cursor: currentPreviewUrl ? "pointer" : "not-allowed",
+            }}
+            title="새 탭으로 열기"
+          >
+            <ExternalLink size={14} />
+          </button>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!currentPreviewUrl) return;
+              const link = document.createElement("a");
+              link.href = currentPreviewUrl;
+              link.download = currentFile?.name || "preview";
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
+            disabled={!currentPreviewUrl}
+            style={{
+              ...titlebarIconButtonStyle,
+              opacity: currentPreviewUrl ? 1 : 0.45,
+              cursor: currentPreviewUrl ? "pointer" : "not-allowed",
+            }}
+            title="다운로드"
+          >
+            <Download size={14} />
+          </button>
+
+          <button
+            type="button"
             onClick={onClose}
             style={{
-              border: "none",
-              background: "transparent",
-              color: "#fff",
-              cursor: "pointer",
-              fontSize: 14,
+              ...titlebarIconButtonStyle,
             }}
+            title="닫기"
           >
-            X
+            <X size={isMobile ? 12 : 14} />
           </button>
         </div>
-
-        {/* 파일 목록 이전/다음 이동 버튼 */}
-        <button
-          type="button"
-          onClick={movePrev}
-          disabled={!canGoPrev}
-          style={{
-            position: "absolute",
-            left: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            zIndex: 1003,
-            width: 34,
-            height: 34,
-            borderRadius: "50%",
-            border: "none",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: canGoPrev ? "rgba(0,0,0,0.48)" : "rgba(255,255,255,0.2)",
-            color: "#fff",
-            cursor: canGoPrev ? "pointer" : "not-allowed",
-          }}
-        >
-          <ChevronLeft size={20} />
-        </button>
-
-        <button
-          type="button"
-          onClick={moveNext}
-          disabled={!canGoNext}
-          style={{
-            position: "absolute",
-            right: 10,
-            top: "50%",
-            transform: "translateY(-50%)",
-            zIndex: 1003,
-            width: 34,
-            height: 34,
-            borderRadius: "50%",
-            border: "none",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: canGoNext ? "rgba(0,0,0,0.48)" : "rgba(255,255,255,0.2)",
-            color: "#fff",
-            cursor: canGoNext ? "pointer" : "not-allowed",
-          }}
-        >
-          <ChevronRight size={20} />
-        </button>
 
         <div
           style={{
@@ -533,7 +635,7 @@ function PreviewOverlay({
             width: "100%",
             height: "100%",
             zIndex: 1001,
-            paddingTop: 32,
+            paddingTop: 42,
             boxSizing: "border-box",
             overflow: "hidden",
           }}
@@ -595,60 +697,103 @@ function PreviewOverlay({
                     <div
                       style={{
                         position: "absolute",
-                        top: 8,
-                        right: 8,
+                        top: 10,
+                        right: 10,
                         display: "flex",
                         flexDirection: "column",
-                        gap: 4,
+                        gap: 8,
                         zIndex: 1000,
                         pointerEvents: "auto",
                       }}
                     >
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           zoomIn();
                         }}
-                        style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}
+                        style={imageToolButtonStyle}
+                        title="확대"
                       >
-                        +
+                        <Plus size={14} />
                       </button>
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           zoomOut();
                         }}
-                        style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}
+                        style={imageToolButtonStyle}
+                        title="축소"
                       >
-                        -
+                        <Minus size={14} />
                       </button>
                       <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           e.preventDefault();
                           resetTransform();
+                          setImageRotation((prev) => (prev + 90) % 360);
                         }}
-                        style={{ border: "none", padding: isMobile ? "2px 6px" : "4px 8px", cursor: "pointer" }}
+                        style={imageToolButtonStyle}
+                        title="90도 회전"
                       >
-                        ⟳
+                        <span
+                          style={{
+                            fontSize: isMobile ? 9 : 10,
+                            fontWeight: 700,
+                            lineHeight: 1,
+                            letterSpacing: "-0.02em",
+                          }}
+                        >
+                          90°
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          resetTransform();
+                          setImageRotation(0);
+                        }}
+                        style={imageToolButtonStyle}
+                        title="원래대로"
+                      >
+                        <RefreshCw size={14} />
                       </button>
                     </div>
 
                     <TransformComponent>
-                      <img
-                        src={currentFileViewUrl}
-                        alt={currentFile.name || "미리보기"}
+                      <div
                         style={{
-                          maxWidth: "100%",
-                          maxHeight: "100%",
-                          height: "auto",
-                          width: "auto",
-                          borderRadius: 8,
-                          display: "block",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: isMobile ? 8 : 12,
+                          width: "100%",
+                          height: "100%",
                         }}
-                      />
+                      >
+                        <div
+                          style={{
+                            width: imageFrameSize.width,
+                            height: imageFrameSize.height,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <img
+                            src={currentFileViewUrl}
+                            alt={currentFile.name || "미리보기"}
+                            style={rotatedImageStyle}
+                          />
+                        </div>
+                      </div>
                     </TransformComponent>
                   </>
                 )}

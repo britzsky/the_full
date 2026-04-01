@@ -700,12 +700,25 @@ function AccountPurchaseDeadlineTab() {
 
       if (String(selectedSaleId) !== String(saleId)) {
         setSelectedSaleId(String(saleId));
+      } else {
+        // 같은 행을 다시 눌러도 상세 조회가 다시 실행되도록 처리
+        fetchPurchaseDetailList({
+          sale_id: String(saleId),
+          account_id: row?.account_id || filters.account_id,
+        });
       }
       if (selectedMasterIndex !== rowIndex) {
         setSelectedMasterIndex(rowIndex);
       }
     },
-    [selectedSaleId, selectedMasterIndex, setDetailRows, setOriginalDetailRows]
+    [
+      selectedSaleId,
+      selectedMasterIndex,
+      filters.account_id,
+      fetchPurchaseDetailList,
+      setDetailRows,
+      setOriginalDetailRows,
+    ]
   );
 
   // ✅ 하단 행추가 버튼

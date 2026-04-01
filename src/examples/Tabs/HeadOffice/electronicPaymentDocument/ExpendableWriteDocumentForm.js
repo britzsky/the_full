@@ -5,6 +5,20 @@ import { TextField } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 
+// 숫자 기준 커서 위치를 현재 문자열 인덱스로 환산한다.
+function getDigitCursorPosition(text, digitCount) {
+  const safeText = String(text ?? "");
+  if (digitCount <= 0) return 0;
+
+  let seenDigits = 0;
+  for (let index = 0; index < safeText.length; index += 1) {
+    if (/\d/.test(safeText[index])) seenDigits += 1;
+    if (seenDigits >= digitCount) return index + 1;
+  }
+
+  return safeText.length;
+}
+
 // 소모품 구매 품의서(E) 한 행 렌더링
 // - 행 단위로 분리해 테이블 전체 재렌더 비용을 줄인다.
 // - 입력 변경은 로컬 버퍼 상태를 갱신한다.
@@ -29,6 +43,8 @@ const ItemRow = React.memo(function ItemRow({
   const handleBlurItem = typeof onBlurItem === "function" ? onBlurItem : () => {};
   const qtyInputRef = React.useRef(null);
   const qtySelectionRef = React.useRef(null);
+  const priceInputRef = React.useRef(null);
+  const priceSelectionRef = React.useRef(null);
 
   // 수량 입력값은 숫자만 남기기 때문에 입력 직전의 숫자 위치를 기억해
   // 상태 반영 후에도 커서가 같은 자리로 돌아오도록 맞춘다.
@@ -44,6 +60,24 @@ const ItemRow = React.memo(function ItemRow({
     qtySelectionRef.current = null;
   }, [row?.qty]);
 
+  // 금액 입력값은 천단위 콤마가 다시 붙기 때문에
+  // 입력 직전의 숫자 위치를 기준으로 커서를 복원한다.
+  React.useLayoutEffect(() => {
+    const nextSelection = priceSelectionRef.current;
+    const inputElement = priceInputRef.current;
+    if (!nextSelection || !inputElement) return;
+
+    const formattedValue = String(row?.price ?? "");
+    const maxDigits = formattedValue.replace(/[^\d]/g, "").length;
+    const startDigit = Math.min(nextSelection.start, maxDigits);
+    const endDigit = Math.min(nextSelection.end, maxDigits);
+    const start = getDigitCursorPosition(formattedValue, startDigit);
+    const end = getDigitCursorPosition(formattedValue, endDigit);
+
+    inputElement.setSelectionRange(start, end);
+    priceSelectionRef.current = null;
+  }, [row?.price]);
+
   const handleChangeQty = React.useCallback(
     (e) => {
       const rawValue = String(e.target.value ?? "");
@@ -56,6 +90,22 @@ const ItemRow = React.memo(function ItemRow({
       };
 
       handleChangeItem(idx, "qty", rawValue);
+    },
+    [handleChangeItem, idx]
+  );
+
+  const handleChangePrice = React.useCallback(
+    (e) => {
+      const rawValue = String(e.target.value ?? "");
+      const selectionStart = Number(e.target.selectionStart ?? rawValue.length);
+      const selectionEnd = Number(e.target.selectionEnd ?? selectionStart);
+
+      priceSelectionRef.current = {
+        start: rawValue.slice(0, selectionStart).replace(/[^\d]/g, "").length,
+        end: rawValue.slice(0, selectionEnd).replace(/[^\d]/g, "").length,
+      };
+
+      handleChangeItem(idx, "price", rawValue);
     },
     [handleChangeItem, idx]
   );
@@ -95,9 +145,10 @@ const ItemRow = React.memo(function ItemRow({
           size="small"
           value={row.price}
           // 금액은 숫자 키패드 유도 + 입력값은 천단위 포맷 유지
-          onChange={(e) => handleChangeItem(idx, "price", e.target.value)}
+          onChange={handleChangePrice}
           onBlur={handleBlurItem}
           fullWidth
+          inputRef={priceInputRef}
           inputProps={{ inputMode: "numeric", pattern: "[0-9]*" }}
           sx={gridInputStyle}
         />
@@ -326,9 +377,9 @@ function ExpendableWriteDocumentForm({
             <col style={{ width: isMobile ? 180 : 240 }} />
             <col style={{ width: isMobile ? 70 : 82 }} />
             <col style={{ width: isMobile ? 84 : 98 }} />
-            <col style={{ width: isMobile ? 180 : 240 }} />
+            <col style={{ width: isMobile ? 150 : 200 }} />
             <col style={{ width: isMobile ? 140 : 170 }} />
-            <col style={{ width: isMobile ? 180 : 220 }} />
+            <col style={{ width: isMobile ? 210 : 260 }} />
             <col style={{ width: isMobile ? 130 : 160 }} />
           </colgroup>
           <thead>

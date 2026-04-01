@@ -659,8 +659,8 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   const moveCeoToPayerSlot = !needPayer && needCeo;
   // 결재 액션 코드 정규화
   const selectedActionSign = actionStatus === "4" || actionStatus === "3" ? actionStatus : "";
-  // 구매여부 컬럼 노출 여부
-  const showBuyYnColumn = isExpendableSpecialUser;
+  // 소모품 구매 품의서 상세에서는 일반 직원도 구매여부를 볼 수 있도록 컬럼을 항상 노출한다.
+  const showBuyYnColumn = isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE);
   // 결재자 결재완료 상태 판정
   const isPayerApproved = asText(detailMain?.payer_sign) === "4";
   // 반려 상태 판정

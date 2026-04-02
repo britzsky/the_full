@@ -42,6 +42,26 @@ const parseDateOnly = (yyyyMmDd) => {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 };
 
+// 접수일 문자열에서 연/월만 분리한다.
+const getYearMonthFromDate = (dateValue) => {
+  const normalized = toDateInputValue(dateValue);
+  if (!normalized) return null;
+  const [yearText, monthText] = normalized.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+  return { year, month };
+};
+
+// 접수일이 선택한 연/월 조건과 일치하는지 확인한다.
+const matchesYearMonthFilter = (dateValue, targetYear, targetMonth) => {
+  const yearMonth = getYearMonthFromDate(dateValue);
+  if (!yearMonth) return false;
+  if (yearMonth.year !== Number(targetYear)) return false;
+  if (!targetMonth) return true;
+  return yearMonth.month === Number(targetMonth);
+};
+
 // 날짜 입력칸 숫자 타이핑을 yyyy-mm-dd 형태로 마스킹
 const formatDateTypingValue = (rawValue) => {
   const digits = String(rawValue || "")
@@ -199,6 +219,10 @@ export default function useAccountIssueSheetData(teamCode = 1) {
   const [accountList, setAccountList] = useState([]);
   const [typeList, setTypeList] = useState([]);
   const [loading, setLoading] = useState(true);
+  // 접수일 기준 연/월 필터 상태
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const [filterYear, setFilterYear] = useState(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState("");
   const [selectedAccountKey, setSelectedAccountKey] = useState(null);
   const [selectedRowId, setSelectedRowId] = useState(null);
   const [ctxMenu, setCtxMenu] = useState({
@@ -304,10 +328,27 @@ export default function useAccountIssueSheetData(teamCode = 1) {
       .filter((row) => row.hasData);
   }, [panelRows, accountList, accountNameById]);
 
+  // 좌측 편집 목록과 우측 요약 모두 접수일 기준 같은 연/월 필터를 사용한다.
+  const filteredRows = useMemo(() => {
+    return (rows || []).filter((row) => {
+      const normalizedSubDate = toDateInputValue(row.sub_date);
+      if (!normalizedSubDate && row.idx == null) return true;
+      return matchesYearMonthFilter(normalizedSubDate, filterYear, filterMonth);
+    });
+  }, [rows, filterYear, filterMonth]);
+
+  const filteredAnalysisRows = useMemo(
+    () =>
+      analysisRows.filter((row) =>
+        matchesYearMonthFilter(row.subDate, filterYear, filterMonth)
+      ),
+    [analysisRows, filterYear, filterMonth]
+  );
+
   // 업장별 요약(총건수/해결/보류/미입력)
   const accountSummaryRows = useMemo(() => {
     const map = new Map();
-    analysisRows.forEach((row) => {
+    filteredAnalysisRows.forEach((row) => {
       const key = row.accountKey;
       if (!map.has(key)) {
         map.set(key, {
@@ -337,11 +378,11 @@ export default function useAccountIssueSheetData(teamCode = 1) {
       if (b.total !== a.total) return b.total - a.total;
       return String(a.accountName).localeCompare(String(b.accountName), "ko");
     });
-  }, [analysisRows]);
+  }, [filteredAnalysisRows]);
 
   // 전체 요약
   const overallSummary = useMemo(() => {
-    return analysisRows.reduce(
+    return filteredAnalysisRows.reduce(
       (acc, row) => {
         acc.total += 1;
         if (row.isResolved) acc.resolved += 1;
@@ -354,7 +395,7 @@ export default function useAccountIssueSheetData(teamCode = 1) {
       },
       { total: 0, resolved: 0, unresolved: 0, pending: 0, noResult: 0 }
     );
-  }, [analysisRows]);
+  }, [filteredAnalysisRows]);
 
   const selectedSummary = useMemo(
     () => accountSummaryRows.find((row) => row.key === selectedAccountKey) || null,
@@ -362,13 +403,13 @@ export default function useAccountIssueSheetData(teamCode = 1) {
   );
 
   const scopedRows = useMemo(() => {
-    if (!selectedAccountKey) return analysisRows;
-    return analysisRows.filter((row) => row.accountKey === selectedAccountKey);
-  }, [analysisRows, selectedAccountKey]);
+    if (!selectedAccountKey) return filteredAnalysisRows;
+    return filteredAnalysisRows.filter((row) => row.accountKey === selectedAccountKey);
+  }, [filteredAnalysisRows, selectedAccountKey]);
 
   const unresolvedRows = useMemo(() => {
     // 미해결건 확인은 거래처 선택과 무관하게 항상 전체 거래처 기준으로 표시
-    return analysisRows
+    return filteredAnalysisRows
       .filter((row) => !row.isResolved)
       .sort((a, b) => {
         const aDate = a.subDate || "9999-12-31";
@@ -376,7 +417,7 @@ export default function useAccountIssueSheetData(teamCode = 1) {
         if (aDate !== bDate) return aDate.localeCompare(bDate);
         return String(a.idx || "").localeCompare(String(b.idx || ""));
       });
-  }, [analysisRows]);
+  }, [filteredAnalysisRows]);
 
   const scopedRowsSorted = useMemo(() => {
     return [...scopedRows].sort((a, b) => {
@@ -906,9 +947,15 @@ export default function useAccountIssueSheetData(teamCode = 1) {
   return {
     loading,
     rows,
+    filteredRows,
     originalRows,
     accountList,
     typeList,
+    currentYear,
+    filterYear,
+    setFilterYear,
+    filterMonth,
+    setFilterMonth,
     accountNameById,
     typeLabelById,
     selectedAccountKey,

@@ -25,6 +25,7 @@ const PIE_COLORS = [
   "#66bb6a",
   "#ff8f00",
 ];
+const TOP_FILTER_CONTROL_HEIGHT = 38;
 
 // 항목 수가 많을 때 상위 항목 + 기타로 압축
 const compactRows = (rows, maxItems = 8) => {
@@ -237,6 +238,11 @@ export default function AccountIssueSheetStatsTab() {
   // 운영팀(team_code=1) 통계 데이터/필터 상태 훅(del_yn='N' 기준 집계)
   const {
     loading,
+    currentYear,
+    filterYear,
+    setFilterYear,
+    filterMonth,
+    setFilterMonth,
     selectedAccountKey,
     setSelectedAccountKey,
     selectedAccountName,
@@ -305,56 +311,104 @@ export default function AccountIssueSheetStatsTab() {
           {selectedAccountName ? `${selectedAccountName} 통계` : "거래처 선택 통계"}
         </MDTypography>
 
-        <Autocomplete
-          size="small"
-          options={accountStats}
-          value={selectedAccountOption}
-          onChange={(_, newValue) => setSelectedAccountKey(newValue?.key || "")}
-          getOptionLabel={(option) => option?.accountName || ""}
-          filterOptions={(options, { inputValue }) => {
-            const keyword = String(inputValue || "").trim().toLowerCase();
-            if (!keyword) return options;
-            return options.filter(
-              (row) =>
-                String(row?.accountName || "").toLowerCase().includes(keyword) ||
-                String(row?.accountId || "").toLowerCase().includes(keyword)
-            );
-          }}
-          isOptionEqualToValue={(option, value) => option?.key === value?.key}
-          sx={{ minWidth: 320, background: "#fff" }}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="거래처 선택"
-              placeholder="거래처 검색"
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                e.preventDefault();
+        <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          {/* 접수일 기준 연/월 필터 영역 */}
+          <TextField
+            select
+            size="small"
+            value={filterYear}
+            onChange={(e) => setFilterYear(Number(e.target.value))}
+            sx={{ minWidth: 110, background: "#fff" }}
+            SelectProps={{ native: true }}
+          >
+            <option value={currentYear}>{currentYear}년</option>
+          </TextField>
+          <TextField
+            select
+            size="small"
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            sx={{ minWidth: 110, background: "#fff" }}
+            SelectProps={{ native: true }}
+          >
+            <option value="">전체</option>
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
+              <option key={monthValue} value={monthValue}>
+                {monthValue}월
+              </option>
+            ))}
+          </TextField>
 
-                const keyword = String(e.currentTarget.value || "").trim().toLowerCase();
-                if (!keyword) return;
+          <Autocomplete
+            size="small"
+            options={accountStats}
+            value={selectedAccountOption}
+            onChange={(_, newValue) => setSelectedAccountKey(newValue?.key || "")}
+            getOptionLabel={(option) => option?.accountName || ""}
+            filterOptions={(options, { inputValue }) => {
+              const keyword = String(inputValue || "").trim().toLowerCase();
+              if (!keyword) return options;
+              return options.filter(
+                (row) =>
+                  String(row?.accountName || "").toLowerCase().includes(keyword) ||
+                  String(row?.accountId || "").toLowerCase().includes(keyword)
+              );
+            }}
+            isOptionEqualToValue={(option, value) => option?.key === value?.key}
+            sx={{ minWidth: 320, background: "#fff" }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 선택"
+                placeholder="거래처 검색"
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    height: TOP_FILTER_CONTROL_HEIGHT,
+                    minHeight: TOP_FILTER_CONTROL_HEIGHT,
+                    background: "#fff",
+                    paddingTop: "0 !important",
+                    paddingBottom: "0 !important",
+                  },
+                  "& .MuiOutlinedInput-input": {
+                    height: `${TOP_FILTER_CONTROL_HEIGHT}px`,
+                    boxSizing: "border-box",
+                  },
+                  "& .MuiAutocomplete-input": {
+                    padding: "0 8px !important",
+                  },
+                  "& .MuiAutocomplete-endAdornment": {
+                    top: `calc(50% - ${14}px)`,
+                  },
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
 
-                const exact = accountStats.find(
-                  (row) =>
-                    String(row.accountName || "").trim().toLowerCase() === keyword ||
-                    String(row.accountId || "").trim().toLowerCase() === keyword
-                );
+                  const keyword = String(e.currentTarget.value || "").trim().toLowerCase();
+                  if (!keyword) return;
 
-                const partial = accountStats.find(
-                  (row) =>
-                    String(row.accountName || "").toLowerCase().includes(keyword) ||
-                    String(row.accountId || "").toLowerCase().includes(keyword)
-                );
+                  const exact = accountStats.find(
+                    (row) =>
+                      String(row.accountName || "").trim().toLowerCase() === keyword ||
+                      String(row.accountId || "").trim().toLowerCase() === keyword
+                  );
 
-                const picked = exact || partial;
-                if (!picked) return;
+                  const partial = accountStats.find(
+                    (row) =>
+                      String(row.accountName || "").toLowerCase().includes(keyword) ||
+                      String(row.accountId || "").toLowerCase().includes(keyword)
+                  );
 
-                setSelectedAccountKey(picked.key);
-                e.currentTarget.blur();
-              }}
-            />
-          )}
-        />
+                  const picked = exact || partial;
+                  if (!picked) return;
+
+                  setSelectedAccountKey(picked.key);
+                  e.currentTarget.blur();
+                }}
+              />
+            )}
+          />
+        </MDBox>
       </MDBox>
 
       {/* 선택 거래처 기준 통계 3종 */}

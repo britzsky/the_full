@@ -15,9 +15,55 @@ const normalizeResult = (value) => {
   return s;
 };
 
+// 서버/입력에서 내려오는 다양한 날짜 포맷을 YYYY-MM-DD로 통일
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  const text = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    if (text === "0000-00-00" || text === "0001-01-01") return "";
+    return text;
+  }
+  if (/^\d{8}$/.test(text)) return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+  const matchedDate = text.match(/(\d{4}-\d{2}-\d{2})/);
+  if (matchedDate?.[1]) {
+    const normalized = matchedDate[1];
+    if (normalized === "0000-00-00" || normalized === "0001-01-01") return "";
+    return normalized;
+  }
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const normalized = `${year}-${month}-${day}`;
+  if (normalized === "0000-00-00" || normalized === "0001-01-01") return "";
+  return normalized;
+};
+
+// 접수일 문자열에서 연/월만 분리한다.
+const getYearMonthFromDate = (dateValue) => {
+  const normalized = toDateInputValue(dateValue);
+  if (!normalized) return null;
+  const [yearText, monthText] = normalized.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
+  return { year, month };
+};
+
+// 접수일이 선택한 연/월 조건과 일치하는지 확인한다.
+const matchesYearMonthFilter = (dateValue, targetYear, targetMonth) => {
+  const yearMonth = getYearMonthFromDate(dateValue);
+  if (!yearMonth) return false;
+  if (yearMonth.year !== Number(targetYear)) return false;
+  if (!targetMonth) return true;
+  return yearMonth.month === Number(targetMonth);
+};
+
 // 서버 row를 통계 계산용 최소 필드 구조로 정규화
 const normalizeRow = (row) => ({
   idx: row.idx ?? null,
+  sub_date: toDateInputValue(row.sub_date),
   account_id: row.account_id ? String(row.account_id) : "",
   account_name: row.account_name || "",
   type: row.type != null ? String(row.type) : "",
@@ -39,6 +85,9 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
   const [accountList, setAccountList] = useState([]);
   const [typeList, setTypeList] = useState([]);
   // 화면 필터 상태(선택 고객사 + 로딩)
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const [filterYear, setFilterYear] = useState(() => new Date().getFullYear());
+  const [filterMonth, setFilterMonth] = useState("");
   const [selectedAccountKey, setSelectedAccountKey] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -92,6 +141,15 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
     };
   };
 
+  // 통계 카드 전체에 접수일 기준 연/월 필터를 적용한다.
+  const filteredRows = useMemo(
+    () =>
+      (rows || []).filter((row) =>
+        matchesYearMonthFilter(row.sub_date, filterYear, filterMonth)
+      ),
+    [rows, filterYear, filterMonth]
+  );
+
   // =========================
   // 전체 통계 계산
   // =========================
@@ -99,7 +157,7 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
   const accountStats = useMemo(() => {
     const map = new Map();
 
-    (rows || []).forEach((row) => {
+    filteredRows.forEach((row) => {
       const meta = normalizeAccountMeta(row);
       if (!map.has(meta.key)) {
         map.set(meta.key, { ...meta, count: 0 });
@@ -111,12 +169,12 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
       if (b.count !== a.count) return b.count - a.count;
       return String(a.accountName).localeCompare(String(b.accountName), "ko");
     });
-  }, [rows, accountNameById]);
+  }, [filteredRows, accountNameById]);
 
   // 전체 구분별 건수 통계
   const overallTypeStats = useMemo(() => {
     const map = new Map();
-    (rows || []).forEach((row) => {
+    filteredRows.forEach((row) => {
       const typeCode = String(row.type || "").trim();
       const label = typeLabelById.get(typeCode) || typeCode || "미구분";
       map.set(label, (map.get(label) || 0) + 1);
@@ -125,18 +183,18 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
     return Array.from(map.entries())
       .map(([label, count]) => ({ label, count }))
       .sort((a, b) => b.count - a.count);
-  }, [rows, typeLabelById]);
+  }, [filteredRows, typeLabelById]);
 
   // 전체 해결/미해결 통계
   const overallResultStats = useMemo(() => {
-    if (!rows.length) return [];
-    const resolved = rows.filter((row) => isResolved(row.result)).length;
-    const unresolved = rows.length - resolved;
+    if (!filteredRows.length) return [];
+    const resolved = filteredRows.filter((row) => isResolved(row.result)).length;
+    const unresolved = filteredRows.length - resolved;
     return [
       { label: "해결", count: resolved },
       { label: "미해결", count: unresolved },
     ];
-  }, [rows]);
+  }, [filteredRows]);
 
   // =========================
   // 선택 고객사 기준 통계 계산
@@ -144,8 +202,8 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
   // 선택 고객사에 해당하는 행 목록
   const selectedRows = useMemo(() => {
     if (!selectedAccountKey) return [];
-    return rows.filter((row) => normalizeAccountMeta(row).key === selectedAccountKey);
-  }, [rows, selectedAccountKey, accountNameById]);
+    return filteredRows.filter((row) => normalizeAccountMeta(row).key === selectedAccountKey);
+  }, [filteredRows, selectedAccountKey, accountNameById]);
 
   // 선택 고객사명
   const selectedAccountName = useMemo(() => {
@@ -260,6 +318,11 @@ export default function useAccountIssueSheetStatsTabData(teamCode = 1) {
   // 통계 탭에서 사용하는 계산 결과/필터 상태 반환
   return {
     loading,
+    currentYear,
+    filterYear,
+    setFilterYear,
+    filterMonth,
+    setFilterMonth,
     selectedAccountKey,
     setSelectedAccountKey,
     selectedAccountName,

@@ -37,6 +37,7 @@ const MULTILINE_CELL_MAX_HEIGHT = 140;
 const TOP_ACCOUNT_INPUT_MIN_WIDTH = 240;
 const TOP_ACCOUNT_DROPDOWN_MIN_WIDTH = 240;
 const LEFT_ACCOUNT_DROPDOWN_WIDTH = 240;
+const TOP_FILTER_CONTROL_HEIGHT = 38;
 // 왼쪽 편집 테이블 컬럼 폭
 const LEFT_COL_WIDTH = {
   subDate: 90,
@@ -62,9 +63,15 @@ export default function DeadlineIssueTab2() {
   const {
     loading,
     rows,
+    filteredRows,
     originalRows,
     accountList,
     typeList,
+    currentYear,
+    filterYear,
+    setFilterYear,
+    filterMonth,
+    setFilterMonth,
     accountNameById,
     typeLabelById,
     selectedAccountKey,
@@ -405,8 +412,8 @@ export default function DeadlineIssueTab2() {
 
   // 행 추가/삭제처럼 구조가 바뀌면 즉시 정렬을 다시 계산
   const leftRowsIdKey = useMemo(
-    () => (rows || []).map((row) => String(row.id)).join("|"),
-    [rows]
+    () => (filteredRows || []).map((row) => String(row.id)).join("|"),
+    [filteredRows]
   );
 
   const leftRowById = useMemo(() => {
@@ -419,7 +426,10 @@ export default function DeadlineIssueTab2() {
 
   // 왼쪽 편집 테이블은 기본 접수일 내림차순으로 표시
   const leftSortedRowIds = useMemo(() => {
-    const withSourceIndex = (rows || []).map((row, sourceIndex) => ({ row, sourceIndex }));
+    const withSourceIndex = (filteredRows || []).map((row) => ({
+      row,
+      sourceIndex: leftRowById.get(row.id)?.sourceIndex ?? 0,
+    }));
     return withSourceIndex
       .sort((a, b) => {
         const resolveValue = (targetRow) => {
@@ -444,7 +454,17 @@ export default function DeadlineIssueTab2() {
         return a.sourceIndex - b.sourceIndex;
       })
       .map(({ row }) => row.id);
-  }, [leftSort, leftSortTrigger, leftRowsIdKey, RESULT_OPTIONS, toDateInputValue, typeLabelById, accountNameById]);
+  }, [
+    filteredRows,
+    leftRowById,
+    leftSort,
+    leftSortTrigger,
+    leftRowsIdKey,
+    RESULT_OPTIONS,
+    toDateInputValue,
+    typeLabelById,
+    accountNameById,
+  ]);
 
   // 우측 상세 테이블은 기존 기본값(접수일 오름차순)을 유지한 채 컬럼 클릭 정렬을 추가
   const sortDetailRows = (dataRows, sortState) => {
@@ -713,6 +733,32 @@ export default function DeadlineIssueTab2() {
           flexWrap: "wrap",
         }}
       >
+        {/* 접수일 기준 연/월 필터 영역 */}
+        <TextField
+          select
+          size="small"
+          value={filterYear}
+          onChange={(e) => setFilterYear(Number(e.target.value))}
+          sx={{ minWidth: 110, background: "#fff" }}
+          SelectProps={{ native: true }}
+        >
+          <option value={currentYear}>{currentYear}년</option>
+        </TextField>
+        <TextField
+          select
+          size="small"
+          value={filterMonth}
+          onChange={(e) => setFilterMonth(e.target.value)}
+          sx={{ minWidth: 110, background: "#fff" }}
+          SelectProps={{ native: true }}
+        >
+          <option value="">전체</option>
+          {Array.from({ length: 12 }, (_, index) => index + 1).map((monthValue) => (
+            <option key={monthValue} value={monthValue}>
+              {monthValue}월
+            </option>
+          ))}
+        </TextField>
         <Autocomplete
           size="small"
           options={accountSelectOptions}
@@ -748,6 +794,25 @@ export default function DeadlineIssueTab2() {
               {...params}
               label="거래처 선택"
               placeholder="거래처 검색"
+              sx={{
+                "& .MuiOutlinedInput-root": {
+                  height: TOP_FILTER_CONTROL_HEIGHT,
+                  minHeight: TOP_FILTER_CONTROL_HEIGHT,
+                  background: "#fff",
+                  paddingTop: "0 !important",
+                  paddingBottom: "0 !important",
+                },
+                "& .MuiOutlinedInput-input": {
+                  height: `${TOP_FILTER_CONTROL_HEIGHT}px`,
+                  boxSizing: "border-box",
+                },
+                "& .MuiAutocomplete-input": {
+                  padding: "0 8px !important",
+                },
+                "& .MuiAutocomplete-endAdornment": {
+                  top: `calc(50% - ${14}px)`,
+                },
+              }}
             />
           )}
         />

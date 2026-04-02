@@ -2759,7 +2759,11 @@ function TallySheet() {
               boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
             }}
           />
-          <Typography sx={{ fontSize: 12, fontWeight: 700, color: "#333" }}>{it.label}</Typography>
+          <Typography
+            sx={{ fontSize: 12, fontWeight: 700, color: "#333", position: "relative", top: "1px" }}
+          >
+            {it.label}
+          </Typography>
         </Box>
       ))}
     </Box>
@@ -3058,7 +3062,7 @@ function TallySheet() {
 
                 const activeRowBg = isActiveRow ? "rgba(255, 244, 179, 0.55)" : "";
                 const activeCellBg = isActiveThisCell ? "rgba(255, 213, 79, 0.60)" : "";
-                const lockedRowBg = rowLocked ? "rgba(158, 158, 158, 0.28)" : "";
+                const lockedRowBg = rowLocked ? "#E4E4E4" : "";
                 const isLightPoint =
                   pointColor &&
                   ["#f8fbfe", "#fff", "#ffffff"].includes(String(pointColor).toLowerCase());

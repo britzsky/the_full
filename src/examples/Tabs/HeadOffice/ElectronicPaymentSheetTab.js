@@ -926,10 +926,10 @@ export default function ElectronicPaymentSheetTab() {
     })();
   }, [fetchDepartments, fetchUsersByDepartment, loginDepartment, loginUserId]);
 
-  // ✅ 부서가 바뀌면 작성자 목록 로드 + tm_user 자동 설정(부서의 position==1인 사람)
-  useEffect(() => {
-    (async () => {
-      if (!department) {
+  // 선택한 부서 기준으로 작성자 목록과 팀장 결재선을 동기화한다.
+  const syncDepartmentUsers = useCallback(
+    async (targetDepartment) => {
+      if (!targetDepartment) {
         setWriterList([]);
         setWriterId("");
         setApprovalLine((prev) => ({
@@ -940,7 +940,7 @@ export default function ElectronicPaymentSheetTab() {
         return;
       }
 
-      const users = await fetchUsersByDepartment(department);
+      const users = await fetchUsersByDepartment(targetDepartment);
       setWriterList(users || []);
 
       // 작성자 자동 선택: 로그인 사용자 우선, 없으면 첫번째
@@ -953,7 +953,7 @@ export default function ElectronicPaymentSheetTab() {
         setWriterId("");
       }
 
-      // ✅ tm_user 자동: department 내 position==1인 사람(팀장)
+      // 부서 내 position==1 사용자를 팀장 결재선으로 자동 반영한다.
       const tm = (users || []).find((u) => Number(u.position) === 1);
       if (tm) {
         setApprovalLine((prev) => ({
@@ -964,8 +964,14 @@ export default function ElectronicPaymentSheetTab() {
       } else {
         setApprovalLine((prev) => ({ ...prev, tm_user: "", tm_user_name: "" }));
       }
-    })();
-  }, [department, fetchUsersByDepartment, loginUserId]);
+    },
+    [fetchUsersByDepartment, loginUserId]
+  );
+
+  // ✅ 부서가 바뀌면 작성자 목록 로드 + tm_user 자동 설정(부서의 position==1인 사람)
+  useEffect(() => {
+    void syncDepartmentUsers(department);
+  }, [department, syncDepartmentUsers]);
 
   // ✅ docType이 position==0(대표 필요)이면 ceo 자동 세팅(회사 트리에서 position==0 찾기)
   useEffect(() => {
@@ -1165,10 +1171,11 @@ export default function ElectronicPaymentSheetTab() {
   const resetToDocTypeSelect = useCallback(() => {
     const emptyItems = createEmptyItems();
     const emptyDraftSheet = createEmptyDraftSheet();
+    const nextDepartment = loginDepartment || "";
     setDocType("");
     setSelectedLargeType("");
     setSelectedMiddleType("");
-    setDepartment(loginDepartment || "");
+    setDepartment(nextDepartment);
     setWriterId(loginUserId || "");
     setWriterList([]);
     setDraftDt(dayjs().format("YYYY-MM-DDTHH:mm:ss"));
@@ -1194,7 +1201,10 @@ export default function ElectronicPaymentSheetTab() {
     setPayerLineAdded(false);
     setOpenLineModal(false);
     resetPaymentDocAttachments();
-  }, [loginDepartment, loginUserId, resetPaymentDocAttachments]);
+    if (nextDepartment) {
+      void syncDepartmentUsers(nextDepartment);
+    }
+  }, [loginDepartment, loginUserId, resetPaymentDocAttachments, syncDepartmentUsers]);
 
   // ✅ 상신 payload: main / item 분리
   const handleSave = async () => {

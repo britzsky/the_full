@@ -926,9 +926,13 @@ function RecordSheet() {
     }
     if (loading) return;
 
-    setEmployeeRowsView(Array.isArray(memberRows) ? memberRows : []);
+    const visibleEmployeeRows = (Array.isArray(memberRows) ? memberRows : []).filter((row) =>
+      shouldIncludeRetiredForViewMonth(row, year, month)
+    );
+
+    setEmployeeRowsView(visibleEmployeeRows);
     setEmployeeLoadedViewKey(currentViewKey);
-  }, [memberRows, loading, currentViewKey]);
+  }, [memberRows, loading, currentViewKey, year, month]);
 
   // =========================
   // ✅ 1) payload 안전 처리 (문자열 JSON 파싱까지)

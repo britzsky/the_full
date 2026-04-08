@@ -250,32 +250,77 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     });
   }, [birthdayMemberRows, birthdayMemberSort]);
 
-  // the_full_web 처리
-  const buildInquiryManageUrl = (inquiryId) => {
+  // 문의관리 상세/목록 이동에 사용할 공개 웹 경로를 만든다.
+  const buildInquiryManagePath = (inquiryId) => {
     const parsedId = Number(inquiryId);
     if (!Number.isInteger(parsedId) || parsedId <= 0) {
-      return `${THE_FULL_WEB_BASE_URL}/contact/manage`;
+      return "/contact/manage";
     }
 
-    return `${THE_FULL_WEB_BASE_URL}/contact/manage/${parsedId}`;
+    return `/contact/manage/${parsedId}`;
+  };
+
+  // ERP 로컬 로그인 정보를 공개 웹 도메인 쿠키로 넘긴 뒤 새 탭을 연다.
+  const openTheFullWebWithSession = (redirectPath) => {
+    const normalizedRedirectPath =
+      typeof redirectPath === "string" && redirectPath.startsWith("/") ? redirectPath : "/";
+
+    syncSharedAuthCookiesFromStorage();
+
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const userIdText = String(window.localStorage.getItem("user_id") || "").trim();
+    const sessionIdText = String(window.localStorage.getItem("login_session_id") || "").trim();
+    const webPositionText = String(window.localStorage.getItem("web_position") || "N").trim().toUpperCase() || "N";
+    const positionText = String(window.localStorage.getItem("position") || "").trim();
+    const departmentText = String(window.localStorage.getItem("department") || "").trim();
+
+    if (!userIdText || !sessionIdText) {
+      window.open(`${THE_FULL_WEB_BASE_URL}${normalizedRedirectPath}`, "_blank", "noopener");
+      return;
+    }
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = `${THE_FULL_WEB_BASE_URL}/api/erp-session`;
+    form.target = "_blank";
+    form.style.display = "none";
+
+    [
+      { name: "user_id", value: userIdText },
+      { name: "session_id", value: sessionIdText },
+      { name: "web_position", value: webPositionText },
+      { name: "position", value: positionText },
+      { name: "department", value: departmentText },
+      { name: "redirect_path", value: normalizedRedirectPath },
+    ].forEach(({ name, value }) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
   };
 
   const openInquiryManagePage = (inquiryId) => {
-    // 문의답변 관리 화면으로 이동하기 직전에 ERP 로그인 정보를 공용 쿠키로 다시 맞춘다.
-    syncSharedAuthCookiesFromStorage();
-    const targetUrl = buildInquiryManageUrl(inquiryId);
-    window.open(targetUrl, "_blank", "noopener");
+    // 문의답변 관리 화면으로 이동할 때 공개 웹 도메인에 세션 쿠키를 먼저 심는다.
+    openTheFullWebWithSession(buildInquiryManagePath(inquiryId));
   };
 
-  // 문의관리 목록으로 이동할 때도 ERP 로그인 정보를 공용 쿠키로 다시 맞춘다.
+  // 문의관리 목록으로 이동할 때도 공개 웹 도메인에 세션 쿠키를 먼저 심는다.
   const openInquiryManageListPage = () => {
-    openInquiryManagePage();
+    openTheFullWebWithSession(buildInquiryManagePath());
   };
 
-  // 홍보 게시판으로 이동하기 직전에 ERP 로그인 정보를 공용 쿠키로 다시 맞춘다.
+  // 홍보 게시판으로 이동할 때도 공개 웹 도메인에 세션 쿠키를 먼저 심는다.
   const openPromotionBoardPage = () => {
-    syncSharedAuthCookiesFromStorage();
-    window.open(`${THE_FULL_WEB_BASE_URL}/promotion`, "_blank", "noopener");
+    openTheFullWebWithSession("/promotion");
   };
 
   // ✅ 승인대기 목록 조회 (use_yn='N'만)  ※ approval_requested_* 로직 제거

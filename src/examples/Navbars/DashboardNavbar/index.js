@@ -58,7 +58,15 @@ const resolveTheFullWebBaseUrl = () => {
   if (apiBaseUrl) {
     try {
       const parsedApiUrl = new URL(apiBaseUrl);
-      return `${parsedApiUrl.protocol}//${parsedApiUrl.hostname}:8081`;
+      const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
+
+      // 로컬 ERP에서 열었을 때만 로컬 공개웹 포트를 그대로 사용한다.
+      if (localHosts.has(parsedApiUrl.hostname)) {
+        return `${parsedApiUrl.protocol}//${parsedApiUrl.hostname}:8081`;
+      }
+
+      // 운영 ERP에서는 공개웹 도메인으로 직접 이동한다.
+      return "http://n.thefull.kr";
     } catch (error) {
       // API 주소 파싱에 실패하면 아래 기본 로컬 주소를 사용한다.
     }

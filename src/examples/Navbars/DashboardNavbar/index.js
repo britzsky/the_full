@@ -43,14 +43,36 @@ import { navbar, navbarContainer, navbarIconButton } from "examples/Navbars/Dash
 // Context
 import { useMaterialUIController, setTransparentNavbar, setMiniSidenav } from "context";
 
+// ERP .env 값 기준으로 공개 웹 주소를 정한다.
+const resolveTheFullWebBaseUrl = () => {
+  const explicitWebBaseUrl = String(
+    process.env.REACT_APP_THE_FULL_WEB_BASE_URL || process.env.REACT_APP_WEB_BASE_URL || ""
+  ).trim().replace(/\/+$/, "");
+
+  if (explicitWebBaseUrl) {
+    return explicitWebBaseUrl;
+  }
+
+  const apiBaseUrl = String(process.env.REACT_APP_API_BASE_URL || "").trim();
+
+  if (apiBaseUrl) {
+    try {
+      const parsedApiUrl = new URL(apiBaseUrl);
+      return `${parsedApiUrl.protocol}//${parsedApiUrl.hostname}:8081`;
+    } catch (error) {
+      // API 주소 파싱에 실패하면 아래 기본 로컬 주소를 사용한다.
+    }
+  }
+
+  return "http://localhost:8081";
+};
+
 function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMini }) {
   const NAVBAR_H = 48;
   // ✅ 승인대기/문의답변대기/알림 뱃지 자동 갱신 주기 (화면 전체 새로고침 없이 알림만 업데이트)
   const NOTIF_POLL_MS = 30000;
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
-  const THE_FULL_WEB_BASE_URL = (
-    process.env.REACT_APP_THE_FULL_WEB_BASE_URL || process.env.REACT_APP_WEB_BASE_URL || "http://localhost:8081"
-  ).replace(/\/+$/, "");
+  const THE_FULL_WEB_BASE_URL = resolveTheFullWebBaseUrl();
 
   // ✅ 화면이 너무 작아지면 오른쪽(유저명/프로필/알림) 숨김
   const theme = useTheme();
@@ -112,8 +134,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const inquiryMenuSectionTitle = inquiryPendingCount > 0 ? "문의 답변 대기" : "문의 목록";
   const inquiryMenuItemTitle =
     inquiryPendingCount > 0 ? `문의 답변 대기 목록 (${inquiryPendingCount})` : "문의 목록";
-  const promotionMenuSectionTitle = "홍보 게시판";
-  const promotionMenuItemTitle = "홍보 게시판 이동";
+  const promotionMenuSectionTitle = "홍보 게시글";
+  const promotionMenuItemTitle = "홍보 게시글 이동";
 
   // ------------------ 승인대기 목록 표시에 필요한 유틸 ------------------
   const DEPT_MAP = {

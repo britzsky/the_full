@@ -47,6 +47,7 @@ import createCache from "@emotion/cache";
 
 // Material Dashboard 2 React routes
 import routes from "routes";
+import { clearSharedAuthCookies, syncSharedAuthCookiesFromStorage } from "utils/sharedAuthSession";
 
 // Material Dashboard 2 React contexts
 import { useMaterialUIController, setMiniSidenav, setOpenConfigurator } from "context";
@@ -268,8 +269,12 @@ const FieldboardOnlyRouteBlocker = () => {
         "position",
         "department",
         "account_id",
+        "web_position",
         "login_session_id",
       ].forEach((key) => localStorage.removeItem(key));
+      sessionStorage.removeItem("login_user_id");
+      sessionStorage.removeItem("login_session_id");
+      clearSharedAuthCookies();
       setShouldMoveLogin(true);
     });
   }, []);
@@ -339,7 +344,9 @@ export default function App() {
 
   const localSessionId = localStorage.getItem("login_session_id");
   const localUserId = localStorage.getItem("user_id");
+  const localPosition = localStorage.getItem("position");
   const department = localStorage.getItem("department");
+  const localWebPosition = localStorage.getItem("web_position");
   const isAuthed = !!localUserId && !!localSessionId;
   const isAuthPath = pathname.startsWith("/authentication/");
 
@@ -350,6 +357,10 @@ export default function App() {
   useEffect(() => {
     document.body.setAttribute("dir", direction);
   }, [direction]);
+
+  useEffect(() => {
+    syncSharedAuthCookiesFromStorage();
+  }, [localUserId, localSessionId, localPosition, department, localWebPosition]);
 
   useEffect(() => {
     // localStorage 인증 키 변경 시 화면 갱신
@@ -363,6 +374,7 @@ export default function App() {
         "position",
         "department",
         "account_id",
+        "web_position",
       ]);
 
       if (!watchKeys.has(event.key)) return;

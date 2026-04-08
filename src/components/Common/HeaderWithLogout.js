@@ -6,6 +6,7 @@ import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import { useNavigate } from "react-router-dom";
 import PropTypes from "prop-types";
+import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 
 // ✅ 사이드네브 컨트롤 import
 import {
@@ -26,11 +27,13 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
     localStorage.removeItem("position");
     localStorage.removeItem("department");
     localStorage.removeItem("account_id");
+    localStorage.removeItem("web_position");
     localStorage.removeItem("login_session_id");
     localStorage.removeItem("position_name");
     localStorage.removeItem("user_name");
     sessionStorage.removeItem("login_session_id");
     sessionStorage.removeItem("login_user_id");
+    clearSharedAuthCookies();
 
     navigate("/authentication/sign-in");
   };

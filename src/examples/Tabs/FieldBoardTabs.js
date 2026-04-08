@@ -14,6 +14,7 @@ import HygieneSheetTab from "./FieldBoard/HygieneSheetTab";
 import PropertySheetTab from "./FieldBoard/PropertySheetTab";
 
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
+import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 
 function FieldBoardTabs() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -28,11 +29,13 @@ function FieldBoardTabs() {
     localStorage.removeItem("position");
     localStorage.removeItem("department");
     localStorage.removeItem("account_id");
+    localStorage.removeItem("web_position");
     localStorage.removeItem("login_session_id");
     localStorage.removeItem("position_name");
     localStorage.removeItem("user_name");
     sessionStorage.removeItem("login_session_id");
     sessionStorage.removeItem("login_user_id");
+    clearSharedAuthCookies();
 
     navigate("/authentication/sign-in");
   };

@@ -9,6 +9,7 @@ import {
   TextField,
   MenuItem,
   Select,
+  Typography,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -30,6 +31,12 @@ export default function DeadlineBalanceTab() {
   const [month, setMonth] = useState(today.month() + 1);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editableRows, setEditableRows] = useState([]);
+  // ✅ 거래처 선택 전에도 전체 거래처 색상 계산을 위해 사용하는 입금 이력
+  const [allDepositColorRows, setAllDepositColorRows] = useState([]);
+  // ✅ 미납 품목 전용 비교 기준으로 사용하는 월별 미수 스냅샷 목록
+  const [allUnpaidBaseRows, setAllUnpaidBaseRows] = useState([]);
+  // ✅ 초기 진입 시 미납 품목 보조 집계가 끝난 뒤 화면을 표시하기 위한 상태
+  const [isUnpaidSummaryInitialized, setIsUnpaidSummaryInitialized] = useState(false);
   // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
   const [accountSortKey, setAccountSortKey] = useState("account_name");
 
@@ -69,6 +76,9 @@ export default function DeadlineBalanceTab() {
 
   // 🔹 입금 모달 관련
   const [modalOpen, setModalOpen] = useState(false);
+  // ✅ 장기미수 상세 모달
+  const [longTermModalOpen, setLongTermModalOpen] = useState(false);
+  const [longTermDetail, setLongTermDetail] = useState(null);
   const [depositForm, setDepositForm] = useState({
     customer_name: "",
     account_id: "",
@@ -88,12 +98,23 @@ export default function DeadlineBalanceTab() {
   });
   const AUTO_DEPOSIT_TYPES = new Set(["1", "2", "3", "4", "5", "6"]);
   const API_BASED_TYPES = new Set(["1", "2", "3", "4", "5"]);
+  const UNPAID_LOOKBACK_YEARS = 2;
   const REFUND_TARGET_LABEL_BY_CODE = {
     1: "생계비",
     2: "일반식대",
     3: "직원식대",
     5: "보전",
   };
+  const DEPOSIT_STATUS_COLORS = {
+    complete: "#D2DCB6",
+    partial: "#FFF2C6",
+    required: "#FFFFFF",
+  };
+  const DEPOSIT_STATUS_LEGEND = [
+    { color: DEPOSIT_STATUS_COLORS.complete, label: "입금완료" },
+    { color: DEPOSIT_STATUS_COLORS.partial, label: "부분입금" },
+    { color: DEPOSIT_STATUS_COLORS.required, label: "입금필요" },
+  ];
 
   // ✅ balanceRows가 갱신된 뒤 자동으로 다시 선택
   useEffect(() => {
@@ -110,6 +131,130 @@ export default function DeadlineBalanceTab() {
   useEffect(() => {
     fetchDeadlineBalanceList();
   }, [year, month]);
+
+  // ✅ 미납 품목 전용 집계 범위(조회 연월과 무관하게 최근 기준으로 고정)
+  const getUnpaidSummaryYearCandidates = () =>
+    Array.from({ length: UNPAID_LOOKBACK_YEARS + 1 }, (_, idx) => today.year() - idx).sort(
+      (a, b) => a - b
+    );
+
+  // ✅ 올해는 현재 월까지만, 이전 연도는 12월까지 미납 품목 비교 범위로 사용
+  const getUnpaidSummaryMonthsByYear = (targetYear) => {
+    const maxMonth = Number(targetYear) === Number(today.year()) ? today.month() + 1 : 12;
+    return Array.from({ length: maxMonth }, (_, idx) => idx + 1);
+  };
+
+  // ✅ 미납 품목 전용 원본 목록을 조회 연월과 분리해서 다시 가져온다
+  const fetchAllUnpaidSummarySourceList = async () => {
+    const summaryYears = getUnpaidSummaryYearCandidates();
+
+    try {
+      const deadlineResponses = await Promise.all(
+        summaryYears.flatMap((targetYear) =>
+          getUnpaidSummaryMonthsByYear(targetYear).map((targetMonth) =>
+            api
+              .get("/Account/AccountDeadlineBalanceList", {
+                params: { year: targetYear, month: targetMonth },
+              })
+              .then((res) => ({ year: targetYear, month: targetMonth, rows: res.data || [] }))
+              .catch(() => ({ year: targetYear, month: targetMonth, rows: [] }))
+          )
+        )
+      );
+
+      const unpaidBaseRows = deadlineResponses
+        .flatMap(({ year: targetYear, month: targetMonth, rows }) =>
+          (rows || []).map((item) => ({
+            account_id: normalizeAccountId(item.account_id),
+            account_name: item.account_name,
+            year: Number(item.year || targetYear),
+            month: Number(item.month || targetMonth),
+            living_cost: parseNumber(item.living_cost),
+            basic_cost: parseNumber(item.basic_cost),
+            employ_cost: parseNumber(item.employ_cost),
+            integrity_cost: parseNumber(item.integrity_cost),
+            balance_price: parseNumber(item.balance_price),
+            before_price2: parseNumber(item.before_price2),
+          }))
+        )
+        .filter((item) => item.account_id);
+
+      const unpaidBaseMap = new Map();
+      unpaidBaseRows.forEach((item) => {
+        const ymKey = `${String(item.year).padStart(4, "0")}-${String(item.month).padStart(2, "0")}`;
+        unpaidBaseMap.set(`${item.account_id}_${ymKey}`, item);
+      });
+      const finalizedUnpaidBaseRows = Array.from(unpaidBaseMap.values());
+
+      const accountIds = Array.from(
+        new Set(finalizedUnpaidBaseRows.map((item) => normalizeAccountId(item.account_id)).filter(Boolean))
+      );
+
+      let finalizedDepositColorRows = [];
+
+      if (accountIds.length > 0) {
+        const depositResponses = await Promise.all(
+          accountIds.flatMap((accountId) =>
+            summaryYears.map((targetYear) =>
+              api
+                .get("/Account/AccountDepositHistoryList", {
+                  params: {
+                    account_id: accountId,
+                    year: targetYear,
+                    month: Number(targetYear) === Number(today.year()) ? today.month() + 1 : 12,
+                  },
+                })
+                .then((res) => res.data || [])
+                .catch(() => [])
+            )
+          )
+        );
+
+        const depositMap = new Map();
+        depositResponses.flat().forEach((item) => {
+          const note = item.note || "";
+          const rawType = String(item.type || "").trim();
+          const isRefund = rawType === "6" || rawType === "환불" || note.includes("[환불]");
+          const row = {
+            account_id: normalizeAccountId(item.account_id),
+            year: Number(item.year || 0),
+            month: Number(item.month || 0),
+            type: isRefund ? "환불" : rawType,
+            input_dt: item.input_dt,
+            deposit_amount: parseNumber(item.deposit_amount),
+            input_price: parseNumber(item.input_price),
+          };
+
+          const depositKey = [
+            row.account_id,
+            row.year,
+            row.month,
+            row.type,
+            row.input_dt,
+            row.deposit_amount,
+            row.input_price,
+          ].join("_");
+          depositMap.set(depositKey, row);
+        });
+
+        finalizedDepositColorRows = Array.from(depositMap.values());
+      }
+
+      setAllUnpaidBaseRows(finalizedUnpaidBaseRows);
+      setAllDepositColorRows(finalizedDepositColorRows);
+    } catch (err) {
+      // ✅ 미납 품목 보조 조회 실패 시 기본 표시로 되돌린다
+      console.error("미납 품목 전용 원본 목록 조회 실패:", err);
+      setAllUnpaidBaseRows([]);
+      setAllDepositColorRows([]);
+    } finally {
+      setIsUnpaidSummaryInitialized(true);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllUnpaidSummarySourceList();
+  }, []);
 
   useEffect(() => {
     setEditableRows(
@@ -432,6 +577,551 @@ export default function DeadlineBalanceTab() {
     return codeByLabel[typeValue] || "";
   };
 
+  const normalizeAccountId = (rawAccountId) => String(rawAccountId || "").trim();
+
+  const TYPE_CODE_BY_ACCESSOR = {
+    living_cost: "1",
+    basic_cost: "2",
+    employ_cost: "3",
+    integrity_cost: "5",
+    balance_price: "4",
+  };
+  const TRACKED_UNPAID_TYPE_CODES = ["1", "2", "3", "5"];
+  const TYPE_LABEL_BY_CODE = {
+    1: "생계비",
+    2: "일반식대",
+    3: "직원식대",
+    5: "보전",
+  };
+  const TYPE_ACCESSOR_BY_CODE = {
+    1: "living_cost",
+    2: "basic_cost",
+    3: "employ_cost",
+    5: "integrity_cost",
+  };
+  const BALANCE_TYPE_CODE = "4";
+
+  // ✅ 최신 총 미수잔액보다 월별 누계 합이 작을 때 오래된 대상월에 차액을 보정한다
+  const applyOutstandingGapToTypeRows = (typeRows, gapAmount) => {
+    const normalizedGap = Math.max(0, parseNumber(gapAmount));
+    const nextTypeRows = (typeRows || []).map((item) => ({ ...item }));
+    if (normalizedGap === 0 || nextTypeRows.length === 0) return nextTypeRows;
+
+    const targetIndexes = nextTypeRows.reduce((acc, item, index) => {
+      if (Math.max(0, parseNumber(item.expected)) > 0) {
+        acc.push(index);
+      }
+      return acc;
+    }, []);
+    const distributedIndexes = targetIndexes.length > 0 ? targetIndexes : [0];
+    const expectedTotal = distributedIndexes.reduce(
+      (acc, index) => acc + Math.max(0, parseNumber(nextTypeRows[index]?.expected)),
+      0
+    );
+
+    let remainGap = normalizedGap;
+    distributedIndexes.forEach((targetIndex, index) => {
+      const isLast = index === distributedIndexes.length - 1;
+      const baseExpected = Math.max(0, parseNumber(nextTypeRows[targetIndex]?.expected));
+      const appliedGap = isLast
+        ? remainGap
+        : expectedTotal > 0
+          ? Math.floor((normalizedGap * baseExpected) / expectedTotal)
+          : 0;
+
+      nextTypeRows[targetIndex].expected = baseExpected + appliedGap;
+      nextTypeRows[targetIndex].outstanding =
+        Math.max(0, parseNumber(nextTypeRows[targetIndex]?.outstanding)) + appliedGap;
+      remainGap -= appliedGap;
+    });
+
+    if (remainGap > 0) {
+      const fallbackIndex = distributedIndexes[distributedIndexes.length - 1] ?? 0;
+      nextTypeRows[fallbackIndex].expected =
+        Math.max(0, parseNumber(nextTypeRows[fallbackIndex]?.expected)) + remainGap;
+      nextTypeRows[fallbackIndex].outstanding =
+        Math.max(0, parseNumber(nextTypeRows[fallbackIndex]?.outstanding)) + remainGap;
+    }
+
+    return nextTypeRows;
+  };
+
+  // ✅ 장기미수 상세 모달에서 항목별 금액 설명을 괄호 형태로 만든다
+  const buildTypeBreakdownText = (items) => {
+    const breakdownText = (items || [])
+      .map((item) => {
+        const amount = parseNumber(item?.amount);
+        if (!item?.label || amount === 0) return "";
+        return `${item.label}: ${formatNumber(amount)}`;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+    return breakdownText ? `(${breakdownText})` : "";
+  };
+
+  // ✅ 월별 입금액/누계액에 표시할 두 줄 데이터를 만든다
+  const getLongTermMonthDisplayAmounts = (monthInfo) => {
+    const totalPaid = Math.max(0, parseNumber(monthInfo?.totalPaid));
+    const totalOutstanding = Math.max(0, parseNumber(monthInfo?.totalOutstanding));
+    const balancePaid = Math.max(0, parseNumber(monthInfo?.balancePaid));
+
+    const paidBreakdownText = buildTypeBreakdownText([
+      ...(monthInfo?.typeRows || []).map((item) => ({
+        label: item.typeLabel,
+        amount: item.paid,
+      })),
+      ...(balancePaid > 0 ? [{ label: "미수잔액", amount: balancePaid }] : []),
+    ]);
+    const outstandingBreakdownText = buildTypeBreakdownText(
+      [
+        ...((monthInfo?.typeRows || []).map((item) => ({
+          label: item.typeLabel,
+          amount: item.outstanding,
+        })) || []),
+        ...(balancePaid > 0 ? [{ label: "미수잔액차감", amount: -balancePaid }] : []),
+      ]
+    );
+
+    return {
+      paidBreakdownText,
+      paidAmountText: totalPaid > 0 ? formatNumber(totalPaid) : "-",
+      outstandingBreakdownText,
+      outstandingAmountText: totalOutstanding > 0 ? formatNumber(totalOutstanding) : "-",
+    };
+  };
+
+  // ✅ 미납 월을 연도 기준으로 묶어서 표시
+  const formatGroupedMonthText = (monthInfos) => {
+    const groupedMonthMap = new Map();
+
+    (monthInfos || []).forEach((item) => {
+      const targetYear = Number(item?.year || 0);
+      const targetMonth = Number(item?.month || 0);
+      if (targetYear <= 0 || targetMonth <= 0) return;
+
+      const yearLabel = `${String(targetYear).slice(2)}년`;
+      const prevMonths = groupedMonthMap.get(yearLabel) || [];
+      const monthLabel = `${targetMonth}월`;
+      if (!prevMonths.includes(monthLabel)) {
+        prevMonths.push(monthLabel);
+      }
+      groupedMonthMap.set(yearLabel, prevMonths);
+    });
+
+    return Array.from(groupedMonthMap.entries())
+      .map(([yearLabel, monthLabels]) => `${yearLabel}(${monthLabels.join(", ")})`)
+      .join(", ");
+  };
+
+  // ✅ 기대금액/실입금 합계 기준 상태색 계산
+  const getStatusColorByExpectedAndPaid = (expectedAmount, paidAmount) => {
+    const expected = Math.max(0, parseNumber(expectedAmount));
+    const paid = Math.max(0, parseNumber(paidAmount));
+
+    // ✅ 미수잔액 0원 + 실입금 0원도 입금완료(초록) 처리
+    if (expected === 0 && paid === 0) return DEPOSIT_STATUS_COLORS.complete;
+    if (expected > 0 && paid >= expected) return DEPOSIT_STATUS_COLORS.complete;
+    if (expected > 0 && paid > 0 && paid < expected) return DEPOSIT_STATUS_COLORS.partial;
+    return DEPOSIT_STATUS_COLORS.required;
+  };
+
+  // ✅ 연도 선택 왼쪽에 표시할 입금상태 범례
+  const DepositStatusLegend = () => (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 1,
+        flexWrap: "wrap",
+        mr: 1,
+        userSelect: "none",
+      }}
+    >
+      {DEPOSIT_STATUS_LEGEND.map((item) => (
+        (() => {
+          const normalizedColor = String(item.color || "").toLowerCase();
+          const markerBorderColor =
+            normalizedColor === "#ffffff" || normalizedColor === "#fff"
+              ? "rgba(0,0,0,0.25)"
+              : item.color;
+
+          return (
+        <Box
+          key={item.label}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.6,
+            px: 0.8,
+            py: 0.3,
+            borderRadius: 999,
+            bgcolor: "rgba(0,0,0,0.03)",
+            border: "1px solid rgba(0,0,0,0.08)",
+          }}
+        >
+          <Box
+            sx={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              bgcolor: item.color,
+              border: `1px solid ${markerBorderColor}`,
+              boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
+            }}
+          />
+          <Typography
+            sx={{ fontSize: 12, fontWeight: 700, color: "#333", position: "relative", top: "1px" }}
+          >
+            {item.label}
+          </Typography>
+        </Box>
+          );
+        })()
+      ))}
+    </Box>
+  );
+
+  // ✅ 우측 표 계산용: 미수기준 연월+항목별로 기대금액/실입금 합계 집계
+  const rightStatusMapByBaseYmType = useMemo(() => {
+    const sumMap = new Map();
+    const sourceRows = allDepositColorRows || [];
+
+    (sourceRows || []).forEach((row) => {
+      const typeCode = normalizeDepositTypeCode(row?.type);
+      if (!typeCode || typeCode === "6") return;
+
+      const y = Number(row?.year || 0);
+      const m = Number(row?.month || 0);
+      if (y <= 0 || m <= 0) return;
+
+      const accountId = normalizeAccountId(row?.account_id);
+      if (!accountId) return;
+      const ymKey = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
+      const key = `${accountId}_${ymKey}_${typeCode}`;
+      const prev = sumMap.get(key) || { expected: 0, actual: 0 };
+      // ✅ 분할 입금 대응: 실입금은 합산, 기대금액은 최대값으로 기준 유지
+      prev.expected = Math.max(prev.expected, parseNumber(row?.deposit_amount));
+      prev.actual += parseNumber(row?.input_price);
+      sumMap.set(key, prev);
+    });
+
+    return sumMap;
+  }, [allDepositColorRows]);
+
+  // ✅ 좌측 표 항목 셀 색상
+  const getLeftAmountCellColor = (row, accessorKey) => {
+    const isSelectedRow =
+      selectedCustomer
+      && normalizeAccountId(row?.account_id) === normalizeAccountId(selectedCustomer?.account_id);
+
+    // ✅ 총 미수잔액은 선택 거래처일 때만 분홍색 강조
+    if (accessorKey === "balance_price") {
+      return isSelectedRow ? "#FFE4E1" : "transparent";
+    }
+
+    const typeCode = TYPE_CODE_BY_ACCESSOR[accessorKey];
+    if (!typeCode) return "transparent";
+
+    // ✅ 좌측도 우측과 동일하게 "미수기준일(year/month)+항목" 기준 합산값으로 비교
+    const y = Number(year);
+    const m = Number(month);
+    const accountId = normalizeAccountId(row?.account_id);
+    if (!accountId) return "#FFFFFF";
+    const ymKey = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
+    const key = `${accountId}_${ymKey}_${typeCode}`;
+    const sum = rightStatusMapByBaseYmType.get(key) || { expected: 0, actual: 0 };
+
+    const expectedAmount = parseNumber(row?.[accessorKey]);
+    const paidAmount = sum.actual;
+    return getStatusColorByExpectedAndPaid(expectedAmount, paidAmount);
+  };
+
+  // ✅ 우측 표 입금항목 셀 색상(입금내역의 미수기준일 기준)
+  const getRightTypeCellColor = (depositRow) => {
+    const typeCode = normalizeDepositTypeCode(depositRow?.type);
+    if (!typeCode || typeCode === "6") return "#FFFFFF";
+
+    const accountId = normalizeAccountId(depositRow?.account_id);
+    if (!accountId) return "#FFFFFF";
+    const y = Number(depositRow?.year || 0);
+    const m = Number(depositRow?.month || 0);
+    if (y <= 0 || m <= 0) return "#FFFFFF";
+
+    const ymKey = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`;
+    const key = `${accountId}_${ymKey}_${typeCode}`;
+    const sum = rightStatusMapByBaseYmType.get(key) || { expected: 0, actual: 0 };
+    return getStatusColorByExpectedAndPaid(sum.expected, sum.actual);
+  };
+
+  // ✅ 거래처별 미납월/장기미수 요약 계산
+  const accountUnpaidSummaryMap = useMemo(() => {
+    const accountMonthMap = new Map();
+    const thresholdMonth = dayjs().startOf("month").subtract(3, "month");
+    const finalized = new Map();
+
+    (allUnpaidBaseRows || []).forEach((row) => {
+      const accountId = normalizeAccountId(row?.account_id);
+      const targetYear = Number(row?.year || 0);
+      const targetMonth = Number(row?.month || 0);
+      if (!accountId || targetYear <= 0 || targetMonth <= 0) return;
+
+      const ymKey = `${String(targetYear).padStart(4, "0")}-${String(targetMonth).padStart(2, "0")}`;
+
+      let monthMap = accountMonthMap.get(accountId);
+      if (!monthMap) {
+        monthMap = new Map();
+        accountMonthMap.set(accountId, monthMap);
+      }
+
+      let monthInfo = monthMap.get(ymKey);
+      if (!monthInfo) {
+        monthInfo = {
+          year: targetYear,
+          month: targetMonth,
+          ymKey,
+          typeMap: new Map(),
+          balancePaid: 0,
+          balancePrice: 0,
+        };
+        monthMap.set(ymKey, monthInfo);
+      }
+
+      monthInfo.balancePrice = Math.max(0, parseNumber(row?.balance_price));
+
+      TRACKED_UNPAID_TYPE_CODES.forEach((typeCode) => {
+        const accessorKey = TYPE_ACCESSOR_BY_CODE[typeCode];
+        const expected = Math.max(0, parseNumber(row?.[accessorKey]));
+        monthInfo.typeMap.set(typeCode, {
+          expected,
+          paid: 0,
+          outstanding: expected,
+        });
+      });
+    });
+
+    rightStatusMapByBaseYmType.forEach((sum, rawKey) => {
+      const keyParts = String(rawKey || "").split("_");
+      if (keyParts.length < 3) return;
+
+      const typeCode = String(keyParts.pop() || "");
+      const ymKey = String(keyParts.pop() || "");
+      const accountId = normalizeAccountId(keyParts.join("_"));
+      if (!accountId || (!TRACKED_UNPAID_TYPE_CODES.includes(typeCode) && typeCode !== BALANCE_TYPE_CODE)) {
+        return;
+      }
+
+      const [yStr, mStr] = ymKey.split("-");
+      const y = Number(yStr || 0);
+      const m = Number(mStr || 0);
+      if (y <= 0 || m <= 0) return;
+
+      let monthMap = accountMonthMap.get(accountId);
+      if (!monthMap) {
+        monthMap = new Map();
+        accountMonthMap.set(accountId, monthMap);
+      }
+
+      let monthInfo = monthMap.get(ymKey);
+      if (!monthInfo) {
+        monthInfo = {
+          year: y,
+          month: m,
+          ymKey,
+          typeMap: new Map(),
+          balancePaid: 0,
+          balancePrice: 0,
+        };
+        monthMap.set(ymKey, monthInfo);
+      }
+
+      if (typeCode === BALANCE_TYPE_CODE) {
+        monthInfo.balancePaid = Math.max(0, parseNumber(sum?.actual));
+        return;
+      }
+
+      const base = monthInfo.typeMap.get(typeCode) || { expected: 0, paid: 0, outstanding: 0 };
+      const expected = Math.max(base.expected, parseNumber(sum?.expected));
+      const paid = Math.max(0, parseNumber(sum?.actual));
+      const outstanding = Math.max(0, expected - paid);
+      monthInfo.typeMap.set(typeCode, { expected, paid, outstanding });
+    });
+
+    Array.from(accountMonthMap.entries()).forEach(([accountId, monthMap]) => {
+      const monthDetails = Array.from(monthMap.values())
+        .map((monthInfo) => {
+          const typeRows = TRACKED_UNPAID_TYPE_CODES.map((typeCode) => {
+            const base = monthInfo.typeMap.get(typeCode) || { expected: 0, paid: 0, outstanding: 0 };
+            return {
+              typeCode,
+              typeLabel: TYPE_LABEL_BY_CODE[typeCode] || typeCode,
+              expected: base.expected,
+              paid: base.paid,
+              outstanding: base.outstanding,
+            };
+          });
+
+          const totalExpected = typeRows.reduce((acc, item) => acc + item.expected, 0);
+          const balancePaid = Math.max(0, parseNumber(monthInfo.balancePaid));
+          const totalPaid = typeRows.reduce((acc, item) => acc + item.paid, 0) + balancePaid;
+          const totalOutstanding = Math.max(0, totalExpected - totalPaid);
+          const monthDate = dayjs(`${monthInfo.ymKey}-01`);
+          const isLongTerm =
+            totalOutstanding > 0
+            && (monthDate.isBefore(thresholdMonth, "month")
+              || monthDate.isSame(thresholdMonth, "month"));
+
+          return {
+            ...monthInfo,
+            typeRows,
+            totalExpected,
+            totalPaid,
+            totalOutstanding,
+            balancePaid,
+            balancePrice: Math.max(0, parseNumber(monthInfo.balancePrice)),
+            isLongTerm,
+          };
+        })
+        .filter((item) => item.totalExpected > 0 || item.totalPaid > 0 || item.totalOutstanding > 0);
+
+      monthDetails.sort((a, b) => (a.year !== b.year ? a.year - b.year : a.month - b.month));
+
+      // ✅ 조회 연월과 무관하게 실제 미수기준일에 미납이 남아 있는 월만 표시
+      const unpaidMonthsAll = monthDetails.filter((item) => item.totalOutstanding > 0);
+      const currentSummaryYmKey = `${String(dayjs().year()).padStart(4, "0")}-${String(
+        dayjs().month() + 1
+      ).padStart(2, "0")}`;
+      const currentMonthDetail = monthDetails.find((item) => item.ymKey === currentSummaryYmKey);
+      const hasUnpaidBalance = unpaidMonthsAll.length > 0;
+      const longTermMonths = hasUnpaidBalance
+        ? unpaidMonthsAll.filter((item) => item.isLongTerm)
+        : [];
+      let detailMonths = hasUnpaidBalance && longTermMonths.length > 0
+        ? [...unpaidMonthsAll]
+        : [];
+      if (
+        detailMonths.length > 0
+        && currentMonthDetail
+        && !detailMonths.some((item) => item.ymKey === currentSummaryYmKey)
+      ) {
+        detailMonths.push(currentMonthDetail);
+        detailMonths.sort((a, b) => (a.year !== b.year ? a.year - b.year : a.month - b.month));
+      }
+      const unpaidMonthText = hasUnpaidBalance ? formatGroupedMonthText(unpaidMonthsAll) : "-";
+      const unpaidDetailMonths = unpaidMonthsAll.map((item) => ({
+        ...item,
+        typeRows: (item.typeRows || []).map((typeRow) => ({ ...typeRow })),
+      }));
+
+      const longTermSummaryMonths = (detailMonths.length > 0 ? detailMonths : longTermMonths).map(
+        (item) => ({
+          ...item,
+          typeRows: (item.typeRows || []).map((typeRow) => ({ ...typeRow })),
+        })
+      );
+      const latestBalancePrice = monthDetails.length > 0
+        ? Math.max(
+          0,
+          parseNumber(
+            monthDetails[monthDetails.length - 1]?.balancePrice
+            || monthDetails[monthDetails.length - 1]?.totalOutstanding
+          )
+        )
+        : 0;
+      const calculatedLongTermTotal = longTermSummaryMonths.reduce(
+        (acc, item) => acc + Math.max(0, parseNumber(item.totalOutstanding)),
+        0
+      );
+      const outstandingGap = Math.max(0, latestBalancePrice - calculatedLongTermTotal);
+
+      if (outstandingGap > 0 && longTermSummaryMonths.length > 0) {
+        const oldestMonthInfo = longTermSummaryMonths[0];
+        oldestMonthInfo.typeRows = applyOutstandingGapToTypeRows(
+          oldestMonthInfo.typeRows,
+          outstandingGap
+        );
+        oldestMonthInfo.totalExpected =
+          Math.max(0, parseNumber(oldestMonthInfo.totalExpected)) + outstandingGap;
+        oldestMonthInfo.totalOutstanding =
+          Math.max(0, parseNumber(oldestMonthInfo.totalOutstanding)) + outstandingGap;
+      }
+
+      const longTermExpectedTotal = longTermSummaryMonths.reduce(
+        (acc, item) => acc + Math.max(0, parseNumber(item.totalExpected)),
+        0
+      );
+      const longTermTypeTotals = TRACKED_UNPAID_TYPE_CODES.reduce((acc, typeCode) => {
+        acc[typeCode] = longTermSummaryMonths.reduce((sumAcc, monthInfo) => {
+          const found = monthInfo.typeRows.find((item) => item.typeCode === typeCode);
+          return sumAcc + Math.max(0, parseNumber(found?.outstanding));
+        }, 0);
+        return acc;
+      }, {});
+      const longTermTotal = longTermSummaryMonths.reduce(
+        (acc, item) => acc + Math.max(0, parseNumber(item.totalOutstanding)),
+        0
+      );
+      const longTermPaidTotal = longTermSummaryMonths.reduce(
+        (acc, item) => acc + Math.max(0, parseNumber(item.totalPaid)),
+        0
+      );
+      const longTermMonthText = longTermMonths.length > 0
+        ? formatGroupedMonthText(longTermMonths)
+        : "-";
+      const noteHasPartialPayment = hasUnpaidBalance && longTermSummaryMonths.some(
+        (item) => item.totalPaid > 0 && item.totalOutstanding > 0
+      );
+
+      finalized.set(accountId, {
+        unpaidMonthText,
+        hasUnpaidBalance,
+        hasLongTerm: longTermMonths.length > 0,
+        longTermMonths,
+        unpaidDetailMonths,
+        detailMonths: longTermSummaryMonths,
+        longTermTypeTotals,
+        longTermExpectedTotal: hasUnpaidBalance ? longTermExpectedTotal : 0,
+        longTermPaidTotal: hasUnpaidBalance ? longTermPaidTotal : 0,
+        longTermTotal: hasUnpaidBalance ? Math.max(longTermTotal, latestBalancePrice) : 0,
+        totalUnpaidAmount: hasUnpaidBalance ? Math.max(longTermTotal, latestBalancePrice) : 0,
+        longTermMonthText,
+        noteHasPartialPayment,
+      });
+    });
+
+    return finalized;
+  }, [allUnpaidBaseRows, rightStatusMapByBaseYmType]);
+
+  const getAccountUnpaidSummary = (row) => {
+    const accountId = normalizeAccountId(row?.account_id);
+    return accountUnpaidSummaryMap.get(accountId) || null;
+  };
+
+  const handleOpenLongTermDetail = (row) => {
+    const summary = getAccountUnpaidSummary(row);
+    const targetDetailMonths = summary?.hasLongTerm
+      ? summary?.detailMonths || []
+      : summary?.unpaidDetailMonths || [];
+    if (targetDetailMonths.length === 0) return;
+    const currentBalancePrice = Math.max(0, parseNumber(row?.balance_price));
+    setLongTermDetail({
+      account_id: row?.account_id,
+      account_name: row?.account_name,
+      ...summary,
+      detailMonths: targetDetailMonths,
+      detailTitle: summary?.hasLongTerm ? "장기미수 세부내역" : "미납 품목 세부내역",
+      currentBalancePrice,
+      longTermTotal: currentBalancePrice,
+      totalUnpaidAmount: currentBalancePrice,
+    });
+    setLongTermModalOpen(true);
+  };
+
+  const handleCloseLongTermDetail = () => {
+    setLongTermModalOpen(false);
+    setLongTermDetail(null);
+  };
+
   const hasRefundBaseDepositHistory = (formState) => {
     const targetYear = Number(formState?.base_year || 0);
     const targetMonth = Number(formState?.base_month || 0);
@@ -664,6 +1354,7 @@ export default function DeadlineBalanceTab() {
 
       Swal.fire("입금 내역이 저장되었습니다.", refundMessage, "success");
       await fetchDeadlineBalanceList();
+      await fetchAllUnpaidSummarySourceList();
       await fetchDepositHistoryList(selectedCustomer.account_id, year);
       setRefetchTrigger(true);
       handleDepositModalClose();
@@ -722,6 +1413,7 @@ export default function DeadlineBalanceTab() {
         lastSelectedAccountId.current = targetAccountId;
       }
       await fetchDeadlineBalanceList();
+      await fetchAllUnpaidSummarySourceList();
       if (targetAccountId) {
         setRefetchTrigger(true);
       }
@@ -738,9 +1430,8 @@ export default function DeadlineBalanceTab() {
       { header: "일반식대", accessorKey: "basic_cost" },
       { header: "직원식대", accessorKey: "employ_cost" },
       { header: "보전", accessorKey: "integrity_cost" },
-      { header: "이전 미수잔액", accessorKey: "before_price2" },
       { header: "총 미수잔액", accessorKey: "balance_price" },
-      { header: "입금예정일", accessorKey: "input_exp" },
+      { header: "미납 품목", accessorKey: "unpaid_items" },
     ],
     []
   );
@@ -797,11 +1488,29 @@ export default function DeadlineBalanceTab() {
     }),
     [isMobile]
   );
+  const detailTableCellStyle = useMemo(
+    () => ({
+      border: "1px solid #686D76",
+      padding: isMobile ? "3px" : "4px",
+      fontSize: "12px",
+      color: "#344767",
+    }),
+    []
+  );
+  const detailTableHeaderStyle = useMemo(
+    () => ({
+      ...detailTableCellStyle,
+      backgroundColor: "#f0f0f0",
+      fontWeight: "bold",
+      textAlign: "center",
+    }),
+    [detailTableCellStyle]
+  );
 
   const isInputPriceLocked = isInputPriceLockedInModal(depositForm);
 
   // ✅ 초기 로딩만 전체 로딩 화면 표시 (행 클릭 시 스크롤 튐 방지)
-  const isInitialLoading = loading && balanceRows.length === 0;
+  const isInitialLoading = (loading && balanceRows.length === 0) || !isUnpaidSummaryInitialized;
   if (isInitialLoading) return <LoadingScreen />;
 
   return (
@@ -831,6 +1540,8 @@ export default function DeadlineBalanceTab() {
               🚫 현재 계정({userId || "unknown"})은 조회만 가능합니다. (입력/저장/입금 불가)
             </MDTypography>
           )}
+
+          <DepositStatusLegend />
 
           <TextField
             select
@@ -944,7 +1655,6 @@ export default function DeadlineBalanceTab() {
 
                         const baseTdStyle = {
                           cursor: key === "account_name" ? "pointer" : "default",
-                          backgroundColor: isSelected ? "#ffe4e1" : "transparent",
                           fontWeight: isSelected ? "bold" : "normal",
                         };
 
@@ -952,10 +1662,71 @@ export default function DeadlineBalanceTab() {
                           return (
                             <td
                               key={key}
-                              style={baseTdStyle}
+                              style={{
+                                ...baseTdStyle,
+                                backgroundColor: isSelected ? "#FFE4E1" : "transparent",
+                              }}
                               onClick={() => handleSelectCustomer(row)}
                             >
                               {value}
+                            </td>
+                          );
+                        }
+
+                        if (key === "unpaid_items") {
+                          const unpaidSummary = getAccountUnpaidSummary(row);
+                          const unpaidText = unpaidSummary?.unpaidMonthText || "-";
+                          const hasLongTerm = Boolean(unpaidSummary?.hasLongTerm);
+                          const hasUnpaidDetail = Boolean(
+                            unpaidSummary?.hasLongTerm || (unpaidSummary?.unpaidDetailMonths || []).length > 0
+                          );
+
+                          return (
+                            <td
+                              key={key}
+                              style={{
+                                ...baseTdStyle,
+                                // ✅ 행 선택 시 미납 품목 셀도 분홍색으로 함께 강조
+                                backgroundColor: isSelected ? "#FFE4E1" : "transparent",
+                                minWidth: isMobile ? "130px" : "180px",
+                                textAlign: hasLongTerm ? "center" : "left",
+                                padding: isMobile ? "3px" : "4px",
+                              }}
+                            >
+                              {!hasLongTerm && (
+                                <MDTypography
+                                  component={hasUnpaidDetail ? "span" : "p"}
+                                  onClick={hasUnpaidDetail ? () => handleOpenLongTermDetail(row) : undefined}
+                                  sx={{
+                                    fontSize: isMobile ? "11px" : "12px",
+                                    lineHeight: 1.2,
+                                    cursor: hasUnpaidDetail ? "pointer" : "default",
+                                    "&:hover": hasUnpaidDetail
+                                      ? {
+                                        fontWeight: "bold",
+                                        textDecoration: "underline",
+                                      }
+                                      : undefined,
+                                  }}
+                                >
+                                  {unpaidText}
+                                </MDTypography>
+                              )}
+                              {hasLongTerm && (
+                                <MDTypography
+                                  component="span"
+                                  onClick={() => handleOpenLongTermDetail(row)}
+                                  sx={{
+                                    cursor: "pointer",
+                                    color: "#d32f2f",
+                                    fontSize: isMobile ? "11px" : "12px",
+                                    lineHeight: 1.2,
+                                    textDecoration: "underline",
+                                  }}
+                                >
+                                  장기미수 세부내역
+                                </MDTypography>
+                              )}
                             </td>
                           );
                         }
@@ -966,38 +1737,40 @@ export default function DeadlineBalanceTab() {
                             "basic_cost",
                             "employ_cost",
                             "integrity_cost",
-                            "input_exp",
                             "balance_price",
                           ].includes(key)
                         ) {
                           return (
-                            <td key={key} align="right" style={baseTdStyle}>
+                            <td
+                              key={key}
+                              align="right"
+                              style={{
+                                ...baseTdStyle,
+                                backgroundColor: getLeftAmountCellColor(row, key),
+                              }}
+                            >
                               <input
                                 type="text"
                                 disabled={!canEdit} // ✅ 입력 막기
-                                value={
-                                  key === "input_exp" ? value ?? "" : formatNumber(value ?? "")
-                                }
+                                value={formatNumber(value ?? "")}
                                 onChange={(e) =>
                                   handleChange(row.account_name, key, e.target.value)
                                 }
                                 onBlur={(e) => {
                                   if (!canEdit) return;
-                                  if (key !== "input_exp") {
-                                    const formatted = formatNumber(parseNumber(e.target.value));
-                                    setEditableRows((prev) =>
-                                      prev.map((r) =>
-                                        r.account_name === row.account_name
-                                          ? { ...r, [key]: parseNumber(formatted) }
-                                          : r
-                                      )
-                                    );
-                                  }
+                                  const formatted = formatNumber(parseNumber(e.target.value));
+                                  setEditableRows((prev) =>
+                                    prev.map((r) =>
+                                      r.account_name === row.account_name
+                                        ? { ...r, [key]: parseNumber(formatted) }
+                                        : r
+                                    )
+                                  );
                                 }}
                                 style={{
-                                  width: key === "input_exp" ? "100px" : "80px",
+                                  width: "80px",
                                   border: "none",
-                                  textAlign: key === "input_exp" ? "left" : "right",
+                                  textAlign: "right",
                                   background: "transparent",
                                   ...(canEdit
                                     ? getCellStyle(row.account_name, key)
@@ -1011,19 +1784,14 @@ export default function DeadlineBalanceTab() {
                           );
                         }
 
-                        // 일반 표시 셀(예: before_price2)
+                        // 일반 표시 셀
                         return (
                           <td
                             key={key}
                             align="right"
                             style={{
                               ...baseTdStyle,
-                              // ✅ 선택 행이면 무조건 분홍색이 우선
-                              backgroundColor: isSelected
-                                ? "#ffe4e1"
-                                : key === "before_price2"
-                                  ? "#FDE7B3"
-                                  : "transparent",
+                              backgroundColor: "transparent",
                               fontWeight: "bold",
                             }}
                           >
@@ -1084,7 +1852,20 @@ export default function DeadlineBalanceTab() {
                             <td key={key}>
                               {y > 0 && m > 0
                                 ? `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`
-                                : "0000-00"}
+                              : "0000-00"}
+                            </td>
+                          );
+                        }
+
+                        if (key === "type") {
+                          return (
+                            <td
+                              key={key}
+                              style={{
+                                backgroundColor: getRightTypeCellColor(row),
+                              }}
+                            >
+                              {value}
                             </td>
                           );
                         }
@@ -1109,6 +1890,270 @@ export default function DeadlineBalanceTab() {
           </Box>
         </Grid>
       </Grid>
+
+      {/* 장기미수 상세 모달 */}
+      <Modal open={longTermModalOpen} onClose={handleCloseLongTermDetail}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile
+              ? (longTermDetail?.hasLongTerm ? "94vw" : "90vw")
+              : (longTermDetail?.hasLongTerm ? "88vw" : "64vw"),
+            maxWidth: longTermDetail?.hasLongTerm ? 1220 : 700,
+            maxHeight: "92vh",
+            overflowY: "auto",
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            pt: isMobile ? 1.5 : 2,
+            px: isMobile ? 1.5 : 2,
+            pb: isMobile ? 0.5 : 0.5,
+          }}
+        >
+          <MDBox display="flex" alignItems="center" gap={1} mb={1.25}>
+            <MDTypography variant="h6" sx={{ fontSize: isMobile ? "14px" : "16px" }}>
+              {longTermDetail?.detailTitle || "장기미수 세부내역"}
+            </MDTypography>
+            <MDTypography
+              variant="button"
+              color="dark"
+              sx={{ fontSize: isMobile ? "11px" : "12px" }}
+            >
+              {longTermDetail?.account_name || "-"}
+            </MDTypography>
+          </MDBox>
+
+          <Grid container spacing={isMobile ? 1 : 1.5}>
+            <Grid item xs={12} md={longTermDetail?.hasLongTerm ? 8 : 12}>
+              <Box
+                sx={{
+                  maxHeight: isMobile ? "none" : "70vh",
+                  overflowY: isMobile ? "visible" : "auto",
+                  pr: isMobile ? 0 : 1,
+                }}
+              >
+                {(longTermDetail?.detailMonths || []).length > 0 ? (
+                  longTermDetail.detailMonths.map((monthInfo, monthIndex, detailMonths) => {
+                    const monthDisplayAmounts = getLongTermMonthDisplayAmounts(monthInfo);
+                    const isLastMonth = monthIndex === detailMonths.length - 1;
+
+                    return (
+                      <Box key={monthInfo.ymKey} sx={{ border: "1px solid #cfcfcf", mb: isLastMonth ? 0 : 1 }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                          <thead>
+                            <tr>
+                              <th
+                                colSpan={TRACKED_UNPAID_TYPE_CODES.length + 1}
+                                style={detailTableHeaderStyle}
+                              >
+                                {`${monthInfo.year}년 ${monthInfo.month}월`}
+                              </th>
+                            </tr>
+                            <tr>
+                              <th
+                                style={{ ...detailTableHeaderStyle, width: isMobile ? "72px" : "90px" }}
+                              >
+                                내역
+                              </th>
+                              {TRACKED_UNPAID_TYPE_CODES.map((typeCode) => (
+                                <th
+                                  key={`${monthInfo.ymKey}_${typeCode}_header`}
+                                  style={{ ...detailTableHeaderStyle, width: isMobile ? "72px" : "96px" }}
+                                >
+                                  {TYPE_LABEL_BY_CODE[typeCode]}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td
+                                style={{
+                                  ...detailTableCellStyle,
+                                  textAlign: "center",
+                                  width: isMobile ? "72px" : "90px",
+                                }}
+                              >
+                                금액
+                              </td>
+                              {TRACKED_UNPAID_TYPE_CODES.map((typeCode) => {
+                                const rawValue = Math.max(
+                                  0,
+                                  parseNumber(
+                                    monthInfo.typeRows.find((item) => item.typeCode === typeCode)?.expected
+                                  )
+                                );
+                                return (
+                                  <td
+                                    key={`${monthInfo.ymKey}_expected_${typeCode}`}
+                                    style={{
+                                      ...detailTableCellStyle,
+                                      textAlign: "right",
+                                      width: isMobile ? "72px" : "96px",
+                                    }}
+                                  >
+                                    {rawValue > 0 ? formatNumber(rawValue) : "-"}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                            {[
+                              {
+                                label: "입금액",
+                                value: Math.max(0, parseNumber(monthInfo.totalPaid)),
+                                displayBreakdownText: monthDisplayAmounts.paidBreakdownText,
+                                displayAmountText: monthDisplayAmounts.paidAmountText,
+                              },
+                              { label: "차액", value: Math.max(0, parseNumber(monthInfo.totalExpected)) },
+                              {
+                                label: "누계액",
+                                value: Math.max(0, parseNumber(monthInfo.totalOutstanding)),
+                                displayBreakdownText: monthDisplayAmounts.outstandingBreakdownText,
+                                displayAmountText: monthDisplayAmounts.outstandingAmountText,
+                                highlight: true,
+                              },
+                            ].map((rowInfo) => (
+                              <tr key={`${monthInfo.ymKey}_${rowInfo.label}`}>
+                                <td
+                                  style={{
+                                    ...detailTableCellStyle,
+                                    textAlign: "center",
+                                    fontWeight: rowInfo.highlight ? "bold" : "normal",
+                                    background: rowInfo.highlight ? "#e7e4e4" : "transparent",
+                                    width: isMobile ? "72px" : "90px",
+                                  }}
+                                >
+                                  {rowInfo.label}
+                                </td>
+                                <td
+                                  colSpan={TRACKED_UNPAID_TYPE_CODES.length}
+                                  style={{
+                                    ...detailTableCellStyle,
+                                    textAlign: "right",
+                                    fontWeight: rowInfo.highlight ? "bold" : "normal",
+                                    background: rowInfo.highlight ? "#e7e4e4" : "transparent",
+                                  }}
+                                >
+                                  {rowInfo.displayBreakdownText ? (
+                                    <Box
+                                      sx={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        alignItems: "flex-end",
+                                        gap: 0,
+                                        py: 0,
+                                      }}
+                                    >
+                                      <Typography
+                                        component="div"
+                                        sx={{
+                                          fontSize: "12px",
+                                          lineHeight: 1.35,
+                                          wordBreak: "keep-all",
+                                          textAlign: "right",
+                                          color: "#344767",
+                                        }}
+                                      >
+                                        {rowInfo.displayBreakdownText}
+                                      </Typography>
+                                      <Typography
+                                        component="div"
+                                        sx={{
+                                          fontSize: "12px",
+                                          lineHeight: 1.35,
+                                          fontWeight: rowInfo.highlight ? "bold" : "normal",
+                                          textAlign: "right",
+                                          color: "#344767",
+                                        }}
+                                      >
+                                        {rowInfo.displayAmountText}
+                                      </Typography>
+                                    </Box>
+                                  ) : (
+                                    rowInfo.displayAmountText || (rowInfo.value > 0 ? formatNumber(rowInfo.value) : "-")
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </Box>
+                    );
+                  })
+                ) : (
+                  <MDTypography variant="button" color="text">
+                    장기미수 대상이 없습니다.
+                  </MDTypography>
+                )}
+              </Box>
+            </Grid>
+
+            {longTermDetail?.hasLongTerm && (
+              <Grid item xs={12} md={4}>
+                <Box sx={{ border: "1px solid #cfcfcf" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr>
+                        <th colSpan={2} style={detailTableHeaderStyle}>
+                          결론
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[
+                        {
+                          label: "총 장기미납",
+                          value: formatNumber(longTermDetail?.longTermTotal || 0) || "-",
+                        },
+                        {
+                          label: "입금한 금액",
+                          value: formatNumber(longTermDetail?.longTermPaidTotal || 0) || "-",
+                        },
+                        {
+                          label: "총 미납금",
+                          value: formatNumber(longTermDetail?.totalUnpaidAmount || 0) || "-",
+                        },
+                      ].map((rowInfo) => (
+                        <tr key={`summary_${rowInfo.label}`}>
+                          <td
+                            style={{
+                              ...detailTableCellStyle,
+                              textAlign: "center",
+                              fontWeight: "bold",
+                              background: rowInfo.label === "총 미납금" ? "#e7e4e4" : "#f0f0f0",
+                            }}
+                          >
+                            {rowInfo.label}
+                          </td>
+                          <td
+                            style={{
+                              ...detailTableCellStyle,
+                              textAlign: "right",
+                              fontWeight: rowInfo.label === "총 미납금" ? "bold" : "normal",
+                              background: rowInfo.label === "총 미납금" ? "#e7e4e4" : "transparent",
+                            }}
+                          >
+                            {rowInfo.value}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Box>
+              </Grid>
+            )}
+          </Grid>
+
+          <Box display="flex" justifyContent="flex-end" mt={0.5}>
+            <Button variant="contained" onClick={handleCloseLongTermDetail} sx={{ color: "#fff" }}>
+              닫기
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
 
       {/* 입금 모달 */}
       <Modal open={modalOpen} onClose={handleDepositModalClose}>

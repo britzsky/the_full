@@ -220,7 +220,7 @@ function UserProfileModal({ open, onClose }) {
     setOpenPostcode(false);
   };
 
-  // ✅ 조회: 모달 열릴 때 user_id로 조회 (응답: 배열[0] flat)
+  // ✅ 조회: 모달이 실제로 열릴 때만 user_id 기준으로 조회하고, 네비바 폴링 리렌더에는 다시 덮어쓰지 않는다.
   useEffect(() => {
     if (!open) return;
 
@@ -273,7 +273,7 @@ function UserProfileModal({ open, onClose }) {
     };
 
     fetchUser();
-  }, [open, onClose, fetchAccountList]);
+  }, [open, fetchAccountList]);
 
   const datePickerSx = {
     "& .react-datepicker-popper": {

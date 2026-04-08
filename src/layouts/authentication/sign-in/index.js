@@ -16,6 +16,7 @@ import MDButton from "components/MDButton";
 
 // Authentication layout components
 import BasicLayout from "layouts/authentication/components/BasicLayout";
+import { clearSharedAuthCookies, writeSharedAuthCookies } from "utils/sharedAuthSession";
 
 // Images
 import bgImage2 from "assets/images/thefull_sign_1.png";
@@ -23,14 +24,13 @@ import Swal from "sweetalert2";
 
 function Basic() {
   const [rememberMe, setRememberMe] = useState(false);
-  const handleSetRememberMe = () => setRememberMe(!rememberMe);
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
   const navigate = useNavigate();
+  const handleSetRememberMe = () => setRememberMe(!rememberMe);
 
-  // ✅ 로그인 처리 함수 (직접 입력 / 자동 로그인 둘 다 사용)
-  const handleLogin = (id = userId, pw = password) => {
+  // 로그인 처리 함수
+  const handleLogin = (id = userId, pw = password, shouldRemember = rememberMe) => {
     // 아이디/비밀번호 빈값 체크 (옵션)
     if (!id || !pw) {
       Swal.fire({
@@ -79,8 +79,11 @@ function Basic() {
           }
           return;
         } else {
-          // 🔐 자동로그인 체크 여부에 따라 localStorage에 계정정보 저장
-          if (rememberMe) {
+          sessionStorage.setItem("login_user_id", response.data.user_id);
+          const webPosition = String(response.data.web_position ?? "N").trim().toUpperCase() || "N";
+
+          // 로그인 화면의 자동로그인 체크 여부에 따라 계정정보를 로컬스토리지에 유지
+          if (shouldRemember) {
             localStorage.setItem("autoLogin", "true");
             localStorage.setItem("autoLoginUserId", id);
             localStorage.setItem("autoLoginPassword", pw);
@@ -98,8 +101,16 @@ function Basic() {
           localStorage.setItem("position", response.data.position);
           localStorage.setItem("department", response.data.department);
           localStorage.setItem("account_id", response.data.account_id);
+          localStorage.setItem("web_position", webPosition);
           const sessionId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
           localStorage.setItem("login_session_id", sessionId);
+          writeSharedAuthCookies({
+            userId: response.data.user_id,
+            sessionId,
+            position: response.data.position,
+            department: response.data.department,
+            webPosition,
+          });
 
           const department = response.data.department;
 
@@ -117,7 +128,14 @@ function Basic() {
       });
   };
 
-  // ✅ 브라우저에 저장된 자동로그인 정보가 있으면 자동 로그인 시도
+  // 현재 로그인 세션이 비어 있으면 ERP/web 공용 쿠키만 정리
+  useEffect(() => {
+    if (!localStorage.getItem("user_id") || !localStorage.getItem("login_session_id")) {
+      clearSharedAuthCookies();
+    }
+  }, []);
+
+  // 자동로그인 설정이 저장된 경우 로그인 화면 진입 시 바로 로그인 처리
   useEffect(() => {
     const savedAutoLogin = localStorage.getItem("autoLogin") === "true";
     const savedUserId = localStorage.getItem("autoLoginUserId");
@@ -127,12 +145,11 @@ function Basic() {
       setRememberMe(true);
       setUserId(savedUserId);
       setPassword(savedPassword);
-      // 바로 자동 로그인 시도
-      handleLogin(savedUserId, savedPassword);
+      handleLogin(savedUserId, savedPassword, true);
     }
-  }, []); // 처음 한번만 실행
+  }, []);
 
-  // ✅ 엔터키로 로그인되도록 form onSubmit 처리
+  // 엔터키 로그인 처리
   const handleSubmit = (e) => {
     e.preventDefault(); // 새로고침 방지
     handleLogin();
@@ -169,7 +186,7 @@ function Basic() {
               />
             </MDBox>
 
-            {/* 자동 로그인 스위치 */}
+            {/* 로그인 화면에서만 사용하는 자동로그인 설정 영역 */}
             <MDBox display="flex" alignItems="center" ml={-1} mb={1}>
               <Switch checked={rememberMe} onChange={handleSetRememberMe} />
               <MDTypography

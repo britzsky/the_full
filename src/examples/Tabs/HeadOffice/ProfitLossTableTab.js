@@ -22,9 +22,12 @@ export default function ProfitLossTableTab() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
   const didSetDefaultAccountRef = useRef(false);
+  const tableBoxRef = useRef(null);
+  const noteMeasureCanvasRef = useRef(null);
 
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
+  const [lockedNoteColumnWidth, setLockedNoteColumnWidth] = useState(null);
 
   // ✅ 실제 조회에 사용할 month (전체면 빈값으로 넘김)
   const queryMonth = useMemo(() => {
@@ -78,6 +81,7 @@ export default function ProfitLossTableTab() {
     } else {
       setEditRows([]);
     }
+    setLockedNoteColumnWidth(null);
   }, [profitLossTableRows]);
 
   // ✅ 계정 자동 선택
@@ -151,6 +155,7 @@ export default function ProfitLossTableTab() {
 
   // ✅ 텍스트 입력 가능한 항목
   const editableTextFields = ["utility_bills_note"];
+  const noteField = "utility_bills_note";
 
   // ✅ 숨길 컬럼
   const hiddenCols = ["주간일반", "주간직원"];
@@ -316,6 +321,32 @@ export default function ProfitLossTableTab() {
 
     fetchProfitLossTableList(queryAccountId, queryMonth, year);
   };
+
+  const getNoteInputWidth = (value) => {
+    const safe = String(value ?? "");
+    if (!safe) return "80px";
+
+    if (!noteMeasureCanvasRef.current && typeof document !== "undefined") {
+      noteMeasureCanvasRef.current = document.createElement("canvas");
+    }
+
+    const ctx = noteMeasureCanvasRef.current?.getContext("2d");
+    if (!ctx) return `${Math.max(80, safe.length * 10 + 6)}px`;
+
+    ctx.font = "bold 12px sans-serif";
+    return `${Math.max(80, Math.ceil(ctx.measureText(safe).width + 6))}px`;
+  };
+
+  const lockNoteColumn = useCallback(() => {
+    if (lockedNoteColumnWidth) return;
+
+    const tableEl = tableBoxRef.current;
+    const noteCell = tableEl?.querySelector(`td[data-field="${noteField}"]`);
+    const noteHeader = tableEl?.querySelector(`th[data-field="${noteField}"]`);
+    const width = Math.ceil((noteCell || noteHeader)?.getBoundingClientRect?.().width ?? 0);
+
+    setLockedNoteColumnWidth(width > 0 ? width : 80);
+  }, [lockedNoteColumnWidth, noteField]);
 
   const downloadBlob = (blob, filename) => {
     const url = window.URL.createObjectURL(blob);
@@ -1165,6 +1196,7 @@ export default function ProfitLossTableTab() {
     try {
       await api.post("/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
+      setLockedNoteColumnWidth(null);
       fetchProfitLossTableList(queryAccountId, queryMonth, year);
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
@@ -1310,6 +1342,7 @@ export default function ProfitLossTableTab() {
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <Box
+            ref={tableBoxRef}
             sx={{
               maxHeight: "75vh",
               overflowY: "auto",
@@ -1362,7 +1395,19 @@ export default function ProfitLossTableTab() {
                   ))}
                   <th rowSpan={2}>영업이익</th>
                 </tr>
-                <tr>{filteredHeaders.flatMap((h) => h.cols.map((c) => <th key={c}>{c}</th>))}</tr>
+                <tr>
+                  {filteredHeaders.flatMap((h) =>
+                    h.cols.map((c) => (
+                      <th
+                        key={c}
+                        data-field={fieldMap[c]?.value ?? ""}
+                        style={fieldMap[c]?.value === noteField ? { textAlign: "left" } : undefined}
+                      >
+                        {c}
+                      </th>
+                    ))
+                  )}
+                </tr>
               </thead>
 
               <tbody>
@@ -1383,6 +1428,7 @@ export default function ProfitLossTableTab() {
 
                           const isText = editableTextFields.includes(field);
                           const isNumber = editableNumberFields.includes(field);
+                          const isNote = field === noteField;
 
                           const isChanged = (() => {
                             if (isText) {
@@ -1399,20 +1445,41 @@ export default function ProfitLossTableTab() {
                           })();
 
                           return (
-                            <td key={col}>
+                            <td
+                              key={col}
+                              data-field={field}
+                              style={{
+                                ...(isNote && lockedNoteColumnWidth
+                                  ? {
+                                      width: `${lockedNoteColumnWidth}px`,
+                                      minWidth: `${lockedNoteColumnWidth}px`,
+                                      maxWidth: `${lockedNoteColumnWidth}px`,
+                                    }
+                                  : {}),
+                                ...(isNote ? { textAlign: "left" } : {}),
+                              }}
+                            >
                               {isText ? (
                                 <input
                                   type="text"
                                   value={r[field] ?? ""}
                                   style={{
-                                    width: "80px",
+                                    width: isNote
+                                      ? lockedNoteColumnWidth
+                                        ? "100%"
+                                        : getNoteInputWidth(r[field] ?? "")
+                                      : "80px",
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",
-                                    textAlign: "right",
+                                    textAlign: isNote ? "left" : "right",
                                     border: "none",
                                     background: "transparent",
                                     color: isChanged ? "red" : "black",
+                                    boxSizing: "border-box",
+                                  }}
+                                  onFocus={() => {
+                                    if (isNote) lockNoteColumn();
                                   }}
                                   onChange={(e) => handleInputChange(i, field, e.target.value)}
                                 />
@@ -1477,8 +1544,16 @@ export default function ProfitLossTableTab() {
                         h.cols.map((col) => {
                           const ratioField = fieldMap[col]?.ratio;
                           const value = r[ratioField];
+                          const isNote = fieldMap[col]?.value === noteField;
                           return (
-                            <td key={`${col}_ratio`} style={{ fontSize: "11px", color: "#CD2C58" }}>
+                            <td
+                              key={`${col}_ratio`}
+                              style={{
+                                fontSize: "11px",
+                                color: "#CD2C58",
+                                ...(isNote ? { textAlign: "left" } : {}),
+                              }}
+                            >
                               {value ? `${formatNumber(value)}%` : "-"}
                             </td>
                           );

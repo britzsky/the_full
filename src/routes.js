@@ -185,9 +185,9 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/electronicpaymentmanager",
         component: <ElectronicPaymentManager />,
-        // allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        // allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
-        allowedDepartments: [6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        // allowedDepartments: [6], // 🔹 부서권한
         accessMode: "AND",
       },
     ],

@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import PropTypes from "prop-types";
 
 // @mui
@@ -32,6 +32,7 @@ import NotificationItem from "examples/Items/NotificationItem";
 import api from "api/api";
 import Swal from "sweetalert2";
 import { useNavigate } from "react-router-dom";
+import { syncSharedAuthCookiesFromStorage } from "utils/sharedAuthSession";
 
 // ✅ 프로필 모달
 import UserProfileModal from "examples/Navbars/DefaultNavbar/UserProfileModal";
@@ -48,7 +49,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const NOTIF_POLL_MS = 30000;
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
   const THE_FULL_WEB_BASE_URL = (
-    process.env.REACT_APP_THE_FULL_WEB_BASE_URL || process.env.REACT_APP_WEB_BASE_URL || "http://localhost:3001"
+    process.env.REACT_APP_THE_FULL_WEB_BASE_URL || process.env.REACT_APP_WEB_BASE_URL || "http://localhost:8081"
   ).replace(/\/+$/, "");
 
   // ✅ 화면이 너무 작아지면 오른쪽(유저명/프로필/알림) 숨김
@@ -73,6 +74,10 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const [position_name, setPositionName] = useState("");
 
   const userId = localStorage.getItem("user_id");
+  const webPosition = String(localStorage.getItem("web_position") ?? "").trim().toUpperCase();
+  const canViewPromotionAlert = webPosition === "P" || webPosition === "A";
+  const canViewInquiryAlert = webPosition === "I" || webPosition === "A";
+  const shouldAlwaysShowInquirySection = canViewInquiryAlert;
 
   // 관리자 여부 체크
   const isAdmin = (() => {
@@ -89,12 +94,26 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
   const pendingCount = approveRows.length;
 
-  // ✅ 문의 답변 대기 Dialog 상태 (Navbar에만 존재)
+  // ✅ 문의 목록 Dialog 상태 (Navbar에만 존재)
   const [inquiryPendingOpen, setInquiryPendingOpen] = useState(false);
   const [inquiryPendingRows, setInquiryPendingRows] = useState([]);
   const [inquiryPendingLoading, setInquiryPendingLoading] = useState(false);
-  const inquiryPendingCount = inquiryPendingRows.length;
+
+  // 이달 생일자 알림
+  const [birthdayMemberOpen, setBirthdayMemberOpen] = useState(false);
+  const [birthdayMemberRows, setBirthdayMemberRows] = useState([]);
+  const [birthdayMemberLoading, setBirthdayMemberLoading] = useState(false);
+  const [birthdayMemberSort, setBirthdayMemberSort] = useState({ key: "birthday", direction: "asc" });
+
+  const inquiryPendingCount = (inquiryPendingRows || []).filter((row) => row?.answer_yn !== "Y").length;
+  const birthdayMemberCount = birthdayMemberRows.length;
   const electronicPaymentNotifCount = electronicPaymentNotifications.length;
+  const currentMonthText = `${new Date().getMonth() + 1}월`;
+  const inquiryMenuSectionTitle = inquiryPendingCount > 0 ? "문의 답변 대기" : "문의 목록";
+  const inquiryMenuItemTitle =
+    inquiryPendingCount > 0 ? `문의 답변 대기 목록 (${inquiryPendingCount})` : "문의 목록";
+  const promotionMenuSectionTitle = "홍보 게시판";
+  const promotionMenuItemTitle = "홍보 게시판 이동";
 
   // ------------------ 승인대기 목록 표시에 필요한 유틸 ------------------
   const DEPT_MAP = {
@@ -141,6 +160,66 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     return "";
   };
 
+  // 생일 문자열을 월/일 정렬용 숫자로 변환한다.
+  const getBirthdaySortValue = (birthday) => {
+    const digits = String(birthday || "").replace(/\D/g, "");
+    if (digits.length >= 4) {
+      return Number(digits.slice(0, 4));
+    }
+    return 9999;
+  };
+
+  const getBirthdaySortDirectionMark = (sortState, key) => {
+    if (!sortState || sortState.key !== key) return "";
+    return sortState.direction === "asc" ? " ▲" : " ▼";
+  };
+
+  const compareBirthdayTextValue = (aValue, bValue) => {
+    const aText = String(aValue ?? "").trim();
+    const bText = String(bValue ?? "").trim();
+    const aEmpty = !aText;
+    const bEmpty = !bText;
+
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+
+    return aText.localeCompare(bText, "ko", { numeric: true, sensitivity: "base" });
+  };
+
+  const toggleBirthdayMemberSort = (key) => {
+    setBirthdayMemberSort((prev) => {
+      if (prev.key === key) {
+        return { ...prev, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
+  const sortedBirthdayMemberRows = useMemo(() => {
+    const rows = [...(birthdayMemberRows || [])];
+
+    return rows.sort((a, b) => {
+      const compareBirthday = getBirthdaySortValue(a?.birthday) - getBirthdaySortValue(b?.birthday);
+      const compareAccountName = compareBirthdayTextValue(a?.account_name, b?.account_name);
+      const compareName = compareBirthdayTextValue(a?.name, b?.name);
+
+      if (birthdayMemberSort.key === "accountName") {
+        if (compareAccountName !== 0) {
+          return birthdayMemberSort.direction === "asc" ? compareAccountName : -compareAccountName;
+        }
+        if (compareBirthday !== 0) return compareBirthday;
+        return compareName;
+      }
+
+      if (compareBirthday !== 0) {
+        return birthdayMemberSort.direction === "asc" ? compareBirthday : -compareBirthday;
+      }
+      if (compareAccountName !== 0) return compareAccountName;
+      return compareName;
+    });
+  }, [birthdayMemberRows, birthdayMemberSort]);
+
   // the_full_web 처리
   const buildInquiryManageUrl = (inquiryId) => {
     const parsedId = Number(inquiryId);
@@ -148,18 +227,25 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
       return `${THE_FULL_WEB_BASE_URL}/contact/manage`;
     }
 
-    const search = new URLSearchParams();
-    if (userId) {
-      search.set("erp_user_id", String(userId).trim());
-    }
-
-    const queryString = search.toString();
-    return `${THE_FULL_WEB_BASE_URL}/contact/manage/${parsedId}${queryString ? `?${queryString}` : ""}`;
+    return `${THE_FULL_WEB_BASE_URL}/contact/manage/${parsedId}`;
   };
 
   const openInquiryManagePage = (inquiryId) => {
+    // 문의답변 관리 화면으로 이동하기 직전에 ERP 로그인 정보를 공용 쿠키로 다시 맞춘다.
+    syncSharedAuthCookiesFromStorage();
     const targetUrl = buildInquiryManageUrl(inquiryId);
-    window.open(targetUrl, "_blank", "noopener,noreferrer");
+    window.open(targetUrl, "_blank", "noopener");
+  };
+
+  // 문의관리 목록으로 이동할 때도 ERP 로그인 정보를 공용 쿠키로 다시 맞춘다.
+  const openInquiryManageListPage = () => {
+    openInquiryManagePage();
+  };
+
+  // 홍보 게시판으로 이동하기 직전에 ERP 로그인 정보를 공용 쿠키로 다시 맞춘다.
+  const openPromotionBoardPage = () => {
+    syncSharedAuthCookiesFromStorage();
+    window.open(`${THE_FULL_WEB_BASE_URL}/promotion`, "_blank", "noopener");
   };
 
   // ✅ 승인대기 목록 조회 (use_yn='N'만)  ※ approval_requested_* 로직 제거
@@ -235,9 +321,9 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     }
   };
 
-  // ✅ 문의 답변 대기 목록 조회 (answer_yn='N'만)
+  // ✅ 문의 목록 조회 (answer_yn 전체)
   const fetchInquiryPendingList = async (withLoading = false) => {
-    if (!userId) {
+    if (!canViewInquiryAlert) {
       setInquiryPendingRows([]);
       return;
     }
@@ -248,7 +334,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
       let responseData = null;
       for (const endpoint of CONTACT_PENDING_ENDPOINTS) {
         try {
-          const res = await api.get(endpoint, { params: { user_id: userId, answer_yn: "N" } });
+          // ERP 문의 목록 모달은 답변 여부와 상관없이 전체 목록을 조회한다.
+          const res = await api.get(endpoint, { params: { answer_yn: "ALL" } });
           responseData = res.data;
           break;
         } catch (error) {
@@ -272,28 +359,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
             return null;
           }
 
-          const assignedUserId = String(
-            pick(
-              row,
-              "user_id",
-              "USER_ID",
-              "assigned_user_id",
-              "ASSIGNED_USER_ID",
-              "assignedUserId",
-              "target_user_id",
-              "TARGET_USER_ID",
-              "targetUserId"
-            ) || ""
-          ).trim();
-          if (assignedUserId && assignedUserId !== String(userId).trim()) {
-            return null;
-          }
-
           const answerYn = String(pick(row, "answer_yn", "ANSWER_YN", "answerYn") || "N").trim().toUpperCase();
-          if (answerYn === "Y") {
-            return null;
-          }
-
           return {
             id: inquiryId,
             title: String(pick(row, "title", "TITLE") || "").trim(),
@@ -301,9 +367,16 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
             manager_name: String(pick(row, "manager_name", "MANAGER_NAME", "managerName") || "").trim(),
             email: String(pick(row, "email", "EMAIL") || "").trim(),
             phone_number: String(pick(row, "phone_number", "PHONE_NUMBER", "phoneNumber") || "").trim(),
+            answer_yn: answerYn === "Y" ? "Y" : "N",
           };
         })
-        .filter(Boolean);
+        .filter(Boolean)
+        .sort((beforeRow, afterRow) => {
+          if (beforeRow.answer_yn !== afterRow.answer_yn) {
+            return beforeRow.answer_yn === "N" ? -1 : 1;
+          }
+          return afterRow.id - beforeRow.id;
+        });
 
       setInquiryPendingRows(mapped);
     } catch (error) {
@@ -325,6 +398,13 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     setInquiryPendingRows([]);
     setInquiryPendingOpen(true);
     await fetchInquiryPendingList(true);
+  };
+
+  const openBirthdayMemberDialog = async () => {
+    setBirthdayMemberSort({ key: "birthday", direction: "asc" });
+    setBirthdayMemberRows([]);
+    setBirthdayMemberOpen(true);
+    await fetchBirthdayMemberList(true);
   };
 
   const changeUseYn = (userId2, value) => {
@@ -397,7 +477,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   };
 
   const pendingBodyCellStyle = {
-    padding: "6px 8px",
+    padding: "4px 8px",
     fontSize: 12,
     textAlign: "center",
     whiteSpace: "nowrap",
@@ -406,6 +486,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     verticalAlign: "middle",
     background: "#fff",
   };
+  const inquiryActionButtonSx = { minWidth: 92, py: 0.15, px: 1, fontSize: 12, lineHeight: 1.2 };
 
   const approvalChangedAccentColor = "#d32f2f";
 
@@ -548,12 +629,59 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                   variant="outlined"
                   color="info"
                   size="small"
-                  onClick={() => openInquiryManagePage(row.id)}
-                  sx={{ minWidth: 92, py: 0.4, px: 1, fontSize: 12, lineHeight: 1.2 }}
+                  onClick={row.answer_yn !== "Y" ? () => openInquiryManagePage(row.id) : undefined}
+                  disabled={row.answer_yn === "Y"}
+                  tabIndex={row.answer_yn === "Y" ? -1 : 0}
+                  sx={{
+                    ...inquiryActionButtonSx,
+                    visibility: row.answer_yn === "Y" ? "hidden" : "visible",
+                    pointerEvents: row.answer_yn === "Y" ? "none" : "auto",
+                  }}
                 >
                   문의답변
                 </MDButton>
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </MDBox>
+  );
+
+  const renderBirthdayMemberTable = () => (
+    <MDBox sx={pendingTableWrapSx}>
+      <table style={pendingTableStyle}>
+        <colgroup>
+          <col style={{ width: 70 }} />
+          <col style={{ width: 220 }} />
+          <col style={{ width: 140 }} />
+          <col style={{ width: 120 }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={pendingHeadCellStyle}>NO</th>
+            <th
+              style={{ ...pendingHeadCellStyle, cursor: "pointer", userSelect: "none" }}
+              onClick={() => toggleBirthdayMemberSort("accountName")}
+            >
+              {`업장명${getBirthdaySortDirectionMark(birthdayMemberSort, "accountName")}`}
+            </th>
+            <th style={pendingHeadCellStyle}>성명</th>
+            <th
+              style={{ ...pendingHeadCellStyle, cursor: "pointer", userSelect: "none" }}
+              onClick={() => toggleBirthdayMemberSort("birthday")}
+            >
+              {`생일${getBirthdaySortDirectionMark(birthdayMemberSort, "birthday")}`}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {(sortedBirthdayMemberRows || []).map((row, index) => (
+            <tr key={row.member_id || `${row.account_id || "account"}-${row.name || index}`}>
+              <td style={pendingBodyCellStyle}>{index + 1}</td>
+              <td style={pendingBodyCellStyle}>{row.account_name || "-"}</td>
+              <td style={pendingBodyCellStyle}>{row.name || "-"}</td>
+              <td style={pendingBodyCellStyle}>{row.birthday || "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -586,9 +714,9 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     fetchNotifications();
     fetchElectronicPaymentNotifications();
     if (isAdmin) fetchApprovePendingList(false); // ✅ 관리자면 초기부터 승인대기 카운트 확보
-    // TEMP_INQUIRY_PENDING_OFF_20260330: 문의답변 대기 조회 임시 비활성화
-    // fetchInquiryPendingList(false);
-  }, []);
+    fetchInquiryPendingList(false);
+    fetchBirthdayMemberList(false);
+  }, [canViewInquiryAlert]);
 
   useEffect(() => {
     // ✅ 주기적 폴링: 탭이 보일 때만 승인대기/문의답변대기/알림 리스트 갱신
@@ -597,12 +725,12 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
       fetchNotifications();
       fetchElectronicPaymentNotifications();
       if (isAdmin) fetchApprovePendingList(false);
-      // TEMP_INQUIRY_PENDING_OFF_20260330: 문의답변 대기 조회 임시 비활성화
-      // fetchInquiryPendingList(false);
+      fetchInquiryPendingList(false);
+      fetchBirthdayMemberList(false);
     }, NOTIF_POLL_MS);
 
     return () => clearInterval(intervalId);
-  }, [isAdmin]);
+  }, [canViewInquiryAlert, isAdmin]);
 
   const fetchNotifications = async () => {
     if (!userId) {
@@ -619,6 +747,41 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
       setNotifications([]);
     } finally {
       setNotifLoading(false);
+    }
+  };
+
+  const fetchBirthdayMemberList = async (withLoading = false) => {
+    if (!userId) {
+      setBirthdayMemberRows([]);
+      return;
+    }
+
+    try {
+      if (withLoading) setBirthdayMemberLoading(true);
+
+      const res = await api.get("/User/BirthdayMemberList", { params: { user_id: userId } });
+      const raw =
+        Array.isArray(res.data?.list) ? res.data.list :
+          Array.isArray(res.data) ? res.data :
+            Array.isArray(res.data?.data) ? res.data.data :
+              [];
+
+      const mapped = raw
+        .map((row) => ({
+          member_id: pick(row, "member_id", "MEMBER_ID", "memberId"),
+          account_id: pick(row, "account_id", "ACCOUNT_ID", "accountId"),
+          account_name: String(pick(row, "account_name", "ACCOUNT_NAME", "accountName") || "").trim(),
+          name: String(pick(row, "name", "NAME") || "").trim(),
+          birthday: String(pick(row, "birthday", "BIRTHDAY", "birthday_md", "BIRTHDAY_MD") || "").trim(),
+        }))
+        .filter((row) => row.member_id || row.account_name || row.name || row.birthday);
+
+      setBirthdayMemberRows(mapped);
+    } catch (error) {
+      console.error("이달 생일자 조회 실패:", error);
+      setBirthdayMemberRows([]);
+    } finally {
+      if (withLoading) setBirthdayMemberLoading(false);
     }
   };
 
@@ -694,8 +857,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     fetchNotifications();
     fetchElectronicPaymentNotifications();
     if (isAdmin) fetchApprovePendingList(false); // ✅ 메뉴 열 때도 최신화
-    // TEMP_INQUIRY_PENDING_OFF_20260330: 문의답변 대기 조회 임시 비활성화
-    // fetchInquiryPendingList(false); // ✅ 메뉴 열 때 문의답변대기도 최신화
+    fetchInquiryPendingList(false); // ✅ 메뉴 열 때 문의답변대기도 최신화
+    fetchBirthdayMemberList(false);
   };
 
   const handleCloseMenu = () => setOpenMenu(null);
@@ -710,26 +873,30 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const totalBadgeCount =
     electronicPaymentNotifCount +
     notifications.length +
+    inquiryPendingCount +
+    birthdayMemberCount +
     (isAdmin ? pendingCount : 0);
-  // TEMP_INQUIRY_PENDING_OFF_20260330: 문의답변 대기 카운트 임시 제외
-  // + inquiryPendingCount;
+
   // 사용자 승인대기 / 문의 답변대기 / 전자결재 알림이 있으면 네비 알림 뱃지를 강조한다.
   const shouldBlinkNotificationBadge =
     (isAdmin && pendingCount > 0) ||
     inquiryPendingCount > 0 ||
     electronicPaymentNotifCount > 0;
 
-    const renderMenu = () => {
-      const showApprovalSection = isAdmin && pendingCount > 0; // ✅ 있을 때만
-      // TEMP_INQUIRY_PENDING_OFF_20260330: 문의답변 대기 섹션 임시 비활성화
-      const showInquirySection = false;
-      // const showInquirySection = inquiryPendingCount > 0; // ✅ 있을 때만
-      const showElectronicPaymentSection = electronicPaymentNotifCount > 0; // ✅ 있을 때만
-      const hasAnyMenuItems =
-        showApprovalSection ||
-        showInquirySection ||
-        showElectronicPaymentSection ||
-        notifications.length > 0;
+  const renderMenu = () => {
+    const showPromotionSection = canViewPromotionAlert;
+    const showInquirySection = canViewInquiryAlert && (shouldAlwaysShowInquirySection || inquiryPendingCount > 0);
+    const showElectronicPaymentSection = electronicPaymentNotifCount > 0;
+    const showApprovalSection = isAdmin && pendingCount > 0;
+    const showBirthdaySection = birthdayMemberCount > 0;
+    const showContractSection = notifLoading || notifications.length > 0;
+    const hasAnyMenuItems =
+      showPromotionSection ||
+      showInquirySection ||
+      showElectronicPaymentSection ||
+      showApprovalSection ||
+      showBirthdaySection ||
+      showContractSection;
 
     return (
       <Menu
@@ -752,42 +919,11 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           "& .MuiBackdrop-root": { backgroundColor: "transparent" },
         }}
       >
-        {/* ✅ 승인대기 섹션: "있을 때만" 표시 */}
-        {showApprovalSection && (
-          <>
-            <MDBox px={2} pt={1} pb={0.5}>
-              <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
-                사용자 승인 대기
-              </MDTypography>
-            </MDBox>
-
-            <MDBox
-              sx={{
-                cursor: "pointer",
-                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
-                borderRadius: "10px",
-              }}
-              onClick={async () => {
-                handleCloseMenu();
-                await openApproveDialog();
-              }}
-            >
-              <NotificationItem
-                icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
-                title={`사용자 승인 대기 목록 (${pendingCount})`}
-              />
-            </MDBox>
-
-            <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
-          </>
-        )}
-
-        {/* ✅ 문의답변대기 섹션: "있을 때만" 표시 */}
         {showInquirySection && (
           <>
             <MDBox px={2} pt={1} pb={0.5}>
               <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
-                문의 답변 대기
+                {inquiryMenuSectionTitle}
               </MDTypography>
             </MDBox>
 
@@ -804,7 +940,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
             >
               <NotificationItem
                 icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
-                title={`문의 답변 대기 목록 (${inquiryPendingCount})`}
+                title={inquiryMenuItemTitle}
               />
             </MDBox>
 
@@ -812,7 +948,6 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           </>
         )}
 
-        {/* ✅ 전자결재 알림 섹션 */}
         {showElectronicPaymentSection && (
           <>
             <MDBox px={2} pt={1} pb={0.5}>
@@ -842,8 +977,102 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           </>
         )}
 
-        {/* ✅ 계약 만료 알림 */}
-        {notifLoading && (
+        {showApprovalSection && (
+          <>
+            <MDBox px={2} pt={1} pb={0.5}>
+              <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+                사용자 승인 대기
+              </MDTypography>
+            </MDBox>
+
+            <MDBox
+              sx={{
+                cursor: "pointer",
+                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                borderRadius: "10px",
+              }}
+              onClick={async () => {
+                handleCloseMenu();
+                await openApproveDialog();
+              }}
+            >
+              <NotificationItem
+                icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                title={`사용자 승인 대기 목록 (${pendingCount})`}
+              />
+            </MDBox>
+
+            <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
+          </>
+        )}
+
+        {showPromotionSection && (
+          <>
+            <MDBox px={2} pt={1} pb={0.5}>
+              <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+                {promotionMenuSectionTitle}
+              </MDTypography>
+            </MDBox>
+
+            <MDBox
+              sx={{
+                cursor: "pointer",
+                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                borderRadius: "10px",
+              }}
+              onClick={() => {
+                handleCloseMenu();
+                openPromotionBoardPage();
+              }}
+            >
+              <NotificationItem
+                icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                title={promotionMenuItemTitle}
+              />
+            </MDBox>
+
+            <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
+          </>
+        )}
+
+        {showBirthdaySection && (
+          <>
+            <MDBox px={2} pt={1} pb={0.5}>
+              <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+                {`${currentMonthText}의 생일자 알림`}
+              </MDTypography>
+            </MDBox>
+
+            <MDBox
+              sx={{
+                cursor: "pointer",
+                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                borderRadius: "10px",
+              }}
+              onClick={async () => {
+                handleCloseMenu();
+                await openBirthdayMemberDialog();
+              }}
+            >
+              <NotificationItem
+                icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                title={`${currentMonthText}의 생일자 목록 (${birthdayMemberCount})`}
+              />
+            </MDBox>
+
+            <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
+          </>
+        )}
+
+        {showContractSection && (
+          <MDBox px={2} pt={1} pb={0.5}>
+            <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+              계약 만료 알림
+            </MDTypography>
+          </MDBox>
+        )}
+
+        {showContractSection && notifLoading && (
           <MDBox px={2} py={1}>
             <MDTypography variant="button" fontSize="0.7rem" sx={{ color: "#fff" }}>
               알림을 불러오는 중입니다...
@@ -1074,9 +1303,26 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
         </DialogActions>
       </Dialog>
 
-      {/* ✅ 문의답변대기 Dialog: Navbar에만 1개 */}
+      {/* ✅ 문의 목록 Dialog: Navbar에만 1개 */}
       <Dialog open={inquiryPendingOpen} onClose={() => setInquiryPendingOpen(false)} fullWidth maxWidth="xl">
-        <DialogTitle sx={{ fontWeight: 800 }}>문의 답변 대기 목록</DialogTitle>
+        <DialogTitle sx={{ px: 2, py: 1.5 }}>
+          <MDBox display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+            <MDTypography variant="h6" fontWeight="bold">
+              문의 목록
+            </MDTypography>
+            <MDButton
+              color="info"
+              size="small"
+              onClick={openInquiryManageListPage}
+              sx={{
+                ...inquiryActionButtonSx,
+                color: "#ffffff !important",
+              }}
+            >
+              문의관리
+            </MDButton>
+          </MDBox>
+        </DialogTitle>
 
         <DialogContent dividers sx={{ p: 2 }}>
           {inquiryPendingLoading ? (
@@ -1087,13 +1333,37 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
             renderInquiryPendingTable()
           ) : (
             <MDTypography variant="caption" color="text" sx={{ opacity: 0.7 }}>
-              문의 답변 대기가 없습니다.
+              문의 내역이 없습니다.
             </MDTypography>
           )}
         </DialogContent>
 
         <DialogActions sx={{ px: 2, py: 1.5 }}>
           <MDButton variant="outlined" color="secondary" onClick={() => setInquiryPendingOpen(false)}>
+            닫기
+          </MDButton>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={birthdayMemberOpen} onClose={() => setBirthdayMemberOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ fontWeight: 800 }}>{`${currentMonthText}의 생일자 목록`}</DialogTitle>
+
+        <DialogContent dividers sx={{ p: 2 }}>
+          {birthdayMemberLoading ? (
+            <MDTypography variant="caption" color="text" sx={{ opacity: 0.7 }}>
+              불러오는 중...
+            </MDTypography>
+          ) : birthdayMemberRows?.length ? (
+            renderBirthdayMemberTable()
+          ) : (
+            <MDTypography variant="caption" color="text" sx={{ opacity: 0.7 }}>
+              {`${currentMonthText}의 생일자가 없습니다.`}
+            </MDTypography>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 2, py: 1.5 }}>
+          <MDButton variant="outlined" color="secondary" onClick={() => setBirthdayMemberOpen(false)}>
             닫기
           </MDButton>
         </DialogActions>

@@ -43,8 +43,51 @@ import { navbar, navbarContainer, navbarIconButton } from "examples/Navbars/Dash
 // Context
 import { useMaterialUIController, setTransparentNavbar, setMiniSidenav } from "context";
 
-// ERP .env 값 기준으로 공개 웹 주소를 정한다.
+// 현재 ERP 접속 호스트가 로컬인지 운영인지 판별한다.
+const isLocalRuntimeHost = (hostname) => {
+  const normalizedHost = String(hostname || "").trim().toLowerCase();
+
+  if (!normalizedHost) {
+    return false;
+  }
+
+  if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(normalizedHost)) {
+    return true;
+  }
+
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/u.test(normalizedHost)) {
+    return true;
+  }
+
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(normalizedHost)) {
+    return true;
+  }
+
+  return /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/u.test(normalizedHost);
+};
+
+// 현재 ERP가 열린 위치를 기준으로 공개 웹 주소를 정한다.
 const resolveTheFullWebBaseUrl = () => {
+  if (typeof window !== "undefined") {
+    try {
+      const runtimeUrl = new URL(window.location.href);
+
+      // 로컬에서 열었을 때만 같은 호스트의 8081 공개 웹으로 연결한다.
+      if (isLocalRuntimeHost(runtimeUrl.hostname)) {
+        runtimeUrl.port = "8081";
+        runtimeUrl.pathname = "";
+        runtimeUrl.search = "";
+        runtimeUrl.hash = "";
+        return runtimeUrl.origin;
+      }
+
+      // 운영에서 열었을 때는 공개 웹 운영 도메인으로 고정한다.
+      return `${runtimeUrl.protocol}//n.thefull.kr`;
+    } catch (error) {
+      // 브라우저 주소 파싱에 실패하면 아래 보조 규칙을 사용한다.
+    }
+  }
+
   const explicitWebBaseUrl = String(
     process.env.REACT_APP_THE_FULL_WEB_BASE_URL || process.env.REACT_APP_WEB_BASE_URL || ""
   ).trim().replace(/\/+$/, "");

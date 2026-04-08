@@ -44,17 +44,7 @@ import { navbar, navbarContainer, navbarIconButton } from "examples/Navbars/Dash
 import { useMaterialUIController, setTransparentNavbar, setMiniSidenav } from "context";
 
 // ERP에서 공개 웹으로 이동할 때는 운영 공개 웹 도메인을 사용한다.
-const resolveTheFullWebBaseUrl = () => {
-  const explicitWebBaseUrl = String(
-    process.env.REACT_APP_THE_FULL_WEB_BASE_URL || process.env.REACT_APP_WEB_BASE_URL || ""
-  ).trim().replace(/\/+$/, "");
-
-  if (explicitWebBaseUrl) {
-    return explicitWebBaseUrl;
-  }
-
-  return "http://n.thefull.kr";
-};
+const resolveTheFullWebBaseUrl = () => "http://n.thefull.kr";
 
 function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMini }) {
   const NAVBAR_H = 48;

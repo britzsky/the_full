@@ -1401,7 +1401,6 @@ export default function ProfitLossTableTab() {
                       <th
                         key={c}
                         data-field={fieldMap[c]?.value ?? ""}
-                        style={fieldMap[c]?.value === noteField ? { textAlign: "left" } : undefined}
                       >
                         {c}
                       </th>

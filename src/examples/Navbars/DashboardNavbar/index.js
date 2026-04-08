@@ -261,7 +261,9 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   };
 
   // ERP 로컬 로그인 정보를 공개 웹 도메인 쿠키로 넘긴 뒤 새 탭을 연다.
-  const openTheFullWebWithSession = (redirectPath) => {
+  const openTheFullWebWithSession = ({ bridgePath, redirectPath }) => {
+    const normalizedBridgePath =
+      typeof bridgePath === "string" && bridgePath.startsWith("/") ? bridgePath : "/";
     const normalizedRedirectPath =
       typeof redirectPath === "string" && redirectPath.startsWith("/") ? redirectPath : "/";
 
@@ -284,7 +286,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
     const form = document.createElement("form");
     form.method = "POST";
-    form.action = `${THE_FULL_WEB_BASE_URL}/api/erp-session`;
+    form.action = `${THE_FULL_WEB_BASE_URL}${normalizedBridgePath}`;
     form.target = "_blank";
     form.style.display = "none";
 
@@ -310,17 +312,26 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
   const openInquiryManagePage = (inquiryId) => {
     // 문의답변 관리 화면으로 이동할 때 공개 웹 도메인에 세션 쿠키를 먼저 심는다.
-    openTheFullWebWithSession(buildInquiryManagePath(inquiryId));
+    openTheFullWebWithSession({
+      bridgePath: "/contact/manage/session",
+      redirectPath: buildInquiryManagePath(inquiryId),
+    });
   };
 
   // 문의관리 목록으로 이동할 때도 공개 웹 도메인에 세션 쿠키를 먼저 심는다.
   const openInquiryManageListPage = () => {
-    openTheFullWebWithSession(buildInquiryManagePath());
+    openTheFullWebWithSession({
+      bridgePath: "/contact/manage/session",
+      redirectPath: buildInquiryManagePath(),
+    });
   };
 
   // 홍보 게시판으로 이동할 때도 공개 웹 도메인에 세션 쿠키를 먼저 심는다.
   const openPromotionBoardPage = () => {
-    openTheFullWebWithSession("/promotion");
+    openTheFullWebWithSession({
+      bridgePath: "/promotion/session",
+      redirectPath: "/promotion",
+    });
   };
 
   // ✅ 승인대기 목록 조회 (use_yn='N'만)  ※ approval_requested_* 로직 제거

@@ -109,10 +109,11 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
     return Math.round(avgMeals + employ);
   }
 
-  // ✅ 20250819193620: 2층 주간보호(어르신) (조/중/석 평균(있는 항목만)) + 경관식
-  // - 2층 주간보호(어르신) = daycare_breakfast/daycare_lunch/daycare_diner
+  // ✅ 20250819193620: 기본 조/중/석 평균(있는 항목만) + 경관식
+  // - breakfast/lunch/dinner 값을 계(total) 계산 기준으로 사용 
+  // - (2026-04-09 데이케어 평균에서 요양원 평균으로 변경)
   if (accountId === "20250819193620") {
-    const avgMeals = avgOfExisting(row.daycare_breakfast, row.daycare_lunch, row.daycare_diner);
+    const avgMeals = avgOfExisting(row.breakfast, row.lunch, row.dinner);
     const ceremony = parseNumber(row.ceremony);
     return Math.round(avgMeals + ceremony);
   }

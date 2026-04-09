@@ -43,8 +43,31 @@ import { navbar, navbarContainer, navbarIconButton } from "examples/Navbars/Dash
 // Context
 import { useMaterialUIController, setTransparentNavbar, setMiniSidenav } from "context";
 
-// ERP에서 공개 웹으로 이동할 때는 운영 공개 웹 도메인을 사용한다.
-const resolveTheFullWebBaseUrl = () => "http://n.thefull.kr";
+// 문자열 환경값 공백 제거
+const normalizeText = (value) => (value == null ? "" : String(value).trim());
+
+// ERP API 주소의 도메인을 기준으로 공개 웹 주소를 결정한다.
+const resolveTheFullWebBaseUrl = () => {
+  const apiBaseUrl = normalizeText(process.env.REACT_APP_API_BASE_URL);
+
+  if (apiBaseUrl) {
+    try {
+      const parsedApiUrl = new URL(apiBaseUrl);
+
+      // 운영 ERP IP를 쓰는 환경이면 공개 웹 도메인으로 연결한다.
+      if (parsedApiUrl.hostname === "52.64.151.137") {
+        return "http://n.thefull.kr";
+      }
+
+      // 그 외에는 같은 호스트의 로컬 공개 웹 포트를 사용한다.
+      return `${parsedApiUrl.protocol}//${parsedApiUrl.hostname}:8081`;
+    } catch (error) {
+      // API 주소 파싱에 실패하면 아래 기본 로컬 주소를 사용한다.
+    }
+  }
+
+  return "http://localhost:8081";
+};
 
 function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMini }) {
   const NAVBAR_H = 48;
@@ -1302,22 +1325,22 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                     color="error"
                     max={99}
                     invisible={totalBadgeCount === 0}
-                    sx={
-                      shouldBlinkNotificationBadge
-                        ? {
-                          "& .MuiBadge-badge": {
+                    sx={{
+                      "& .MuiBadge-badge": {
+                        transform: "translate(60%, -34%)",
+                        ...(shouldBlinkNotificationBadge
+                          ? {
                             animation: "approveBlink 1.1s infinite",
                             boxShadow: "0 0 0 0 rgba(255,255,255,0.0)",
-                            transform: "translate(30%, -20%)",
-                          },
-                          "@keyframes approveBlink": {
-                            "0%": { opacity: 1, boxShadow: "0 0 0 0 rgba(255,255,255,0.0)" },
-                            "50%": { opacity: 0.9, boxShadow: "0 0 10px 2px rgba(255,255,255,0.55)" },
-                            "100%": { opacity: 1, boxShadow: "0 0 0 0 rgba(255,255,255,0.0)" },
-                          },
-                        }
-                        : undefined
-                    }
+                          }
+                          : {}),
+                      },
+                      "@keyframes approveBlink": {
+                        "0%": { opacity: 1, boxShadow: "0 0 0 0 rgba(255,255,255,0.0)" },
+                        "50%": { opacity: 0.9, boxShadow: "0 0 10px 2px rgba(255,255,255,0.55)" },
+                        "100%": { opacity: 1, boxShadow: "0 0 0 0 rgba(255,255,255,0.0)" },
+                      },
+                    }}
                   >
                     <Icon sx={iconsStyle}>notifications</Icon>
                   </Badge>

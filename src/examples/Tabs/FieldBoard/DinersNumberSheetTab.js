@@ -696,6 +696,8 @@ function DinersNumberSheet() {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isMobileOrTablet = isMobile || isTablet;
 
   const { activeRows, setActiveRows, loading, fetchAllData, extraDietCols, accountList } =
     useDinersNumbersheetData(selectedAccountId, year, month);
@@ -1196,133 +1198,150 @@ function DinersNumberSheet() {
   return (
     <>
       <MDBox
-        pt={1}
-        pb={1}
         sx={{
-          display: "flex",
-          justifyContent: isMobile ? "space-between" : "flex-end",
-          alignItems: "center",
-          gap: isMobile ? 1 : 2,
-          flexWrap: isMobile ? "wrap" : "nowrap",
           position: "sticky",
-          zIndex: 10,
-          top: 78,
+          // 상위 FieldBoardTabs 헤더/탭 sticky 영역 아래에서 항상 고정 유지
+          top: { xs: 88, md: 78 },
+          zIndex: 12,
           backgroundColor: "#ffffff",
+          borderBottom: "1px solid #eee",
         }}
       >
-        {isWorkingDayVisible && (
-          <>
-            <MDTypography variant="button">근무일수</MDTypography>
-            <TextField
-              value={workingDay}
-              onChange={(e) => setWorkingDay(e.target.value)}
-              onBlur={(e) => {
-                const num = parseNumber(e.target.value) || 0;
-                setWorkingDay(num.toString());
-              }}
-              variant="outlined"
-              size="small"
-              sx={{
-                minWidth: isMobile ? 150 : 180,
-                fontSize: isMobile ? "12px" : "14px",
-              }}
-              SelectProps={{ native: true }}
-              inputProps={{
-                style: {
-                  textAlign: "right",
-                  ...(isWorkingDayChanged ? { color: "red" } : {}),
-                },
-              }}
-            />
-          </>
-        )}
-
-        {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
-        {(filteredAccountList || []).length > 0 && (
-          <Autocomplete
-            size="small"
-            options={accountOptions}
-            value={(() => {
-              const v = String(selectedAccountId ?? "");
-              return accountOptions.find((o) => o.value === v) || null;
-            })()}
-            onChange={(_, opt) => {
-              if (isAccountLocked) return; // ✅ localStorage로 고정이면 변경 불가
-              // 입력 비움 시 거래처 선택 유지
-              if (!opt) return;
-              setSelectedAccountId(opt.value);
-            }}
-            inputValue={accountInput}
-            onInputChange={(_, newValue) => {
-              if (isAccountLocked) return;
-              setAccountInput(newValue);
-            }}
-            getOptionLabel={(opt) => opt?.label ?? ""}
-            isOptionEqualToValue={(opt, val) => opt.value === val.value}
-            renderInput={(params) => (
+        <MDBox
+          pt={1}
+          pb={1}
+          sx={{
+            display: "flex",
+            justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
+            alignItems: "center",
+            gap: isMobileOrTablet ? 1 : 2,
+            flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
+          }}
+        >
+          {isWorkingDayVisible && (
+            <>
+              <MDTypography variant="button">근무일수</MDTypography>
               <TextField
-                {...params}
-                label={isAccountLocked ? "거래처(고정)" : "거래처"}
-                placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
+                value={workingDay}
+                onChange={(e) => setWorkingDay(e.target.value)}
+                onBlur={(e) => {
+                  const num = parseNumber(e.target.value) || 0;
+                  setWorkingDay(num.toString());
+                }}
+                variant="outlined"
                 size="small"
-                onKeyDown={(e) => {
-                  if (isAccountLocked) return;
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    selectAccountByInput();
-                  }
+                sx={{
+                  minWidth: isMobile ? 150 : 180,
+                  fontSize: isMobile ? "12px" : "14px",
+                }}
+                SelectProps={{ native: true }}
+                inputProps={{
+                  style: {
+                    textAlign: "right",
+                    ...(isWorkingDayChanged ? { color: "red" } : {}),
+                  },
                 }}
               />
-            )}
-            sx={{ minWidth: isMobile ? 220 : 260 }}
-            disabled={isAccountLocked} // ✅ localStorage 고정이면 Autocomplete 자체 비활성
-            ListboxProps={{ style: { fontSize: "12px" } }}
-          />
-        )}
+            </>
+          )}
 
-        <TextField
-          select
-          size="small"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-            <option key={y} value={y}>
-              {y}년
-            </option>
-          ))}
-        </TextField>
+          {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
+          {(filteredAccountList || []).length > 0 && (
+            <Autocomplete
+              size="small"
+              options={accountOptions}
+              value={(() => {
+                const v = String(selectedAccountId ?? "");
+                return accountOptions.find((o) => o.value === v) || null;
+              })()}
+              onChange={(_, opt) => {
+                if (isAccountLocked) return; // ✅ localStorage로 고정이면 변경 불가
+                // 입력 비움 시 거래처 선택 유지
+                if (!opt) return;
+                setSelectedAccountId(opt.value);
+              }}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => {
+                if (isAccountLocked) return;
+                setAccountInput(newValue);
+              }}
+              getOptionLabel={(opt) => opt?.label ?? ""}
+              isOptionEqualToValue={(opt, val) => opt.value === val.value}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label={isAccountLocked ? "거래처(고정)" : "거래처"}
+                  placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
+                  size="small"
+                  onKeyDown={(e) => {
+                    if (isAccountLocked) return;
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
+                />
+              )}
+              sx={{
+                minWidth: isMobile ? 220 : 260,
+                flex: isMobileOrTablet ? "1 1 240px" : "0 0 auto",
+                maxWidth: isMobileOrTablet ? "100%" : "none",
+              }}
+              disabled={isAccountLocked} // ✅ localStorage 고정이면 Autocomplete 자체 비활성
+              ListboxProps={{ style: { fontSize: "12px" } }}
+            />
+          )}
 
-        <TextField
-          select
-          size="small"
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>
-              {m}월
-            </option>
-          ))}
-        </TextField>
+          <TextField
+            select
+            size="small"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            sx={{
+              minWidth: isMobile ? 140 : 150,
+              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+            }}
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </TextField>
 
-        <MDButton
-          variant="contained"
-          color="success"
-          startIcon={<DownloadIcon />}
-          onClick={handleExcelDownload}
-          sx={actionButtonSx}
-        >
-          엑셀다운로드
-        </MDButton>
+          <TextField
+            select
+            size="small"
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            sx={{
+              minWidth: isMobile ? 140 : 150,
+              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+            }}
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m}월
+              </option>
+            ))}
+          </TextField>
 
-        <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
-          저장
-        </MDButton>
+          <MDButton
+            variant="contained"
+            color="success"
+            startIcon={<DownloadIcon />}
+            onClick={handleExcelDownload}
+            sx={actionButtonSx}
+          >
+            엑셀다운로드
+          </MDButton>
+
+          <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
+            저장
+          </MDButton>
+        </MDBox>
       </MDBox>
 
       <MDBox pt={1} pb={3}>

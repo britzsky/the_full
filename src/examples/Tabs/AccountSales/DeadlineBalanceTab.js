@@ -20,6 +20,8 @@ import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
 import api from "api/api";
 import { sortAccountRows } from "utils/accountSort";
+import ExcelJS from "exceljs";
+import DownloadIcon from "@mui/icons-material/Download";
 
 // 🔹 데이터 훅 import
 import useDeadlineBalanceData, { parseNumber, formatNumber } from "./deadlineBalanceData";
@@ -1422,6 +1424,93 @@ export default function DeadlineBalanceTab() {
     }
   };
 
+  // ✅ 조회 연월 기준으로 전체 거래처 미수잔액 목록을 엑셀로 다운로드
+  const handleExcelDownload = async () => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet("전체 미수잔액");
+
+      const reportYm = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
+      const borderThin = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+
+      // ✅ A1 제목 행: 조회 연월 기준 문구
+      ws.mergeCells("A1:F1");
+      ws.getCell("A1").value = `■ 전체 거래처별 미수잔액 / ${reportYm}`;
+      ws.getCell("A1").font = { bold: true, size: 12 };
+      ws.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
+      ws.getRow(1).height = 24;
+
+      // ✅ A2부터 헤더 구성
+      const excelHeaders = ["거래처", "생계비", "일반식대", "직원식대", "보전", "총 미수잔액"];
+      excelHeaders.forEach((header, idx) => {
+        const cell = ws.getCell(2, idx + 1);
+        cell.value = header;
+        cell.font = { bold: true };
+        cell.border = borderThin;
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+      });
+
+      // ✅ 거래처명 기준 조회 순서와 동일하게 정렬해서 데이터 작성
+      const excelRows = sortAccountRows(editableRows, {
+        sortKey: "account_name",
+        keepAllOnTop: true,
+      });
+      excelRows.forEach((row, rowIdx) => {
+        const excelRowNo = rowIdx + 3;
+        const rowValues = [
+          row?.account_name || "",
+          parseNumber(row?.living_cost),
+          parseNumber(row?.basic_cost),
+          parseNumber(row?.employ_cost),
+          parseNumber(row?.integrity_cost),
+          parseNumber(row?.balance_price),
+        ];
+
+        rowValues.forEach((value, colIdx) => {
+          const cell = ws.getCell(excelRowNo, colIdx + 1);
+          cell.value = value;
+          cell.border = borderThin;
+          cell.alignment = {
+            vertical: "middle",
+            horizontal: colIdx === 0 ? "left" : "right",
+          };
+
+          if (colIdx > 0) {
+            cell.numFmt = "#,##0";
+          }
+        });
+      });
+
+      ws.getColumn(1).width = 30;
+      ws.getColumn(2).width = 14;
+      ws.getColumn(3).width = 14;
+      ws.getColumn(4).width = 14;
+      ws.getColumn(5).width = 14;
+      ws.getColumn(6).width = 18;
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `전체_거래처별_미수잔액_${reportYm}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    }
+  };
+
   // 🔹 컬럼 정의
   const columns = useMemo(
     () => [
@@ -1485,6 +1574,22 @@ export default function DeadlineBalanceTab() {
         border: "none",
         background: "transparent",
       },
+    }),
+    [isMobile]
+  );
+  const actionButtonSx = useMemo(
+    () => ({
+      fontSize: isMobile ? "11px" : "13px",
+      minWidth: isMobile ? 82 : 100,
+      px: isMobile ? 1 : 2,
+    }),
+    [isMobile]
+  );
+  const compactActionButtonSx = useMemo(
+    () => ({
+      fontSize: isMobile ? "11px" : "13px",
+      minWidth: isMobile ? 64 : 74,
+      px: isMobile ? 1 : 1.5,
     }),
     [isMobile]
   );
@@ -1594,18 +1699,29 @@ export default function DeadlineBalanceTab() {
           }}
         >
           <MDButton
+            variant="contained"
+            color="success"
+            startIcon={<DownloadIcon />}
+            onClick={handleExcelDownload}
+            sx={actionButtonSx}
+          >
+            엑셀다운로드
+          </MDButton>
+          <MDButton
             variant="gradient"
-            color="info"
+            color="warning"
             onClick={handleDepositModalOpen}
             disabled={!canEdit}
+            sx={compactActionButtonSx}
           >
             입금
           </MDButton>
           <MDButton
             variant="gradient"
-            color="success"
+            color="info"
             onClick={handleSaveChanges}
             disabled={!canEdit}
+            sx={compactActionButtonSx}
           >
             저장
           </MDButton>

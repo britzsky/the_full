@@ -258,6 +258,13 @@ const keepEditableTailVisible = (el) => {
 function AccountCorporateCardSheet() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
+  const isMobileTabletLandscape = useMediaQuery(
+    "(max-width:1279.95px) and (orientation: landscape)"
+  );
+  // 모바일/태블릿에서 상단(기본)/하단(Detail) 테이블 최소 노출 높이
+  const splitPanelMinHeight = isMobileTabletLandscape ? 260 : isMobileTablet ? 320 : 0;
+  const splitContainerMinHeight = isMobileTablet ? splitPanelMinHeight * 2 + 24 : undefined;
 
   const {
     loading,
@@ -1351,7 +1358,8 @@ function AccountCorporateCardSheet() {
       {/* ====== 상단/하단 50:50 영역 ====== */}
       <MDBox
         sx={{
-          height: "calc(100vh - 170px)",
+          height: isMobileTablet ? "auto" : "calc(100vh - 170px)",
+          minHeight: splitContainerMinHeight,
           display: "flex",
           flexDirection: "column",
           gap: 1.5,
@@ -1363,6 +1371,7 @@ function AccountCorporateCardSheet() {
           ref={masterWrapRef}
           sx={{
             flex: 1,
+            minHeight: isMobileTablet ? splitPanelMinHeight : 0,
             overflow: "auto",
             border: "1px solid #ddd",
             borderRadius: 1,
@@ -1950,6 +1959,7 @@ function AccountCorporateCardSheet() {
         <MDBox
           sx={{
             flex: 1,
+            minHeight: isMobileTablet ? splitPanelMinHeight : 0,
             display: "flex",
             flexDirection: "column",
             gap: 1,

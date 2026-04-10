@@ -257,6 +257,7 @@ const buildSearchBlob = (row) =>
 function UserManagement() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
 
   // 화면 데이터/상태
   const [rows, setRows] = useState([]);
@@ -492,6 +493,34 @@ function UserManagement() {
       transform: "translateZ(0)",
       backgroundClip: "padding-box",
     },
+  };
+
+  const seqColumnWidth = TABLE_COLUMNS.find((col) => col.key === "ui_index")?.width ?? 52;
+
+  // 모바일/태블릿에서는 순번/성명만 좌측 고정하고 나머지 컬럼은 가로 스크롤로 이동한다.
+  const getStickyColumnStyle = (columnKey, isHeader = false) => {
+    if (!isMobileTablet) return {};
+
+    if (columnKey === "ui_index") {
+      return {
+        position: "sticky",
+        left: 0,
+        zIndex: isHeader ? 12 : 6,
+        background: isHeader ? "#dbe7f5" : "#fff",
+      };
+    }
+
+    if (columnKey === "user_name") {
+      return {
+        position: "sticky",
+        left: seqColumnWidth,
+        zIndex: isHeader ? 11 : 5,
+        background: isHeader ? "#dbe7f5" : "#fff",
+        boxShadow: "2px 0 0 #cfd6de",
+      };
+    }
+
+    return {};
   };
 
   // 드롭다운 화살표/텍스트 간격을 모든 셀에서 동일하게 강제
@@ -1496,110 +1525,71 @@ function UserManagement() {
             </MDBox>
             {/* 작은 화면에서 테이블이 박스 밖으로 넘치지 않도록 내부 스크롤 처리 */}
             <MDBox px={2} pt={1.25} pb={1} sx={{ maxHeight: "88vh", overflow: "auto" }}>
-              <>
-                {isMobile ? (
-                  // ✅ 모바일: 카드형 리스트
-                  <MDBox display="flex" flexDirection="column" gap={1}>
-                    {pagedRows.map((row) => {
-                      const mobileDelYnChanged = isCellChanged(row, "del_yn");
-                      return (
-                        <Card key={row.ui_index} sx={{ p: 1.5 }}>
-                          <MDBox display="flex" justifyContent="space-between" gap={1}>
-                          <MDBox>
-                            <MDTypography variant="caption" color="#111" fontWeight="medium">
-                              {row.user_name} ({row.user_id})
-                            </MDTypography>
-                            <MDTypography variant="caption" color="text">
-                              {row.dept_or_account} · {row.position_label}
-                            </MDTypography>
-                            <MDTypography variant="caption" color="text">
-                              {row.phone || "-"}
-                            </MDTypography>
-                            <MDTypography variant="caption" color="text">
-                              {row.join_dt || "-"}
-                            </MDTypography>
-                          </MDBox>
-                          <Select
-                            size="small"
-                            value={pendingDelYn[row.user_id] ?? row.del_yn}
-                            onChange={(e) => handleDelYnChange(row.user_id, e.target.value)}
-                            sx={{
-                              ...compactSelectSx,
-                              ...(mobileDelYnChanged ? changedSelectSx : {}),
-                              minWidth: 84,
+              {/* 모바일/태블릿도 데스크톱과 동일한 테이블 레이아웃으로 표시 */}
+              <MDBox sx={tableSx}>
+                <table>
+                  <colgroup>
+                    {TABLE_COLUMNS.map((col) => (
+                      <col key={col.key} style={{ width: `${col.width}px` }} />
+                    ))}
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {TABLE_COLUMNS.map((col) => (
+                        <th
+                          key={col.key}
+                          style={{
+                            minWidth: col.width,
+                            width: col.width,
+                            ...getStickyColumnStyle(col.key, true),
+                          }}
+                        >
+                          {col.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pagedRows.map((row) => (
+                      <tr key={`${row.ui_index}_${row.user_id}`}>
+                        {TABLE_COLUMNS.map((col) => (
+                          <td
+                            key={`${row.ui_index}_${col.key}`}
+                            style={{
+                              minWidth: col.width,
+                              width: col.width,
+                              textAlign: col.align || "center",
+                              verticalAlign: "middle",
+                              paddingLeft: 4,
+                              paddingRight: 4,
+                              fontFamily: TABLE_FONT_FAMILY,
+                              fontSize: `${TABLE_FONT_SIZE}px`,
+                              ...getStickyColumnStyle(col.key, false),
                             }}
                           >
-                            <MenuItem value="N">재직</MenuItem>
-                            <MenuItem value="Y">퇴사</MenuItem>
-                          </Select>
-                          </MDBox>
-                          <MDTypography variant="caption" color="text">
-                            {row.address_full}
-                          </MDTypography>
-                        </Card>
-                      );
-                    })}
-                  </MDBox>
-                ) : (
-                  // 데스크톱: accountissuesheet2 톤으로 직접 테이블 렌더링
-                  <MDBox sx={tableSx}>
-                    <table>
-                      <colgroup>
-                        {TABLE_COLUMNS.map((col) => (
-                          <col key={col.key} style={{ width: `${col.width}px` }} />
+                            {renderTableCellContent(row, col.key)}
+                          </td>
                         ))}
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          {TABLE_COLUMNS.map((col) => (
-                            <th key={col.key} style={{ minWidth: col.width, width: col.width }}>
-                              {col.label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pagedRows.map((row) => (
-                          <tr key={`${row.ui_index}_${row.user_id}`}>
-                            {TABLE_COLUMNS.map((col) => (
-                              <td
-                                key={`${row.ui_index}_${col.key}`}
-                                style={{
-                                  minWidth: col.width,
-                                  width: col.width,
-                                  textAlign: col.align || "center",
-                                  verticalAlign: "middle",
-                                  paddingLeft: 4,
-                                  paddingRight: 4,
-                                  fontFamily: TABLE_FONT_FAMILY,
-                                  fontSize: `${TABLE_FONT_SIZE}px`,
-                                }}
-                              >
-                                {renderTableCellContent(row, col.key)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                        {pagedRows.length === 0 && (
-                          <tr>
-                            <td
-                              colSpan={TABLE_COLUMNS.length}
-                              style={{
-                                textAlign: "center",
-                                padding: "10px",
-                                fontFamily: TABLE_FONT_FAMILY,
-                                fontSize: `${TABLE_FONT_SIZE}px`,
-                              }}
-                            >
-                              데이터가 없습니다.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </MDBox>
-                )}
-              </>
+                      </tr>
+                    ))}
+                    {pagedRows.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={TABLE_COLUMNS.length}
+                          style={{
+                            textAlign: "center",
+                            padding: "10px",
+                            fontFamily: TABLE_FONT_FAMILY,
+                            fontSize: `${TABLE_FONT_SIZE}px`,
+                          }}
+                        >
+                          데이터가 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </MDBox>
             </MDBox>
             <MDBox
               px={2}

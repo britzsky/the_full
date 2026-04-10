@@ -11,7 +11,7 @@ import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import Icon from "@mui/material/Icon";
-import { FormControl, InputLabel, Select, MenuItem } from "@mui/material";
+import { FormControl, InputLabel, Select, MenuItem, useTheme, useMediaQuery } from "@mui/material";
 
 // MD
 import MDBox from "components/MDBox";
@@ -35,6 +35,8 @@ import bgImage2 from "assets/images/thefull-Photoroom.png";
 const SAVE_API = "/User/UserUpdate"; // 필요 시 "/User/UserRgt" 등으로 변경
 
 function UserProfileModal({ open, onClose }) {
+  const theme = useTheme();
+  const isMdDown = useMediaQuery(theme.breakpoints.down("md"));
   const [loading, setLoading] = useState(false);
 
   const [form, setForm] = useState({
@@ -416,7 +418,7 @@ function UserProfileModal({ open, onClose }) {
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth fullScreen={isMdDown}>
         <DialogTitle sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <MDTypography variant="h6">내 정보</MDTypography>
           <IconButton onClick={onClose} size="small">
@@ -424,12 +426,12 @@ function UserProfileModal({ open, onClose }) {
           </IconButton>
         </DialogTitle>
 
-        <DialogContent dividers>
-          <Card sx={{ boxShadow: "none" }}>
-            <MDBox pt={1} pb={1} px={3} textAlign="center">
-              <img src={bgImage2} alt="logo" style={{ maxWidth: 150 }} />
+        <DialogContent dividers sx={{ overflowX: "hidden", px: isMdDown ? 1 : 3 }}>
+          <Card sx={{ boxShadow: "none", overflowX: "hidden" }}>
+            <MDBox pt={1} pb={1} px={isMdDown ? 1.5 : 3} textAlign="center">
+              <img src={bgImage2} alt="logo" style={{ maxWidth: isMdDown ? 120 : 150 }} />
 
-              <MDBox component="form" role="form" mt={1}>
+              <MDBox component="form" role="form" mt={1} sx={{ overflowX: "hidden" }}>
                 <MDBox mb={2}>
                   <MDInput
                     type="text"
@@ -531,9 +533,17 @@ function UserProfileModal({ open, onClose }) {
 
                 {/* 사용자타입 */}
                 <MDBox mb={2}>
-                  <MDBox display="flex" justifyContent="space-between">
+                  <MDBox
+                    sx={{
+                      display: "flex",
+                      justifyContent: isMdDown ? "flex-start" : "space-between",
+                      flexWrap: "wrap",
+                      rowGap: 0.5,
+                      columnGap: 1,
+                    }}
+                  >
                     {USER_TYPE_OPTIONS.map((opt) => (
-                      <MDBox key={opt.code} display="flex" alignItems="center">
+                      <MDBox key={opt.code} display="flex" alignItems="center" sx={{ minWidth: isMdDown ? "45%" : "auto" }}>
                         <Checkbox checked={form.user_type === opt.code} onChange={() => handleUserTypeChange(opt.code)} />
                         <MDTypography variant="body2" sx={{ fontSize: "0.75rem" }}>
                           {opt.labelKo}
@@ -550,7 +560,14 @@ function UserProfileModal({ open, onClose }) {
 
                 {/* 본사일 때 부서/직책 */}
                 {form.user_type === "2" && (
-                  <MDBox mb={2} display="flex" gap={1}>
+                  <MDBox
+                    mb={2}
+                    sx={{
+                      display: "flex",
+                      gap: 1,
+                      flexDirection: isMdDown ? "column" : "row",
+                    }}
+                  >
                     <FormControl fullWidth error={!!errors.department} sx={{ flex: 1, ...selectSx }}>
                       <InputLabel sx={selectLabelSx}>부서</InputLabel>
                       <Select label="부서" value={form.department} onChange={(e) => handleInputChange("department", e.target.value)}>
@@ -652,7 +669,15 @@ function UserProfileModal({ open, onClose }) {
                   />
                 </MDBox>
 
-                <MDBox mb={2} display="flex">
+                <MDBox
+                  mb={2}
+                  sx={{
+                    display: "flex",
+                    gap: 1,
+                    flexDirection: isMdDown ? "column" : "row",
+                    alignItems: isMdDown ? "stretch" : "center",
+                  }}
+                >
                   <MDInput
                     type="text"
                     label="주소"
@@ -664,7 +689,12 @@ function UserProfileModal({ open, onClose }) {
                     helperText={errors.address}
                     InputLabelProps={{ style: { fontSize: "0.7rem" } }}
                   />
-                  <MDButton variant="gradient" color="info" onClick={() => setOpenPostcode(true)} sx={{ ml: 1, padding: "2px" }}>
+                  <MDButton
+                    variant="gradient"
+                    color="info"
+                    onClick={() => setOpenPostcode(true)}
+                    sx={{ ml: isMdDown ? 0 : 1, px: 1.25, py: 0.5, alignSelf: isMdDown ? "flex-end" : "center" }}
+                  >
                     주소찾기
                   </MDButton>
                 </MDBox>
@@ -695,7 +725,7 @@ function UserProfileModal({ open, onClose }) {
                   />
                 </MDBox>
 
-                <MDBox mt={2} display="flex" justifyContent="flex-end" gap={1}>
+                <MDBox mt={2} sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap" }}>
                   <MDButton variant="outlined" color="secondary" onClick={onClose} disabled={loading}>
                     닫기
                   </MDButton>
@@ -705,9 +735,49 @@ function UserProfileModal({ open, onClose }) {
                 </MDBox>
 
                 {/* 주소 검색 모달 */}
-                <Dialog open={openPostcode} onClose={() => setOpenPostcode(false)} maxWidth="sm" fullWidth>
-                  <DialogContent>
-                    <DaumPostcode onComplete={handleCompletePostcode} autoClose />
+                <Dialog
+                  open={openPostcode}
+                  onClose={() => setOpenPostcode(false)}
+                  maxWidth="sm"
+                  fullWidth
+                  fullScreen={isMdDown}
+                  sx={{
+                    "& .MuiDialog-paper": {
+                      overflow: "hidden",
+                      ...(isMdDown ? { m: 0, width: "100%", maxWidth: "100%" } : {}),
+                    },
+                  }}
+                >
+                  <DialogTitle sx={{ py: 1.25, px: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <MDTypography variant="button" fontWeight="medium">
+                      주소 검색
+                    </MDTypography>
+                    <IconButton size="small" onClick={() => setOpenPostcode(false)}>
+                      <Icon>close</Icon>
+                    </IconButton>
+                  </DialogTitle>
+                  <DialogContent
+                    sx={{
+                      p: isMdDown ? 0 : 2,
+                      overflow: "hidden",
+                      height: isMdDown ? "calc(100dvh - 56px)" : 500,
+                    }}
+                  >
+                    {/* 모바일에서도 주소 검색 영역이 가로/세로를 꽉 채워 보이도록 고정 */}
+                    <MDBox
+                      sx={{
+                        width: "100%",
+                        height: "100%",
+                        "& iframe": {
+                          width: "100% !important",
+                          height: "100% !important",
+                          border: 0,
+                          display: "block",
+                        },
+                      }}
+                    >
+                      <DaumPostcode onComplete={handleCompletePostcode} autoClose style={{ width: "100%", height: "100%" }} />
+                    </MDBox>
                   </DialogContent>
                 </Dialog>
               </MDBox>

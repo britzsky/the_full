@@ -50,6 +50,13 @@ import { koKR } from "@mui/x-date-pickers/locales";
 function AccountPurchaseTallyTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
+  const isMobileTabletLandscape = useMediaQuery(
+    "(max-width:1279.95px) and (orientation: landscape)"
+  );
+  // 모바일/태블릿에서는 테이블이 너무 낮아지지 않도록 최소 높이를 보장
+  const tableMinHeight = isMobileTabletLandscape ? 250 : isMobileTablet ? 330 : 0;
+  const tableMaxHeight = isMobileTabletLandscape ? "50vh" : isMobileTablet ? "58vh" : "75vh";
 
   // ✅ 기본 월(YYYY-MM)
   const defaultMonthStr = dayjs().locale("ko").format("YYYY-MM");
@@ -455,10 +462,10 @@ function AccountPurchaseTallyTab() {
   // =========================================
   const tableSx = {
     flex: 1,
-    minHeight: 0,
+    minHeight: isMobileTablet ? tableMinHeight : 0,
     overflowX: "auto",
     overflowY: "auto",
-    maxHeight: isMobile ? "calc(100vh - 260px)" : "75vh",
+    maxHeight: tableMaxHeight,
     "& table": {
       borderCollapse: "separate",
       width: "max-content",

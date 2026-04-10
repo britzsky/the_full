@@ -7,7 +7,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
 import api from "api/api";
-import { Modal, Box, Button, TextField, Typography, Select, MenuItem } from "@mui/material";
+import { Modal, Box, Button, TextField, Typography, Select, MenuItem, useMediaQuery } from "@mui/material";
 
 // ✅ 커스텀 훅 import
 import useEventsheetData from "./data/EventSheetData";
@@ -15,6 +15,7 @@ import "./fullcalendar-custom.css";
 import LoadingScreen from "../loading/loadingscreen";
 
 function EventSheetTab() {
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
   const { eventListRows, eventList, loading } = useEventsheetData(currentYear, currentMonth);
@@ -338,11 +339,14 @@ function EventSheetTab() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 520,
+            width: isMobileTablet ? "calc(100vw - 24px)" : 520,
+            maxWidth: 520,
+            maxHeight: isMobileTablet ? "calc(100dvh - 24px)" : "none",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            p: 5,
+            p: isMobileTablet ? 2 : 5,
+            overflowY: isMobileTablet ? "auto" : "visible",
           }}
         >
           {/* 상단 날짜 */}
@@ -360,7 +364,7 @@ function EventSheetTab() {
             size="small"
             value={selectedType}
             onChange={(e) => setSelectedType(e.target.value)}
-            sx={{ minWidth: 170, mb: 2 }}
+            sx={{ minWidth: 170, mb: 2, width: isMobileTablet ? "100%" : "auto" }}
           >
             <MenuItem value="2">
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -382,13 +386,22 @@ function EventSheetTab() {
             label="내용 입력"
             InputLabelProps={{ style: { fontSize: "0.7rem" } }}
             multiline
-            minRows={7}
+            minRows={isMobileTablet ? 5 : 7}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
           />
 
           {/* 버튼 영역 */}
-          <Box sx={{ mt: 3, display: "flex", justifyContent: "flex-end", gap: 1.5 }}>
+          <Box
+            sx={{
+              mt: 3,
+              display: "flex",
+              justifyContent: isMobileTablet ? "stretch" : "flex-end",
+              gap: 1.5,
+              flexWrap: isMobileTablet ? "wrap" : "nowrap",
+              "& .MuiButton-root": isMobileTablet ? { flex: "1 1 30%" } : {},
+            }}
+          >
             {selectedEvent && (
               <Button
                 variant="contained"

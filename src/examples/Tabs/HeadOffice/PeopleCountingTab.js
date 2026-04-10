@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useMemo, useEffect, useState } from "react";
-import { Grid, Box, Select, MenuItem } from "@mui/material";
+import { Grid, Box, Select, MenuItem, useTheme, useMediaQuery } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -13,6 +13,10 @@ export default function PeopleCountingTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1); // ✅ 현재 월
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isMobileOrTablet = isMobile || isTablet;
   // ✅ 거래처 검색이 없는 화면이라 정렬 기준 선택 제공(기본: 거래처명)
   const [accountSortKey, setAccountSortKey] = useState("account_name");
 
@@ -142,7 +146,17 @@ export default function PeopleCountingTab() {
                 <thead>
                   <tr>
                     {columns.map((col) => (
-                      <th key={col.accessorKey} style={{ width: col.width, minWidth: col.width }}>
+                      <th
+                        key={col.accessorKey}
+                        style={{
+                          width: col.width,
+                          minWidth: col.width,
+                          // 모바일/태블릿에서는 거래처 컬럼만 좌측 고정
+                          ...(isMobileOrTablet && col.accessorKey === "account_name"
+                            ? { left: 0, zIndex: 11 }
+                            : {}),
+                        }}
+                      >
                         {col.header}
                       </th>
                     ))}
@@ -166,6 +180,10 @@ export default function PeopleCountingTab() {
                                   minWidth: col.width,
                                   fontWeight: "bold",
                                   background: "#f9f9f9",
+                                  // 모바일/태블릿에서는 거래처 컬럼만 좌측 고정
+                                  ...(isMobileOrTablet
+                                    ? { position: "sticky", left: 0, zIndex: 8 }
+                                    : {}),
                                 }}
                               >
                                 {row[key]}

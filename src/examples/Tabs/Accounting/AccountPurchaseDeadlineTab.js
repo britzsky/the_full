@@ -41,6 +41,13 @@ import useAccountPurchaseDeadlineDetailData from "./accountPurchaseDeadlineDetai
 function AccountPurchaseDeadlineTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
+  const isMobileTabletLandscape = useMediaQuery(
+    "(max-width:1279.95px) and (orientation: landscape)"
+  );
+  // 모바일/태블릿에서는 상단(기본)/하단(Detail) 테이블이 최소 높이 이상 보이도록 고정
+  const splitTableMinHeight = isMobileTabletLandscape ? 240 : isMobileTablet ? 320 : 0;
+  const splitTableMaxHeight = isMobileTabletLandscape ? "44vh" : isMobileTablet ? "52vh" : "38vh";
 
   // 🔹 오늘 날짜 (YYYY-MM-DD)
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -394,10 +401,10 @@ function AccountPurchaseDeadlineTab() {
 
   const tableSx = {
     flex: 1,
-    minHeight: 0,
+    minHeight: isMobileTablet ? splitTableMinHeight : 0,
     overflowX: "auto",
     overflowY: "auto",
-    maxHeight: isMobile ? "calc(38vh - 260px)" : "38vh",
+    maxHeight: splitTableMaxHeight,
     "& table": {
       borderCollapse: "separate",
       width: "max-content",

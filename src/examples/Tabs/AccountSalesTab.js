@@ -34,8 +34,9 @@ function AccountSalesTab() {
   const initialMiniSidenavRef = useRef(miniSidenav);
 
   useEffect(() => {
-    // 화면 좌측 네비 마감이슈 탭은 default 접힘(true), 다른 탭은 펼침(false)
-    setMiniSidenav(dispatch, isDeadlineIssueTab);
+    // 모바일/태블릿은 항상 닫힘 유지, 데스크탑만 기존 탭별 접힘 규칙 적용
+    const isSmallScreen = window.innerWidth < 1200;
+    setMiniSidenav(dispatch, isSmallScreen ? true : isDeadlineIssueTab);
   }, [dispatch, isDeadlineIssueTab]);
 
   useEffect(

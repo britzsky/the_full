@@ -835,6 +835,9 @@ function RecordSheet() {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTabletOrSmallDesktop = useMediaQuery("(max-width:1280px)");
+  const isNarrowDesktop = useMediaQuery("(min-width:1281px) and (max-width:1447px)");
+  const isTopToolbarWrap = isTabletOrSmallDesktop || isNarrowDesktop;
 
   // ✅ 상단 "전체 거래처 엑셀/지급 일괄" 버튼 권한:
   // - position: 0(대표님), 1(팀장)
@@ -4670,20 +4673,20 @@ function RecordSheet() {
           pb={1.5}
           sx={{
             display: "flex",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
+            flexWrap: isTopToolbarWrap ? "wrap" : "nowrap",
+            justifyContent: isTopToolbarWrap ? "flex-start" : "flex-end",
             alignItems: "center",
-            gap: isMobile ? 1 : 2,
+            gap: isTopToolbarWrap ? 1 : 2,
           }}
         >
           <Box
             sx={{
-              flexWrap: isMobile ? "wrap" : "nowrap",
-              justifyContent: isMobile ? "flex-start" : "flex-end",
               display: "flex",
-              justifyContent: "space-between",
+              flexWrap: isTopToolbarWrap ? "wrap" : "nowrap",
+              justifyContent: isTopToolbarWrap ? "flex-start" : "space-between",
               alignItems: "right",
               gap: 1,
+              width: isTopToolbarWrap ? "100%" : "auto",
             }}
           >
             <Autocomplete
@@ -4700,7 +4703,10 @@ function RecordSheet() {
               }}
               getOptionLabel={(opt) => opt?.account_name || ""}
               isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
-              sx={{ minWidth: 200 }}
+              sx={{
+                minWidth: isTopToolbarWrap ? 220 : 200,
+                flex: isTopToolbarWrap ? "1 1 220px" : "0 0 auto",
+              }}
               renderInput={(params) => (
                 <TextField
                   {...params}
@@ -5060,15 +5066,29 @@ function RecordSheet() {
               bgColor="info"
               borderRadius="lg"
               coloredShadow="info"
-              display="flex"
-              alignItems="center"
-              justifyContent="space-between"
+              sx={{
+                display: "flex",
+                alignItems: isTabletOrSmallDesktop ? "flex-start" : "center",
+                justifyContent: "space-between",
+                flexWrap: isTabletOrSmallDesktop ? "wrap" : "nowrap",
+                rowGap: 1,
+                columnGap: 1,
+              }}
             >
               <MDTypography variant="h6" color="white">
                 파출 정보 {dispatchLoading ? "(조회중...)" : ""}
               </MDTypography>
 
-              <MDBox display="flex" alignItems="center" gap={1}>
+              <MDBox
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  flexWrap: isTabletOrSmallDesktop ? "wrap" : "nowrap",
+                  justifyContent: isTabletOrSmallDesktop ? "flex-start" : "flex-end",
+                  width: isTabletOrSmallDesktop ? "100%" : "auto",
+                }}
+              >
                 <Select
                   value={dispatchDelFilter}
                   onChange={(e) => {

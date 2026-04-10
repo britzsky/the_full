@@ -7,7 +7,17 @@ import interactionPlugin from "@fullcalendar/interaction";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
 import api from "api/api";
-import { Modal, Box, Button, TextField, Typography, Select, MenuItem } from "@mui/material";
+import {
+  Modal,
+  Box,
+  Button,
+  TextField,
+  Typography,
+  Select,
+  MenuItem,
+  useTheme,
+  useMediaQuery,
+} from "@mui/material";
 
 import useOperateSchedulesheetData from "./data/OperateScheduleSheetData";
 import "./fullcalendar-custom.css";
@@ -15,6 +25,9 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
 function OperateScheduleSheet() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
   const { eventListRows, eventList, loading } = useOperateSchedulesheetData(
@@ -498,11 +511,14 @@ function OperateScheduleSheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 500,
+            width: isMobile ? "92vw" : 500,
+            maxWidth: "92vw",
+            maxHeight: isMobile ? "90vh" : "auto",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            p: 5,
+            p: isMobile ? 2 : 5,
+            overflowY: isMobile ? "auto" : "visible",
           }}
         >
           {/* 상단 날짜 */}
@@ -519,8 +535,9 @@ function OperateScheduleSheet() {
           <Box
             sx={{
               display: "flex",
-              alignItems: "center",
-              gap: 2,
+              alignItems: isMobile ? "stretch" : "center",
+              flexDirection: isMobile ? "column" : "row",
+              gap: isMobile ? 1 : 2,
               mb: 2,
             }}
           >
@@ -530,9 +547,10 @@ function OperateScheduleSheet() {
               value={selectedType}
               onChange={(e) => setSelectedType(e.target.value)}
               sx={{
-                minWidth: 170,
+                minWidth: isMobile ? "100%" : 170,
+                width: isMobile ? "100%" : "auto",
                 "& .MuiOutlinedInput-root": {
-                  height: 72,
+                  height: isMobile ? 48 : 72,
                 },
                 "& .MuiSelect-select": {
                   display: "flex",
@@ -564,9 +582,10 @@ function OperateScheduleSheet() {
               onChange={(e) => setSelectedMemberId(e.target.value)}
               displayEmpty
               sx={{
-                flex: 1,
+                flex: isMobile ? "none" : 1,
+                width: isMobile ? "100%" : "auto",
                 "& .MuiOutlinedInput-root": {
-                  height: 75,
+                  height: isMobile ? 48 : 75,
                 },
               }}
             >
@@ -589,7 +608,7 @@ function OperateScheduleSheet() {
               style: { fontSize: "0.7rem" },
             }}
             multiline
-            minRows={7}
+            minRows={isMobile ? 5 : 7}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
           />
@@ -599,8 +618,15 @@ function OperateScheduleSheet() {
             sx={{
               mt: 3,
               display: "flex",
-              justifyContent: "flex-end",
+              justifyContent: isMobile ? "stretch" : "flex-end",
+              flexWrap: isMobile ? "wrap" : "nowrap",
               gap: 1.5,
+              "& .MuiButton-root": isMobile
+                ? {
+                  flex: "1 1 calc(50% - 6px)",
+                  minWidth: 0,
+                }
+                : {},
             }}
           >
             {/* 취소 or 복원 버튼 */}

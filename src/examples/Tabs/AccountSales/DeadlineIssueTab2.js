@@ -10,6 +10,7 @@ import {
   Select,
   TextField,
   Tooltip,
+  useMediaQuery,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -26,6 +27,8 @@ import useDeadlineIssueTab2Data from "./deadlineIssueTab2Data";
 const ISSUE_NOTE_MAX_ROWS = 10;
 // 좌/우 패널 공통 높이(화면 하단까지 사용)
 const CONTENT_HEIGHT = "calc(100vh - 220px)";
+// 모바일/태블릿 가로모드에서만 좌/우 패널을 조금 더 길게 사용
+const MOBILE_LANDSCAPE_CONTENT_HEIGHT = "calc(100vh - 180px)";
 // 입력 컨트롤 공통 폰트
 const CONTROL_FONT_SIZE = 12;
 const PLACEHOLDER_FONT_SIZE = CONTROL_FONT_SIZE;
@@ -59,6 +62,12 @@ const ALL_ACCOUNT_OPTION = {
 };
 
 export default function DeadlineIssueTab2() {
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
+  const isMobileLandscape = useMediaQuery("(max-width:1279.95px) and (orientation: landscape)");
+  const panelContentHeight = isMobileLandscape
+    ? MOBILE_LANDSCAPE_CONTENT_HEIGHT
+    : CONTENT_HEIGHT;
+
   // 이슈 목록/행삭제는 데이터 훅에서 소프트삭제(del_yn) 규칙으로 처리
   const {
     loading,
@@ -174,9 +183,12 @@ export default function DeadlineIssueTab2() {
   // 테이블 공통 스타일
   const tableSx = {
     flex: 1,
-    height: CONTENT_HEIGHT,
-    maxHeight: CONTENT_HEIGHT,
+    height: panelContentHeight,
+    maxHeight: panelContentHeight,
     overflow: "auto",
+    borderRight: `1px solid ${BODY_BORDER_COLOR}`,
+    borderBottom: `1px solid ${BODY_BORDER_COLOR}`,
+    boxSizing: "border-box",
     "& table": {
       width: "max-content",
       minWidth: "100%",
@@ -1507,8 +1519,8 @@ export default function DeadlineIssueTab2() {
             display: "flex",
             flexDirection: "column",
             gap: 1,
-            height: CONTENT_HEIGHT,
-            maxHeight: CONTENT_HEIGHT,
+            height: isMobileTablet ? "auto" : panelContentHeight,
+            maxHeight: isMobileTablet ? "none" : panelContentHeight,
           }}
         >
           <MDBox
@@ -1604,7 +1616,9 @@ export default function DeadlineIssueTab2() {
               overflow: "auto",
               background: "#fff",
               minHeight: 0,
-              flex: 1,
+              flex: isMobileTablet ? "0 0 auto" : 1,
+              height: isMobileTablet ? panelContentHeight : undefined,
+              maxHeight: isMobileTablet ? panelContentHeight : undefined,
             }}
           >
             {renderDetailTable(rightSummaryRowsSorted, "표시할 건이 없습니다.", {
@@ -1623,7 +1637,9 @@ export default function DeadlineIssueTab2() {
               overflow: "auto",
               background: "#fff",
               minHeight: 0,
-              flex: 1,
+              flex: isMobileTablet ? "0 0 auto" : 1,
+              height: isMobileTablet ? panelContentHeight : undefined,
+              maxHeight: isMobileTablet ? panelContentHeight : undefined,
             }}
           >
             {renderDetailTable(rightUnresolvedRowsSorted, "미해결 건이 없습니다.", {

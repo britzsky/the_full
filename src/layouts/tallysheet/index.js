@@ -429,6 +429,8 @@ function TallySheet() {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isMobileOrTablet = isMobile || isTablet;
 
   const [tabValue, setTabValue] = useState(0);
   const tallyNoteInputRef = useRef(null);
@@ -2791,7 +2793,11 @@ function TallySheet() {
         alignItems: "center",
         gap: 1,
         flexWrap: "wrap",
-        mr: 1,
+        rowGap: 0.5,
+        mr: isMobileOrTablet ? 0 : 1,
+        width: isMobileOrTablet ? "100%" : "auto",
+        maxWidth: "100%",
+        minWidth: 0,
         userSelect: "none",
       }}
     >
@@ -2807,6 +2813,8 @@ function TallySheet() {
             borderRadius: 999,
             bgcolor: "rgba(0,0,0,0.03)",
             border: "1px solid rgba(0,0,0,0.08)",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
           }}
         >
           <Box
@@ -2820,7 +2828,15 @@ function TallySheet() {
             }}
           />
           <Typography
-            sx={{ fontSize: 12, fontWeight: 700, color: "#333", position: "relative", top: "1px" }}
+            sx={{
+              fontSize: 12,
+              fontWeight: 700,
+              color: "#333",
+              position: "relative",
+              top: "1px",
+              whiteSpace: "nowrap",
+              lineHeight: 1,
+            }}
           >
             {it.label}
           </Typography>
@@ -3169,12 +3185,17 @@ function TallySheet() {
           fontSize: "12px",
           padding: "4px",
         },
-        "& th": { backgroundColor: "#f0f0f0", position: "sticky", top: 0, zIndex: 2 },
+        "& th": {
+          backgroundColor: "#f0f0f0",
+          position: "sticky",
+          top: 0,
+          zIndex: isMobileOrTablet ? 1 : 2,
+        },
         "& td:first-of-type, & th:first-of-type": {
           position: "sticky",
           left: 0,
           background: "#f0f0f0",
-          zIndex: 3,
+          zIndex: isMobileOrTablet ? 2 : 3,
         },
         "& .total-row": { backgroundColor: "#FFE3A9", fontWeight: "bold" },
       }}
@@ -3238,13 +3259,12 @@ function TallySheet() {
 
                 const isActiveThisCell = isActiveRow && activeCell.colKey === colKey;
 
-                const baseBg =
-                  !canInlineEdit && isBaseCell && !isTotalRow ? "rgba(25,118,210,0.03)" : "";
+                const baseBg = !canInlineEdit && isBaseCell && !isTotalRow ? "#F3F8FD" : "";
 
-                const nameLockedBg = colKey === "name" && rowLocked ? "rgba(0,0,0,0.06)" : "";
+                const nameLockedBg = colKey === "name" && rowLocked ? "#E9E9E9" : "";
 
-                const activeRowBg = isActiveRow ? "rgba(255, 244, 179, 0.55)" : "";
-                const activeCellBg = isActiveThisCell ? "rgba(255, 213, 79, 0.60)" : "";
+                const activeRowBg = isActiveRow ? "#FFF4B3" : "";
+                const activeCellBg = isActiveThisCell ? "#FFD54F" : "";
                 const lockedRowBg = rowLocked ? "#E4E4E4" : "";
                 const isLightPoint =
                   pointColor &&
@@ -3372,7 +3392,7 @@ function TallySheet() {
         sx={{
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          zIndex: isMobileOrTablet ? theme.zIndex.appBar + 1 : 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}
@@ -3383,20 +3403,36 @@ function TallySheet() {
           pt={1}
           pb={1}
           sx={{
+            px: 2,
             display: "flex",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
+            flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
+            justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
             alignItems: "center",
-            gap: isMobile ? 1 : 2,
+            gap: isMobileOrTablet ? 1 : 2,
           }}
         >
           {/* ✅ 범례 + 거래처검색을 한 덩어리로 묶어서 "거래처 검색" 왼쪽에 범례 표시 */}
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: isMobileOrTablet ? "stretch" : "center",
+              gap: 1,
+              flexWrap: isMobileOrTablet ? "nowrap" : "wrap",
+              flexDirection: isMobileOrTablet ? "column" : "row",
+              width: isMobileOrTablet ? "100%" : "auto",
+              minWidth: 0,
+            }}
+          >
             <PointLegend />
 
             <Autocomplete
               size="small"
-              sx={{ minWidth: 200 }}
+              sx={{
+                width: isMobileOrTablet ? "100%" : "auto",
+                maxWidth: "100%",
+                minWidth: isMobileOrTablet ? 0 : 200,
+                flex: isMobileOrTablet ? "1 1 auto" : "0 0 auto",
+              }}
               options={filteredAccountList || []}
               value={selectedAccountOption}
               onChange={(_, newValue) => {
@@ -3441,7 +3477,10 @@ function TallySheet() {
             size="small"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
+            sx={{
+              minWidth: isMobile ? 140 : 150,
+              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+            }}
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -3460,7 +3499,10 @@ function TallySheet() {
               // '전월' 탭이어도 월을 변경하면 바꾸면 항상 '현재월' 탭으로 복귀
               setTabValue(0);
             }}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
+            sx={{
+              minWidth: isMobile ? 140 : 150,
+              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+            }}
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -3553,6 +3595,8 @@ function TallySheet() {
               display: "flex",
               flexDirection: "column",
               gap: 1,
+              position: isMobileOrTablet ? "relative" : undefined,
+              zIndex: isMobileOrTablet ? 0 : undefined,
             }}
           >
             <Box
@@ -3579,6 +3623,8 @@ function TallySheet() {
                 indicatorColor="secondary"
                 variant={isMobile ? "scrollable" : "standard"}
                 sx={{
+                  position: isMobileOrTablet ? "relative" : undefined,
+                  zIndex: isMobileOrTablet ? 0 : undefined,
                   minHeight: 36,
                   "& .MuiTab-root": {
                     minHeight: 36,
@@ -3750,10 +3796,13 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 800,
+            width: isMobileOrTablet ? "92vw" : 800,
+            maxWidth: 800,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
-            p: 3,
+            p: isMobileOrTablet ? 2 : 3,
           }}
         >
           <MDBox
@@ -3772,7 +3821,7 @@ function TallySheet() {
           </MDBox>
 
           <Grid container spacing={2}>
-            <Grid item xs={5}>
+            <Grid item xs={12} lg={5}>
               <YourSelectableTable
                 data={leftItems}
                 selected={selectedLeft}
@@ -3781,7 +3830,8 @@ function TallySheet() {
             </Grid>
             <Grid
               item
-              xs={2}
+              xs={12}
+              lg={2}
               display="flex"
               flexDirection="column"
               justifyContent="center"
@@ -3794,7 +3844,7 @@ function TallySheet() {
                 {"<"}
               </MDButton>
             </Grid>
-            <Grid item xs={5}>
+            <Grid item xs={12} lg={5}>
               <YourSelectableTable
                 data={rightItems}
                 selected={selectedRight}
@@ -3822,11 +3872,14 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 500,
+            width: isMobileOrTablet ? "92vw" : 500,
+            maxWidth: 500,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            p: 5,
+            p: isMobileOrTablet ? 2 : 5,
           }}
         >
           <Typography variant="h6" gutterBottom>
@@ -4180,7 +4233,10 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 420,
+            width: isMobileOrTablet ? "92vw" : 420,
+            maxWidth: 420,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
@@ -5392,7 +5448,10 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 520,
+            width: isMobileOrTablet ? "92vw" : 520,
+            maxWidth: 520,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
@@ -5534,7 +5593,10 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 420,
+            width: isMobileOrTablet ? "92vw" : 420,
+            maxWidth: 420,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
@@ -5575,7 +5637,10 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 520,
+            width: isMobileOrTablet ? "92vw" : 520,
+            maxWidth: 520,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
@@ -5727,7 +5792,10 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 420,
+            width: isMobileOrTablet ? "92vw" : 420,
+            maxWidth: 420,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
@@ -5768,7 +5836,10 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 520,
+            width: isMobileOrTablet ? "92vw" : 520,
+            maxWidth: 520,
+            maxHeight: isMobileOrTablet ? "88vh" : "none",
+            overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,

@@ -458,7 +458,7 @@ function CookWearTabStyled() {
     };
 
     return (
-      <MDBox pt={isMobile ? 2 : 4} pb={3} sx={tableSx}>
+      <MDBox pt={isMobile ? 2 : 4} pb={3}>
         <MDBox
           mx={0}
           mt={-1}
@@ -478,92 +478,124 @@ function CookWearTabStyled() {
           </MDTypography>
         </MDBox>
 
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <table>
-              <thead>
-                <tr>
-                  {columns.map((col) => {
-                    const w = colWidths?.[col.accessorKey] ?? col.size ?? 120;
-
-                    return (
-                      <th
-                        key={col.accessorKey}
-                        style={{
-                          width: w,
-                          paddingRight: 10, // 리사이저 공간
-                        }}
-                      >
-                        <div
-                          style={{
-                            position: "relative",
-                            width: "100%",
-                            height: "100%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <span>{col.header}</span>
-
-                          {/* ✅ 리사이즈 핸들 */}
-                          <div
-                            role="presentation"
-                            onMouseDown={(e) =>
-                              onResizeMouseDown(e, tableId, col.accessorKey, colWidths)
-                            }
-                            style={{
-                              position: "absolute",
-                              right: -3,
-                              top: 0,
-                              height: "100%",
-                              width: 6,
-                              cursor: "col-resize",
-                              zIndex: 5,
-                            }}
-                          />
-                        </div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-
-              <tbody>
-                {rows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
+        {/* 테이블 영역만 별도 스크롤해서 제목은 항상 같은 위치에 유지 */}
+        <MDBox sx={tableSx}>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <table>
+                <thead>
+                  <tr>
                     {columns.map((col) => {
-                      const value = row[col.accessorKey] || "";
                       const w = colWidths?.[col.accessorKey] ?? col.size ?? 120;
 
-                      if (col.type === "date") {
-                        return (
-                          <td key={col.accessorKey} style={{ width: w }}>
-                            <input
-                              type="date"
-                              value={value}
-                              disabled={readOnly}
-                              style={{
-                                ...styleFn(rowIndex, col.accessorKey, value),
-                                width: "100%",
-                              }}
-                              onChange={(e) =>
-                                handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
-                              }
-                            />
-                          </td>
-                        );
-                      }
+                      return (
+                        <th
+                          key={col.accessorKey}
+                          style={{
+                            width: w,
+                            paddingRight: 10, // 리사이저 공간
+                          }}
+                        >
+                          <div
+                            style={{
+                              position: "relative",
+                              width: "100%",
+                              height: "100%",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <span>{col.header}</span>
 
-                      // ✅ 사이즈: value=type, label=type_name
-                      if (col.type === "selectItem") {
-                        return (
-                          <td key={col.accessorKey} style={{ width: w }}>
-                            {readOnly ? (
-                              <span style={styleFn(rowIndex, col.accessorKey, value)}>
-                                {getTypeLabel(value) || row.type_name || value}
-                              </span>
-                            ) : (
+                            {/* ✅ 리사이즈 핸들 */}
+                            <div
+                              role="presentation"
+                              onMouseDown={(e) =>
+                                onResizeMouseDown(e, tableId, col.accessorKey, colWidths)
+                              }
+                              style={{
+                                position: "absolute",
+                                right: -3,
+                                top: 0,
+                                height: "100%",
+                                width: 6,
+                                cursor: "col-resize",
+                                zIndex: 5,
+                              }}
+                            />
+                          </div>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {rows.map((row, rowIndex) => (
+                    <tr key={rowIndex}>
+                      {columns.map((col) => {
+                        const value = row[col.accessorKey] || "";
+                        const w = colWidths?.[col.accessorKey] ?? col.size ?? 120;
+
+                        if (col.type === "date") {
+                          return (
+                            <td key={col.accessorKey} style={{ width: w }}>
+                              <input
+                                type="date"
+                                value={value}
+                                disabled={readOnly}
+                                style={{
+                                  ...styleFn(rowIndex, col.accessorKey, value),
+                                  width: "100%",
+                                }}
+                                onChange={(e) =>
+                                  handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
+                                }
+                              />
+                            </td>
+                          );
+                        }
+
+                        // ✅ 사이즈: value=type, label=type_name
+                        if (col.type === "selectItem") {
+                          return (
+                            <td key={col.accessorKey} style={{ width: w }}>
+                              {readOnly ? (
+                                <span style={styleFn(rowIndex, col.accessorKey, value)}>
+                                  {getTypeLabel(value) || row.type_name || value}
+                                </span>
+                              ) : (
+                                <select
+                                  value={value}
+                                  disabled={readOnly}
+                                  style={{
+                                    ...styleFn(rowIndex, col.accessorKey, value),
+                                    width: "100%",
+                                  }}
+                                  onChange={(e) =>
+                                    handleCellChange(setRows)(
+                                      rowIndex,
+                                      col.accessorKey,
+                                      e.target.value
+                                    )
+                                  }
+                                >
+                                  <option value="">선택</option>
+                                  {sizeOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                          );
+                        }
+
+                        if (col.type === "selectAccount") {
+                          return (
+                            <td key={col.accessorKey} style={{ width: w }}>
                               <select
                                 value={value}
                                 disabled={readOnly}
@@ -572,51 +604,46 @@ function CookWearTabStyled() {
                                   width: "100%",
                                 }}
                                 onChange={(e) =>
-                                  handleCellChange(setRows)(
-                                    rowIndex,
-                                    col.accessorKey,
-                                    e.target.value
-                                  )
+                                  handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
                                 }
                               >
-                                <option value="">선택</option>
-                                {sizeOptions.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                {accountList.map((acc) => (
+                                  <option key={acc.account_id} value={acc.account_id}>
+                                    {acc.account_name}
                                   </option>
                                 ))}
+                                <option value="0">(주)더채움</option>
                               </select>
-                            )}
-                          </td>
-                        );
-                      }
+                            </td>
+                          );
+                        }
 
-                      if (col.type === "selectAccount") {
-                        return (
-                          <td key={col.accessorKey} style={{ width: w }}>
-                            <select
-                              value={value}
-                              disabled={readOnly}
-                              style={{
-                                ...styleFn(rowIndex, col.accessorKey, value),
-                                width: "100%",
-                              }}
-                              onChange={(e) =>
-                                handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
-                              }
-                            >
-                              {accountList.map((acc) => (
-                                <option key={acc.account_id} value={acc.account_id}>
-                                  {acc.account_name}
-                                </option>
-                              ))}
-                              <option value="0">(주)더채움</option>
-                            </select>
-                          </td>
-                        );
-                      }
+                        if (col.type === "note") {
+                          return (
+                            <td key={col.accessorKey} style={{ width: w }}>
+                              {readOnly ? (
+                                <span style={styleFn(rowIndex, col.accessorKey, value)}>{value}</span>
+                              ) : (
+                                <input
+                                  type="text"
+                                  value={value}
+                                  style={{
+                                    ...styleFn(rowIndex, col.accessorKey, value),
+                                    width: "100%",
+                                  }}
+                                  onChange={(e) =>
+                                    handleCellChange(setRows)(
+                                      rowIndex,
+                                      col.accessorKey,
+                                      e.target.value
+                                    )
+                                  }
+                                />
+                              )}
+                            </td>
+                          );
+                        }
 
-                      if (col.type === "note") {
                         return (
                           <td key={col.accessorKey} style={{ width: w }}>
                             {readOnly ? (
@@ -630,44 +657,20 @@ function CookWearTabStyled() {
                                   width: "100%",
                                 }}
                                 onChange={(e) =>
-                                  handleCellChange(setRows)(
-                                    rowIndex,
-                                    col.accessorKey,
-                                    e.target.value
-                                  )
+                                  handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
                                 }
                               />
                             )}
                           </td>
                         );
-                      }
-
-                      return (
-                        <td key={col.accessorKey} style={{ width: w }}>
-                          {readOnly ? (
-                            <span style={styleFn(rowIndex, col.accessorKey, value)}>{value}</span>
-                          ) : (
-                            <input
-                              type="text"
-                              value={value}
-                              style={{
-                                ...styleFn(rowIndex, col.accessorKey, value),
-                                width: "100%",
-                              }}
-                              onChange={(e) =>
-                                handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
-                              }
-                            />
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Grid>
           </Grid>
-        </Grid>
+        </MDBox>
       </MDBox>
     );
   };

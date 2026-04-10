@@ -20,6 +20,8 @@ function TeleManagerTab() {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isMobileOrTablet = isMobile || isTablet;
 
   const now = dayjs();
   const [year, setYear] = useState(now.year());
@@ -97,6 +99,16 @@ function TeleManagerTab() {
     }
   }, [teleAccountRows]);
 
+  const colWidths = [30, 170, 150, 160, 60, 100, 140, 80];
+  const desktopStickyColumnCount = 8;
+  // 모바일/태블릿은 본문만 순번+업장명까지만 고정
+  const bodyStickyColumnCount = isMobileOrTablet ? 2 : desktopStickyColumnCount;
+  // 모바일/태블릿 헤더는 순번/업장명만 좌우 고정, 나머지는 상하(top)만 고정
+  const headerStickyColumnCount = isMobileOrTablet ? 2 : desktopStickyColumnCount;
+  const isBodyStickyColumn = (columnIndex) => columnIndex < bodyStickyColumnCount;
+  const isHeaderStickyColumn = (columnIndex) => columnIndex < headerStickyColumnCount;
+  const getStickyLeft = (columnIndex) => colWidths.slice(0, columnIndex).reduce((a, b) => a + b, 0);
+
   // ✅ table style
   const tableSx = {
     maxHeight: isMobile ? "60vh" : "75vh",
@@ -126,7 +138,12 @@ function TeleManagerTab() {
       top: 0,
       zIndex: 2,
     },
-    "& thead th:nth-child(-n+8), & tbody td:nth-child(-n+8)": {
+    [`& thead th:nth-child(-n+${headerStickyColumnCount})`]: {
+      position: "sticky",
+      background: "#fff",
+      zIndex: 3,
+    },
+    [`& tbody td:nth-child(-n+${bodyStickyColumnCount})`]: {
       position: "sticky",
       background: "#fff",
       zIndex: 3,
@@ -176,7 +193,6 @@ function TeleManagerTab() {
     );
   };
 
-  const colWidths = [30, 170, 150, 160, 60, 100, 110, 80];
   const [editingCell, setEditingCell] = useState(null);
 
   function getCellColor(row, key) {
@@ -392,19 +408,20 @@ function TeleManagerTab() {
         pb={1}
         sx={{
           display: "flex",
-          justifyContent: isMobile ? "space-between" : "flex-end",
+          justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
           alignItems: "center",
-          flexWrap: isMobile ? "wrap" : "nowrap",
+          flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
           gap: 1,
         }}
       >
         <Box
           sx={{
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "right",
+            flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
+            justifyContent: isMobileOrTablet ? "flex-start" : "space-between",
+            alignItems: "center",
+            gap: 1,
+            width: isMobileOrTablet ? "100%" : "auto",
           }}
         >
           <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small" sx={{ minWidth: 90 }}>
@@ -415,7 +432,10 @@ function TeleManagerTab() {
             ))}
           </Select>
 
-          <MDButton color="info" sx={{ minWidth: 0, visibility: "hidden" }} />
+          <MDButton
+            color="info"
+            sx={{ minWidth: 0, visibility: "hidden", display: isMobileOrTablet ? "none" : "inline-flex" }}
+          />
         </Box>
 
         {/* 범위 적용 */}
@@ -428,7 +448,8 @@ function TeleManagerTab() {
             borderRadius: 1,
             px: 1,
             py: 0.5,
-            flexWrap: isMobile ? "wrap" : "nowrap",
+            flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
+            width: isMobileOrTablet ? "100%" : "auto",
           }}
         >
           <span style={{ fontSize: 12 }}>범위 타입</span>
@@ -438,7 +459,12 @@ function TeleManagerTab() {
             <option value={3}>집중관리기간</option>
           </select>
 
-          <MDInput placeholder="범위 메모" value={bulkMemo} onChange={(e) => setBulkMemo(e.target.value)} sx={{ width: isMobile ? 150 : 200 }} />
+          <MDInput
+            placeholder="범위 메모"
+            value={bulkMemo}
+            onChange={(e) => setBulkMemo(e.target.value)}
+            sx={{ width: isMobile ? 150 : isTablet ? 170 : 200 }}
+          />
 
           <MDButton variant="outlined" color="secondary" onClick={handleApplySelection} sx={{ fontSize: 11 }}>
             적용
@@ -448,7 +474,7 @@ function TeleManagerTab() {
           </MDButton>
         </Box>
 
-        <Box sx={{ display: "flex", gap: 1, mt: isMobile ? 1 : 0 }}>
+        <Box sx={{ display: "flex", gap: 1, mt: isMobileOrTablet ? 1 : 0 }}>
           <MDButton variant="gradient" color="success" onClick={handleAddRow} sx={{ fontSize: 11 }}>
             행추가
           </MDButton>
@@ -483,11 +509,12 @@ function TeleManagerTab() {
                       key={i}
                       style={{
                         width: colWidths[i],
-                        left: i < 8 ? colWidths.slice(0, i).reduce((a, b) => a + b, 0) : undefined,
-                        position: i < 8 ? "sticky" : "static",
+                        // 상하 고정은 모든 헤더에 적용하고, 좌우 고정은 순번/업장명만 적용
+                        left: isHeaderStickyColumn(i) ? getStickyLeft(i) : undefined,
+                        position: "sticky",
                         top: 0,
                         background: "#f0f0f0",
-                        zIndex: 5,
+                        zIndex: isHeaderStickyColumn(i) ? 6 : 4,
                         borderBottom: "none",
                       }}
                     />
@@ -517,13 +544,14 @@ function TeleManagerTab() {
                       key={i}
                       style={{
                         width: colWidths[i],
-                        left: i < 8 ? colWidths.slice(0, i).reduce((a, b) => a + b, 0) : undefined,
-                        position: i < 8 ? "sticky" : "static",
+                        // 상하 고정은 모든 헤더에 적용하고, 좌우 고정은 순번/업장명만 적용
+                        left: isHeaderStickyColumn(i) ? getStickyLeft(i) : undefined,
+                        position: "sticky",
                         top: 21,
                         background: "#f0f0f0",
                         borderTop: "none",
                         borderBottom: "1px solid",
-                        zIndex: 6,
+                        zIndex: isHeaderStickyColumn(i) ? 7 : 5,
                       }}
                     >
                       {i === 0
@@ -587,24 +615,22 @@ function TeleManagerTab() {
                   // ✅ 잠금 범위(계약상태 제외)
                   const lockStyle = {
                     background: isContractDone ? "#FFF3B0" : "#fff",
-                    opacity: isContractDone ? 0.8 : 1,
                   };
 
                   return (
                     <tr
                       key={row._rowId}
                       style={{
-                        backgroundColor: isContractDone ? "#FFF3B0" : "transparent",
-                        opacity: isContractDone ? 0.9 : 1,
+                        backgroundColor: isContractDone ? "#FFF3B0" : "#fff",
                       }}
                     >
                       {/* 0: 순번 */}
                       <td
                         style={{
-                          position: "sticky",
-                          left: 0,
-                          zIndex: 2,
-                          ...lockStyle,
+                          position: isBodyStickyColumn(0) ? "sticky" : "static",
+                          left: isBodyStickyColumn(0) ? getStickyLeft(0) : undefined,
+                          zIndex: isBodyStickyColumn(0) ? 2 : 1,
+                          background: lockStyle.background,
                         }}
                       >
                         {row.idx}
@@ -618,15 +644,15 @@ function TeleManagerTab() {
                         { key: "region", wIdx: 4 },
                         { key: "now_consignor", wIdx: 5 },
                       ].map(({ key, wIdx }) => {
-                        const left = colWidths.slice(0, wIdx).reduce((a, b) => a + b, 0);
+                        const isSticky = isBodyStickyColumn(wIdx);
                         return (
                           <td
                             key={key}
                             style={{
-                              position: "sticky",
-                              left,
-                              zIndex: 2,
-                              ...lockStyle,
+                              position: isSticky ? "sticky" : "static",
+                              left: isSticky ? getStickyLeft(wIdx) : undefined,
+                              zIndex: isSticky ? 2 : 1,
+                              background: isSticky ? lockStyle.background : isContractDone ? "#FFF3B0" : "#fff",
                               textAlign: "left",
                               color: getCellColor(row, key),
                               padding: "2px 6px",
@@ -656,10 +682,14 @@ function TeleManagerTab() {
                       {/* 6: 계약종료일 (계약완료면 disabled) */}
                       <td
                         style={{
-                          position: "sticky",
-                          left: colWidths.slice(0, 6).reduce((a, b) => a + b, 0),
-                          zIndex: 2,
-                          ...lockStyle,
+                          position: isBodyStickyColumn(6) ? "sticky" : "static",
+                          left: isBodyStickyColumn(6) ? getStickyLeft(6) : undefined,
+                          zIndex: isBodyStickyColumn(6) ? 2 : 1,
+                          background: isBodyStickyColumn(6)
+                            ? lockStyle.background
+                            : isContractDone
+                              ? "#FFF3B0"
+                              : "#fff",
                           textAlign: "left",
                           color: getCellColor(row, "end_dt"),
                           padding: "2px 6px",
@@ -682,10 +712,10 @@ function TeleManagerTab() {
                       {/* 7: 계약상태 (✅ 계약완료여도 이 select 는 수정 가능) */}
                       <td
                         style={{
-                          position: "sticky",
-                          left: colWidths.slice(0, 7).reduce((a, b) => a + b, 0),
-                          zIndex: 3, // ✅ 위로
-                          background: "#fff", // ✅ 항상 흰색(클릭 가능하게 보이도록)
+                          position: isBodyStickyColumn(7) ? "sticky" : "static",
+                          left: isBodyStickyColumn(7) ? getStickyLeft(7) : undefined,
+                          zIndex: isBodyStickyColumn(7) ? 3 : 1,
+                          background: isContractDone ? "#FFF3B0" : "#fff",
                           color: getCellColor(row, "contract_type"),
                         }}
                         onClick={(e) => e.stopPropagation()}

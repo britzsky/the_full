@@ -74,6 +74,13 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
     return () => window.removeEventListener("resize", handleMiniSidenav);
   }, [dispatch, transparentSidenav, whiteSidenav]);
 
+  useEffect(() => {
+    // 모바일/태블릿에서 메뉴 이동 시 자동으로 사이드바를 닫음
+    if (window.innerWidth < 1200) {
+      setMiniSidenav(dispatch, true);
+    }
+  }, [location.pathname, dispatch]);
+
   const renderRoutes = (routesArray) =>
     routesArray.map(({ type, name, icon, key, href, route, collapse }) => {
       if (type === "collapse") {

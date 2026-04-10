@@ -122,6 +122,8 @@ function AccountMemberRecSheet() {
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isTabletOrSmallDesktop = useMediaQuery("(max-width:1280px)");
   const [maskingEnabled, setMaskingEnabled] = useState(true);
   const maskingRole = useMemo(() => {
     if (typeof window === "undefined" || !window?.localStorage) {
@@ -737,6 +739,10 @@ function AccountMemberRecSheet() {
   };
 
   const renderTable = (tableInstance) => {
+    // 화면 크기별 고정 열 범위
+    // 모바일: 이름(2열)까지 고정, 태블릿: 주민번호(3열)까지 고정, 데스크탑: 기존(4열) 유지
+    const stickyColumnCount = isMobile ? 2 : isTablet ? 3 : 4;
+
     return (
       <MDBox
         ref={tableContainerRef}
@@ -769,31 +775,47 @@ function AccountMemberRecSheet() {
             top: 0,
             zIndex: 2,
           },
-          "& td:nth-of-type(1), & th:nth-of-type(1)": {
-            position: "sticky",
-            left: STICKY_LEFT.cor_type,
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(2), & th:nth-of-type(2)": {
-            position: "sticky",
-            left: `${STICKY_LEFT.name}px`,
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(3), & th:nth-of-type(3)": {
-            position: "sticky",
-            left: `${STICKY_LEFT.rrn}px`,
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(4), & th:nth-of-type(4)": {
-            position: "sticky",
-            left: `${STICKY_LEFT.account_id}px`,
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "thead th:nth-of-type(-n+4)": { zIndex: 5 },
+          ...(stickyColumnCount >= 1
+            ? {
+              "& td:nth-of-type(1), & th:nth-of-type(1)": {
+                position: "sticky",
+                left: STICKY_LEFT.cor_type,
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 2
+            ? {
+              "& td:nth-of-type(2), & th:nth-of-type(2)": {
+                position: "sticky",
+                left: `${STICKY_LEFT.name}px`,
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 3
+            ? {
+              "& td:nth-of-type(3), & th:nth-of-type(3)": {
+                position: "sticky",
+                left: `${STICKY_LEFT.rrn}px`,
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 4
+            ? {
+              "& td:nth-of-type(4), & th:nth-of-type(4)": {
+                position: "sticky",
+                left: `${STICKY_LEFT.account_id}px`,
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          [`thead th:nth-of-type(-n+${stickyColumnCount})`]: { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
           "td[contenteditable]": {
             minWidth: "80px",
@@ -1252,10 +1274,10 @@ function AccountMemberRecSheet() {
         pb={1}
         sx={{
           display: "flex",
-          justifyContent: isMobile ? "space-between" : "flex-end",
+          justifyContent: isTabletOrSmallDesktop ? "flex-start" : "flex-end",
           alignItems: "center",
-          gap: isMobile ? 1 : 2,
-          flexWrap: isMobile ? "wrap" : "nowrap",
+          gap: isTabletOrSmallDesktop ? 1 : 2,
+          flexWrap: isTabletOrSmallDesktop ? "wrap" : "nowrap",
           position: "sticky",
           zIndex: 10,
           top: 78,
@@ -1280,7 +1302,10 @@ function AccountMemberRecSheet() {
 
         <Autocomplete
           size="small"
-          sx={{ minWidth: 200 }}
+          sx={{
+            minWidth: 200,
+            ...(isTabletOrSmallDesktop ? { flex: "1 1 220px" } : {}),
+          }}
           options={accountOptionsIndexed}
           value={selectedAccountOption}
           onChange={(_, opt) => {

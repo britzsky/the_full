@@ -720,6 +720,8 @@ function DinersNumberSheet() {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isMobileOrTablet = isMobile || isTablet;
 
   const { activeRows, setActiveRows, loading, fetchAllData, extraDietCols, accountList } =
     useDinersNumbersheetData(selectedAccountId, year, month);
@@ -1281,128 +1283,134 @@ function DinersNumberSheet() {
 
   return (
     <DashboardLayout>
-      <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
-
       <MDBox
-        pt={1}
-        pb={1}
         sx={{
-          display: "flex",
-          justifyContent: isMobile ? "space-between" : "flex-end",
-          alignItems: "center",
-          gap: isMobile ? 1 : 2,
-          flexWrap: isMobile ? "wrap" : "nowrap",
           position: "sticky",
-          zIndex: 10,
-          top: 78,
+          top: 0,
+          zIndex: 12,
           backgroundColor: "#ffffff",
+          borderBottom: "1px solid #eee",
         }}
       >
-        {isWorkingDayVisible && (
-          <>
-            <MDTypography variant="button">근무일수</MDTypography>
-            <TextField
-              value={workingDay}
-              onChange={(e) => setWorkingDay(e.target.value)}
-              onBlur={(e) => {
-                const num = parseNumber(e.target.value) || 0;
-                setWorkingDay(num.toString());
-              }}
-              variant="outlined"
-              size="small"
-              sx={{ width: 80, mr: 1 }}
-              inputProps={{
-                style: {
-                  textAlign: "right",
-                  ...(isWorkingDayChanged ? { color: "red" } : {}),
-                },
-              }}
-            />
-          </>
-        )}
+        <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
 
-        {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
-        {(accountList || []).length > 0 && (
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 200 }}
-            options={accountOptions}
-            value={(() => {
-              const v = String(selectedAccountId ?? "");
-              return accountOptions.find((o) => o.value === v) || null;
-            })()}
-            onChange={(_, opt) => {
-              // 입력 비움 시 거래처 선택 유지
-              if (!opt) return;
-              setSelectedAccountId(opt.value);
-            }}
-            inputValue={accountInput}
-            onInputChange={(_, newValue) => setAccountInput(newValue)}
-            getOptionLabel={(opt) => opt?.label ?? ""}
-            isOptionEqualToValue={(opt, val) => opt.value === val.value}
-            renderInput={(params) => (
+        <MDBox
+          pt={1}
+          pb={1}
+          sx={{
+            display: "flex",
+            justifyContent: isMobile ? "space-between" : "flex-end",
+            alignItems: "center",
+            gap: isMobile ? 1 : 2,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+          }}
+        >
+          {isWorkingDayVisible && (
+            <>
+              <MDTypography variant="button">근무일수</MDTypography>
               <TextField
-                {...params}
-                label="거래처 검색"
-                placeholder="거래처명을 입력"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    selectAccountByInput();
-                  }
+                value={workingDay}
+                onChange={(e) => setWorkingDay(e.target.value)}
+                onBlur={(e) => {
+                  const num = parseNumber(e.target.value) || 0;
+                  setWorkingDay(num.toString());
                 }}
-                sx={{
-                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                  "& input": { padding: "0 8px" },
+                variant="outlined"
+                size="small"
+                sx={{ width: 80, mr: 1 }}
+                inputProps={{
+                  style: {
+                    textAlign: "right",
+                    ...(isWorkingDayChanged ? { color: "red" } : {}),
+                  },
                 }}
               />
-            )}
-          />
-        )}
+            </>
+          )}
 
-        <TextField
-          select
-          size="small"
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-            <option key={y} value={y}>
-              {y}년
-            </option>
-          ))}
-        </TextField>
+          {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
+          {(accountList || []).length > 0 && (
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 200 }}
+              options={accountOptions}
+              value={(() => {
+                const v = String(selectedAccountId ?? "");
+                return accountOptions.find((o) => o.value === v) || null;
+              })()}
+              onChange={(_, opt) => {
+                // 입력 비움 시 거래처 선택 유지
+                if (!opt) return;
+                setSelectedAccountId(opt.value);
+              }}
+              inputValue={accountInput}
+              onInputChange={(_, newValue) => setAccountInput(newValue)}
+              getOptionLabel={(opt) => opt?.label ?? ""}
+              isOptionEqualToValue={(opt, val) => opt.value === val.value}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput();
+                    }
+                  }}
+                  sx={{
+                    "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                    "& input": { padding: "0 8px" },
+                  }}
+                />
+              )}
+            />
+          )}
 
-        <TextField
-          select
-          size="small"
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          sx={{ minWidth: isMobile ? 140 : 150 }}
-          SelectProps={{ native: true }}
-        >
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <option key={m} value={m}>
-              {m}월
-            </option>
-          ))}
-        </TextField>
+          <TextField
+            select
+            size="small"
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+              <option key={y} value={y}>
+                {y}년
+              </option>
+            ))}
+          </TextField>
 
-        <MDButton
-          variant="contained"
-          color="success"
-          startIcon={<DownloadIcon />}
-          onClick={handleExcelDownload}
-          sx={actionButtonSx}
-        >
-          엑셀다운로드
-        </MDButton>
+          <TextField
+            select
+            size="small"
+            value={month}
+            onChange={(e) => setMonth(Number(e.target.value))}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>
+                {m}월
+              </option>
+            ))}
+          </TextField>
 
-        <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
-          저장
-        </MDButton>
+          <MDButton
+            variant="contained"
+            color="success"
+            startIcon={<DownloadIcon />}
+            onClick={handleExcelDownload}
+            sx={actionButtonSx}
+          >
+            엑셀다운로드
+          </MDButton>
+
+          <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
+            저장
+          </MDButton>
+        </MDBox>
       </MDBox>
 
       <MDBox pt={3} pb={3}>
@@ -1451,7 +1459,16 @@ function DinersNumberSheet() {
                             key={i}
                             colSpan={cell.colSpan || 1}
                             rowSpan={cell.rowSpan || 1}
-                            style={{ top: rowIdx * 24 }}
+                            style={{
+                              top: rowIdx * 24,
+                              // 구분 컬럼만 좌측 고정
+                              ...(rowIdx === 0 && i === 0
+                                ? {
+                                  left: 0,
+                                  zIndex: 12,
+                                }
+                                : {}),
+                            }}
                           >
                             {cell.label}
                           </th>
@@ -1463,7 +1480,16 @@ function DinersNumberSheet() {
                   <tbody>
                     {activeRows.map((row, rowIndex) => (
                       <tr key={rowIndex}>
-                        <td>{dayjs(row.diner_date).format("YYYY-MM-DD")}</td>
+                        <td
+                          style={{
+                            position: "sticky",
+                            left: 0,
+                            background: "#ffffff",
+                            zIndex: 8,
+                          }}
+                        >
+                          {dayjs(row.diner_date).format("YYYY-MM-DD")}
+                        </td>
 
                         {visibleColumns.map((key, colIndex) => {
                           const editable = !["total", "diner_date"].includes(key);
@@ -1565,6 +1591,8 @@ function DinersNumberSheet() {
                       <td
                         style={{
                           bottom: summaryStickyRowHeight,
+                          left: 0,
+                          zIndex: 11,
                           background: "#ffeb3b",
                         }}
                       >
@@ -1588,6 +1616,8 @@ function DinersNumberSheet() {
                       <td
                         style={{
                           bottom: 0,
+                          left: 0,
+                          zIndex: 11,
                           background: "#b2ebf2",
                         }}
                       >

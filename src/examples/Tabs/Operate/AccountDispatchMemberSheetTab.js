@@ -105,6 +105,8 @@ function AccountDispatchMemberSheet() {
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
+  const isMobileOrTablet = isMobile || isTablet;
 
   const {
     activeRows,
@@ -283,6 +285,12 @@ function AccountDispatchMemberSheet() {
 
   const renderTable = (tableInst) => {
     const isNumericKey = (k) => k === "salary_sum" || k === "work_cnt";
+    const fixedColumnWidths = [90, 120, 80, 190];
+    // 모바일/태블릿은 성명만 고정, 데스크탑은 기존 4개 컬럼 고정 유지
+    const stickyColumnCount = isMobileOrTablet ? 1 : 4;
+    const isStickyColumn = (columnIndex) => columnIndex < stickyColumnCount;
+    const getStickyLeft = (columnIndex) =>
+      fixedColumnWidths.slice(0, columnIndex).reduce((sum, width) => sum + width, 0);
 
     return (
       <MDBox
@@ -318,30 +326,30 @@ function AccountDispatchMemberSheet() {
           },
           // ✅ sticky: 성명~계좌번호만
           "& td:nth-of-type(1), & th:nth-of-type(1)": {
-            position: "sticky",
-            left: 0,
-            background: "#f0f0f0",
-            zIndex: 3,
+            position: isStickyColumn(0) ? "sticky" : "static",
+            left: isStickyColumn(0) ? 0 : undefined,
+            background: isStickyColumn(0) ? "#f0f0f0" : undefined,
+            zIndex: isStickyColumn(0) ? 3 : undefined,
           },
           "& td:nth-of-type(2), & th:nth-of-type(2)": {
-            position: "sticky",
-            left: "90px",
-            background: "#f0f0f0",
-            zIndex: 3,
+            position: isStickyColumn(1) ? "sticky" : "static",
+            left: isStickyColumn(1) ? `${getStickyLeft(1)}px` : undefined,
+            background: isStickyColumn(1) ? "#f0f0f0" : undefined,
+            zIndex: isStickyColumn(1) ? 3 : undefined,
           },
           "& td:nth-of-type(3), & th:nth-of-type(3)": {
-            position: "sticky",
-            left: "210px",
-            background: "#f0f0f0",
-            zIndex: 3,
+            position: isStickyColumn(2) ? "sticky" : "static",
+            left: isStickyColumn(2) ? `${getStickyLeft(2)}px` : undefined,
+            background: isStickyColumn(2) ? "#f0f0f0" : undefined,
+            zIndex: isStickyColumn(2) ? 3 : undefined,
           },
           "& td:nth-of-type(4), & th:nth-of-type(4)": {
-            position: "sticky",
-            left: "290px",
-            background: "#f0f0f0",
-            zIndex: 3,
+            position: isStickyColumn(3) ? "sticky" : "static",
+            left: isStickyColumn(3) ? `${getStickyLeft(3)}px` : undefined,
+            background: isStickyColumn(3) ? "#f0f0f0" : undefined,
+            zIndex: isStickyColumn(3) ? 3 : undefined,
           },
-          "thead th:nth-of-type(-n+4)": { zIndex: 5 },
+          [`thead th:nth-of-type(-n+${stickyColumnCount})`]: { zIndex: 5 },
         }}
       >
         <table>

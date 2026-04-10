@@ -37,6 +37,7 @@ const filterOptionsByLabel = (options, state) => {
 // ✅ 상단 검색/버튼 영역을 분리해서 입력 중 본문 테이블 전체 리렌더링을 줄임
 const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
   isMobile,
+  isCompactLayout,
   activeStatus,
   onActiveStatusChange,
   accountOptions,
@@ -105,10 +106,10 @@ const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
       pb={1}
       sx={{
         display: "flex",
-        justifyContent: isMobile ? "space-between" : "flex-end",
+        justifyContent: isCompactLayout ? "flex-start" : "flex-end",
         alignItems: "center",
-        gap: isMobile ? 1 : 2,
-        flexWrap: isMobile ? "wrap" : "nowrap",
+        gap: isCompactLayout ? 1 : 2,
+        flexWrap: isCompactLayout ? "wrap" : "nowrap",
         position: "sticky",
         zIndex: 10,
         top: 78,
@@ -141,6 +142,7 @@ const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
         }}
         sx={{
           minWidth: 200,
+          ...(isCompactLayout ? { flex: "1 1 220px" } : {}),
           "& .MuiInputBase-root": { height: 35, fontSize: 12 },
           "& input": { padding: "0 8px" },
         }}
@@ -148,7 +150,10 @@ const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
 
       <Autocomplete
         size="small"
-        sx={{ minWidth: 200 }}
+        sx={{
+          minWidth: 200,
+          ...(isCompactLayout ? { flex: "1 1 220px" } : {}),
+        }}
         options={accountOptions}
         value={selectedAccountOption}
         onChange={(_, option) => {
@@ -313,6 +318,8 @@ function AccountMemberSheet() {
   const tableContainerRef = useRef(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isTabletOrSmallDesktop = useMediaQuery("(max-width:1280px)");
+  const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [maskingEnabled, setMaskingEnabled] = useState(true);
 
@@ -2114,6 +2121,9 @@ function AccountMemberSheet() {
       "cor_type",
     ]);
     const nonEditableCols = new Set(["diner_date", "total"]);
+    // 화면 크기별 고정 열 범위
+    // 모바일: 이름(2열)까지 고정, 태블릿: 주민번호(3열)까지 고정, 데스크탑: 기존(7열) 유지
+    const stickyColumnCount = isMobile ? 2 : isTablet ? 3 : 7;
 
     return (
       <MDBox
@@ -2147,50 +2157,78 @@ function AccountMemberSheet() {
             top: 0,
             zIndex: 2,
           },
-          "& td:nth-of-type(1), & th:nth-of-type(1)": {
-            position: "sticky",
-            left: 0,
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(2), & th:nth-of-type(2)": {
-            position: "sticky",
-            left: "100px",
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(3), & th:nth-of-type(3)": {
-            position: "sticky",
-            left: "200px",
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(4), & th:nth-of-type(4)": {
-            position: "sticky",
-            left: "300px",
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(5), & th:nth-of-type(5)": {
-            position: "sticky",
-            left: "480px",
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(6), & th:nth-of-type(6)": {
-            // 계좌번호
-            position: "sticky",
-            left: "580px",
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "& td:nth-of-type(7), & th:nth-of-type(7)": {
-            position: "sticky",
-            left: "730px",
-            background: "#f0f0f0",
-            zIndex: 3,
-          },
-          "thead th:nth-of-type(-n+7)": { zIndex: 5 },
+          ...(stickyColumnCount >= 1
+            ? {
+              "& td:nth-of-type(1), & th:nth-of-type(1)": {
+                position: "sticky",
+                left: 0,
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 2
+            ? {
+              "& td:nth-of-type(2), & th:nth-of-type(2)": {
+                position: "sticky",
+                left: "100px",
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 3
+            ? {
+              "& td:nth-of-type(3), & th:nth-of-type(3)": {
+                position: "sticky",
+                left: "200px",
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 4
+            ? {
+              "& td:nth-of-type(4), & th:nth-of-type(4)": {
+                position: "sticky",
+                left: "300px",
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 5
+            ? {
+              "& td:nth-of-type(5), & th:nth-of-type(5)": {
+                position: "sticky",
+                left: "480px",
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 6
+            ? {
+              "& td:nth-of-type(6), & th:nth-of-type(6)": {
+                // 계좌번호
+                position: "sticky",
+                left: "580px",
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          ...(stickyColumnCount >= 7
+            ? {
+              "& td:nth-of-type(7), & th:nth-of-type(7)": {
+                position: "sticky",
+                left: "730px",
+                background: "#f0f0f0",
+                zIndex: 3,
+              },
+            }
+            : {}),
+          [`thead th:nth-of-type(-n+${stickyColumnCount})`]: { zIndex: 5 },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
           "td[contenteditable]": {
             minWidth: "80px",
@@ -2894,6 +2932,7 @@ function AccountMemberSheet() {
     <>
       <AccountMemberToolbar
         isMobile={isMobile}
+        isCompactLayout={isTabletOrSmallDesktop}
         activeStatus={activeStatus}
         onActiveStatusChange={handleActiveStatusChange}
         accountOptions={accountOptions}

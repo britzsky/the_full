@@ -19,6 +19,7 @@ export default function BudgetTableTab() {
   const [month, setMonth] = useState(today.month() + 1);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
   // ✅ 숫자 입력 중에는 raw 문자열을 유지해서 커서 점프 방지
@@ -103,6 +104,7 @@ export default function BudgetTableTab() {
     { key: "budget_grant", label: "예산부여", width: 90 }, // editable
     { key: "note", label: "비고", width: 185 }, // editable
   ];
+  const stickyAccountColumnKey = "account_name";
 
   // ✅ 저장 (예산부여, 비고만 변경 체크)
   const handleSave = async () => {
@@ -448,11 +450,19 @@ export default function BudgetTableTab() {
                         {columns.map((col) => (
                           <th
                             key={col.key}
-                            className={col.sticky ? "sticky-col sticky-header" : undefined}
                             style={{
                               width: col.width,
                               minWidth: col.width,
                               maxWidth: col.width,
+                              // 모바일/태블릿은 거래처명만 좌측 고정하고 나머지는 스크롤에 따라 이동
+                              ...(isMobileTablet && col.key === stickyAccountColumnKey
+                                ? {
+                                  position: "sticky",
+                                  left: 0,
+                                  zIndex: 6,
+                                  backgroundColor: "#f0f0f0",
+                                }
+                                : {}),
                             }}
                           >
                             {col.label}
@@ -517,12 +527,20 @@ export default function BudgetTableTab() {
                                 return (
                                   <td
                                     key={field}
-                                    className={col.sticky ? "sticky-col" : undefined}
                                     style={{
                                       ...baseCellStyle,
                                       textAlign: "right",
                                       color: getRatioColor(field, current),
                                       fontWeight: getRatioColor(field, current) ? 800 : undefined,
+                                      ...(isMobileTablet && field === stickyAccountColumnKey
+                                        ? {
+                                          position: "sticky",
+                                          left: 0,
+                                          zIndex: 4,
+                                          backgroundColor: "#fff",
+                                          boxShadow: "2px 0 0 #686D76",
+                                        }
+                                        : {}),
                                     }}
                                   >
                                     {current == null
@@ -537,13 +555,21 @@ export default function BudgetTableTab() {
                               return (
                                 <td
                                   key={field}
-                                  className={col.sticky ? "sticky-col" : undefined}
                                   style={{
                                     ...baseCellStyle,
                                     textAlign:
                                       field === "note" || field === "account_name"
                                         ? "left"
                                         : "center",
+                                    ...(isMobileTablet && field === stickyAccountColumnKey
+                                      ? {
+                                        position: "sticky",
+                                        left: 0,
+                                        zIndex: 4,
+                                        backgroundColor: "#fff",
+                                        boxShadow: "2px 0 0 #686D76",
+                                      }
+                                      : {}),
                                   }}
                                 >
                                   {displayValue}
@@ -556,8 +582,20 @@ export default function BudgetTableTab() {
                               return (
                                 <td
                                   key={field}
-                                  style={{ ...baseCellStyle, textAlign: "left" }}
-                                  className={`${col.sticky ? "sticky-col" : ""} editable-cell`}
+                                  style={{
+                                    ...baseCellStyle,
+                                    textAlign: "left",
+                                    ...(isMobileTablet && field === stickyAccountColumnKey
+                                      ? {
+                                        position: "sticky",
+                                        left: 0,
+                                        zIndex: 4,
+                                        backgroundColor: "#fff",
+                                        boxShadow: "2px 0 0 #686D76",
+                                      }
+                                      : {}),
+                                  }}
+                                  className="editable-cell"
                                 >
                                   <input
                                     type="text"
@@ -594,8 +632,20 @@ export default function BudgetTableTab() {
                             return (
                               <td
                                 key={field}
-                                style={{ ...baseCellStyle, textAlign: "right" }}
-                                className={`${col.sticky ? "sticky-col" : ""} editable-cell`}
+                                style={{
+                                  ...baseCellStyle,
+                                  textAlign: "right",
+                                  ...(isMobileTablet && field === stickyAccountColumnKey
+                                    ? {
+                                      position: "sticky",
+                                      left: 0,
+                                      zIndex: 4,
+                                      backgroundColor: "#fff",
+                                      boxShadow: "2px 0 0 #686D76",
+                                    }
+                                    : {}),
+                                }}
+                                className="editable-cell"
                               >
                                 <input
                                   type="text"

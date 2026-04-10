@@ -10,11 +10,21 @@ import {
 
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
-import Icon from "@mui/material/Icon";
-import { Modal, Box, Typography, Button, TextField, Select, MenuItem } from "@mui/material";
+import {
+  Modal,
+  Box,
+  Typography,
+  Button,
+  TextField,
+  Select,
+  MenuItem,
+  useTheme,
+  useMediaQuery,
+} from "@mui/material";
 
 import PropTypes from "prop-types";
 import MDBox from "components/MDBox";
+import MDButton from "components/MDButton";
 import MDTypography from "components/MDTypography";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
@@ -27,6 +37,8 @@ import useTableData from "layouts/tables/data/authorsTableData";
 import "./tables.css";
 
 export default function Tables() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const navigate = useNavigate();
   const [selectedType, setSelectedType] = useState("0");
   // ✅ 삭제여부 조회값 (전체/정상/삭제)
@@ -638,15 +650,17 @@ export default function Tables() {
     const accountId = row?.account_id;
 
     const base = toPlainText(info.getValue());
-    const value = editedMap?.[rowKey]?.[field] ?? base;
+    const committedValue = editedMap?.[rowKey]?.[field] ?? base;
 
     const org = originalMap?.[rowKey]?.[field] ?? "";
-    const isDirtyCell = String(value ?? "") !== String(org ?? "");
+    const isDirtyCell = String(committedValue ?? "") !== String(org ?? "");
 
     return (
       <TextField
-        value={value}
-        onChange={(e) => updateEditableField(rowKey, accountId, field, e.target.value)}
+        key={`${rowKey}-${field}-${committedValue}`}
+        defaultValue={committedValue}
+        // 입력 중 전체 테이블 재렌더를 막기 위해 blur 시점에만 행 상태를 갱신
+        onBlur={(e) => updateEditableField(rowKey, accountId, field, e.target.value)}
         size="small"
         variant="outlined"
         // ✅ 입력이 페이지 이동(리셋)을 유발하지 않게 하려면
@@ -797,19 +811,26 @@ export default function Tables() {
           <Card>
             {/* 상단 select + 저장 + 추가 버튼 */}
             <MDBox
-              display="flex"
-              justifyContent="flex-end"
-              alignItems="center"
-              gap={2}
-              my={1}
-              mx={1}
+              sx={{
+                display: "flex",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 1,
+                my: 1,
+                mx: 1,
+              }}
             >
               <TextField
                 select
                 size="small"
                 value={selectedDelYn}
                 onChange={handledelynChange}
-                sx={{ minWidth: 150 }}
+                sx={{
+                  minWidth: 150,
+                  flex: "1 1 180px",
+                  maxWidth: 220,
+                }}
                 SelectProps={{ native: true }}
               >
                 {/* ✅ 삭제여부 조회: 전체(N+Y) / 정상(N) / 삭제(Y) */}
@@ -822,7 +843,11 @@ export default function Tables() {
                 select
                 size="small"
                 onChange={onSearchList}
-                sx={{ minWidth: 150 }}
+                sx={{
+                  minWidth: 150,
+                  flex: "1 1 180px",
+                  maxWidth: 220,
+                }}
                 SelectProps={{ native: true }}
                 value={selectedType}
               >
@@ -837,45 +862,40 @@ export default function Tables() {
                 size="small"
                 value={accountSortKey}
                 onChange={handleSortChange}
-                sx={{ minWidth: 150 }}
+                sx={{
+                  minWidth: 150,
+                  flex: "1 1 180px",
+                  maxWidth: 220,
+                }}
                 SelectProps={{ native: true }}
               >
                 <option value="account_name">거래처명 정렬</option>
                 <option value="account_id">거래처ID 정렬</option>
               </TextField>
 
-              {/* ✅ 전체 저장 버튼 */}
-              <Button
-                variant="contained"
+              <MDButton
+                variant="gradient"
+                color="info"
                 onClick={handleSaveAll}
                 sx={{
-                  height: "2.25rem",
-                  bgcolor: "#1976d2",
-                  color: "#fff",
-                  "&:hover": { bgcolor: "#1565c0" },
+                  minWidth: isMobile ? 100 : 110,
+                  fontSize: isMobile ? "11px" : "13px",
                 }}
               >
                 변경 저장
-              </Button>
+              </MDButton>
 
-              {/* 등록 버튼 */}
-              <MDBox
-                display="flex"
-                justifyContent="center"
-                alignItems="center"
-                width="2.25rem"
-                height="2.25rem"
-                bgColor="white"
-                shadow="sm"
-                borderRadius="50%"
-                color="warning"
-                sx={{ cursor: "pointer" }}
+              <MDButton
+                variant="gradient"
+                color="info"
                 onClick={handleModalOpen}
+                sx={{
+                  minWidth: isMobile ? 100 : 110,
+                  fontSize: isMobile ? "11px" : "13px",
+                }}
               >
-                <Icon fontSize="large" color="inherit">
-                  add
-                </Icon>
-              </MDBox>
+                거래처 추가
+              </MDButton>
             </MDBox>
 
             {/* 테이블 */}

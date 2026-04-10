@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  useMediaQuery,
 } from "@mui/material";
 import dayjs from "dayjs";
 import {
@@ -36,6 +37,7 @@ import usePeopleCountingData, { formatNumber } from "./accountMappingPurchaseDat
 import useAccountMappingPurchaseYearData from "./accountMappingPurchaseYeartData";
 
 export default function PeopleCountingTab() {
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   const today = dayjs();
   const [mode, setMode] = useState("MONTH_COMPARE"); // ✅ "YEAR_HEATMAP"
   const [year, setYear] = useState(today.year());
@@ -101,6 +103,8 @@ export default function PeopleCountingTab() {
   const [monthDetailLoading, setMonthDetailLoading] = useState(false);
 
   const HM_BORDER = "1px solid #e0e0e0";
+  const vendorColumnWidth = isMobileTablet ? 170 : 260;
+  const heatmapGridTemplateColumns = `${vendorColumnWidth}px repeat(12, 96px) 110px`;
 
   useEffect(() => {
     if (mode === "YEAR_HEATMAP") fetchYear();
@@ -339,21 +343,35 @@ export default function PeopleCountingTab() {
 
           {/* 히트맵 */}
           <Grid item xs={12}>
-            <Box sx={{ border: HM_BORDER, borderRadius: 2, p: 0, overflowX: "auto", background: "#fff" }}>
+            <Box sx={{ border: HM_BORDER, borderRadius: 2, p: 0, overflow: "auto", maxHeight: "30vh", background: "#fff" }}>
               {/* 헤더 */}
               <Box
                 sx={{
                   display: "grid",
-                  gridTemplateColumns: "260px repeat(12, 96px) 110px",
+                  gridTemplateColumns: heatmapGridTemplateColumns,
                   fontSize: 12,
-                  position: "sticky",
-                  top: 0,
-                  zIndex: 2,
                   background: "#f7f7f7",
                   borderBottom: HM_BORDER,
                 }}
               >
-                <Box sx={{ p: 1, fontWeight: 700, borderRight: HM_BORDER }}>거래처</Box>
+                <Box
+                  sx={{
+                    p: 1,
+                    fontWeight: 700,
+                    borderRight: HM_BORDER,
+                    // 모바일/태블릿은 거래처 컬럼만 좌측 고정해서 본문 스크롤 중에도 식별 가능하게 유지
+                    ...(isMobileTablet
+                      ? {
+                        position: "sticky",
+                        left: 0,
+                        zIndex: 4,
+                        background: "#f7f7f7",
+                      }
+                      : {}),
+                  }}
+                >
+                  거래처
+                </Box>
                 {Array.from({ length: 12 }, (_, i) => (
                   <Box
                     key={i}
@@ -371,14 +389,14 @@ export default function PeopleCountingTab() {
               </Box>
 
               {/* 바디 */}
-              <Box sx={{ maxHeight: "30vh", overflowY: "auto" }}>
+              <Box>
                 {filteredRows.map((r, rowIdx) => (
                   <Box
                     key={r.vendor_key ?? `${r.name}-${r.type ?? "-"}`}
                     onClick={() => setSelectedVendor(r)}
                     sx={{
                       display: "grid",
-                      gridTemplateColumns: "260px repeat(12, 96px) 110px",
+                      gridTemplateColumns: heatmapGridTemplateColumns,
                       fontSize: 12,
                       cursor: "pointer",
                       borderBottom: rowIdx === filteredRows.length - 1 ? "none" : HM_BORDER,
@@ -395,6 +413,14 @@ export default function PeopleCountingTab() {
                         textOverflow: "ellipsis",
                         borderRight: HM_BORDER,
                         background: selectedVendor?.vendor_key === r.vendor_key ? "#fff3e6" : "#fff",
+                        ...(isMobileTablet
+                          ? {
+                            position: "sticky",
+                            left: 0,
+                            zIndex: 3,
+                            boxShadow: "2px 0 0 #e0e0e0",
+                          }
+                          : {}),
                       }}
                       title={getVendorLabel(r)}
                     >

@@ -13,6 +13,7 @@ import {
   Button,
   TextField,
   Typography,
+  useMediaQuery,
 } from "@mui/material";
 
 // ✅ 커스텀 훅 import
@@ -22,6 +23,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
 function WeekMenuSheetTab() {
+  const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
   const { weekMenuListRows, weekMenuList, loading } =
@@ -252,11 +254,14 @@ function WeekMenuSheetTab() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 500,
+            width: isMobileTablet ? "calc(100vw - 24px)" : 500,
+            maxWidth: 500,
+            maxHeight: isMobileTablet ? "calc(100dvh - 24px)" : "none",
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,
-            p: 5,
+            p: isMobileTablet ? 2 : 5,
+            overflowY: isMobileTablet ? "auto" : "visible",
           }}
         >
           <Typography variant="h6" sx={{ mb: 2, fontWeight: "bold" }}>
@@ -270,7 +275,7 @@ function WeekMenuSheetTab() {
               style: { fontSize: "0.7rem" },
             }}
             multiline
-            minRows={7}
+            minRows={isMobileTablet ? 5 : 7}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
           />
@@ -279,8 +284,10 @@ function WeekMenuSheetTab() {
             sx={{
               mt: 3,
               display: "flex",
-              justifyContent: "flex-end",
+              justifyContent: isMobileTablet ? "stretch" : "flex-end",
               gap: 1.5,
+              flexWrap: isMobileTablet ? "wrap" : "nowrap",
+              "& .MuiButton-root": isMobileTablet ? { flex: "1 1 30%" } : {},
             }}
           >
             {/* 기존 일정이 있을 때만 삭제 버튼 표시 */}

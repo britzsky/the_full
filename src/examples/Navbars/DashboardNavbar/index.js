@@ -31,7 +31,7 @@ import MDButton from "components/MDButton";
 import NotificationItem from "examples/Items/NotificationItem";
 import api from "api/api";
 import Swal from "sweetalert2";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { syncSharedAuthCookiesFromStorage } from "utils/sharedAuthSession";
 
 // ✅ 프로필 모달
@@ -76,18 +76,23 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
   const THE_FULL_WEB_BASE_URL = resolveTheFullWebBaseUrl();
 
-  // ✅ 화면이 너무 작아지면 오른쪽(유저명/프로필/알림) 숨김
+  // ✅ 모바일에서도 우측 아이콘 영역은 노출하고, 이름 텍스트만 숨김 처리
   const theme = useTheme();
-  const isSmDown = useMediaQuery(theme.breakpoints.down("sm")); // 600px 이하
-  const hideRightArea = isSmDown;
+  const isMdDown = useMediaQuery(theme.breakpoints.down("md")); // 900px 이하
+  const isMobileLandscape = useMediaQuery("(max-width:899.95px) and (orientation: landscape)");
+  const hideRightArea = false;
 
-  const [navbarType, setNavbarType] = useState();
   const [controller, dispatch] = useMaterialUIController();
   const { miniSidenav, transparentNavbar, fixedNavbar, darkMode } = controller;
+  // 초기 렌더 시 AppBar position 값이 비어 고정 겹침이 생기지 않도록 기본값을 즉시 지정
+  const [navbarType, setNavbarType] = useState(fixedNavbar ? "sticky" : "static");
 
   const [openMenu, setOpenMenu] = useState(null);
   const [openProfile, setOpenProfile] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  // 대시보드 화면에서만 우측 사용자/알림 영역을 표시한다.
+  const isDashboardRoute = location.pathname === "/dashboard" || location.pathname === "/dashboard/";
 
   // 계약 만료 알림
   const [notifications, setNotifications] = useState([]);
@@ -1222,6 +1227,14 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
             paddingLeft: theme2.spacing(1.5),
             paddingRight: theme2.spacing(1.5),
             flexWrap: "nowrap",
+            // 모바일/태블릿에서는 햄버거(좌)와 우측 아이콘 영역이 한 줄로 유지되도록 강제
+            ...(isMdDown || isMobileLandscape
+              ? {
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }
+              : {}),
             "@media (min-width:600px)": { minHeight: NAVBAR_H, height: NAVBAR_H },
           })}
         >
@@ -1263,7 +1276,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           </MDBox>
 
           {/* ✅ 오른쪽 */}
-          {isMini || hideRightArea ? null : (
+          {isMini || hideRightArea || !isDashboardRoute ? null : (
             <MDBox
               sx={{
                 display: "flex",

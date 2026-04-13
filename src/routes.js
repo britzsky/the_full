@@ -352,7 +352,8 @@ const routes = [
     collapse: [
       {
         type: "collapse",
-        name: "💳 거래처 자료 입력",
+        // name: "💳 거래처 자료 입력",
+        name: "📦 매입마감",
         key: "purchaseDeadLineTally",
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchaseDeadLineTally/purchasetally",
@@ -396,7 +397,8 @@ const routes = [
       },
       {
         type: "collapse",
-        name: "📦 매입마감",
+        // name: "📦 매입마감",
+        name: "📦 매입집계",
         key: "purchaseTally",
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchaseTally/purchasetally",

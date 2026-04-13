@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import api from "api/api";
 
 // 숫자 파싱
@@ -14,17 +14,28 @@ const formatNumber = (value) => {
   return Number(value).toLocaleString();
 };
 
-export default function useHygienesheetData() {
+export default function useHygienesheetData(year, month) {
   const [hygieneListRows, setHygieneListRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
   // 차량 정비 이력 조회
-  const fetcHygieneList = async (account_id) => {
+  const fetcHygieneList = useCallback(async (account_id, monthParam = month, yearParam = year) => {
     setLoading(true);
     try {
+      const normalizedMonth =
+        String(monthParam ?? "").trim() === "ALL"
+          ? ""
+          : String(monthParam ?? "")
+              .trim()
+              .padStart(2, "0");
+
       const res = await api.get("/Operate/HygieneList", {
-        params: { account_id: account_id },
+        params: {
+          account_id,
+          year: yearParam,
+          month: normalizedMonth,
+        },
       });
 
       const rows = (res.data || []).map((item) => ({
@@ -47,7 +58,7 @@ export default function useHygienesheetData() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [month, year]);
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {

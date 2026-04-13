@@ -1,4 +1,4 @@
-// src/layouts/hygiene/HygieneSheetTab.js
+﻿// src/layouts/hygiene/HygieneSheetTab.js
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
@@ -10,6 +10,8 @@ import {
   IconButton,
   Tooltip,
   Autocomplete,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
@@ -23,6 +25,9 @@ import { API_BASE_URL } from "config";
 function HygieneSheetTab() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const today = useMemo(() => new Date(), []);
+  const currentYear = today.getFullYear();
+  const currentMonth = String(today.getMonth() + 1);
 
   // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
   const localAccountId = useMemo(() => localStorage.getItem("account_id") || "", []);
@@ -30,7 +35,13 @@ function HygieneSheetTab() {
   const [accountInput, setAccountInput] = useState("");
   const isAccountLocked = !!localAccountId;
 
-  const { hygieneListRows, accountList, loading, fetcHygieneList } = useHygienesheetData();
+  const [year, setYear] = useState(currentYear);
+  const [month, setMonth] = useState(currentMonth);
+
+  const { hygieneListRows, accountList, loading, fetcHygieneList } = useHygienesheetData(
+    year,
+    month
+  );
 
   // ✅ localStorage account_id 기준으로 거래처 리스트 필터링
   const filteredAccountList = useMemo(() => {
@@ -51,6 +62,19 @@ function HygieneSheetTab() {
   });
 
   const imageCols = ["problem_image", "clean_image"];
+
+  const filteredHygieneRows = useMemo(() => {
+    return (hygieneListRows || []).filter((row) => {
+      const baseDate = row?.reg_dt || row?.mod_dt;
+      if (!baseDate) return true;
+
+      const [rowYear, rowMonth] = String(baseDate).split("-");
+      if (String(rowYear ?? "") !== String(year)) return false;
+      if (String(month ?? "") === "ALL") return true;
+
+      return String(Number(rowMonth ?? "")) === String(Number(month));
+    });
+  }, [hygieneListRows, month, year]);
 
   // ✅ 거래처 옵션(Autocomplete)
   const accountOptions = useMemo(
@@ -75,22 +99,53 @@ function HygieneSheetTab() {
     const qLower = q.toLowerCase();
     const exact = list.find((o) => String(o?.label || "").toLowerCase() === qLower);
     const partial =
-      exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
+      exact ||
+      list.find((o) =>
+        String(o?.label || "")
+          .toLowerCase()
+          .includes(qLower)
+      );
     if (partial) {
       setSelectedAccountId(partial.value);
       setAccountInput(partial.label || q);
     }
   }, [accountInput, accountOptions, isAccountLocked]);
 
+  const requestHygieneList = useCallback(
+    (accountId, nextMonth = month, nextYear = year) => {
+      if (!accountId) {
+        setRows([]);
+        setOriginalRows([]);
+        return;
+      }
+
+      fetcHygieneList(accountId, nextMonth, nextYear);
+    },
+    [fetcHygieneList, month, year]
+  );
+
+  const handleYearChange = useCallback(
+    (e) => {
+      const nextYear = Number(e.target.value);
+      setYear(nextYear);
+      requestHygieneList(selectedAccountId, month, nextYear);
+    },
+    [month, requestHygieneList, selectedAccountId]
+  );
+
+  const handleMonthChange = useCallback(
+    (e) => {
+      const nextMonth = e.target.value;
+      setMonth(nextMonth);
+      requestHygieneList(selectedAccountId, nextMonth, year);
+    },
+    [requestHygieneList, selectedAccountId, year]
+  );
+
   // 거래처 변경 시 데이터 조회
   useEffect(() => {
-    if (selectedAccountId) {
-      fetcHygieneList(selectedAccountId);
-    } else {
-      setRows([]);
-      setOriginalRows([]);
-    }
-  }, [selectedAccountId]);
+    requestHygieneList(selectedAccountId, month, year);
+  }, [selectedAccountId, month, year, requestHygieneList]);
 
   // ✅ 거래처 기본값
   useEffect(() => {
@@ -108,13 +163,13 @@ function HygieneSheetTab() {
 
   // 서버 rows → 로컬 rows / originalRows 복사
   useEffect(() => {
-    const deepCopy = (hygieneListRows || []).map((row) => ({
+    const deepCopy = filteredHygieneRows.map((row) => ({
       ...row,
       del_yn: row.del_yn ?? "N", // ✅ 없으면 기본 N
     }));
     setRows(deepCopy);
     setOriginalRows(deepCopy);
-  }, [hygieneListRows]);
+  }, [filteredHygieneRows]);
 
   // cell 값 변경 처리
   const handleCellChange = (rowIndex, key, value) => {
@@ -443,7 +498,7 @@ function HygieneSheetTab() {
           confirmButtonText: "확인",
         });
 
-        await fetcHygieneList(selectedAccountId);
+        await fetcHygieneList(selectedAccountId, month, year);
       } else {
         Swal.fire({
           title: "오류",
@@ -531,6 +586,34 @@ function HygieneSheetTab() {
             )}
           />
         )}
+
+        <Select
+          value={year}
+          onChange={handleYearChange}
+          size="small"
+          renderValue={(selected) => `${selected}년`}
+          sx={{ minWidth: 110, height: "40px" }}
+        >
+          {Array.from({ length: 10 }, (_, i) => currentYear - 5 + i).map((y) => (
+            <MenuItem key={y} value={y}>
+              {y}년
+            </MenuItem>
+          ))}
+        </Select>
+
+        <Select
+          value={month}
+          onChange={handleMonthChange}
+          size="small"
+          sx={{ minWidth: 90, height: "40px" }}
+        >
+          <MenuItem value="ALL">전체</MenuItem>
+          {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((m) => (
+            <MenuItem key={m} value={m}>
+              {m}월
+            </MenuItem>
+          ))}
+        </Select>
 
         <MDButton
           variant="gradient"

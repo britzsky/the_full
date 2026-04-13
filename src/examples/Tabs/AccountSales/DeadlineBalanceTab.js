@@ -50,6 +50,9 @@ export default function DeadlineBalanceTab() {
   const lastSelectedAccountId = useRef(null);
   const [refetchTrigger, setRefetchTrigger] = useState(false);
 
+  // 입금 저장 중 이중 저장 방지 플래그
+  const [isSaving, setIsSaving] = useState(false);
+
   // ✅ 왼쪽 테이블 스크롤 유지용 ref
   const leftTableScrollRef = useRef(null);
   const leftScrollTopRef = useRef(0);
@@ -1260,6 +1263,9 @@ export default function DeadlineBalanceTab() {
       return;
     }
 
+    // 이중 저장 방지
+    if (isSaving) return;
+
     const selectedType = String(depositForm.type || "").trim();
     if (!AUTO_DEPOSIT_TYPES.has(selectedType)) {
       Swal.fire("입금항목 확인", "입금항목을 선택하세요.", "warning");
@@ -1323,6 +1329,7 @@ export default function DeadlineBalanceTab() {
     }
 
     try {
+      setIsSaving(true);
       const normalizedNote = String(depositForm.note || "").trim();
       const refundHumanNote = normalizeRefundNote(normalizedNote, depositForm.refund_target);
       const noteWithRefundTag =
@@ -1354,15 +1361,38 @@ export default function DeadlineBalanceTab() {
         refundMessage = `\n(${result.targetLabel} ${formatNumber(result.appliedAmount)}원 감액, 총 미수잔액 유지)`;
       }
 
-      Swal.fire("입금 내역이 저장되었습니다.", refundMessage, "success");
-      await fetchDeadlineBalanceList();
-      await fetchAllUnpaidSummarySourceList();
-      await fetchDepositHistoryList(selectedCustomer.account_id, year);
-      setRefetchTrigger(true);
+      await Swal.fire("입금 내역이 저장되었습니다.", refundMessage, "success");
+
+      // OK 클릭 직후: 조회 중 swal을 먼저 띄워 화면 전체를 덮음 (MUI Modal z-index 1300보다 높게)
+      const accountId = selectedCustomer.account_id;
+      Swal.fire({
+        title: "조회 중...",
+        text: "잠시만 기다려 주세요.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => {
+          Swal.showLoading();
+          // MUI Modal 백드롭(z-index 1300)보다 높은 값으로 덮어 모달이 닫히는 동안 가려줌
+          const container = Swal.getContainer();
+          if (container) container.style.zIndex = "9999";
+        },
+      });
+
+      // 모달 닫기 (조회 중 swal이 화면을 덮고 있으므로 애니메이션과 무관하게 진행)
       handleDepositModalClose();
-      setModalOpen(false);
+
+      // 재조회
+      await fetchDeadlineBalanceList();
+      if (accountId) await fetchDepositHistoryList(accountId, year);
+      setRefetchTrigger(true);
+      Swal.close();
+      fetchAllUnpaidSummarySourceList();
+
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -2470,7 +2500,7 @@ export default function DeadlineBalanceTab() {
               variant="contained"
               color="primary"
               onClick={handleSaveDeposit}
-              disabled={!canEdit}
+              disabled={!canEdit || isSaving}
               sx={{ color: "#fff" }}
             >
               저장

@@ -1403,8 +1403,17 @@ function AccountPurchaseDeadlineTab() {
       localeText={koKR.components.MuiLocalizationProvider.defaultProps.localeText}
     >
       <DashboardLayout>
-        {/* 🔹 공통 헤더 사용 */}
-        <DashboardNavbar title="💰 매입마감" />
+        {/* 스크롤 시 상단 네비가 화면 위에 유지되도록 고정 */}
+        <MDBox
+          sx={{
+            position: "sticky",
+            top: 0,
+            zIndex: isMobile ? theme.zIndex.appBar + 1 : 10,
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <DashboardNavbar title="💰 매입마감" />
+        </MDBox>
         <MDBox
           pt={1}
           pb={1}
@@ -1414,9 +1423,10 @@ function AccountPurchaseDeadlineTab() {
             alignItems: "center",
             gap: isMobile ? 1 : 2,
             flexWrap: isMobile ? "wrap" : "nowrap",
-            position: "sticky",
-            zIndex: 10,
-            top: 85,
+            // 모바일에서는 검색/버튼 영역도 본문과 함께 스크롤
+            position: isMobile ? "static" : "sticky",
+            zIndex: isMobile ? "auto" : 10,
+            top: isMobile ? "auto" : 85,
             backgroundColor: "#ffffff",
           }}
         >

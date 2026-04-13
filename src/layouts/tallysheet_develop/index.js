@@ -2780,26 +2780,28 @@ function TallySheet() {
 
       <MDBox
         sx={{
+          // 스크롤 시 상단 네비가 화면 위에 유지되도록 고정
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          zIndex: isMobile ? theme.zIndex.appBar + 1 : 10,
           backgroundColor: "#ffffff",
-          borderBottom: "1px solid #eee",
         }}
       >
         <DashboardNavbar title="🧮 집계표" />
+      </MDBox>
 
-        <MDBox
-          pt={1}
-          pb={1}
-          sx={{
-            display: "flex",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
-            alignItems: "center",
-            gap: isMobile ? 1 : 2,
-          }}
-        >
+      <MDBox
+        pt={1}
+        pb={1}
+        sx={{
+          display: "flex",
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          justifyContent: isMobile ? "flex-start" : "flex-end",
+          alignItems: "center",
+          gap: isMobile ? 1 : 2,
+          borderBottom: "1px solid #eee",
+        }}
+      >
           <Autocomplete
             size="small"
             sx={{ minWidth: 200 }}
@@ -2935,7 +2937,6 @@ function TallySheet() {
           >
             저장
           </MDButton>
-        </MDBox>
       </MDBox>
 
       <MDBox pt={3} pb={3}>

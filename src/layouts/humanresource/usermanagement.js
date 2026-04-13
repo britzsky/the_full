@@ -1460,16 +1460,26 @@ function UserManagement() {
 
   return (
     <DashboardLayout>
-      {/* 상단 네비 */}
-      <DashboardNavbar title="🧑‍🔧사용자 관리" />
+      {/* 스크롤 시 상단 네비가 화면 위에 유지되도록 고정 */}
+      <MDBox
+        sx={{
+          position: "sticky",
+          top: 0,
+          zIndex: isMobileTablet ? theme.zIndex.appBar + 1 : 10,
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <DashboardNavbar title="🧑‍🔧사용자 관리" />
+      </MDBox>
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <Card sx={{ mt: 1 }}>
             <MDBox
               sx={{
-                position: "sticky",
-                top: 0,
-                zIndex: 10,
+                // 모바일에서는 검색/버튼 영역도 본문과 함께 스크롤되도록 고정 해제
+                position: isMobile ? "static" : "sticky",
+                top: isMobile ? "auto" : 0,
+                zIndex: isMobile ? "auto" : 10,
                 backgroundColor: "#ffffff",
                 borderBottom: "1px solid #eee",
               }}

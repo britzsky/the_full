@@ -1199,10 +1199,10 @@ function DinersNumberSheet() {
     <>
       <MDBox
         sx={{
-          position: "sticky",
+          position: isMobile ? "static" : "sticky",
           // 상위 FieldBoardTabs 헤더/탭 sticky 영역 아래에서 항상 고정 유지
-          top: { xs: 88, md: 78 },
-          zIndex: 12,
+          top: isMobile ? "auto" : { xs: 88, md: 78 },
+          zIndex: isMobile ? "auto" : 12,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}

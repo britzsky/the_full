@@ -648,9 +648,10 @@ function AccountDispatchMemberSheet() {
           alignItems: "center",
           gap: isMobile ? 1 : 2,
           flexWrap: isMobile ? "wrap" : "nowrap",
-          position: "sticky",
-          zIndex: 10,
-          top: 78,
+          // 모바일에서는 검색/버튼 영역도 본문과 함께 스크롤
+          position: isMobile ? "static" : "sticky",
+          zIndex: isMobile ? "auto" : 10,
+          top: isMobile ? "auto" : 78,
           backgroundColor: "#ffffff",
         }}
       >

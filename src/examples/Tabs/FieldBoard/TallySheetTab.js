@@ -3191,9 +3191,9 @@ function TallySheet() {
 
       <MDBox
         sx={{
-          position: "sticky",
-          top: 0,
-          zIndex: isMobileOrTablet ? 5 : 10,
+          position: isMobileOrTablet ? "static" : "sticky",
+          top: isMobileOrTablet ? "auto" : 0,
+          zIndex: isMobileOrTablet ? "auto" : 10,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}

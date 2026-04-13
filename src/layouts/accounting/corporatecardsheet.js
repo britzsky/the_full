@@ -1782,29 +1782,32 @@ function CorporateCardSheet() {
       {/* ====== 상단 sticky 헤더 ====== */}
       <MDBox
         sx={{
+          // 스크롤 시 상단 네비가 화면 위에 유지되도록 고정
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          zIndex: isMobile ? theme.zIndex.appBar + 1 : 10,
+          backgroundColor: "#ffffff",
+        }}
+      >
+        <DashboardNavbar title="💳 거래처(본사) 법인카드 관리" />
+      </MDBox>
+      <MDBox
+        pt={1}
+        pb={1}
+        sx={{
+          display: "flex",
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          justifyContent: isMobile ? "flex-start" : "flex-end",
+          alignItems: "center",
+          gap: 1,
+          // 모바일에서는 상단 툴바를 고정하지 않음
+          position: isMobile ? "static" : "sticky",
+          zIndex: isMobile ? "auto" : 10,
+          top: isMobile ? "auto" : 78,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}
       >
-        <DashboardNavbar title="💳 거래처(본사) 법인카드 관리" />
-        <MDBox
-          pt={1}
-          pb={1}
-          sx={{
-            display: "flex",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
-            alignItems: "center",
-            gap: 1,
-            position: "sticky",
-            zIndex: 10,
-            top: 78,
-            backgroundColor: "#ffffff",
-          }}
-        >
           <Box
             sx={{
               flexWrap: isMobile ? "wrap" : "nowrap",
@@ -1902,7 +1905,6 @@ function CorporateCardSheet() {
               법인카드관리
             </MDButton>
           </Box>
-        </MDBox>
       </MDBox>
 
       {/* ====== 상단/하단 50:50 영역 ====== */}

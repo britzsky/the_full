@@ -4656,198 +4656,219 @@ function RecordSheet() {
 
   if (isPageLoading) return <LoadingScreen />;
 
-  return (
-    <DashboardLayout>
-      <MDBox
+  const filterAndActionArea = (
+    <MDBox
+      pt={1.5}
+      pb={1.5}
+      sx={{
+        display: "flex",
+        flexWrap: isTopToolbarWrap ? "wrap" : "nowrap",
+        justifyContent: isTopToolbarWrap ? "flex-start" : "flex-end",
+        alignItems: "center",
+        gap: isTopToolbarWrap ? 1 : 2,
+        backgroundColor: "#ffffff",
+        borderBottom: "1px solid #eee",
+      }}
+    >
+      <Box
         sx={{
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          backgroundColor: "#ffffff",
-          borderBottom: "1px solid #eee",
+          display: "flex",
+          flexWrap: isTopToolbarWrap ? "wrap" : "nowrap",
+          justifyContent: isTopToolbarWrap ? "flex-start" : "space-between",
+          alignItems: "right",
+          gap: 1,
+          width: isTopToolbarWrap ? "100%" : "auto",
         }}
       >
-        <DashboardNavbar title="🚌 출근부" />
-        <MDBox
-          pt={1.5}
-          pb={1.5}
+        <Autocomplete
+          size="small"
+          options={accountList || []}
+          value={(accountList || []).find((a) => a.account_id === selectedAccountId) || null}
+          onChange={(_, newVal) => {
+            if (!newVal) return;
+            setSelectedAccountId(newVal?.account_id || "");
+            accountInputRef.current = newVal?.account_name || "";
+          }}
+          onInputChange={(_, newValue) => {
+            accountInputRef.current = String(newValue ?? "");
+          }}
+          getOptionLabel={(opt) => opt?.account_name || ""}
+          isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
           sx={{
-            display: "flex",
-            flexWrap: isTopToolbarWrap ? "wrap" : "nowrap",
-            justifyContent: isTopToolbarWrap ? "flex-start" : "flex-end",
-            alignItems: "center",
-            gap: isTopToolbarWrap ? 1 : 2,
+            minWidth: isTopToolbarWrap ? 220 : 200,
+            flex: isTopToolbarWrap ? "1 1 220px" : "0 0 auto",
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  if (e.nativeEvent?.isComposing) return;
+                  e.preventDefault();
+                  selectAccountByInput(e.currentTarget.value);
+                }
+              }}
+              sx={{
+                "& .MuiInputBase-root": { height: 40, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
+
+        <Select
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          size="small"
+          sx={{
+            minWidth: isMobile ? 90 : 110,
+            "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
           }}
         >
-          <Box
+          {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+            <MenuItem key={y} value={y}>
+              {y}년
+            </MenuItem>
+          ))}
+        </Select>
+
+        <Select
+          value={month}
+          onChange={(e) => setMonth(Number(e.target.value))}
+          size="small"
+          sx={{
+            minWidth: isMobile ? 80 : 100,
+            "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
+          }}
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <MenuItem key={m} value={m}>
+              {m}월
+            </MenuItem>
+          ))}
+        </Select>
+
+        <MDButton
+          variant="gradient"
+          color="success"
+          onClick={handleApplyDefaultTime}
+          sx={{
+            fontSize: isMobile ? "0.7rem" : "0.8rem",
+            minWidth: isMobile ? 110 : 130,
+            px: isMobile ? 1 : 2,
+          }}
+        >
+          출퇴근 일괄 적용
+        </MDButton>
+
+        {canUseBulkExcelAndPay && (
+          <MDButton
+            variant="gradient"
+            color="dark"
+            onClick={openExcelRangeModal}
+            disabled={excelDownloading}
             sx={{
-              display: "flex",
-              flexWrap: isTopToolbarWrap ? "wrap" : "nowrap",
-              justifyContent: isTopToolbarWrap ? "flex-start" : "space-between",
-              alignItems: "right",
-              gap: 1,
-              width: isTopToolbarWrap ? "100%" : "auto",
+              fontSize: isMobile ? "0.7rem" : "0.8rem",
+              minWidth: isMobile ? 90 : 140,
+              px: isMobile ? 1 : 2,
+              opacity: excelDownloading ? 0.6 : 1,
             }}
           >
-            <Autocomplete
-              size="small"
-              options={accountList || []}
-              value={(accountList || []).find((a) => a.account_id === selectedAccountId) || null}
-              onChange={(_, newVal) => {
-                if (!newVal) return;
-                setSelectedAccountId(newVal?.account_id || "");
-                accountInputRef.current = newVal?.account_name || "";
-              }}
-              onInputChange={(_, newValue) => {
-                accountInputRef.current = String(newValue ?? "");
-              }}
-              getOptionLabel={(opt) => opt?.account_name || ""}
-              isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
-              sx={{
-                minWidth: isTopToolbarWrap ? 220 : 200,
-                flex: isTopToolbarWrap ? "1 1 220px" : "0 0 auto",
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="거래처 검색"
-                  placeholder="거래처명을 입력"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      if (e.nativeEvent?.isComposing) return;
-                      e.preventDefault();
-                      selectAccountByInput(e.currentTarget.value);
-                    }
-                  }}
-                  sx={{
-                    "& .MuiInputBase-root": { height: 40, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
-                  }}
-                />
-              )}
-            />
+            {excelDownloading ? "엑셀 생성 중..." : "전체 거래처 엑셀"}
+          </MDButton>
+        )}
 
-            <Select
-              value={year}
-              onChange={(e) => setYear(Number(e.target.value))}
-              size="small"
-              sx={{
-                minWidth: isMobile ? 90 : 110,
-                "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
-              }}
-            >
-              {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-                <MenuItem key={y} value={y}>
-                  {y}년
-                </MenuItem>
-              ))}
-            </Select>
+        {canUseBulkExcelAndPay && (
+          <MDButton
+            variant="gradient"
+            color="primary"
+            onClick={openPayRangeModal}
+            sx={{
+              fontSize: isMobile ? "0.7rem" : "0.8rem",
+              minWidth: isMobile ? 90 : 130,
+              px: isMobile ? 1 : 2,
+            }}
+          >
+            지급 일괄
+          </MDButton>
+        )}
 
-            <Select
-              value={month}
-              onChange={(e) => setMonth(Number(e.target.value))}
-              size="small"
-              sx={{
-                minWidth: isMobile ? 80 : 100,
-                "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
-              }}
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <MenuItem key={m} value={m}>
-                  {m}월
-                </MenuItem>
-              ))}
-            </Select>
+        <MDButton
+          variant="outlined"
+          color={dispatchMaskingEnabled ? "dark" : "secondary"}
+          onClick={() => setDispatchMaskingEnabled((prev) => !prev)}
+          sx={{
+            fontSize: isMobile ? "0.7rem" : "0.8rem",
+            minWidth: isMobile ? 78 : 96,
+            px: isMobile ? 1 : 2,
+          }}
+        >
+          {dispatchMaskingEnabled ? "* 해제" : "* 적용"}
+        </MDButton>
 
-            <MDButton
-              variant="gradient"
-              color="success"
-              onClick={handleApplyDefaultTime}
-              sx={{
-                fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 110 : 130,
-                px: isMobile ? 1 : 2,
-              }}
-            >
-              출퇴근 일괄 적용
-            </MDButton>
+        <MDButton
+          variant="gradient"
+          color="warning"
+          onClick={async () => {
+            // ✅ 전체 조회를 병렬로 묶어 완료 시점까지 로딩 유지
+            await refreshRecordSheetViews("all");
+          }}
+          sx={{
+            fontSize: isMobile ? "0.7rem" : "0.8rem",
+            minWidth: isMobile ? 70 : 90,
+            px: isMobile ? 1 : 2,
+          }}
+        >
+          조회
+        </MDButton>
 
-            {canUseBulkExcelAndPay && (
-              <MDButton
-                variant="gradient"
-                color="dark"
-                onClick={openExcelRangeModal}
-                disabled={excelDownloading}
-                sx={{
-                  fontSize: isMobile ? "0.7rem" : "0.8rem",
-                  minWidth: isMobile ? 90 : 140,
-                  px: isMobile ? 1 : 2,
-                  opacity: excelDownloading ? 0.6 : 1,
-                }}
-              >
-                {excelDownloading ? "엑셀 생성 중..." : "전체 거래처 엑셀"}
-              </MDButton>
-            )}
+        <MDButton
+          variant="gradient"
+          color="info"
+          onClick={handleSave}
+          sx={{
+            fontSize: isMobile ? "0.7rem" : "0.8rem",
+            minWidth: isMobile ? 70 : 90,
+            px: isMobile ? 1 : 2,
+          }}
+        >
+          저장
+        </MDButton>
+      </Box>
+    </MDBox>
+  );
 
-            {canUseBulkExcelAndPay && (
-              <MDButton
-                variant="gradient"
-                color="primary"
-                onClick={openPayRangeModal}
-                sx={{
-                  fontSize: isMobile ? "0.7rem" : "0.8rem",
-                  minWidth: isMobile ? 90 : 130,
-                  px: isMobile ? 1 : 2,
-                }}
-              >
-                지급 일괄
-              </MDButton>
-            )}
-
-            <MDButton
-              variant="outlined"
-              color={dispatchMaskingEnabled ? "dark" : "secondary"}
-              onClick={() => setDispatchMaskingEnabled((prev) => !prev)}
-              sx={{
-                fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 78 : 96,
-                px: isMobile ? 1 : 2,
-              }}
-            >
-              {dispatchMaskingEnabled ? "* 해제" : "* 적용"}
-            </MDButton>
-
-            <MDButton
-              variant="gradient"
-              color="warning"
-              onClick={async () => {
-                // ✅ 전체 조회를 병렬로 묶어 완료 시점까지 로딩 유지
-                await refreshRecordSheetViews("all");
-              }}
-              sx={{
-                fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 70 : 90,
-                px: isMobile ? 1 : 2,
-              }}
-            >
-              조회
-            </MDButton>
-
-            <MDButton
-              variant="gradient"
-              color="info"
-              onClick={handleSave}
-              sx={{
-                fontSize: isMobile ? "0.7rem" : "0.8rem",
-                minWidth: isMobile ? 70 : 90,
-                px: isMobile ? 1 : 2,
-              }}
-            >
-              저장
-            </MDButton>
-          </Box>
+  return (
+    <DashboardLayout>
+      {isMobile ? (
+        <>
+          <MDBox
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: 10,
+              backgroundColor: "#ffffff",
+            }}
+          >
+            <DashboardNavbar title="🚌 출근부" />
+          </MDBox>
+          {filterAndActionArea}
+        </>
+      ) : (
+        <MDBox
+          sx={{
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <DashboardNavbar title="🚌 출근부" />
+          {filterAndActionArea}
         </MDBox>
-      </MDBox>
+      )}
 
       <Grid container spacing={5}>
         {/* 출근 현황 */}

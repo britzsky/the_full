@@ -3375,6 +3375,188 @@ function TallySheet() {
     </MDBox>
   );
 
+  const filterAndActionArea = (
+    <MDBox
+      pt={1}
+      pb={1}
+      sx={{
+        px: 2,
+        display: "flex",
+        flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
+        justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
+        alignItems: "center",
+        gap: isMobileOrTablet ? 1 : 2,
+        backgroundColor: "#ffffff",
+        borderBottom: "1px solid #eee",
+      }}
+    >
+      {/* ✅ 범례 + 거래처검색을 한 덩어리로 묶어서 "거래처 검색" 왼쪽에 범례 표시 */}
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: isMobileOrTablet ? "stretch" : "center",
+          gap: 1,
+          flexWrap: isMobileOrTablet ? "nowrap" : "wrap",
+          flexDirection: isMobileOrTablet ? "column" : "row",
+          width: isMobileOrTablet ? "100%" : "auto",
+          minWidth: 0,
+        }}
+      >
+        <PointLegend />
+
+        <Autocomplete
+          size="small"
+          sx={{
+            width: isMobileOrTablet ? "100%" : "auto",
+            maxWidth: "100%",
+            minWidth: isMobileOrTablet ? 0 : 200,
+            flex: isMobileOrTablet ? "1 1 auto" : "0 0 auto",
+          }}
+          options={filteredAccountList || []}
+          value={selectedAccountOption}
+          onChange={(_, newValue) => {
+            if (isAccountLocked) return;
+            if (!newValue) return;
+            setSelectedAccountId(newValue.account_id);
+            setAccountInput(newValue?.account_name || "");
+          }}
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => {
+            if (isAccountLocked) return;
+            setAccountInput(newValue);
+          }}
+          getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
+          isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
+          disableClearable={isAccountLocked}
+          disabled={isAccountLocked}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              // ✅ 검색: 엔터로 바로 선택되도록 처리
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
+              }}
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
+            />
+          )}
+        />
+      </Box>
+      <TextField
+        select
+        size="small"
+        value={year}
+        onChange={(e) => setYear(Number(e.target.value))}
+        sx={{
+          minWidth: isMobile ? 140 : 150,
+          flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+        }}
+        SelectProps={{ native: true }}
+      >
+        {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+          <option key={y} value={y}>
+            {y}년
+          </option>
+        ))}
+      </TextField>
+
+      <TextField
+        select
+        size="small"
+        value={month}
+        onChange={(e) => {
+          setMonth(Number(e.target.value));
+          // '전월' 탭이어도 월을 변경하면 바꾸면 항상 '현재월' 탭으로 복귀
+          setTabValue(0);
+        }}
+        sx={{
+          minWidth: isMobile ? 140 : 150,
+          flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+        }}
+        SelectProps={{ native: true }}
+      >
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+          <option key={m} value={m}>
+            {m}월
+          </option>
+        ))}
+      </TextField>
+
+      <MDButton
+        variant="gradient"
+        color="info"
+        onClick={handleModalOpen2}
+        sx={{
+          fontSize: isMobile ? "11px" : "13px",
+          minWidth: isMobile ? 90 : 110,
+          px: isMobile ? 1 : 2,
+        }}
+      >
+        거래처 등록
+      </MDButton>
+
+      <MDButton
+        variant="gradient"
+        color="info"
+        onClick={handleModalOpen}
+        sx={{
+          fontSize: isMobile ? "11px" : "13px",
+          minWidth: isMobile ? 90 : 110,
+          px: isMobile ? 1 : 2,
+        }}
+      >
+        거래처 연결
+      </MDButton>
+
+      <MDButton
+        variant="gradient"
+        color="info"
+        onClick={handleRefresh}
+        sx={{
+          fontSize: isMobile ? "11px" : "13px",
+          minWidth: isMobile ? 70 : 90,
+          px: isMobile ? 1 : 2,
+        }}
+      >
+        새로고침
+      </MDButton>
+
+      <MDButton
+        variant="contained"
+        color="success"
+        startIcon={<DownloadIcon />}
+        onClick={handleExcelDownload}
+        sx={{
+          fontSize: isMobile ? "11px" : "13px",
+          minWidth: isMobile ? 70 : 90,
+          px: isMobile ? 1 : 2,
+        }}
+      >
+        엑셀다운로드
+      </MDButton>
+
+      <MDButton
+        variant="gradient"
+        color="info"
+        onClick={handleSave}
+        sx={{
+          fontSize: isMobile ? "11px" : "13px",
+          minWidth: isMobile ? 70 : 90,
+          px: isMobile ? 1 : 2,
+        }}
+      >
+        저장
+      </MDButton>
+    </MDBox>
+  );
+
   // ==============================
   // Part 2 / 2  (Part 1 바로 아래에 이어붙이세요)
   // ==============================
@@ -3388,197 +3570,33 @@ function TallySheet() {
         onClose={closeFloatingPreview}
       />
 
-      <MDBox
-        sx={{
-          position: "sticky",
-          top: 0,
-          zIndex: isMobileOrTablet ? theme.zIndex.appBar + 1 : 10,
-          backgroundColor: "#ffffff",
-          borderBottom: "1px solid #eee",
-        }}
-      >
-        <DashboardNavbar title="🧮 집계표" />
-
+      {isMobileOrTablet ? (
+        <>
+          <MDBox
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: theme.zIndex.appBar + 1,
+              backgroundColor: "#ffffff",
+            }}
+          >
+            <DashboardNavbar title="🧮 집계표" />
+          </MDBox>
+          {filterAndActionArea}
+        </>
+      ) : (
         <MDBox
-          pt={1}
-          pb={1}
           sx={{
-            px: 2,
-            display: "flex",
-            flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
-            justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
-            alignItems: "center",
-            gap: isMobileOrTablet ? 1 : 2,
+            position: "sticky",
+            top: 0,
+            zIndex: 10,
+            backgroundColor: "#ffffff",
           }}
         >
-          {/* ✅ 범례 + 거래처검색을 한 덩어리로 묶어서 "거래처 검색" 왼쪽에 범례 표시 */}
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: isMobileOrTablet ? "stretch" : "center",
-              gap: 1,
-              flexWrap: isMobileOrTablet ? "nowrap" : "wrap",
-              flexDirection: isMobileOrTablet ? "column" : "row",
-              width: isMobileOrTablet ? "100%" : "auto",
-              minWidth: 0,
-            }}
-          >
-            <PointLegend />
-
-            <Autocomplete
-              size="small"
-              sx={{
-                width: isMobileOrTablet ? "100%" : "auto",
-                maxWidth: "100%",
-                minWidth: isMobileOrTablet ? 0 : 200,
-                flex: isMobileOrTablet ? "1 1 auto" : "0 0 auto",
-              }}
-              options={filteredAccountList || []}
-              value={selectedAccountOption}
-              onChange={(_, newValue) => {
-                if (isAccountLocked) return;
-                if (!newValue) return;
-                setSelectedAccountId(newValue.account_id);
-                setAccountInput(newValue?.account_name || "");
-              }}
-              inputValue={accountInput}
-              onInputChange={(_, newValue) => {
-                if (isAccountLocked) return;
-                setAccountInput(newValue);
-              }}
-              getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
-              isOptionEqualToValue={(opt, val) =>
-                String(opt?.account_id) === String(val?.account_id)
-              }
-              disableClearable={isAccountLocked}
-              disabled={isAccountLocked}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="거래처 검색"
-                  placeholder="거래처명을 입력"
-                  // ✅ 검색: 엔터로 바로 선택되도록 처리
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      selectAccountByInput();
-                    }
-                  }}
-                  sx={{
-                    "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
-                  }}
-                />
-              )}
-            />
-          </Box>
-          <TextField
-            select
-            size="small"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            sx={{
-              minWidth: isMobile ? 140 : 150,
-              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
-            }}
-            SelectProps={{ native: true }}
-          >
-            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-              <option key={y} value={y}>
-                {y}년
-              </option>
-            ))}
-          </TextField>
-
-          <TextField
-            select
-            size="small"
-            value={month}
-            onChange={(e) => {
-              setMonth(Number(e.target.value));
-              // '전월' 탭이어도 월을 변경하면 바꾸면 항상 '현재월' 탭으로 복귀
-              setTabValue(0);
-            }}
-            sx={{
-              minWidth: isMobile ? 140 : 150,
-              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
-            }}
-            SelectProps={{ native: true }}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <option key={m} value={m}>
-                {m}월
-              </option>
-            ))}
-          </TextField>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleModalOpen2}
-            sx={{
-              fontSize: isMobile ? "11px" : "13px",
-              minWidth: isMobile ? 90 : 110,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            거래처 등록
-          </MDButton>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleModalOpen}
-            sx={{
-              fontSize: isMobile ? "11px" : "13px",
-              minWidth: isMobile ? 90 : 110,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            거래처 연결
-          </MDButton>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleRefresh}
-            sx={{
-              fontSize: isMobile ? "11px" : "13px",
-              minWidth: isMobile ? 70 : 90,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            새로고침
-          </MDButton>
-
-          <MDButton
-            variant="contained"
-            color="success"
-            startIcon={<DownloadIcon />}
-            onClick={handleExcelDownload}
-            sx={{
-              fontSize: isMobile ? "11px" : "13px",
-              minWidth: isMobile ? 70 : 90,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            엑셀다운로드
-          </MDButton>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleSave}
-            sx={{
-              fontSize: isMobile ? "11px" : "13px",
-              minWidth: isMobile ? 70 : 90,
-              px: isMobile ? 1 : 2,
-            }}
-          >
-            저장
-          </MDButton>
+          <DashboardNavbar title="🧮 집계표" />
+          {filterAndActionArea}
         </MDBox>
-      </MDBox>
+      )}
 
       <MDBox pt={3} pb={3}>
         <Card>

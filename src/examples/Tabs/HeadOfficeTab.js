@@ -83,7 +83,9 @@ function HeadOfficeTab() {
         </Tabs>
       </MDBox>
       {/* 탭 내용 */}
-      <MDBox p={2}>{tabComponents[tabIndex]}</MDBox>
+      <MDBox p={2} sx={{ position: "relative", zIndex: 1 }}>
+        {tabComponents[tabIndex]}
+      </MDBox>
     </Card>
   );
 }

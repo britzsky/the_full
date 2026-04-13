@@ -1345,7 +1345,12 @@ export default function ProfitLossTableTab() {
             ref={tableBoxRef}
             sx={{
               maxHeight: "75vh",
+              overflowX: "auto",
               overflowY: "auto",
+              position: "relative",
+              isolation: "isolate",
+              zIndex: 0,
+              WebkitOverflowScrolling: "touch",
               "& table": {
                 borderCollapse: "collapse",
                 width: "100%",
@@ -1379,6 +1384,21 @@ export default function ProfitLossTableTab() {
                 zIndex: 3,
                 background: "#e8f0ff",
                 borderRight: "1px solid #686D76",
+              },
+              // 모바일 가로 모드에서는 테이블 레이어를 낮추고 고정 컬럼을 해제해 탭 헤더를 우선 노출
+              "@media (orientation: landscape) and (max-height: 900px)": {
+                zIndex: 0,
+                "& table, & thead, & tbody, & tr, & th, & td, & input": {
+                  zIndex: "0 !important",
+                },
+                ".sticky-col": {
+                  position: "static",
+                  left: "auto",
+                  zIndex: "0 !important",
+                },
+                ".sticky-header": {
+                  zIndex: "0 !important",
+                },
               },
             }}
           >

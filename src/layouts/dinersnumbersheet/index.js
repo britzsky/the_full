@@ -1281,137 +1281,157 @@ function DinersNumberSheet() {
   // ✅ 하단 고정 합계/평균 행 겹침 방지를 위한 기준 높이
   const summaryStickyRowHeight = 28;
 
-  return (
-    <DashboardLayout>
-      <MDBox
-        sx={{
-          position: "sticky",
-          top: 0,
-          zIndex: 12,
-          backgroundColor: "#ffffff",
-          borderBottom: "1px solid #eee",
-        }}
-      >
-        <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
+  const filterAndActionArea = (
+    <MDBox
+      pt={1}
+      pb={1}
+      sx={{
+        display: "flex",
+        justifyContent: isMobile ? "space-between" : "flex-end",
+        alignItems: "center",
+        gap: isMobile ? 1 : 2,
+        flexWrap: isMobile ? "wrap" : "nowrap",
+        backgroundColor: "#ffffff",
+        borderBottom: "1px solid #eee",
+      }}
+    >
+      {isWorkingDayVisible && (
+        <>
+          <MDTypography variant="button">근무일수</MDTypography>
+          <TextField
+            value={workingDay}
+            onChange={(e) => setWorkingDay(e.target.value)}
+            onBlur={(e) => {
+              const num = parseNumber(e.target.value) || 0;
+              setWorkingDay(num.toString());
+            }}
+            variant="outlined"
+            size="small"
+            sx={{ width: 80, mr: 1 }}
+            inputProps={{
+              style: {
+                textAlign: "right",
+                ...(isWorkingDayChanged ? { color: "red" } : {}),
+              },
+            }}
+          />
+        </>
+      )}
 
-        <MDBox
-          pt={1}
-          pb={1}
-          sx={{
-            display: "flex",
-            justifyContent: isMobile ? "space-between" : "flex-end",
-            alignItems: "center",
-            gap: isMobile ? 1 : 2,
-            flexWrap: isMobile ? "wrap" : "nowrap",
+      {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
+      {(accountList || []).length > 0 && (
+        <Autocomplete
+          size="small"
+          sx={{ minWidth: 200 }}
+          options={accountOptions}
+          value={(() => {
+            const v = String(selectedAccountId ?? "");
+            return accountOptions.find((o) => o.value === v) || null;
+          })()}
+          onChange={(_, opt) => {
+            // 입력 비움 시 거래처 선택 유지
+            if (!opt) return;
+            setSelectedAccountId(opt.value);
           }}
-        >
-          {isWorkingDayVisible && (
-            <>
-              <MDTypography variant="button">근무일수</MDTypography>
-              <TextField
-                value={workingDay}
-                onChange={(e) => setWorkingDay(e.target.value)}
-                onBlur={(e) => {
-                  const num = parseNumber(e.target.value) || 0;
-                  setWorkingDay(num.toString());
-                }}
-                variant="outlined"
-                size="small"
-                sx={{ width: 80, mr: 1 }}
-                inputProps={{
-                  style: {
-                    textAlign: "right",
-                    ...(isWorkingDayChanged ? { color: "red" } : {}),
-                  },
-                }}
-              />
-            </>
-          )}
-
-          {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
-          {(accountList || []).length > 0 && (
-            <Autocomplete
-              size="small"
-              sx={{ minWidth: 200 }}
-              options={accountOptions}
-              value={(() => {
-                const v = String(selectedAccountId ?? "");
-                return accountOptions.find((o) => o.value === v) || null;
-              })()}
-              onChange={(_, opt) => {
-                // 입력 비움 시 거래처 선택 유지
-                if (!opt) return;
-                setSelectedAccountId(opt.value);
+          inputValue={accountInput}
+          onInputChange={(_, newValue) => setAccountInput(newValue)}
+          getOptionLabel={(opt) => opt?.label ?? ""}
+          isOptionEqualToValue={(opt, val) => opt.value === val.value}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="거래처 검색"
+              placeholder="거래처명을 입력"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  selectAccountByInput();
+                }
               }}
-              inputValue={accountInput}
-              onInputChange={(_, newValue) => setAccountInput(newValue)}
-              getOptionLabel={(opt) => opt?.label ?? ""}
-              isOptionEqualToValue={(opt, val) => opt.value === val.value}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="거래처 검색"
-                  placeholder="거래처명을 입력"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      selectAccountByInput();
-                    }
-                  }}
-                  sx={{
-                    "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
-                  }}
-                />
-              )}
+              sx={{
+                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                "& input": { padding: "0 8px" },
+              }}
             />
           )}
+        />
+      )}
 
-          <TextField
-            select
-            size="small"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
-            SelectProps={{ native: true }}
+      <TextField
+        select
+        size="small"
+        value={year}
+        onChange={(e) => setYear(Number(e.target.value))}
+        sx={{ minWidth: isMobile ? 140 : 150 }}
+        SelectProps={{ native: true }}
+      >
+        {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+          <option key={y} value={y}>
+            {y}년
+          </option>
+        ))}
+      </TextField>
+
+      <TextField
+        select
+        size="small"
+        value={month}
+        onChange={(e) => setMonth(Number(e.target.value))}
+        sx={{ minWidth: isMobile ? 140 : 150 }}
+        SelectProps={{ native: true }}
+      >
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+          <option key={m} value={m}>
+            {m}월
+          </option>
+        ))}
+      </TextField>
+
+      <MDButton
+        variant="contained"
+        color="success"
+        startIcon={<DownloadIcon />}
+        onClick={handleExcelDownload}
+        sx={actionButtonSx}
+      >
+        엑셀다운로드
+      </MDButton>
+
+      <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
+        저장
+      </MDButton>
+    </MDBox>
+  );
+
+  return (
+    <DashboardLayout>
+      {isMobile ? (
+        <>
+          <MDBox
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: 12,
+              backgroundColor: "#ffffff",
+            }}
           >
-            {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-              <option key={y} value={y}>
-                {y}년
-              </option>
-            ))}
-          </TextField>
-
-          <TextField
-            select
-            size="small"
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }}
-            SelectProps={{ native: true }}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <option key={m} value={m}>
-                {m}월
-              </option>
-            ))}
-          </TextField>
-
-          <MDButton
-            variant="contained"
-            color="success"
-            startIcon={<DownloadIcon />}
-            onClick={handleExcelDownload}
-            sx={actionButtonSx}
-          >
-            엑셀다운로드
-          </MDButton>
-
-          <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
-            저장
-          </MDButton>
+            <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
+          </MDBox>
+          {filterAndActionArea}
+        </>
+      ) : (
+        <MDBox
+          sx={{
+            position: "sticky",
+            top: 0,
+            zIndex: 12,
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <HeaderWithLogout showMenuButton title="🍽️ 식수관리" />
+          {filterAndActionArea}
         </MDBox>
-      </MDBox>
+      )}
 
       <MDBox pt={3} pb={3}>
         <Grid container spacing={6}>

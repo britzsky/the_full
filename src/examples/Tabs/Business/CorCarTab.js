@@ -501,31 +501,34 @@ function CorCarTabStyled() {
     <DashboardLayout>
       <MDBox
         sx={{
+          // 스크롤 시 상단 네비가 화면 위에 유지되도록 고정
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          zIndex: isMobile ? theme.zIndex.appBar + 1 : 10,
           backgroundColor: "#ffffff",
-          borderBottom: "1px solid #eee",
         }}
       >
         {/* <HeaderWithLogout showMenuButton title="🚌 출근부" /> */}
         <DashboardNavbar title="🚙 법인차량 관리" />
-        {/* 상단 차량 선택 + 버튼 영역 - 모바일에서 줄바꿈 */}
-        <MDBox
-          pt={1}
-          pb={1}
-          gap={1}
-          sx={{
-            display: "flex",
-            justifyContent: isMobile ? "space-between" : "flex-end",
-            alignItems: "center",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            position: "sticky",
-            zIndex: 10,
-            top: 78,
-            backgroundColor: "#ffffff",
-          }}
-        >
+      </MDBox>
+      {/* 상단 차량 선택 + 버튼 영역 - 모바일에서 줄바꿈 */}
+      <MDBox
+        pt={1}
+        pb={1}
+        gap={1}
+        sx={{
+          display: "flex",
+          justifyContent: isMobile ? "space-between" : "flex-end",
+          alignItems: "center",
+          flexWrap: isMobile ? "wrap" : "nowrap",
+          // 모바일에서는 상단 툴바를 본문 스크롤에 포함
+          position: isMobile ? "static" : "sticky",
+          zIndex: isMobile ? "auto" : 10,
+          top: isMobile ? "auto" : 78,
+          backgroundColor: "#ffffff",
+          borderBottom: "1px solid #eee",
+        }}
+      >
           {carSelectList.length > 0 && (
             <TextField
               select
@@ -579,7 +582,6 @@ function CorCarTabStyled() {
               저장
             </MDButton>
           </Box>
-        </MDBox>
       </MDBox>
       <MDBox pt={1} pb={3} sx={tableSx}>
         <Grid container spacing={3}>

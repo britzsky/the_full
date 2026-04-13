@@ -91,8 +91,10 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const [openProfile, setOpenProfile] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  // 대시보드 화면에서만 우측 사용자/알림 영역을 표시한다.
+  // 모바일에서는 대시보드에서만 우측 사용자/알림 영역을 표시한다.
+  // 데스크탑에서는 어느 화면에서도 우측 영역을 표시한다.
   const isDashboardRoute = location.pathname === "/dashboard" || location.pathname === "/dashboard/";
+  const shouldShowRightArea = !hideRightArea && (!isMdDown || isDashboardRoute);
 
   // 계약 만료 알림
   const [notifications, setNotifications] = useState([]);
@@ -1276,7 +1278,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           </MDBox>
 
           {/* ✅ 오른쪽 */}
-          {isMini || hideRightArea || !isDashboardRoute ? null : (
+          {isMini || !shouldShowRightArea ? null : (
             <MDBox
               sx={{
                 display: "flex",

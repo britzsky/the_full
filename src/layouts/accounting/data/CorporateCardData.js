@@ -91,18 +91,20 @@ export default function useAccountCorporateCardData() {
   // ========================= (2) 결제내역(상단) 조회 =========================
   // ✅ account_id 추가
   const fetchHeadOfficeCorporateCardPaymentList = useCallback(
-    async ({ year, month, account_id }) => {
+    async ({ year, month, account_id, itemType, setState = true }) => {
       return withLoading(async () => {
         try {
           const res = await api.get("/Account/HeadOfficeCorporateCardPaymentList", {
-            params: { year, month, account_id },
+            params: { year, month, account_id, itemType },
           });
 
-          console.log(res.data);
-          setPaymentRows(res.data || []);
+          const rows = res.data || [];
+          if (setState) setPaymentRows(rows);
+          return rows;
         } catch (err) {
           console.error("결제내역 조회 실패:", err);
-          setPaymentRows([]);
+          if (setState) setPaymentRows([]);
+          return [];
         }
       });
     },

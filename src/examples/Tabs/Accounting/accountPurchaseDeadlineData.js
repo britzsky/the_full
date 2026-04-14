@@ -31,9 +31,17 @@ export default function useAccountPurchaseDeadlineData() {
   const fetchPurchaseList = async (filters) => {
     setLoading(true);
     try {
-      // ✅ GET 파라미터는 반드시 params 로 감싸기
+      // "0" = 전체 선택 값 → 빈값("")으로 변환해서 SQL <if> 조건에서 제외되게 함
+      const toParam = (v) => (!v || v === "0" ? "" : v);
+      const params = {
+        account_id: toParam(filters?.account_id),
+        type:       toParam(filters?.type),
+        year:       toParam(filters?.year),
+        month:      toParam(filters?.month),
+        payType:    toParam(filters?.payType),
+      };
       const res = await api.get("/Account/AccountPurchaseTallyList", {
-        params: filters,
+        params,
       });
 
       let list = [];
@@ -48,27 +56,32 @@ export default function useAccountPurchaseDeadlineData() {
         setPartnerList(res.data.partners || []);
       }
 
-      // 숫자 포맷 등 프론트에서 가공하고 싶다면 여기서 처리
-      const mapped = (list || []).map((item) => ({
-        sale_id: item.sale_id,
-        account_id: item.account_id,
-        account_name: item.account_name || "",
-        use_name: item.use_name || "",
-        bizNo: item.bizNo || "",
-        saleDate: item.saleDate || "",
-        total: formatNumber(item.total),
-        vat: formatNumber(item.vat),
-        taxFree: formatNumber(item.taxFree),
-        tax: formatNumber(item.tax),
-        totalCash: formatNumber(item.totalCash),
-        totalCard: formatNumber(item.totalCard),
-        payType: String(item.payType ?? ""), // select에서 쓰기 위해 문자열화
-        receipt_image: item.receipt_image || "",
-        note: item.note || "",
-        type: item.type,
-        bizNo: item.bizNo,
-        ceo_name: item.ceo_name,
-      }));
+      const mapped = (list || []).map((item) => {
+        // payType 보정: 1/2 아닌 경우 기본 1
+        const pt = String(item.payType ?? "").trim();
+        return {
+          sale_id: item.sale_id,
+          account_id: item.account_id,
+          account_name: item.account_name || "",
+          use_name: item.use_name || "",
+          bizNo: item.bizNo || "",
+          ceo_name: item.ceo_name || "",
+          saleDate: item.saleDate || "",
+          total:     formatNumber(item.total),
+          vat:       formatNumber(item.vat),
+          taxFree:   formatNumber(item.taxFree),
+          tax:       formatNumber(item.tax),
+          totalCash: formatNumber(item.totalCash),
+          totalCard: formatNumber(item.totalCard),
+          payType: pt === "1" || pt === "2" ? pt : "1",
+          receipt_type: item.receipt_type || "",
+          receipt_image: item.receipt_image || "",
+          note: item.note || "",
+          reg_dt: item.reg_dt || "",
+          type: String(item.type ?? ""),
+          type_name: item.type_name || "",
+        };
+      });
 
       setRows(mapped);
       setOriginalRows(mapped.map((r) => ({ ...r })));
@@ -86,6 +99,7 @@ export default function useAccountPurchaseDeadlineData() {
     rows,
     setRows,
     originalRows,
+    setOriginalRows,
     partnerList,
     loading,
     fetchPurchaseList,

@@ -1365,7 +1365,7 @@ function AccountCorporateCardSheet() {
           display: "flex",
           flexDirection: "column",
           gap: 1.5,
-          mt: 1.5,
+          mt: isMobile ? 1.5 : 2.5,
         }}
       >
         {/* ========================= 상단(50%) 결제내역 ========================= */}

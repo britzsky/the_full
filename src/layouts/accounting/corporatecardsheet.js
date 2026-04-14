@@ -108,6 +108,13 @@ const ITEM_TYPES = [
   { value: 2, label: "소모품" },
   { value: 3, label: "예산미발행" },
 ];
+const ITEM_TYPE_FILTER_OPTIONS = [
+  { value: "0", label: "상품구분 전체" },
+  { value: "1", label: "식재료" },
+  { value: "2", label: "소모품" },
+  { value: "3", label: "예산미발행" },
+];
+const DETAIL_FILTER_CONCURRENCY = 10;
 
 const onlyDigits = (v = "") => String(v).replace(/\D/g, "");
 const isValidCardNoDigits = (v = "") => /^\d{16}$/.test(onlyDigits(v));
@@ -341,6 +348,7 @@ function CorporateCardSheet() {
     accountList,
     fetchHeadOfficeCorporateCardList,
     paymentRows,
+    setPaymentRows,
     fetchHeadOfficeCorporateCardPaymentList,
     paymentDetailRows,
     fetchHeadOfficeCorporateCardPaymentDetailList,
@@ -371,7 +379,10 @@ function CorporateCardSheet() {
 
   // ✅ 거래처 검색조건
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [itemTypeFilter, setItemTypeFilter] = useState("0");
+  const [masterFilterLoading, setMasterFilterLoading] = useState(false);
   const accountInputRef = useRef("");
+  const detailItemTypeCacheRef = useRef(new Map());
 
   // ✅ 스캔된 상세 item 은 무조건 빨간 글씨
   const isForcedRedRow = (row) => !!row?.isForcedRed;
@@ -467,10 +478,83 @@ function CorporateCardSheet() {
   }, [accountList, selectedAccountId]);
 
   // ========================= 조회 =========================
+  const filterMasterRowsByItemType = useCallback(
+    async (rows) => {
+      const targetItemType = Number(itemTypeFilter || 0);
+      if (!targetItemType || !Array.isArray(rows) || rows.length === 0) return rows || [];
+
+      setMasterFilterLoading(true);
+      try {
+        const matched = new Array(rows.length).fill(false);
+        const pending = [];
+
+        rows.forEach((row, idx) => {
+          const saleId = String(row?.sale_id || "").trim();
+          if (!saleId) return;
+
+          const cachedTypeSet = detailItemTypeCacheRef.current.get(saleId);
+          if (cachedTypeSet) {
+            matched[idx] = cachedTypeSet.has(targetItemType);
+            return;
+          }
+
+          pending.push({ row, idx, saleId });
+        });
+
+        let cursor = 0;
+        const worker = async () => {
+          while (cursor < pending.length) {
+            const current = pending[cursor];
+            cursor += 1;
+
+            const { row, idx, saleId } = current;
+            try {
+              const res = await api.get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
+                params: {
+                  sale_id: saleId,
+                  account_id: row?.account_id ?? selectedAccountId ?? "",
+                  payment_dt: row?.payment_dt ?? "",
+                },
+                validateStatus: () => true,
+              });
+
+              const detailList =
+                res?.status === 200
+                  ? Array.isArray(res?.data)
+                    ? res.data
+                    : res?.data?.rows || []
+                  : [];
+
+              const typeSet = new Set(
+                (detailList || [])
+                  .map((it) => Number(it?.itemType ?? it?.itemtype ?? 0))
+                  .filter((v) => Number.isFinite(v) && v > 0)
+              );
+              detailItemTypeCacheRef.current.set(saleId, typeSet);
+              matched[idx] = typeSet.has(targetItemType);
+            } catch (err) {
+              console.error("상세 itemType 필터 조회 실패:", err);
+              detailItemTypeCacheRef.current.set(saleId, new Set());
+              matched[idx] = false;
+            }
+          }
+        };
+
+        const workerCount = Math.min(DETAIL_FILTER_CONCURRENCY, pending.length);
+        await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+        return rows.filter((_, idx) => matched[idx]);
+      } finally {
+        setMasterFilterLoading(false);
+      }
+    },
+    [itemTypeFilter, selectedAccountId]
+  );
+
   const handleFetchMaster = useCallback(async (opts = {}) => {
     const force = !!opts.force;
     if (!selectedAccountId) return;
-    const key = `${selectedAccountId}|${year}|${month}`;
+    const key = `${selectedAccountId}|${year}|${month}|${itemTypeFilter}`;
     const inflight = masterFetchStateRef.current;
 
     if (!force && inflight.promise && inflight.key === key) {
@@ -478,11 +562,20 @@ function CorporateCardSheet() {
       return;
     }
 
-    const requestPromise = fetchHeadOfficeCorporateCardPaymentList({
-      year,
-      month,
-      account_id: selectedAccountId,
-    });
+    const requestPromise = (async () => {
+      const fetchedRows =
+        (await fetchHeadOfficeCorporateCardPaymentList({
+          year,
+          month,
+          account_id: selectedAccountId,
+          itemType: itemTypeFilter,
+          setState: false,
+        })) || [];
+
+      const filteredRows = await filterMasterRowsByItemType(fetchedRows);
+      if (masterFetchStateRef.current.key !== key) return;
+      setPaymentRows(filteredRows);
+    })();
     masterFetchStateRef.current = { key, promise: requestPromise };
 
     try {
@@ -493,7 +586,15 @@ function CorporateCardSheet() {
         masterFetchStateRef.current = { key, promise: null };
       }
     }
-  }, [fetchHeadOfficeCorporateCardPaymentList, year, month, selectedAccountId]);
+  }, [
+    fetchHeadOfficeCorporateCardPaymentList,
+    year,
+    month,
+    selectedAccountId,
+    itemTypeFilter,
+    filterMasterRowsByItemType,
+    setPaymentRows,
+  ]);
 
   const handleSearchMaster = useCallback(async () => {
     if (!selectedAccountId) return;
@@ -531,7 +632,7 @@ function CorporateCardSheet() {
     skipPendingNewMergeRef.current = true;
 
     handleFetchMaster();
-  }, [selectedAccountId, year, month, handleFetchMaster]);
+  }, [selectedAccountId, year, month, itemTypeFilter, handleFetchMaster]);
 
   // ✅ 거래처(account_id) 무관: 전체 카드 목록
   const cardsAll = useMemo(() => {
@@ -1792,7 +1893,7 @@ function CorporateCardSheet() {
         <DashboardNavbar title="💳 거래처(본사) 법인카드 관리" />
       </MDBox>
       <MDBox
-        pt={1}
+        pt={0.5}
         pb={1}
         sx={{
           display: "flex",
@@ -1818,6 +1919,19 @@ function CorporateCardSheet() {
               gap: 1,
             }}
           >
+            <Select
+              size="small"
+              value={itemTypeFilter}
+              onChange={(e) => setItemTypeFilter(String(e.target.value))}
+              sx={{ minWidth: 140 }}
+            >
+              {ITEM_TYPE_FILTER_OPTIONS.map((opt) => (
+                <MenuItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </MenuItem>
+              ))}
+            </Select>
+
             {/* ✅ 거래처 검색 가능한 Autocomplete */}
             <Autocomplete
               size="small"
@@ -1888,8 +2002,13 @@ function CorporateCardSheet() {
               행추가
             </MDButton>
 
-            <MDButton color="info" onClick={handleSearchMaster} sx={{ minWidth: 80 }}>
-              조회
+            <MDButton
+              color="info"
+              onClick={handleSearchMaster}
+              disabled={masterFilterLoading}
+              sx={{ minWidth: 80 }}
+            >
+              {masterFilterLoading ? "조회중..." : "조회"}
             </MDButton>
 
             <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
@@ -1915,7 +2034,7 @@ function CorporateCardSheet() {
           display: "flex",
           flexDirection: "column",
           gap: 1.5,
-          mt: 1.5,
+          mt: isMobile ? 1.5 : 2.5,
         }}
       >
         {/* ========================= 상단(50%) 결제내역 ========================= */}
@@ -1961,7 +2080,7 @@ function CorporateCardSheet() {
             "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
           }}
         >
-          <table key={`master-${selectedAccountId}-${year}-${month}-${masterRenderKey}`}>
+          <table key={`master-${selectedAccountId}-${year}-${month}-${itemTypeFilter}-${masterRenderKey}`}>
             <thead>
               <tr>
                 {masterColumns.map((c) => (

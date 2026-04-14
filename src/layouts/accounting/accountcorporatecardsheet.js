@@ -1427,7 +1427,7 @@ function AccountCorporateCardSheet() {
       </MDBox>
 
       <MDBox
-        pt={1}
+        pt={0.5}
         pb={1}
         sx={{
           display: "flex",
@@ -1544,7 +1544,7 @@ function AccountCorporateCardSheet() {
           display: "flex",
           flexDirection: "column",
           gap: 1.5,
-          mt: 1.5,
+          mt: isMobile ? 1.5 : 2.5,
         }}
       >
         {/* ========================= 상단(50%) 결제내역 ========================= */}

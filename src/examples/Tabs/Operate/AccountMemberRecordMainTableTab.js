@@ -4,7 +4,14 @@ import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-tabl
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import { TextField, useTheme, useMediaQuery } from "@mui/material";
+import {
+  TextField,
+  useTheme,
+  useMediaQuery,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+} from "@mui/material";
 import Swal from "sweetalert2";
 import api from "api/api";
 import Autocomplete from "@mui/material/Autocomplete";
@@ -72,6 +79,9 @@ function AccountMemberRecordMainTableTab() {
 
   // ✅ 마지막 클릭 부족항목의 position_type
   const [selectedPositionType, setSelectedPositionType] = useState("");
+  const [todayModalOpen, setTodayModalOpen] = useState(false);
+  const [todayCheckLoading, setTodayCheckLoading] = useState(false);
+  const [todayCheckRows, setTodayCheckRows] = useState([]);
 
   const tableContainerRef = useRef(null);
 
@@ -255,6 +265,7 @@ function AccountMemberRecordMainTableTab() {
 
   const pad2 = (n) => String(n).padStart(2, "0");
   const formatYMD = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const startOfDate = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 
   const getDateByWeekDay = useCallback(
     (y, mm, week, dayKey) => {
@@ -368,7 +379,16 @@ function AccountMemberRecordMainTableTab() {
       try {
         setLoading(true);
 
-        await fetchAccountStandardList();
+        const standardRows = await fetchAccountStandardList();
+        if (!alive) return;
+
+        const hydratedRows = (standardRows || []).map((row) => hydrateSchedule(row));
+        setActiveRows(hydratedRows);
+        setOriginalRows(hydratedRows);
+
+        const incomingRootIdx = String(hydratedRows?.[0]?.root_idx ?? "").trim();
+        setOriginalRootIdx(incomingRootIdx);
+        setSelectedRootIdx(normalizeToOptionValue(incomingRootIdx, rootOptions || []));
 
         if (selectedAccountId) {
           await fetchAccountRecordSituationList({
@@ -397,29 +417,16 @@ function AccountMemberRecordMainTableTab() {
     fetchAccountStandardList,
     fetchAccountRecordSituationList,
     setSimulationRows,
+    hydrateSchedule,
+    normalizeToOptionValue,
+    rootOptions,
+    setActiveRows,
+    setOriginalRows,
   ]);
 
   // =========================
   // ✅ activeRows 로딩 후 root_idx 자동매핑
   // =========================
-  useEffect(() => {
-    if (Array.isArray(activeRows) && activeRows.length > 0) {
-      const updated = activeRows.map((row) => hydrateSchedule(row));
-      setActiveRows(updated);
-      setOriginalRows(updated);
-
-      const first = updated[0] || {};
-      const incomingRootIdx = String(first?.root_idx ?? "").trim();
-
-      setOriginalRootIdx(incomingRootIdx);
-      setSelectedRootIdx(incomingRootIdx);
-    } else {
-      setOriginalRows([]);
-      setOriginalRootIdx("");
-      setSelectedRootIdx("");
-    }
-  }, [activeRows?.length]);
-
   useEffect(() => {
     const fixed = normalizeToOptionValue(originalRootIdx, rootOptions || []);
     setSelectedRootIdx((prev) => {
@@ -861,6 +868,85 @@ function AccountMemberRecordMainTableTab() {
     [isNone]
   );
 
+  const buildTodayShortagePayload = useCallback(
+    (standardRows = [], situationRows = []) => {
+      const requiredByPosDay = {};
+      const actualByWeekPosDay = {};
+      const excludedByWeekDay = {};
+
+      (standardRows || []).forEach((r) => {
+        const pos = String(r?.position_type ?? "").trim();
+        if (!pos) return;
+
+        if (!requiredByPosDay[pos]) requiredByPosDay[pos] = {};
+        DAY_KEYS.forEach((dayKey) => {
+          requiredByPosDay[pos][dayKey] = (requiredByPosDay[pos][dayKey] || 0) + toInt(r?.[dayKey]);
+        });
+      });
+
+      const requiredPosList = Object.keys(requiredByPosDay);
+      if (requiredPosList.length === 0) return [];
+
+      (situationRows || []).forEach((r) => {
+        const week = toWeekNo(r?.week_number);
+        const pos = String(r?.position_type ?? "").trim();
+        if (!week || !pos) return;
+
+        if (!actualByWeekPosDay[week]) actualByWeekPosDay[week] = {};
+        if (!actualByWeekPosDay[week][pos]) actualByWeekPosDay[week][pos] = {};
+
+        if (!excludedByWeekDay[week]) excludedByWeekDay[week] = {};
+
+        DAY_KEYS.forEach((dayKey) => {
+          const v = r?.[dayKey];
+
+          if (isNone(v)) {
+            excludedByWeekDay[week][dayKey] = true;
+            return;
+          }
+
+          const n = toIntOrNull(v);
+          if (n == null) {
+            excludedByWeekDay[week][dayKey] = true;
+            return;
+          }
+
+          actualByWeekPosDay[week][pos][dayKey] = (actualByWeekPosDay[week][pos][dayKey] || 0) + n;
+        });
+      });
+
+      const result = [];
+      Object.keys(actualByWeekPosDay || {}).forEach((weekKey) => {
+        const week = Number(weekKey);
+        if (!Number.isFinite(week) || week <= 0) return;
+
+        requiredPosList.forEach((pos) => {
+          DAY_KEYS.forEach((dayKey) => {
+            if (excludedByWeekDay?.[week]?.[dayKey]) return;
+
+            const req = requiredByPosDay?.[pos]?.[dayKey] || 0;
+            const act = actualByWeekPosDay?.[week]?.[pos]?.[dayKey] || 0;
+            const diff = req - act;
+
+            if (diff > 0) {
+              result.push({
+                week,
+                dayKey,
+                position_type: pos,
+                shortage: diff,
+                required: req,
+                actual: act,
+              });
+            }
+          });
+        });
+      });
+
+      return result;
+    },
+    [DAY_KEYS, isNone, toInt, toIntOrNull, toWeekNo]
+  );
+
   const shortageList = useMemo(() => {
     const requiredByPosDay = {};
     const actualByWeekPosDay = {};
@@ -1021,6 +1107,174 @@ function AccountMemberRecordMainTableTab() {
     },
     [activeRows]
   );
+
+  const rootLabelByValue = useCallback(
+    (rootIdx) =>
+      rootOptions.find((o) => String(o.value) === String(rootIdx ?? ""))?.label ||
+      NONE_OPTION.label,
+    [NONE_OPTION.label, rootOptions]
+  );
+
+  const handleOpenTodayCheck = useCallback(async () => {
+    if ((accountList || []).length === 0) {
+      Swal.fire("안내", "거래처 목록이 아직 준비되지 않았습니다.", "info");
+      return;
+    }
+
+    setTodayModalOpen(true);
+    setTodayCheckLoading(true);
+
+    try {
+      const today = startOfDate(new Date());
+
+      const allRows = await Promise.all(
+        (accountList || []).map(async (account) => {
+          const accountId = String(account?.account_id ?? "").trim();
+          if (!accountId) return [];
+
+          const [standardRes, situationRes] = await Promise.all([
+            api.get("/Operate/AccountRecordStandardList", {
+              params: { account_id: accountId, del_yn: activeStatus },
+            }),
+            api.get("/Operate/RecordSituationList", {
+              params: { account_id: accountId, year, month },
+            }),
+          ]);
+
+          const standardRows = (standardRes?.data || []).map((item) =>
+            hydrateSchedule({
+              master_idx: item.master_idx,
+              account_id: item.account_id,
+              work_system: item.work_system,
+              position_type: item.position_type,
+              start_time: item.start_time,
+              end_time: item.end_time,
+              mon: item.mon,
+              tue: item.tue,
+              wed: item.wed,
+              thu: item.thu,
+              fri: item.fri,
+              sat: item.sat,
+              sun: item.sun,
+              root_idx: item.root_idx,
+            })
+          );
+
+          const situationRows = (situationRes?.data || []).map((item) => ({
+            week_number: item.week_number,
+            position_type: item.position_type,
+            mon: item.mon,
+            tue: item.tue,
+            wed: item.wed,
+            thu: item.thu,
+            fri: item.fri,
+            sat: item.sat,
+            sun: item.sun,
+          }));
+
+          const rootIdx = String(standardRows?.[0]?.root_idx ?? "").trim();
+          const normalizedRootIdx = normalizeToOptionValue(rootIdx, rootOptions || []);
+          const rootLabel = rootLabelByValue(normalizedRootIdx);
+          const getShiftByPositionForRows = (positionType) => {
+            const pos = String(positionType ?? "").trim();
+            if (!pos) return { start_time: "", end_time: "" };
+
+            const list = (standardRows || []).filter(
+              (r) => String(r?.position_type ?? "").trim() === pos
+            );
+
+            const pickMostCommon = (arr) => {
+              const freq = {};
+              arr.forEach((v) => {
+                const s = String(v ?? "").trim();
+                if (!s) return;
+                freq[s] = (freq[s] || 0) + 1;
+              });
+              const entries = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+              return entries.length ? entries[0][0] : "";
+            };
+
+            const startCandidates = list.map((r) => r?.start_time);
+            const endCandidates = list.map((r) => r?.end_time);
+
+            return {
+              start_time:
+                pickMostCommon(startCandidates) ||
+                String(startCandidates.find((v) => String(v ?? "").trim()) ?? ""),
+              end_time:
+                pickMostCommon(endCandidates) ||
+                String(endCandidates.find((v) => String(v ?? "").trim()) ?? ""),
+            };
+          };
+
+          return buildTodayShortagePayload(standardRows, situationRows)
+            .map((item) => {
+              const targetDate = getDateByWeekDay(year, month, item.week, item.dayKey);
+              if (!targetDate) return null;
+
+              const normalizedDate = startOfDate(targetDate);
+              const daysLeft = Math.floor(
+                (normalizedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+              );
+
+              if (daysLeft < 0) return null;
+
+              const shift = getShiftByPositionForRows(item.position_type);
+
+              return {
+                account_id: accountId,
+                account_name: account?.account_name || accountId,
+                root_label: rootLabel,
+                shortage_date: formatYMD(normalizedDate),
+                position_label: positionLabelOf(item.position_type),
+                start_time: shift.start_time || "-",
+                end_time: shift.end_time || "-",
+                days_left: daysLeft,
+                week: item.week,
+                day_order: DAY_KEYS.indexOf(item.dayKey),
+              };
+            })
+            .filter(Boolean);
+        })
+      );
+
+      const flattened = allRows.flat().sort((a, b) => {
+        if (String(a.account_id) !== String(b.account_id)) {
+          return String(a.account_id).localeCompare(String(b.account_id), undefined, {
+            numeric: true,
+          });
+        }
+        if (a.days_left !== b.days_left) return a.days_left - b.days_left;
+        if (a.shortage_date !== b.shortage_date) {
+          return String(a.shortage_date).localeCompare(String(b.shortage_date));
+        }
+        if (a.week !== b.week) return a.week - b.week;
+        return a.day_order - b.day_order;
+      });
+
+      setTodayCheckRows(flattened);
+    } catch (e) {
+      console.error(e);
+      setTodayCheckRows([]);
+      Swal.fire("실패", e?.message || "Today 확인 조회 중 오류가 발생했습니다.", "error");
+    } finally {
+      setTodayCheckLoading(false);
+    }
+  }, [
+    DAY_KEYS,
+    accountList,
+    activeStatus,
+    buildTodayShortagePayload,
+    formatYMD,
+    getDateByWeekDay,
+    hydrateSchedule,
+    month,
+    normalizeToOptionValue,
+    positionLabelOf,
+    rootLabelByValue,
+    rootOptions,
+    year,
+  ]);
 
   const handleClickShortageItem = useCallback(
     async ({ position_type, week, dayKey, dayLabel, posLabel, 부족 }) => {
@@ -1469,10 +1723,18 @@ function AccountMemberRecordMainTableTab() {
           ))}
         </TextField>
 
+        <MDButton
+          variant="outlined"
+          color="dark"
+          size="small"
+          onClick={handleOpenTodayCheck}
+          disabled={todayCheckLoading}
+        >
+          Today확인
+        </MDButton>
         <MDButton variant="contained" color="success" size="small" onClick={handleAddRow}>
           행추가
         </MDButton>
-
         <MDButton variant="contained" color="info" size="small" onClick={handleSave}>
           저장
         </MDButton>
@@ -1656,6 +1918,79 @@ function AccountMemberRecordMainTableTab() {
           </Grid>
         </Grid>
       </MDBox>
+
+      <Dialog
+        open={todayModalOpen}
+        onClose={() => setTodayModalOpen(false)}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle>{`Today확인 (${year}-${month})`}</DialogTitle>
+        <DialogContent>
+          {todayCheckLoading ? (
+            <MDBox sx={{ py: 2, fontSize: 13, color: "#555" }}>
+              전체 업장 부족 항목 계산 중...
+            </MDBox>
+          ) : todayCheckRows.length === 0 ? (
+            <MDBox sx={{ py: 2, fontSize: 13, color: "#555" }}>
+              오늘 이후 기준으로 부족한 항목이 없습니다.
+            </MDBox>
+          ) : (
+            <MDBox
+              sx={{
+                maxHeight: isMobile ? "60vh" : "70vh",
+                overflow: "auto",
+                "& table": { width: "100%", borderCollapse: "collapse", tableLayout: "fixed" },
+                "& th, & td": {
+                  border: "1px solid #e0e0e0",
+                  padding: "8px 6px",
+                  fontSize: 12,
+                  textAlign: "center",
+                  whiteSpace: "nowrap",
+                },
+                "& th": {
+                  background: "#f7fbff",
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                  fontWeight: 700,
+                },
+              }}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: "20%" }}>거래처</th>
+                    <th style={{ width: "22%" }}>권역</th>
+                    <th style={{ width: "14%" }}>부족한 일자</th>
+                    <th style={{ width: "12%" }}>구분</th>
+                    <th style={{ width: "10%" }}>시작</th>
+                    <th style={{ width: "10%" }}>마감</th>
+                    <th style={{ width: "12%" }}>남은 일수</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {todayCheckRows.map((row, idx) => (
+                    <tr key={`${row.account_id}-${row.shortage_date}-${row.position_label}-${idx}`}>
+                      <td title={row.account_name}>{row.account_name}</td>
+                      <td title={row.root_label}>{row.root_label}</td>
+                      <td>{row.shortage_date}</td>
+                      <td>{row.position_label}</td>
+                      <td>{row.start_time}</td>
+                      <td>{row.end_time}</td>
+                      <td
+                        style={{ color: row.days_left <= 10 ? "#d32f2f" : "#111", fontWeight: 700 }}
+                      >
+                        {row.days_left}일
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </MDBox>
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

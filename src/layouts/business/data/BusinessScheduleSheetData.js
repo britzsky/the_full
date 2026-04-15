@@ -28,6 +28,8 @@ export default function useBusinessSchedulesheetData(currentYear, currentMonth) 
         reg_dt: item.reg_dt,
         del_yn: item.del_yn,
         user_id: item.user_id,
+        account_id: item.account_id,
+        account_name: item.account_name,
         reg_user_id: item.reg_user_id,
         user_name: item.user_name
       }));

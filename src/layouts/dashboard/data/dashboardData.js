@@ -97,6 +97,8 @@ export default function useDashBoardData() {
           user_name: x.user_name || x.user_name || "",
           type: x.type || x.type || "",
           position_name: x.position_name || x.position_name || "",
+          account_id: x.account_id || "",
+          account_name: x.account_name || "",
           department: x.department || x.department || "",
         }))
       );
@@ -112,6 +114,8 @@ export default function useDashBoardData() {
           user_name: x.user_name || x.user_name || "",
           type: x.type || x.type || "",
           position_name: x.position_name || x.position_name || "",
+          account_id: x.account_id || "",
+          account_name: x.account_name || "",
           department: x.department || x.department || "",
         }))
       );

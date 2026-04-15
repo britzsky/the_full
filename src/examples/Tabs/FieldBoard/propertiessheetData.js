@@ -38,6 +38,8 @@ export default function usePropertiessheetData() {
           purchase_price: parseNumber(item.purchase_price),
           item_img: item.item_img,
           receipt_img: item.receipt_img,
+          receipt_img2: item.receipt_img2,
+          receipt_img3: item.receipt_img3,
           note: item.note,
           depreciation: item.depreciation
         }));

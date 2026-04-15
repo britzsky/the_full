@@ -38,6 +38,7 @@ const normalizeItemType = (v) => {
   const s = String(v ?? "").trim().toLowerCase();
   if (s === "1" || s.includes("식재료")) return "1";
   if (s === "2" || s.includes("소모품")) return "2";
+  if (s === "3" || s.includes("경관식")) return "3";
   return "";
 };
 
@@ -59,18 +60,24 @@ const summarizeTallyByDetail = (detailRows) => {
     food_vat: 0,
     food_taxFree: 0,
     food_total: 0,
+    scenic_tax: 0,
+    scenic_vat: 0,
+    scenic_taxFree: 0,
+    scenic_total: 0,
     expen_item_rows: 0,
     food_item_rows: 0,
+    scenic_item_rows: 0,
     expen_tax_rows: 0,
     food_tax_rows: 0,
+    scenic_tax_rows: 0,
   };
 
   (detailRows || []).forEach((item) => {
     const itemType = normalizeItemType(pickField(item, ["itemType", "itemtype", "item_type"]));
     const taxType = normalizeTaxType(pickField(item, ["taxType", "taxtype", "tax_type"]));
 
-    // itemtype: 1=식재료, 2=소모품
-    if (itemType !== "1" && itemType !== "2") return;
+    // itemtype: 1=식재료, 2=소모품, 3=경관식
+    if (itemType !== "1" && itemType !== "2" && itemType !== "3") return;
 
     const amountRaw = pickField(item, ["amount", "total_amount", "totalAmount"]);
     const qtyRaw = pickField(item, ["qty", "quantity"]);
@@ -81,7 +88,7 @@ const summarizeTallyByDetail = (detailRows) => {
       ? parseNumber(amountRaw)
       : (qty > 0 ? qty * unitPrice : unitPrice);
 
-    const prefix = itemType === "1" ? "food" : "expen";
+    const prefix = itemType === "1" ? "food" : itemType === "3" ? "scenic" : "expen";
     sum[`${prefix}_item_rows`] += 1;
 
     // taxtype: 1=과세, 2=면세
@@ -121,7 +128,8 @@ export default function useAccountPurchaseTallyData() {
 
   /**
    * 매입 집계 조회
-   * - AccountPurchaseTallyForTallyTab API 사용 (tb_account_purchase_tally 직접 조회)
+   * - AccountPurchaseTallyForTallyTab API 사용
+   *   (일반 타입: tb_account_purchase_tally/_detail, 1002/1003: 본사 법인카드 결제 테이블 기준)
    * - saleDate(YYYY-MM)를 fromDate(월 1일)~toDate(월 말일)로 변환해서 전송
    * - type이 "0"이면 전체 타입 조회
    * @param {Object} filters - { type, saleDate(YYYY-MM), account_id, ... }
@@ -160,6 +168,11 @@ export default function useAccountPurchaseTallyData() {
         food_vat:     formatNumber(item.food_vat),
         food_taxFree: formatNumber(item.food_taxFree),
         food_total:   formatNumber(item.food_total),
+        // 경관식(itemType=3): 과세 공급가 / 부가세 / 면세 / 합계
+        scenic_tax:     formatNumber(item.scenic_tax),
+        scenic_vat:     formatNumber(item.scenic_vat),
+        scenic_taxFree: formatNumber(item.scenic_taxFree),
+        scenic_total:   formatNumber(item.scenic_total),
         use_name: item.use_name || "",
         note: item.note || "",
         bizNo: item.bizNo || "",
@@ -167,11 +180,20 @@ export default function useAccountPurchaseTallyData() {
         reg_dt: item.reg_dt || "",
       }));
 
+      const hasSaleIdRow = mappedBase.some((row) => String(row?.sale_id ?? "").trim() !== "");
+      if (!hasSaleIdRow) {
+        setRows(mappedBase);
+        setOriginalRows(mappedBase.map((r) => ({ ...r })));
+        return;
+      }
+
       // ✅ 성능 최적화:
       // - 전체 조회(account_id 미선택)에서 행 수가 많으면 상세 API N회 호출이 매우 느려진다.
       // - 이 경우 서버 집계(AccountPurchaseTallyForTallyTab) 값을 그대로 사용한다.
       const isAllAccountQuery = String(toParam(filters?.account_id)) === "";
-      const useDetailRecalc = !isAllAccountQuery || mappedBase.length <= 300;
+      const isAllTypeQuery = String(toParam(filters?.type)) === "";
+      const isBroadQuery = isAllAccountQuery && isAllTypeQuery;
+      const useDetailRecalc = !isBroadQuery && (!isAllAccountQuery || mappedBase.length <= 300);
       if (!useDetailRecalc) {
         setRows(mappedBase);
         setOriginalRows(mappedBase.map((r) => ({ ...r })));
@@ -238,6 +260,16 @@ export default function useAccountPurchaseTallyData() {
             summary.food_tax_rows > 0 ? formatNumber(summary.food_vat) : row.food_vat,
           food_taxFree:
             summary.food_tax_rows > 0 ? formatNumber(summary.food_taxFree) : row.food_taxFree,
+
+          // ✅ 경관식: itemType=3 상세가 있을 때만 반영
+          scenic_total:
+            summary.scenic_item_rows > 0 ? formatNumber(summary.scenic_total) : row.scenic_total,
+          scenic_tax:
+            summary.scenic_tax_rows > 0 ? formatNumber(summary.scenic_tax) : row.scenic_tax,
+          scenic_vat:
+            summary.scenic_tax_rows > 0 ? formatNumber(summary.scenic_vat) : row.scenic_vat,
+          scenic_taxFree:
+            summary.scenic_tax_rows > 0 ? formatNumber(summary.scenic_taxFree) : row.scenic_taxFree,
         });
       }
 
@@ -266,15 +298,44 @@ export default function useAccountPurchaseTallyData() {
       const url = hasAccountId ? "/Operate/AccountMappingV2List" : "/Operate/AccountMappingList";
 
       const res = await api.get(url, {
-        params: hasAccountId ? { account_id: filters.account_id } : {},
+        params: hasAccountId
+          ? { account_id: filters.account_id, _ts: Date.now() }
+          : { _ts: Date.now() },
       });
 
       const list = Array.isArray(res.data) ? res.data : res.data?.rows || res.data?.data || [];
 
-      const mapped = (list || []).map((item) => ({
-        type: item.type,
-        name: item.name,
-      }));
+      const mapped = (list || [])
+        .filter((item) => String(item?.del_yn ?? "N") !== "Y")
+        .map((item) => ({
+          type: item.type,
+          name: item.name,
+        }));
+
+      const has1002 = mapped.some((item) => String(item?.type ?? "") === "1002");
+      const has1003 = mapped.some((item) => String(item?.type ?? "") === "1003");
+      const blocked1002 = (list || []).some(
+        (item) => String(item?.type ?? "") === "1002" && String(item?.del_yn ?? "N") === "Y"
+      );
+      const blocked1003 = (list || []).some(
+        (item) => String(item?.type ?? "") === "1003" && String(item?.del_yn ?? "N") === "Y"
+      );
+
+      if (!has1002 && !blocked1002) {
+        mapped.push({ type: "1002", name: "기타경비" });
+      }
+      if (!has1003 && !blocked1003) {
+        mapped.push({ type: "1003", name: "기타" });
+      }
+
+      mapped.sort((a, b) => {
+        const an = Number(a?.type);
+        const bn = Number(b?.type);
+        const aNum = Number.isFinite(an);
+        const bNum = Number.isFinite(bn);
+        if (aNum && bNum) return an - bn;
+        return String(a?.type ?? "").localeCompare(String(b?.type ?? ""), "ko");
+      });
 
       setMappingRows(mapped.map((r) => ({ ...r })));
     } catch (err) {

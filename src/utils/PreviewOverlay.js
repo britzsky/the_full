@@ -410,6 +410,10 @@ function PreviewOverlay({
         top: viewerPos.y,
         width: `${widthRatio * 100}vw`,
         height: `${heightRatio * 100}vh`,
+        minWidth: 280,
+        minHeight: 200,
+        resize: "both",
+        overflow: "hidden",
       };
     },
     [viewerPos.x, viewerPos.y, isMobile, currentFile?.kind]
@@ -489,7 +493,6 @@ function PreviewOverlay({
   const viewerTitleText = `${currentFile?.name || "첨부 미리보기"}${previewFiles.length ? `  (${safeIndex + 1}/${previewFiles.length})` : ""}`;
 
   const overlayElement = (
-    // 배경 클릭으로 닫기: 모달 외부 클릭 닫힘 UX를 기본으로 제공
     <div
       style={{
         position: "fixed",
@@ -499,11 +502,10 @@ function PreviewOverlay({
         height: "100vh",
         backgroundColor: "transparent",
         zIndex: 13000,
+        pointerEvents: "none",
       }}
-      onClick={onClose}
     >
-      {/* 내부 컨텐츠 클릭은 닫힘 이벤트 전파를 막아야 버튼/드래그가 정상 동작한다. */}
-      <div onClick={(e) => e.stopPropagation()} style={panelStyle}>
+      <div style={{ ...panelStyle, pointerEvents: "auto" }}>
         {/* 제목 바를 마우스로 잡아서 오버레이 위치를 이동할 수 있게 구성 */}
         <div
           style={{

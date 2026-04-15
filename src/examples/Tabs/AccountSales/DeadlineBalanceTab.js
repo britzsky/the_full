@@ -1108,16 +1108,12 @@ export default function DeadlineBalanceTab() {
       ? summary?.detailMonths || []
       : summary?.unpaidDetailMonths || [];
     if (targetDetailMonths.length === 0) return;
-    const currentBalancePrice = Math.max(0, parseNumber(row?.balance_price));
     setLongTermDetail({
       account_id: row?.account_id,
       account_name: row?.account_name,
       ...summary,
       detailMonths: targetDetailMonths,
       detailTitle: summary?.hasLongTerm ? "장기미수 세부내역" : "미납 품목 세부내역",
-      currentBalancePrice,
-      longTermTotal: currentBalancePrice,
-      totalUnpaidAmount: currentBalancePrice,
     });
     setLongTermModalOpen(true);
   };
@@ -2081,10 +2077,18 @@ export default function DeadlineBalanceTab() {
                   pr: isMobile ? 0 : 1,
                 }}
               >
-                {(longTermDetail?.detailMonths || []).length > 0 ? (
-                  longTermDetail.detailMonths.map((monthInfo, monthIndex, detailMonths) => {
+                {(longTermDetail?.detailMonths || []).length > 0 ? (() => {
+                  let cumulativeAmount = 0;
+                  return longTermDetail.detailMonths.map((monthInfo, monthIndex, detailMonths) => {
                     const monthDisplayAmounts = getLongTermMonthDisplayAmounts(monthInfo);
                     const isLastMonth = monthIndex === detailMonths.length - 1;
+
+                    // 차액 = 해당월 합계(생계비+일반식대+직원식대+보전) - 입금액
+                    const totalExpected = Math.max(0, parseNumber(monthInfo.totalExpected));
+                    const totalPaid = Math.max(0, parseNumber(monthInfo.totalPaid));
+                    const diffAmount = totalExpected - totalPaid;
+                    // 누계액 = 이전 누계 + 이번 차액
+                    cumulativeAmount += diffAmount;
 
                     return (
                       <Box key={monthInfo.ymKey} sx={{ border: "1px solid #cfcfcf", mb: isLastMonth ? 0 : 1 }}>
@@ -2153,12 +2157,10 @@ export default function DeadlineBalanceTab() {
                                 displayBreakdownText: monthDisplayAmounts.paidBreakdownText,
                                 displayAmountText: monthDisplayAmounts.paidAmountText,
                               },
-                              { label: "차액", value: Math.max(0, parseNumber(monthInfo.totalExpected)) },
+                              { label: "차액", value: diffAmount },
                               {
                                 label: "누계액",
-                                value: Math.max(0, parseNumber(monthInfo.totalOutstanding)),
-                                displayBreakdownText: monthDisplayAmounts.outstandingBreakdownText,
-                                displayAmountText: monthDisplayAmounts.outstandingAmountText,
+                                value: cumulativeAmount,
                                 highlight: true,
                               },
                             ].map((rowInfo) => (
@@ -2219,7 +2221,9 @@ export default function DeadlineBalanceTab() {
                                       </Typography>
                                     </Box>
                                   ) : (
-                                    rowInfo.displayAmountText || (rowInfo.value > 0 ? formatNumber(rowInfo.value) : "-")
+                                    rowInfo.displayAmountText || (
+                                      parseNumber(rowInfo.value) !== 0 ? formatNumber(rowInfo.value) : "-"
+                                    )
                                   )}
                                 </td>
                               </tr>
@@ -2228,8 +2232,8 @@ export default function DeadlineBalanceTab() {
                         </table>
                       </Box>
                     );
-                  })
-                ) : (
+                  });
+                })() : (
                   <MDTypography variant="button" color="text">
                     장기미수 대상이 없습니다.
                   </MDTypography>
@@ -2249,20 +2253,41 @@ export default function DeadlineBalanceTab() {
                       </tr>
                     </thead>
                     <tbody>
-                      {[
-                        {
-                          label: "총 장기미납",
-                          value: formatNumber(longTermDetail?.longTermTotal || 0) || "-",
-                        },
-                        {
-                          label: "입금한 금액",
-                          value: formatNumber(longTermDetail?.longTermPaidTotal || 0) || "-",
-                        },
-                        {
-                          label: "총 미납금",
-                          value: formatNumber(longTermDetail?.totalUnpaidAmount || 0) || "-",
-                        },
-                      ].map((rowInfo) => (
+                      {(() => {
+                        const detailMonths = longTermDetail?.detailMonths || [];
+                        const longTermExpectedTotal = detailMonths.reduce(
+                          (totalAcc, monthInfo) => totalAcc + TRACKED_UNPAID_TYPE_CODES.reduce(
+                            (monthAcc, typeCode) => monthAcc + Math.max(
+                              0,
+                              parseNumber(
+                                monthInfo?.typeRows?.find((item) => item.typeCode === typeCode)?.expected
+                              )
+                            ),
+                            0
+                          ),
+                          0
+                        );
+                        const longTermPaidTotal = detailMonths.reduce(
+                          (totalAcc, monthInfo) => totalAcc + Math.max(0, parseNumber(monthInfo?.totalPaid)),
+                          0
+                        );
+                        const totalUnpaidAmount = longTermExpectedTotal - longTermPaidTotal;
+
+                        return [
+                          {
+                            label: "총 장기미납",
+                            value: formatNumber(longTermExpectedTotal) || "-",
+                          },
+                          {
+                            label: "입금한 금액",
+                            value: formatNumber(longTermPaidTotal) || "-",
+                          },
+                          {
+                            label: "총 미납금",
+                            value: formatNumber(totalUnpaidAmount) || "-",
+                          },
+                        ];
+                      })().map((rowInfo) => (
                         <tr key={`summary_${rowInfo.label}`}>
                           <td
                             style={{

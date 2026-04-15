@@ -52,10 +52,11 @@ import BusinessSchedule from "layouts/business/BusinessScheduleSheet";
 import TeleManager from "layouts/business/telemanager";
 import ContractManager from "layouts/accountinfosheet";
 // 운영
-import OperateSchedule from "layouts/operate/OperateScheduleSheet";
+
 import OperateTab from "layouts/operate/operatetab";
 import OperateTab_3 from "layouts/operate/operatetab_3";
 import OperateTab_4 from "layouts/operate/operatetab_4";
+import OperateTab_5 from "layouts/operate/operatetab_5";
 import AccountIssueManager2 from "layouts/operate/accountissuesheet2";
 import BudgetManager from "layouts/operate/budgettablesheet";
 // 회계
@@ -267,7 +268,7 @@ const routes = [
         key: "operateschedule",
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/operateschedule",
-        component: <OperateSchedule />,
+        component: <OperateTab_5 />,
         allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
         accessMode: "AND",

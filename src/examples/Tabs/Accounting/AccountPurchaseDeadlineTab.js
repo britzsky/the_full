@@ -185,6 +185,8 @@ function AccountPurchaseDeadlineTab() {
   const detailWrapRef = useRef(null);
   const fileInputRefs = useRef({});
   const masterRowsRef = useRef([]);
+  const qtyRefs = useRef({});
+  const unitPriceRefs = useRef({});
 
   // ✅ 타입(요양원/산업체/학교) 옵션: 거래처(account_id) 기준으로 서버에서 받기
   const [typeOptions, setTypeOptions] = useState([]); // [{value, label}]
@@ -197,6 +199,7 @@ function AccountPurchaseDeadlineTab() {
     const mapped = arr
       .map((x) => {
         const value = x?.type ?? x?.account_type ?? x?.mapping_type ?? x?.code ?? x?.value ?? x?.id;
+        const delYn = String(x?.del_yn ?? "N");
 
         const label =
           x?.type_name ??
@@ -213,9 +216,9 @@ function AccountPurchaseDeadlineTab() {
 
         if (value === null || value === undefined || String(value).trim() === "") return null;
 
-        return { value: String(value), label: String(label ?? value) };
+        return { value: String(value), label: String(label ?? value), del_yn: delYn };
       })
-      .filter(Boolean);
+      .filter((x) => x && String(x.del_yn) !== "Y");
 
     // 중복 제거(값 기준)
     const uniq = [];
@@ -223,8 +226,36 @@ function AccountPurchaseDeadlineTab() {
     for (const o of mapped) {
       if (seen.has(o.value)) continue;
       seen.add(o.value);
-      uniq.push(o);
+      uniq.push({ value: o.value, label: o.label });
     }
+
+    // 기본 기타 타입(1002/1003)이 응답에서 누락된 경우 보강
+    const blockedSpecial = new Set(
+      arr
+        .map((x) => ({
+          type: String(x?.type ?? x?.value ?? ""),
+          del_yn: String(x?.del_yn ?? "N"),
+        }))
+        .filter((x) => (x.type === "1002" || x.type === "1003") && x.del_yn === "Y")
+        .map((x) => x.type)
+    );
+    if (!seen.has("1002") && !blockedSpecial.has("1002")) {
+      uniq.push({ value: "1002", label: "기타경비" });
+      seen.add("1002");
+    }
+    if (!seen.has("1003") && !blockedSpecial.has("1003")) {
+      uniq.push({ value: "1003", label: "기타" });
+      seen.add("1003");
+    }
+
+    uniq.sort((a, b) => {
+      const an = Number(a.value);
+      const bn = Number(b.value);
+      const aNum = Number.isFinite(an);
+      const bNum = Number.isFinite(bn);
+      if (aNum && bNum) return an - bn;
+      return String(a.value).localeCompare(String(b.value), "ko");
+    });
     return uniq;
   }, []);
 
@@ -234,12 +265,12 @@ function AccountPurchaseDeadlineTab() {
         setTypeOptions([]);
         return [];
       }
+
       try {
         setTypeLoading(true);
         const res = await api.get("/Operate/AccountMappingV2List", {
-          params: { account_id: accountId },
+          params: { account_id: accountId, _ts: Date.now() },
         });
-
         const opts = normalizeTypeOptions(res?.data);
 
         setTypeOptions(opts);
@@ -398,8 +429,30 @@ function AccountPurchaseDeadlineTab() {
     [masterSums]
   );
 
+  // ✅ 미저장 변경 여부 (handleAccountChange/handleSearch보다 먼저 선언)
+  const hasDirtyRowsEarly = useCallback(() => {
+    return rows.some((r) => r.__dirty) || detailRows.some((r) => r.__dirty);
+  }, [rows, detailRows]);
+
+  // handleSave는 아래 정의되므로 ref로 참조
+  const handleSaveRef = useRef(null);
+
   const handleAccountChange = useCallback(
     async (_, opt) => {
+      // ✅ 미저장 체크
+      if (hasDirtyRowsEarly()) {
+        const result = await Swal.fire({
+          title: "저장하지 않은 변경사항이 있습니다.",
+          text: "저장 후 이동하시겠습니까?",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "저장 후 이동",
+          cancelButtonText: "취소",
+        });
+        if (!result.isConfirmed) return;
+        if (handleSaveRef.current) await handleSaveRef.current();
+      }
+
       const nextId = opt ? String(opt.value) : "";
       const nextAccountTypeCode = opt ? String(opt.account_type_code ?? "") : "";
 
@@ -419,8 +472,7 @@ function AccountPurchaseDeadlineTab() {
       const opts = await fetchTypeOptions(nextId);
 
       // ✅ 2) filters 기반으로 next 구성
-      const preferredType = String(filters.type ?? "") === "0" ? "0" : nextAccountTypeCode;
-      const nextType = resolveNextType(opts, preferredType, nextAccountTypeCode);
+      const nextType = resolveNextType(opts, filters.type, nextAccountTypeCode);
       const next = { ...filters, account_id: nextId, type: nextType };
 
       // ✅ 3) 상태 반영 + 조회
@@ -434,11 +486,28 @@ function AccountPurchaseDeadlineTab() {
       resolveNextType,
       setDetailRows,
       setOriginalDetailRows,
+      hasDirtyRowsEarly,
     ]
   );
 
+  // ✅ 미저장 변경 여부 (handleSearch용 alias)
+  const hasDirtyRows = hasDirtyRowsEarly;
+
   // ✅ 조회 버튼 클릭
   const handleSearch = async () => {
+    if (hasDirtyRows()) {
+      const result = await Swal.fire({
+        title: "저장하지 않은 변경사항이 있습니다.",
+        text: "저장 후 조회하시겠습니까?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "저장 후 조회",
+        cancelButtonText: "취소",
+      });
+      if (!result.isConfirmed) return;
+      if (handleSaveRef.current) await handleSaveRef.current();
+      return; // handleSave 내부에서 fetchPurchaseList 이미 호출
+    }
     try {
       // 조회 시 미저장 수정값은 즉시 폐기하고 화면 DOM도 새로 마운트
       setRows((originalRows || []).map((r) => ({ ...r })));
@@ -450,7 +519,6 @@ function AccountPurchaseDeadlineTab() {
       setSelectedMasterIndex(-1);
       setDetailRows([]);
       setOriginalDetailRows([]);
-
       await fetchPurchaseList(filters);
     } catch (e) {
       Swal.fire("오류", e.message, "error");
@@ -664,12 +732,24 @@ function AccountPurchaseDeadlineTab() {
     return base;
   }, [filters.type, typeNameByValue]);
 
+  const masterTotalColIndex = useMemo(
+    () => masterColumns.findIndex((c) => c.accessorKey === "total"),
+    [masterColumns]
+  );
+
+  const masterSummaryTailColSpan = useMemo(() => {
+    const totalIndex = masterTotalColIndex >= 0 ? masterTotalColIndex : 8;
+    return Math.max(masterColumns.length - (totalIndex + 1), 0);
+  }, [masterColumns.length, masterTotalColIndex]);
+
   const detailColumns = useMemo(
     () => [
       { header: "상품명", accessorKey: "name", size: 220 },
       { header: "수량", accessorKey: "qty", size: 90 },
-      { header: "금액", accessorKey: "amount", size: 120 },
       { header: "단가", accessorKey: "unitPrice", size: 110 },
+      { header: "과세", accessorKey: "tax", size: 110 },
+      { header: "부가세", accessorKey: "vat", size: 110 },
+      { header: "금액", accessorKey: "amount", size: 120 },
       { header: "과세구분", accessorKey: "taxType", size: 110 },
       { header: "상품구분", accessorKey: "itemType", size: 110 },
     ],
@@ -786,7 +866,8 @@ function AccountPurchaseDeadlineTab() {
         formData.append("account_id", accountId);
         formData.append("saleDate", row.saleDate || "");
         formData.append("saveType", rowType === "1000" ? "cor" : "account");
-        if (row.sale_id) formData.append("sale_id", String(row.sale_id));
+        console.log("[업로드] 전송 sale_id:", row.sale_id, "rowIndex:", rowIndex);
+        formData.append("sale_id", String(row.sale_id || ""));
 
         const res = await api.post(endpoint, formData, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
@@ -801,9 +882,10 @@ function AccountPurchaseDeadlineTab() {
 
         const data = res.data || {};
         const main = data.main || data || {};
+        console.log("[업로드] 응답 sale_id:", main.sale_id, "기존 row.sale_id:", row.sale_id);
 
         const patch = {
-          ...(main.sale_id != null ? { sale_id: main.sale_id } : {}),
+          // sale_id는 기존 행 유지 — 응답값으로 덮으면 저장 시 새 행으로 INSERT됨
           ...(main.account_id != null && main.account_id !== "" ? { account_id: main.account_id } : {}),
           ...(main.saleDate != null ? { saleDate: main.saleDate } : {}),
           ...(main.use_name != null ? { use_name: main.use_name } : {}),
@@ -819,12 +901,13 @@ function AccountPurchaseDeadlineTab() {
             : {}),
         };
 
+        // rows 갱신 (dirty 유지 — 빨간색 표시 및 변경감지용)
         setRows((prev) =>
           prev.map((r, i) => (i === rowIndex ? { ...r, ...patch, __dirty: true } : r))
         );
 
-        // 업로드한 행 선택 유지
-        const uploadedSaleId = patch.sale_id ?? row.sale_id;
+        // 업로드한 행 선택 유지 (sale_id는 기존 행 것 사용)
+        const uploadedSaleId = row.sale_id;
         if (uploadedSaleId) {
           setSelectedSaleId(String(uploadedSaleId));
           setSelectedMasterIndex(rowIndex);
@@ -983,6 +1066,7 @@ function AccountPurchaseDeadlineTab() {
 
       delete next.__isNew;
       delete next.__dirty;
+      delete next.__taxManual;
 
       return next;
     },
@@ -1085,6 +1169,8 @@ function AccountPurchaseDeadlineTab() {
 
       qty: "",
       unitPrice: "",
+      tax: "",
+      vat: "",
       amount: "",
 
       // ✅ 기본값(선택)
@@ -1096,6 +1182,7 @@ function AccountPurchaseDeadlineTab() {
 
       user_id,
       __isNew: true,
+      __key: `new-${Date.now()}`,
     };
 
     setDetailRows((prev) => [newRow, ...prev]);
@@ -1153,28 +1240,54 @@ function AccountPurchaseDeadlineTab() {
       // ✅ detail이 변경됐으면 현재 detailRows 기준으로 master 자동계산값을 직접 계산
       // useEffect에 의존하지 않고 handleSave 시점에 즉시 반영
       let currentRows = rows || [];
-      if (modifiedDetail.length > 0 && selectedSaleId && selectedMasterIndex >= 0) {
-        let calcTotal = 0, calcTax = 0, calcVat = 0, calcTaxFree = 0;
-        (detailRows || []).forEach((r) => {
-          const amt = Number(String(r?.amount ?? "").replace(/,/g, "")) || 0;
-          const taxType = String(r?.taxType ?? "");
-          calcTotal += amt;
-          if (taxType === "1") {
-            const rowVat = Math.floor(amt / 11);
-            calcTax += amt - rowVat;
-            calcVat += rowVat;
-          } else if (taxType === "2") {
-            calcTaxFree += amt;
-          }
-        });
-        currentRows = currentRows.map((r, i) => {
-          if (i !== selectedMasterIndex) return r;
+      if (modifiedDetail.length > 0 && selectedSaleId) {
+        const toNumForSave = (v) => {
+          const n = Number(String(v ?? "").replace(/,/g, "").trim());
+          return Number.isFinite(n) ? n : 0;
+        };
+        const calcMasterTotalsForSave = (list) => {
+          let total = 0;
+          let tax = 0;
+          let vat = 0;
+          let taxFree = 0;
+
+          (list || []).forEach((r) => {
+            const amt = toNumForSave(r?.amount);
+            const taxType = String(r?.taxType ?? "");
+            const autoVat = taxType === "1" ? Math.floor(amt / 11) : 0;
+            const autoTax = taxType === "1" ? amt - autoVat : 0;
+            const inputTax = toNumForSave(r?.tax);
+            const inputVat = toNumForSave(r?.vat);
+            const hasManualFlag = !!r?.__taxManual;
+            const hasManualValue =
+              taxType === "1" &&
+              (String(r?.tax ?? "").trim() !== "" || String(r?.vat ?? "").trim() !== "") &&
+              (inputTax !== autoTax || inputVat !== autoVat);
+
+            total += amt;
+            if (hasManualFlag || hasManualValue) {
+              tax += inputTax;
+              vat += inputVat;
+            } else if (taxType === "1") {
+              tax += autoTax;
+              vat += autoVat;
+            } else if (taxType === "2") {
+              taxFree += amt;
+            }
+          });
+
+          return { total, tax, vat, taxFree };
+        };
+
+        const { total, tax, vat, taxFree } = calcMasterTotalsForSave(detailRows || []);
+        currentRows = currentRows.map((r) => {
+          if (String(r?.sale_id ?? "") !== String(selectedSaleId)) return r;
           return {
             ...r,
-            tax: calcTax.toLocaleString("ko-KR"),
-            vat: calcVat.toLocaleString("ko-KR"),
-            total: calcTotal.toLocaleString("ko-KR"),
-            taxFree: calcTaxFree.toLocaleString("ko-KR"),
+            tax: tax.toLocaleString("ko-KR"),
+            vat: vat.toLocaleString("ko-KR"),
+            total: total.toLocaleString("ko-KR"),
+            taxFree: taxFree.toLocaleString("ko-KR"),
             __dirty: true,
           };
         });
@@ -1241,7 +1354,6 @@ function AccountPurchaseDeadlineTab() {
 
       Swal.close();
       Swal.fire("성공", "저장되었습니다.", "success");
-
       // 상단 재조회 (selectedSaleId는 rows useEffect에서 자동 복원)
       await fetchPurchaseList(filters);
 
@@ -1282,6 +1394,9 @@ function AccountPurchaseDeadlineTab() {
     buildDetailRowForSave,
     setDetailTableKey,
   ]);
+
+  // handleSave ref 동기화 (handleAccountChange에서 forward 참조용)
+  handleSaveRef.current = handleSave;
 
   // -----------------------------
   // ✅ 엑셀 다운로드
@@ -1743,9 +1858,8 @@ function AccountPurchaseDeadlineTab() {
 
   // ✅ 하단 셀 스타일/값 변경 유틸 (select에도 사용)
   const getDetailCellStyle = useCallback(
-    (index, key, val) => {
-      const cur = detailRows?.[index];
-      if (cur?.__dirty) return { color: "red" };
+    (row, index, key, val) => {
+      if (row?.__dirty) return { color: "red" };
 
       const o = originalDetailRows?.[index] || {};
       const ov = o?.[key];
@@ -1758,13 +1872,60 @@ function AccountPurchaseDeadlineTab() {
       }
       return ov !== val ? { color: "red" } : { color: "black" };
     },
-    [detailRows, originalDetailRows, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
+    [originalDetailRows, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
   );
 
   const setDetailCell = useCallback(
     (rowIndex, key, value) => {
       setDetailRows((prev) =>
-        prev.map((x, idx) => (idx === rowIndex ? { ...x, [key]: value, __dirty: true } : x))
+        prev.map((x, idx) => {
+          if (idx !== rowIndex) return x;
+
+          const updated = { ...x, [key]: value, __dirty: true };
+
+          // tax/vat 직접 수기 입력 시 자동계산 비활성화 플래그
+          if (key === "tax" || key === "vat") {
+            updated.__taxManual = true;
+            return updated;
+          }
+
+          // qty 또는 unitPrice 변경 시: blur 확정(autoCalc=true)이면 amount/과세/부가세 자동계산
+          if (key === "qty" || key === "unitPrice") {
+            if (value?.__autoCalc) {
+              const finalVal = value.value;
+              updated[key] = finalVal;
+              updated.__taxManual = false;
+              // ref에서 읽어온 상대방 값 우선, 없으면 state 값 사용
+              const qtyVal = key === "qty" ? finalVal : (value._qtyValue ?? x.qty);
+              const upVal = key === "unitPrice" ? finalVal : (value._upValue ?? x.unitPrice);
+              const qNum = Number(String(qtyVal).replace(/,/g, "")) || 0;
+              const pNum = Number(String(upVal).replace(/,/g, "")) || 0;
+              if (qNum && pNum) {
+                const autoAmt = qNum * pNum;
+                updated.amount = autoAmt.toLocaleString("ko-KR");
+                const tType = String(x.taxType ?? "");
+                const autoVat = tType === "1" ? Math.floor(autoAmt / 11) : 0;
+                const autoTax = tType === "1" ? autoAmt - autoVat : 0;
+                updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
+                updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+              }
+            }
+            return updated;
+          }
+
+          // amount 또는 taxType 변경 시: __taxManual 리셋 후 자동계산
+          if (key === "amount" || key === "taxType") {
+            updated.__taxManual = false;
+            const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
+            const tType = String(key === "taxType" ? value : x.taxType);
+            const autoVat = tType === "1" ? Math.floor(amt / 11) : 0;
+            const autoTax = tType === "1" ? amt - autoVat : 0;
+            updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
+            updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+          }
+
+          return updated;
+        })
       );
     },
     [setDetailRows]
@@ -1826,13 +1987,26 @@ function AccountPurchaseDeadlineTab() {
       (list || []).forEach((r) => {
         const amt = toNum(r?.amount);
         const taxType = String(r?.taxType ?? "");
+        const autoVat = computeVat(amt, taxType);
+        const autoTax = computeTax(amt, taxType);
+        const inputTax = toNum(r?.tax);
+        const inputVat = toNum(r?.vat);
+        const hasManualFlag = !!r?.__taxManual;
+        const hasManualValue =
+          taxType === "1" &&
+          (String(stripComma(r?.tax ?? "")) !== "" || String(stripComma(r?.vat ?? "")) !== "") &&
+          (inputTax !== autoTax || inputVat !== autoVat);
+
         total += amt;
 
-        if (taxType === "1") {
-          const rowVat = Math.floor(amt / 11);
-          const rowTax = amt - rowVat;
-          tax += rowTax;
-          vat += rowVat;
+        if (hasManualFlag || hasManualValue) {
+          // 수기 입력된 행은 해당 값 그대로 사용
+          tax += inputTax;
+          vat += inputVat;
+          if (taxType === "2") taxFree += amt;
+        } else if (taxType === "1") {
+          tax += autoTax;
+          vat += autoVat;
         } else if (taxType === "2") {
           taxFree += amt;
         }
@@ -1840,20 +2014,21 @@ function AccountPurchaseDeadlineTab() {
 
       return { total, tax, vat, taxFree };
     },
-    [toNum]
+    [toNum, computeVat, computeTax, stripComma]
   );
 
   useEffect(() => {
     if (!selectedSaleId) return;
-    if (selectedMasterIndex < 0) return;
     if (detailLoading) return;
     if (!Array.isArray(detailRows) || detailRows.length === 0) return;
 
     const { total, tax, vat, taxFree } = calcMasterTotalsFromDetail(detailRows);
 
     setRows((prev) => {
-      if (!Array.isArray(prev) || !prev[selectedMasterIndex]) return prev;
-      const cur = prev[selectedMasterIndex];
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const targetIndex = prev.findIndex((r) => String(r?.sale_id ?? "") === String(selectedSaleId));
+      if (targetIndex < 0) return prev;
+      const cur = prev[targetIndex];
 
       const nextTaxText = tax.toLocaleString("ko-KR");
       const nextVatText = vat.toLocaleString("ko-KR");
@@ -1869,7 +2044,7 @@ function AccountPurchaseDeadlineTab() {
       if (same) return prev;
 
       return prev.map((r, i) => {
-        if (i !== selectedMasterIndex) return r;
+        if (i !== targetIndex) return r;
         return {
           ...r,
           tax: nextTaxText,
@@ -1882,7 +2057,6 @@ function AccountPurchaseDeadlineTab() {
     });
   }, [
     selectedSaleId,
-    selectedMasterIndex,
     detailLoading,
     detailRows,
     calcMasterTotalsFromDetail,
@@ -2487,25 +2661,17 @@ function AccountPurchaseDeadlineTab() {
                 <tfoot>
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={Math.max(masterTotalColIndex, 1)}
                       style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}
                     >
                       합계
                     </td>
-
-                    <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
-                      {masterSumText.tax}
-                    </td>
-                    <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
-                      {masterSumText.vat}
-                    </td>
-                    <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
-                      {masterSumText.taxFree}
-                    </td>
                     <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
                       {masterSumText.total}
                     </td>
-                    <td colSpan={Math.max(masterColumns.length - 8, 1)} style={{ background: "#f7f7f7" }} />
+                    {masterSummaryTailColSpan > 0 && (
+                      <td colSpan={masterSummaryTailColSpan} style={{ background: "#f7f7f7" }} />
+                    )}
                   </tr>
                 </tfoot>
               )}
@@ -2587,7 +2753,7 @@ function AccountPurchaseDeadlineTab() {
 
                       return (
                         <tr
-                          key={i}
+                          key={r.__key ?? r.item_id ?? i}
                           style={{
                             backgroundColor: rowChanged ? "rgba(211,47,47,0.04)" : "transparent",
                           }}
@@ -2603,7 +2769,7 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(220),
                               textAlign: "left",
-                              ...getDetailCellStyle(i, "name", r.name),
+                              ...getDetailCellStyle(r, i, "name", r.name),
                             }}
                           >
                             {r.name ?? ""}
@@ -2613,16 +2779,19 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(90),
                               textAlign: "right",
-                              ...getDetailCellStyle(i, "qty", r.qty),
+                              ...getDetailCellStyle(r, i, "qty", r.qty),
                             }}
                           >
                             <input
+                              key={`qty-${i}-${detailTableKey}`}
                               type="text"
                               defaultValue={r.qty ?? ""}
+                              ref={(el) => { if (el) qtyRefs.current[i] = el; }}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
                                 e.target.value = formatted;
-                                setDetailCell(i, "qty", formatted);
+                                const upFormatted = formatComma(unitPriceRefs.current[i]?.value ?? "");
+                                setDetailCell(i, "qty", { value: formatted, __autoCalc: true, _upValue: upFormatted });
                               }}
                               style={{
                                 width: "100%",
@@ -2631,7 +2800,91 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(i, "qty", r.qty)?.color || "inherit",
+                                color: getDetailCellStyle(r, i, "qty", r.qty)?.color || "inherit",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              ...fixedColStyle(110),
+                              textAlign: "right",
+                              ...getDetailCellStyle(r, i, "unitPrice", r.unitPrice),
+                            }}
+                          >
+                            <input
+                              key={`up-${i}-${detailTableKey}`}
+                              type="text"
+                              defaultValue={r.unitPrice ?? ""}
+                              ref={(el) => { if (el) unitPriceRefs.current[i] = el; }}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                e.target.value = formatted;
+                                const qtyFormatted = formatComma(qtyRefs.current[i]?.value ?? "");
+                                setDetailCell(i, "unitPrice", { value: formatted, __autoCalc: true, _qtyValue: qtyFormatted });
+                              }}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: getDetailCellStyle(r, i, "unitPrice", r.unitPrice)?.color || "inherit",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              ...fixedColStyle(110),
+                              textAlign: "right",
+                              ...getDetailCellStyle(r, i, "tax", r.tax),
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={r.tax ?? ""}
+                              onChange={(e) => setDetailCell(i, "tax", e.target.value)}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "tax", formatted);
+                              }}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: getDetailCellStyle(r, i, "tax", r.tax)?.color || "inherit",
+                              }}
+                            />
+                          </td>
+
+                          <td
+                            style={{
+                              ...fixedColStyle(110),
+                              textAlign: "right",
+                              ...getDetailCellStyle(r, i, "vat", r.vat),
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={r.vat ?? ""}
+                              onChange={(e) => setDetailCell(i, "vat", e.target.value)}
+                              onBlur={(e) => {
+                                const formatted = formatComma(e.target.value);
+                                setDetailCell(i, "vat", formatted);
+                              }}
+                              style={{
+                                width: "100%",
+                                textAlign: "right",
+                                fontSize: "12px",
+                                border: "none",
+                                outline: "none",
+                                background: "transparent",
+                                color: getDetailCellStyle(r, i, "vat", r.vat)?.color || "inherit",
                               }}
                             />
                           </td>
@@ -2640,7 +2893,7 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(120),
                               textAlign: "right",
-                              ...getDetailCellStyle(i, "amount", r.amount),
+                              ...getDetailCellStyle(r, i, "amount", r.amount),
                             }}
                           >
                             <input
@@ -2658,41 +2911,14 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(i, "amount", r.amount)?.color || "inherit",
-                              }}
-                            />
-                          </td>
-
-                          <td
-                            style={{
-                              ...fixedColStyle(110),
-                              textAlign: "right",
-                              ...getDetailCellStyle(i, "unitPrice", r.unitPrice),
-                            }}
-                          >
-                            <input
-                              type="text"
-                              defaultValue={r.unitPrice ?? ""}
-                              onBlur={(e) => {
-                                const formatted = formatComma(e.target.value);
-                                e.target.value = formatted;
-                                setDetailCell(i, "unitPrice", formatted);
-                              }}
-                              style={{
-                                width: "100%",
-                                textAlign: "right",
-                                fontSize: "12px",
-                                border: "none",
-                                outline: "none",
-                                background: "transparent",
-                                color: getDetailCellStyle(i, "unitPrice", r.unitPrice)?.color || "inherit",
+                                color: getDetailCellStyle(r, i, "amount", r.amount)?.color || "inherit",
                               }}
                             />
                           </td>
 
                           <td
                             style={fixedColStyle(110, {
-                              ...getDetailCellStyle(i, "taxType", r.taxType),
+                              ...getDetailCellStyle(r, i, "taxType", r.taxType),
                             })}
                           >
                             <Select
@@ -2710,10 +2936,10 @@ function AccountPurchaseDeadlineTab() {
                                 fontSize: 12,
                                 height: 25,
                                 "& .MuiSelect-select": {
-                                  color: getDetailCellStyle(i, "taxType", r.taxType)?.color || "black",
+                                  color: getDetailCellStyle(r, i, "taxType", r.taxType)?.color || "black",
                                 },
                                 "& .MuiSvgIcon-root": {
-                                  color: getDetailCellStyle(i, "taxType", r.taxType)?.color || "black",
+                                  color: getDetailCellStyle(r, i, "taxType", r.taxType)?.color || "black",
                                 },
                               }}
                             >
@@ -2730,7 +2956,7 @@ function AccountPurchaseDeadlineTab() {
 
                           <td
                             style={fixedColStyle(110, {
-                              ...getDetailCellStyle(i, "itemType", r.itemType),
+                              ...getDetailCellStyle(r, i, "itemType", r.itemType),
                             })}
                           >
                             <Select
@@ -2748,10 +2974,10 @@ function AccountPurchaseDeadlineTab() {
                                 fontSize: 12,
                                 height: 25,
                                 "& .MuiSelect-select": {
-                                  color: getDetailCellStyle(i, "itemType", r.itemType)?.color || "black",
+                                  color: getDetailCellStyle(r, i, "itemType", r.itemType)?.color || "black",
                                 },
                                 "& .MuiSvgIcon-root": {
-                                  color: getDetailCellStyle(i, "itemType", r.itemType)?.color || "black",
+                                  color: getDetailCellStyle(r, i, "itemType", r.itemType)?.color || "black",
                                 },
                               }}
                             >

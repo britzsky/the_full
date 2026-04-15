@@ -913,6 +913,11 @@ function TallySheet() {
 
     if (cardForm.receipt_image) fd.append("file", cardForm.receipt_image);
 
+    if (mode !== "edit" && !cardForm.receipt_image) {
+      Swal.fire("안내", "영수증을 등록해주세요.", "warning");
+      return false;
+    }
+
     if (mode === "edit") {
       if (cardForm.id != null) fd.append("id", cardForm.id);
       if (cardForm.sale_id) fd.append("sale_id", String(cardForm.sale_id));
@@ -1307,6 +1312,11 @@ function TallySheet() {
 
     if (cashForm.receipt_image) fd.append("file", cashForm.receipt_image);
 
+    if (mode !== "edit" && !cashForm.receipt_image) {
+      Swal.fire("안내", "영수증을 등록해주세요.", "warning");
+      return false;
+    }
+
     if (mode === "edit") {
       if (cashForm.id != null) fd.append("id", cashForm.id);
       if (cashForm.sale_id) fd.append("sale_id", String(cashForm.sale_id));
@@ -1661,6 +1671,11 @@ function TallySheet() {
     fd.append("total", parseNumber(otherForm.total));
 
     if (otherForm.receipt_image) fd.append("file", otherForm.receipt_image);
+
+    if (mode !== "edit" && !otherForm.receipt_image) {
+      Swal.fire("안내", "영수증을 등록해주세요.", "warning");
+      return false;
+    }
 
     if (mode === "edit") {
       if (otherForm.id != null) fd.append("id", otherForm.id);
@@ -2846,6 +2861,9 @@ function TallySheet() {
     [useLockMap]
   );
 
+  // ✅ 낙관적 업데이트용 로컬 override 맵 (서버 재조회 완료 전까지 즉시 반영)
+  const [pointOverrideMap, setPointOverrideMap] = useState(new Map());
+
   // ✅ pointList -> (year,month,type,day) 단위로 색상 lookup 맵
   const pointColorMap = useMemo(() => {
     const map = new Map();
@@ -2864,8 +2882,13 @@ function TallySheet() {
 
       map.set(buildPointKey(y, m, t, d), color);
     });
+    // override 적용 (저장 직후 낙관적 반영)
+    pointOverrideMap.forEach((color, key) => {
+      if (color === null) map.delete(key);
+      else map.set(key, color);
+    });
     return map;
-  }, [pointList, selectedAccountId]);
+  }, [pointList, selectedAccountId, pointOverrideMap]);
 
   // ✅ 우클릭 메뉴 상태(마우스 좌표 + 타겟 셀 정보)
   const [pointMenu, setPointMenu] = useState({
@@ -2944,6 +2967,16 @@ function TallySheet() {
         date: Number(t.day),
       };
 
+      // ✅ 낙관적 업데이트: 저장 전 즉시 색상 반영
+      const overrideKey = buildPointKey(t.year, t.month, t.type, t.day);
+      const optimisticColor = getPointColorByGubun(gubun);
+      setPointOverrideMap((prev) => {
+        const next = new Map(prev);
+        if (optimisticColor) next.set(overrideKey, optimisticColor);
+        else next.set(overrideKey, null);
+        return next;
+      });
+
       try {
         const res = await api.post("/Operate/TallySheetPointSave", payload, {
           validateStatus: () => true,
@@ -2965,9 +2998,20 @@ function TallySheet() {
           timer: 900,
         });
 
-        // ✅ 저장한 월 기준으로 pointList 재조회
+        // ✅ 저장한 월 기준으로 pointList 재조회 후 override 초기화
         await refetchPointForExactMonth(t.year, t.month);
+        setPointOverrideMap((prev) => {
+          const next = new Map(prev);
+          next.delete(overrideKey);
+          return next;
+        });
       } catch (err) {
+        // 실패 시 override 롤백
+        setPointOverrideMap((prev) => {
+          const next = new Map(prev);
+          next.delete(overrideKey);
+          return next;
+        });
         closePointMenu();
         Swal.fire("오류", err.message || "포인트 저장 중 오류", "error");
       }
@@ -3076,7 +3120,7 @@ function TallySheet() {
 
                 const isActiveThisCell = isActiveRow && activeCell.colKey === colKey;
 
-                const baseBg = !canInlineEdit && isBaseCell && !isTotalRow ? "#F3F8FD" : "";
+                const baseBg = "";
 
                 const nameLockedBg = colKey === "name" && rowLocked ? "#E9E9E9" : "";
 
@@ -3087,24 +3131,17 @@ function TallySheet() {
                   pointColor &&
                   ["#f8fbfe", "#fff", "#ffffff"].includes(String(pointColor).toLowerCase());
 
-                const overlayOn = (overlay, base) =>
-                  `linear-gradient(${overlay}, ${overlay}), ${base}`;
+                // 파란색/빨간색만 노란 activeRow보다 우선 (흰색은 노랑이 덮음)
+                const isStrongPoint = pointColor && !isLightPoint;
 
-                // ✅ activeCell/activeRow + pointColor가 같이 있을 때 섞어서 보여주기
+                // ✅ 우선순위: locked > 파/빨 pointColor > activeCellBg > activeRowBg > 흰 pointColor > 기본
                 const mergedBg = (() => {
-                  // 입력불가 행은 전체를 회색으로 표시
                   if (lockedRowBg) return lockedRowBg;
-
-                  // 활성 셀 배경이 있으면 그걸 최우선으로
-                  if (activeCellBg)
-                    return pointColor ? overlayOn(activeCellBg, pointColor) : activeCellBg;
-
-                  // 포인트색이 있는 셀인데, 활성행이면 노랑을 위에 오버레이
-                  if (pointColor)
-                    return isActiveRow ? overlayOn(activeRowBg, pointColor) : pointColor;
-
-                  // 포인트색 없으면 기존대로
-                  return activeRowBg || nameLockedBg || baseBg || "";
+                  if (isStrongPoint) return pointColor;
+                  if (activeCellBg) return activeCellBg;
+                  if (activeRowBg) return activeRowBg;
+                  if (pointColor) return pointColor; // 흰색은 activeRow 없을 때만
+                  return nameLockedBg || baseBg || "";
                 })();
 
                 return (
@@ -3115,11 +3152,13 @@ function TallySheet() {
                     style={{
                       color: isChanged
                         ? "#d32f2f"
-                        : pointColor
-                          ? isLightPoint
-                            ? "black"
-                            : "#fff"
-                          : "black",
+                        : lockedRowBg
+                          ? "black"
+                          : pointColor
+                            ? isLightPoint
+                              ? "black"
+                              : "#fff"
+                            : "black",
                       width: "80px",
                       cursor: !isBaseCell
                         ? "default"
@@ -3193,7 +3232,8 @@ function TallySheet() {
         sx={{
           position: isMobileOrTablet ? "static" : "sticky",
           top: isMobileOrTablet ? "auto" : 0,
-          zIndex: isMobileOrTablet ? "auto" : 10,
+          zIndex: isMobileOrTablet ? 20 : 1200,
+          isolation: "isolate",
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}
@@ -3287,8 +3327,8 @@ function TallySheet() {
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
             sx={{
-              minWidth: isMobile ? 140 : 150,
-              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+              minWidth: isMobile ? 80 : 90,
+              flex: isMobileOrTablet ? "1 1 80px" : "0 0 auto",
             }}
             SelectProps={{ native: true }}
           >
@@ -3309,8 +3349,8 @@ function TallySheet() {
               setTabValue(0);
             }}
             sx={{
-              minWidth: isMobile ? 140 : 150,
-              flex: isMobileOrTablet ? "1 1 120px" : "0 0 auto",
+              minWidth: isMobile ? 70 : 80,
+              flex: isMobileOrTablet ? "1 1 70px" : "0 0 auto",
             }}
             SelectProps={{ native: true }}
           >
@@ -3405,8 +3445,8 @@ function TallySheet() {
               display: "flex",
               flexDirection: "column",
               gap: 1,
-              position: isMobileOrTablet ? "relative" : undefined,
-              zIndex: isMobileOrTablet ? 0 : undefined,
+              position: "relative",
+              zIndex: 1,
             }}
           >
             <Box
@@ -3433,8 +3473,8 @@ function TallySheet() {
                 indicatorColor="secondary"
                 variant={isMobile ? "scrollable" : "standard"}
                 sx={{
-                  position: isMobileOrTablet ? "relative" : undefined,
-                  zIndex: isMobileOrTablet ? 0 : undefined,
+                  position: "relative",
+                  zIndex: 1,
                   minHeight: 36,
                   "& .MuiTab-root": {
                     minHeight: 36,
@@ -5254,7 +5294,7 @@ function TallySheet() {
 
             <Grid item xs={12}>
               <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                <MDButton component="label" variant="contained" color="info" size="small">
+                <MDButton component="label" variant="contained" color="info" size="small" sx={{ color: "#fff !important" }}>
                   영수증 파일 선택
                   <input
                     ref={cardFileRef}
@@ -5453,7 +5493,7 @@ function TallySheet() {
 
             <Grid item xs={12}>
               <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                <MDButton component="label" variant="contained" color="info" size="small">
+                <MDButton component="label" variant="contained" color="info" size="small" sx={{ color: "#fff !important" }}>
                   영수증 파일 선택
                   <input
                     ref={cashFileRef}
@@ -5614,7 +5654,7 @@ function TallySheet() {
 
             <Grid item xs={12}>
               <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
-                <MDButton component="label" variant="contained" color="info" size="small">
+                <MDButton component="label" variant="contained" color="info" size="small" sx={{ color: "#fff !important" }}>
                   영수증 파일 선택
                   <input
                     ref={otherFileRef}

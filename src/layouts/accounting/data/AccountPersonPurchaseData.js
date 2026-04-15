@@ -98,7 +98,8 @@ export default function useAccountCorporateCardData() {
             params: { year, month, account_id },
           });
 
-          setPaymentRows(res.data || []);
+          const list = Array.isArray(res.data) ? res.data : [];
+          setPaymentRows(list.filter((row) => String(row?.type ?? "") === "1008"));
         } catch (err) {
           console.error("결제내역 조회 실패:", err);
           setPaymentRows([]);

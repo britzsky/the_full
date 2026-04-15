@@ -1,5 +1,5 @@
 // src/layouts/property/PropertySheetTab.js
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import {
@@ -10,6 +10,7 @@ import {
   Tooltip,
   Autocomplete,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
@@ -17,8 +18,42 @@ import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiess
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
+import ExcelJS from "exceljs";
 import dayjs from "dayjs";
 import { API_BASE_URL } from "config";
+
+const RECEIPT_IMAGE_FIELDS = ["receipt_img", "receipt_img2", "receipt_img3"];
+const RECEIPT_IMAGE_MAX_COUNT = RECEIPT_IMAGE_FIELDS.length;
+
+const isLocalUploadImage = (value) =>
+  !!value &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  value.file instanceof File &&
+  typeof value.previewUrl === "string";
+
+const createLocalUploadImage = (file) => ({
+  file,
+  previewUrl: URL.createObjectURL(file),
+});
+
+const extractUploadFile = (value) => {
+  if (isLocalUploadImage(value)) return value.file;
+  return value instanceof File ? value : null;
+};
+
+const getReceiptImageValues = (row) =>
+  RECEIPT_IMAGE_FIELDS.map((field) => row?.[field]).filter(Boolean);
+
+const applyReceiptImageValues = (row, imageValues) => {
+  const nextRow = { ...row };
+
+  RECEIPT_IMAGE_FIELDS.forEach((field, index) => {
+    nextRow[field] = imageValues[index] || "";
+  });
+
+  return nextRow;
+};
 
 function PropertySheetTab() {
   const theme = useTheme();
@@ -30,6 +65,8 @@ function PropertySheetTab() {
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
+  const [excelDownloading, setExcelDownloading] = useState(false);
+  const rowsRef = useRef([]);
 
   // ✅ 우클릭(컨텍스트) 메뉴 상태
   const [ctxMenu, setCtxMenu] = useState({
@@ -55,6 +92,96 @@ function PropertySheetTab() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  const cleanupLocalImageValue = useCallback((value) => {
+    if (isLocalUploadImage(value)) {
+      URL.revokeObjectURL(value.previewUrl);
+    }
+  }, []);
+
+  const cleanupRowLocalImageValues = useCallback(
+    (row) => {
+      cleanupLocalImageValue(row?.item_img);
+      RECEIPT_IMAGE_FIELDS.forEach((field) => cleanupLocalImageValue(row?.[field]));
+    },
+    [cleanupLocalImageValue]
+  );
+
+  const resolveImageSource = useCallback((value) => {
+    if (!value) return "";
+    if (typeof value === "string") return `${API_BASE_URL}${value}`;
+    if (isLocalUploadImage(value)) return value.previewUrl;
+    return "";
+  }, []);
+
+  const updateReceiptImages = useCallback(
+    (rowIndex, nextImagesOrUpdater) => {
+      setRows((prevRows) =>
+        prevRows.map((row, idx) => {
+          if (idx !== rowIndex) return row;
+
+          const currentImages = getReceiptImageValues(row);
+          const nextImagesRaw =
+            typeof nextImagesOrUpdater === "function"
+              ? nextImagesOrUpdater(currentImages, row)
+              : nextImagesOrUpdater;
+          const nextImages = (Array.isArray(nextImagesRaw) ? nextImagesRaw : currentImages)
+            .filter(Boolean)
+            .slice(0, RECEIPT_IMAGE_MAX_COUNT);
+
+          currentImages.forEach((imageValue) => {
+            if (isLocalUploadImage(imageValue) && !nextImages.includes(imageValue)) {
+              cleanupLocalImageValue(imageValue);
+            }
+          });
+
+          const isSameOrder =
+            currentImages.length === nextImages.length &&
+            currentImages.every((imageValue, imageIndex) => imageValue === nextImages[imageIndex]);
+
+          return isSameOrder ? row : applyReceiptImageValues(row, nextImages);
+        })
+      );
+    },
+    [cleanupLocalImageValue]
+  );
+
+  const handleReceiptFileChange = useCallback(
+    (rowIndex, fileList) => {
+      const selectedFiles = Array.from(fileList || []).filter(Boolean);
+      if (selectedFiles.length === 0) return;
+
+      const currentImages = getReceiptImageValues(rows[rowIndex] || {});
+      const remainCount = RECEIPT_IMAGE_MAX_COUNT - currentImages.length;
+      if (remainCount <= 0) return;
+
+      const nextLocalImages = selectedFiles
+        .slice(0, remainCount)
+        .map((file) => createLocalUploadImage(file));
+
+      updateReceiptImages(rowIndex, [...currentImages, ...nextLocalImages]);
+
+      if (selectedFiles.length > remainCount) {
+        Swal.fire({
+          title: "안내",
+          text: `영수증 이미지는 최대 ${RECEIPT_IMAGE_MAX_COUNT}장까지 등록할 수 있습니다.`,
+          icon: "info",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+      }
+    },
+    [rows, updateReceiptImages]
+  );
+
+  const handleRemoveReceiptImage = useCallback(
+    (rowIndex, imageIndex) => {
+      updateReceiptImages(rowIndex, (currentImages) =>
+        currentImages.filter((_, currentIndex) => currentIndex !== imageIndex)
+      );
+    },
+    [updateReceiptImages]
+  );
 
   // ✅ localStorage account_id 있으면 거래처 고정
   const lockedAccountId = useMemo(() => {
@@ -91,7 +218,7 @@ function PropertySheetTab() {
   useEffect(() => {
     // ✅ type은 select 비교/표시 위해 문자열로 통일
     const deepCopy = (activeRows || []).map((r) => ({
-      ...r,
+      ...applyReceiptImageValues(r, getReceiptImageValues(r)),
       type: r.type == null ? "0" : String(r.type),
     }));
 
@@ -114,9 +241,10 @@ function PropertySheetTab() {
       return { ...row, depreciation: formatNumber(depreciationValue) };
     });
 
+    rowsRef.current.forEach((row) => cleanupRowLocalImageValues(row));
     setRows(updated);
     setOriginalRows(deepCopy);
-  }, [activeRows]);
+  }, [activeRows, cleanupRowLocalImageValues]);
 
   useEffect(() => {
     if (!accountList?.length) return;
@@ -133,11 +261,30 @@ function PropertySheetTab() {
     }
   }, [accountList, selectedAccountId, lockedAccountId]);
 
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  useEffect(
+    () => () => {
+      rowsRef.current.forEach((row) => cleanupRowLocalImageValues(row));
+    },
+    [cleanupRowLocalImageValues]
+  );
+
   const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
-      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
+      prevRows.map((row, idx) => {
+        if (idx !== rowIndex) return row;
+
+        const prevValue = row[key];
+        if (prevValue === value) return row;
+
+        cleanupLocalImageValue(prevValue);
+        return { ...row, [key]: value };
+      })
     );
   };
 
@@ -177,6 +324,8 @@ function PropertySheetTab() {
       purchase_price: "0",
       item_img: "",
       receipt_img: "",
+      receipt_img2: "",
+      receipt_img3: "",
       note: "",
       depreciation: "",
       del_yn: "N", // ✅ 기본 N
@@ -188,11 +337,9 @@ function PropertySheetTab() {
 
   const handleViewImage = (value) => {
     if (!value) return;
-    if (typeof value === "object") {
-      setViewImageSrc(URL.createObjectURL(value));
-    } else {
-      setViewImageSrc(`${API_BASE_URL}${value}`);
-    }
+    const imageSrc = resolveImageSource(value);
+    if (!imageSrc) return;
+    setViewImageSrc(imageSrc);
   };
   const handleCloseViewer = () => setViewImageSrc(null);
 
@@ -250,9 +397,9 @@ function PropertySheetTab() {
         }
       });
 
-      // ✅ 이미지가 File 객체면(로컬 업로드) 삭제 저장에선 굳이 필요 없으니 제거
-      ["item_img", "receipt_img"].forEach((f) => {
-        if (deleteRow[f] && typeof deleteRow[f] === "object") {
+      // ✅ 로컬에서만 들고 있는 업로드 파일은 삭제 저장 payload에서 제외
+      ["item_img", ...RECEIPT_IMAGE_FIELDS].forEach((f) => {
+        if (extractUploadFile(deleteRow[f])) {
           delete deleteRow[f];
         }
       });
@@ -262,6 +409,7 @@ function PropertySheetTab() {
       });
 
       if (response?.data?.code === 200) {
+        cleanupRowLocalImageValues(row);
         // ✅ 재조회 없이 화면에서만 제거
         setRows((prev) => prev.filter((_, i) => i !== rowIndex));
         setOriginalRows((prev) => prev.filter((_, i) => i !== rowIndex));
@@ -337,6 +485,272 @@ function PropertySheetTab() {
     document.body.removeChild(a);
   }, []);
 
+  const buildImageUrl = useCallback((path) => {
+    if (!path || typeof path !== "string") return "";
+    const raw = /^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path}`;
+    return encodeURI(raw);
+  }, []);
+
+  const toImageExtension = useCallback((mimeType = "", fileName = "") => {
+    const mime = String(mimeType || "").toLowerCase();
+    const name = String(fileName || "").toLowerCase();
+
+    if (mime.includes("png") || name.endsWith(".png")) return "png";
+    if (mime.includes("jpeg") || mime.includes("jpg") || name.endsWith(".jpg") || name.endsWith(".jpeg"))
+      return "jpeg";
+    if (mime.includes("gif") || name.endsWith(".gif")) return "gif";
+
+    return "";
+  }, []);
+
+  const arrayBufferToBase64 = useCallback((arrayBuffer) => {
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunkSize = 0x8000;
+    let binary = "";
+
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+
+    return window.btoa(binary);
+  }, []);
+
+  const loadImageForExcel = useCallback(
+    async (value) => {
+      if (!value) return null;
+
+      const uploadFile = extractUploadFile(value);
+      if (uploadFile) {
+        const extension = toImageExtension(uploadFile.type, uploadFile.name);
+        if (!extension) return null;
+        const base64 = arrayBufferToBase64(await uploadFile.arrayBuffer());
+        return { base64: `data:${uploadFile.type || `image/${extension}`};base64,${base64}`, extension };
+      }
+
+      if (typeof value === "string") {
+        const url = buildImageUrl(value);
+        if (!url) return null;
+
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return null;
+
+        const blob = await res.blob();
+        const extension = toImageExtension(blob.type, value);
+        if (!extension) return null;
+
+        const base64 = arrayBufferToBase64(await blob.arrayBuffer());
+        return { base64: `data:${blob.type || `image/${extension}`};base64,${base64}`, extension };
+      }
+
+      return null;
+    },
+    [arrayBufferToBase64, buildImageUrl, toImageExtension]
+  );
+
+  const handleExcelDownload = useCallback(async () => {
+    if (excelDownloading) return;
+    if (!rows.length) {
+      Swal.fire({
+        title: "안내",
+        text: "다운로드할 데이터가 없습니다.",
+        icon: "info",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+      return;
+    }
+
+    try {
+      setExcelDownloading(true);
+      Swal.fire({
+        title: "엑셀 생성 중...",
+        text: "이미지 포함 파일을 준비 중입니다.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "THEFULL";
+      const ws = workbook.addWorksheet("기물관리");
+
+      const headers = [
+        "구매일자",
+        "구매처",
+        "품목",
+        "규격",
+        "수량",
+        "신규/중고",
+        "구매가격",
+        "예상감가(60개월 기준)",
+        "제품사진",
+        "영수증사진1",
+        "영수증사진2",
+        "영수증사진3",
+        "비고",
+      ];
+
+      ws.columns = [
+        { width: 13 },
+        { width: 18 },
+        { width: 20 },
+        { width: 14 },
+        { width: 8 },
+        { width: 11 },
+        { width: 13 },
+        { width: 18 },
+        { width: 40 },
+        { width: 40 },
+        { width: 40 },
+        { width: 40 },
+        { width: 20 },
+      ];
+
+      ws.addRow(headers);
+      const borderThin = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+
+      headers.forEach((_, idx) => {
+        const cell = ws.getCell(1, idx + 1);
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+        cell.border = borderThin;
+      });
+
+      const imageTasks = [];
+
+      rows.forEach((row, idx) => {
+        const excelRowNo = idx + 2;
+        const receiptImages = getReceiptImageValues(row);
+
+        ws.addRow([
+          row.purchase_dt || "",
+          row.purchase_name || "",
+          row.item || "",
+          row.spec || "",
+          parseNumber(row.qty || 0),
+          String(row.type) === "1" ? "중고" : "신규",
+          parseNumber(row.purchase_price || 0),
+          parseNumber(row.depreciation || 0),
+          "",
+          "",
+          "",
+          "",
+          row.note || "",
+        ]);
+
+        for (let c = 1; c <= 13; c += 1) {
+          const cell = ws.getCell(excelRowNo, c);
+          cell.border = borderThin;
+          cell.alignment = { horizontal: c >= 5 && c <= 8 ? "right" : "center", vertical: "middle" };
+          if ([5, 7, 8].includes(c)) cell.numFmt = "#,##0";
+          if ([9, 10, 11, 12, 13].includes(c)) cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+        }
+
+        imageTasks.push({ rowNo: excelRowNo, colNo: 9, source: row.item_img, kind: "item" });
+        receiptImages
+          .filter((imageValue) => Boolean(imageValue))
+          .slice(0, 3)
+          .forEach((imageValue, imageIndex) => {
+            imageTasks.push({
+              rowNo: excelRowNo,
+              colNo: 10 + imageIndex,
+              source: imageValue,
+              kind: "receipt",
+            });
+          });
+      });
+
+      const runImageTask = async (task) => {
+        if (!task?.source) return;
+        const image = await loadImageForExcel(task.source);
+        if (!image) return;
+
+        const imageId = workbook.addImage({
+          base64: image.base64,
+          extension: image.extension,
+        });
+
+        const isReceiptImage = task.kind === "receipt";
+        const imageWidth = isReceiptImage ? 220 : 260;
+        const imageHeight = isReceiptImage ? 165 : 195;
+        const colOffset = 0.02;
+        const rowOffset = isReceiptImage ? 0.06 : 0.04;
+        const minRowHeight = isReceiptImage ? 190 : 210;
+
+        ws.getRow(task.rowNo).height = Math.max(ws.getRow(task.rowNo).height || 20, minRowHeight);
+        ws.addImage(imageId, {
+          tl: { col: task.colNo - 1 + colOffset, row: task.rowNo - 1 + rowOffset },
+          ext: { width: imageWidth, height: imageHeight },
+        });
+      };
+
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < imageTasks.length) {
+          const current = imageTasks[cursor];
+          cursor += 1;
+          try {
+            await runImageTask(current);
+          } catch (e) {
+            console.error("엑셀 이미지 삽입 실패:", e);
+          }
+        }
+      };
+
+      const workerCount = Math.min(4, imageTasks.length);
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const accountLabel = selectedAccountOption?.label || "전체";
+      const filename = `기물관리_${accountLabel}_${dayjs().format("YYYYMM")}.xlsx`;
+      const a = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      Swal.close();
+      Swal.fire({
+        title: "완료",
+        text: "엑셀 다운로드가 완료되었습니다.",
+        icon: "success",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.close();
+      Swal.fire({
+        title: "실패",
+        text: "엑셀 다운로드 중 오류가 발생했습니다.",
+        icon: "error",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    } finally {
+      setExcelDownloading(false);
+    }
+  }, [
+    excelDownloading,
+    rows,
+    loadImageForExcel,
+    selectedAccountOption?.label,
+  ]);
+
   // ✅ 아이콘 파란색
   const fileIconSx = { color: "#1e88e5" };
 
@@ -385,11 +799,14 @@ function PropertySheetTab() {
             if (updatedRow[col]) updatedRow[col] = updatedRow[col].toString().replace(/,/g, "");
           });
 
-          const imageFields = ["item_img", "receipt_img"];
+          updatedRow = applyReceiptImageValues(updatedRow, getReceiptImageValues(updatedRow));
+
+          const imageFields = ["item_img", ...RECEIPT_IMAGE_FIELDS];
           for (const field of imageFields) {
-            if (row[field] && typeof row[field] === "object") {
+            const uploadFile = extractUploadFile(row[field]);
+            if (uploadFile) {
               const uploadedPath = await uploadImage(
-                row[field],
+                uploadFile,
                 row.purchase_dt,
                 selectedAccountId
               );
@@ -457,7 +874,7 @@ function PropertySheetTab() {
       { header: "구매가격", accessorKey: "purchase_price", size: 100 },
       { header: "예상감가\n(60개월 기준)", accessorKey: "depreciation", size: 100 },
       { header: "제품사진", accessorKey: "item_img", size: 140 },
-      { header: "영수증사진", accessorKey: "receipt_img", size: 140 },
+      { header: "영수증사진", accessorKey: "receipt_img", size: 250 },
       { header: "비고", accessorKey: "note", size: 120 },
     ],
     []
@@ -573,6 +990,18 @@ function PropertySheetTab() {
 
         <MDButton
           color="info"
+          onClick={handleExcelDownload}
+          disabled={excelDownloading}
+          sx={{
+            fontSize: isMobile ? "11px" : "13px",
+            minWidth: isMobile ? 90 : 110,
+          }}
+        >
+          {excelDownloading ? "다운로드중" : "엑셀다운로드"}
+        </MDButton>
+
+        <MDButton
+          color="info"
           onClick={handleAddRow}
           sx={{
             fontSize: isMobile ? "11px" : "13px",
@@ -654,7 +1083,142 @@ function PropertySheetTab() {
                       </td>
                     );
 
-                  if (["item_img", "receipt_img"].includes(key)) {
+                  if (key === "receipt_img") {
+                    const receiptImages = getReceiptImageValues(row);
+                    const isReceiptChanged = RECEIPT_IMAGE_FIELDS.some(
+                      (field) => !isSameValue(field, originalRows[rowIndex]?.[field], row[field])
+                    );
+
+                    return (
+                      <td
+                        key={key}
+                        style={{
+                          width: col.size,
+                          textAlign: "center",
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          id={`upload-${key}-${rowIndex}`}
+                          style={{ display: "none" }}
+                          onChange={(e) => {
+                            handleReceiptFileChange(rowIndex, e.target.files);
+                            e.target.value = "";
+                          }}
+                        />
+
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "flex-start",
+                            gap: 8,
+                            flexWrap: "wrap",
+                            minHeight: isMobile ? 84 : 96,
+                            padding: 0,
+                          }}
+                        >
+                          {receiptImages.map((imageValue, imageIndex) => (
+                            <div
+                              key={`receipt-image-${rowIndex}-${imageIndex}`}
+                              style={{
+                                position: "relative",
+                                width: isMobile ? 52 : 62,
+                                height: isMobile ? 80 : 92,
+                                borderRadius: 6,
+                                overflow: "hidden",
+                                border: `1px solid ${isReceiptChanged ? "#d32f2f" : "#d0d7e2"}`,
+                                backgroundColor: "#f1f4f8",
+                                flexShrink: 0,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleViewImage(imageValue)}
+                                style={{
+                                  border: "none",
+                                  background: "none",
+                                  width: "100%",
+                                  height: "100%",
+                                  padding: 0,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                <img
+                                  src={encodeURI(resolveImageSource(imageValue))}
+                                  alt={`영수증 이미지 ${imageIndex + 1}`}
+                                  loading="lazy"
+                                  decoding="async"
+                                  style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                  }}
+                                />
+                              </button>
+
+                              <IconButton
+                                size="small"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemoveReceiptImage(rowIndex, imageIndex);
+                                }}
+                                sx={{
+                                  position: "absolute",
+                                  top: 2,
+                                  right: 2,
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: "999px",
+                                  border: "1px solid #e2b4b4",
+                                  backgroundColor: "#fff1f1",
+                                  color: "#d32f2f",
+                                  "&:hover": {
+                                    backgroundColor: "#ffe3e3",
+                                  },
+                                }}
+                              >
+                                <CloseIcon sx={{ fontSize: 14 }} />
+                              </IconButton>
+                            </div>
+                          ))}
+
+                          {receiptImages.length < RECEIPT_IMAGE_MAX_COUNT && (
+                            <label htmlFor={`upload-${key}-${rowIndex}`}>
+                              <MDButton
+                                component="span"
+                                size="small"
+                                color="info"
+                                sx={{
+                                  fontSize: isMobile ? "10px" : "12px",
+                                  minWidth: isMobile ? 54 : 62,
+                                  minHeight: isMobile ? 32 : 36,
+                                  px: isMobile ? 0.75 : 1,
+                                  py: isMobile ? 0.35 : 0.45,
+                                  lineHeight: 1.2,
+                                  whiteSpace: "normal",
+                                  border: isReceiptChanged
+                                    ? "1px solid #d32f2f"
+                                    : "1px solid transparent",
+                                }}
+                              >
+                                <>
+                                  파일선택
+                                  <br />
+                                  (최대 3장)
+                                </>
+                              </MDButton>
+                            </label>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  }
+
+                  if (key === "item_img") {
                     const hasImage = !!value;
 
                     // ✅ 원본 대비 변경 여부 (File 객체로 재업로드되면 무조건 변경)
@@ -677,7 +1241,7 @@ function PropertySheetTab() {
                           style={{ display: "none" }}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) handleCellChange(rowIndex, key, file);
+                            if (file) handleCellChange(rowIndex, key, createLocalUploadImage(file));
                             e.target.value = ""; // 같은 파일 재선택 가능
                           }}
                         />

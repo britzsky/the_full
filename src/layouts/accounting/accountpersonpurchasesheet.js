@@ -201,7 +201,7 @@ const selectAllContent = (el) => {
 // ✅ 특정 거래처(account_id) 조건
 // - 사용처(use_name) 상단 셀: Select 고정 (value=1 / text=웰스토리)
 // - 이미지 첨부(업로드/재업로드) 차단
-// - 저장 시 type: 특정 account_id면 1, 그 외 1008
+// - 저장 시 type: 개인구매(1008) 고정
 // ============================================================
 const SPECIAL_ACCOUNT_IDS = new Set([
   "20260126093618",
@@ -238,7 +238,7 @@ const normalizeSpecialUseValue = (v) => {
   return "1";
 };
 
-const getSaveTypeByAccount = (accountId) => (isSpecialAccount(accountId) ? 1 : 1008);
+const getSaveTypeByAccount = () => 1008;
 
 const fixedColStyle = (size, extra = {}) => ({
   width: size,

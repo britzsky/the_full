@@ -207,6 +207,10 @@ const getTypeColor2 = (type) => {
     case "10":
     case "11":
       return "#1A0841";
+    case "12":
+      return "#e53935";
+    case "13":
+      return "#7B1FA2";
     default:
       return "#F2921D";
   }
@@ -229,16 +233,18 @@ const TYPE_OPTIONS = [
 // ✅ 행사 종류 정의 (department=5용)
 const TYPE_OPTIONS2 = [
   { value: "1", label: "행사" },
-  { value: "2", label: "위생관리" },
-  { value: "3", label: "미팅" },
-  { value: "4", label: "오픈" },
-  { value: "5", label: "오픈준비" },
-  { value: "6", label: "외근" },
-  { value: "7", label: "출장" },
-  { value: "8", label: "체크" },
-  { value: "9", label: "연차" },
-  { value: "10", label: "오전반차" },
-  { value: "11", label: "오후반차" },
+  { value: "2", label: "위생" },
+  { value: "3", label: "관리" },
+  { value: "4", label: "이슈" },
+  { value: "5", label: "미팅" },
+  { value: "6", label: "오픈" },
+  { value: "7", label: "오픈준비" },
+  { value: "8", label: "외근" },
+  { value: "9", label: "출장" },
+  { value: "10", label: "체크" },
+  { value: "11", label: "연차" },
+  { value: "12", label: "오전반차" },
+  { value: "13", label: "오후반차" },
 ];
 
 // ✅ department에 따라 라벨 옵션 선택
@@ -255,6 +261,7 @@ const getTypeColorByDepartment = (typeValue, department) => {
   const dept = String(department ?? "");
   return dept === "5" ? getTypeColor2(typeValue) : getTypeColor(typeValue);
 };
+const stripSchedulePrefix = (text) => String(text || "").replace(/^\[[^\]]*\]\s*/, "").trim();
 
 function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
   if (!items?.length) {
@@ -270,9 +277,22 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
       {items.map((it, idx) => {
         const typeLabel = getTypeLabelByDepartment(it.type, it.department);
         const color = getTypeColorByDepartment(it.type, it.department);
-        // ✅ 요청 포맷: "내용 / 이름 [직책]"
+        const accountName = String(it.account_name || "").trim();
+        const badgeText = typeLabel
+          ? `[${typeLabel}${accountName ? ` - ${accountName}` : ""}]`
+          : accountName
+            ? `[${accountName}]`
+            : "";
+        const rawContent = String(it.content || "").trim();
+        const hasPrefixedContent = /^\[[^\]]+\]\s*/.test(rawContent);
+        const hasAccountInPrefix = /^\[[^\]]+\s-\s[^\]]+\]\s*/.test(rawContent);
+        const strippedContent = stripSchedulePrefix(rawContent);
+        const displayContent = hasPrefixedContent && (hasAccountInPrefix || !badgeText)
+          ? rawContent
+          : `${badgeText}${badgeText && strippedContent ? " " : ""}${strippedContent}`.trim();
+        // ✅ 본문 포맷: "[구분-거래처] 내용 / 이름 [직책]"
         const positionText = it.position_name ? ` [${it.position_name}]` : "";
-        const scheduleText = `${it.content || ""}${it.user_name ? ` / ${it.user_name}${positionText}` : ""}`;
+        const scheduleText = `${displayContent}${it.user_name ? ` / ${it.user_name}${positionText}` : ""}`;
 
         return (
           <MDBox
@@ -303,7 +323,6 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
                 lineHeight: 1.3,
               }}
             >
-              {typeLabel ? `[${typeLabel}] ` : ""}
               {scheduleText}
             </MDTypography>
           </MDBox>
@@ -321,6 +340,7 @@ ScheduleLines.propTypes = {
       user_name: PropTypes.string,
       content: PropTypes.string,
       position_name: PropTypes.string,
+      account_name: PropTypes.string,
       time: PropTypes.string,
     })
   ),

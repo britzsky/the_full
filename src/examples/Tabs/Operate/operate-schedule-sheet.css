@@ -1,0 +1,6 @@
+/* 요일 헤더(일~토) 스크롤바 제거 */
+.fc .fc-col-header .fc-scroller,
+.fc-col-header-cell .fc-scroller,
+.fc .fc-scrollgrid-section-header .fc-scroller {
+  overflow: hidden !important;
+}

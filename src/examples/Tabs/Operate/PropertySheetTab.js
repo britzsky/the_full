@@ -19,6 +19,7 @@ import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiess
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
+import ExcelJS from "exceljs";
 import dayjs from "dayjs";
 import { API_BASE_URL } from "config";
 
@@ -164,6 +165,7 @@ function PropertySheetTab() {
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
+  const [excelDownloading, setExcelDownloading] = useState(false);
   const rowsRef = useRef([]);
 
   // ✅ 우클릭(컨텍스트) 메뉴 상태
@@ -560,6 +562,272 @@ function PropertySheetTab() {
     document.body.removeChild(a);
   }, []);
 
+  const buildImageUrl = useCallback((path) => {
+    if (!path || typeof path !== "string") return "";
+    const raw = /^https?:\/\//i.test(path) ? path : `${API_BASE_URL}${path}`;
+    return encodeURI(raw);
+  }, []);
+
+  const toImageExtension = useCallback((mimeType = "", fileName = "") => {
+    const mime = String(mimeType || "").toLowerCase();
+    const name = String(fileName || "").toLowerCase();
+
+    if (mime.includes("png") || name.endsWith(".png")) return "png";
+    if (mime.includes("jpeg") || mime.includes("jpg") || name.endsWith(".jpg") || name.endsWith(".jpeg"))
+      return "jpeg";
+    if (mime.includes("gif") || name.endsWith(".gif")) return "gif";
+
+    return "";
+  }, []);
+
+  const arrayBufferToBase64 = useCallback((arrayBuffer) => {
+    const bytes = new Uint8Array(arrayBuffer);
+    const chunkSize = 0x8000;
+    let binary = "";
+
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+
+    return window.btoa(binary);
+  }, []);
+
+  const loadImageForExcel = useCallback(
+    async (value) => {
+      if (!value) return null;
+
+      const uploadFile = extractUploadFile(value);
+      if (uploadFile) {
+        const extension = toImageExtension(uploadFile.type, uploadFile.name);
+        if (!extension) return null;
+        const base64 = arrayBufferToBase64(await uploadFile.arrayBuffer());
+        return { base64: `data:${uploadFile.type || `image/${extension}`};base64,${base64}`, extension };
+      }
+
+      if (typeof value === "string") {
+        const url = buildImageUrl(value);
+        if (!url) return null;
+
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) return null;
+
+        const blob = await res.blob();
+        const extension = toImageExtension(blob.type, value);
+        if (!extension) return null;
+
+        const base64 = arrayBufferToBase64(await blob.arrayBuffer());
+        return { base64: `data:${blob.type || `image/${extension}`};base64,${base64}`, extension };
+      }
+
+      return null;
+    },
+    [arrayBufferToBase64, buildImageUrl, toImageExtension]
+  );
+
+  const handleExcelDownload = useCallback(async () => {
+    if (excelDownloading) return;
+    if (!rows.length) {
+      Swal.fire({
+        title: "안내",
+        text: "다운로드할 데이터가 없습니다.",
+        icon: "info",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+      return;
+    }
+
+    try {
+      setExcelDownloading(true);
+      Swal.fire({
+        title: "엑셀 생성 중...",
+        text: "이미지 포함 파일을 준비 중입니다.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        didOpen: () => Swal.showLoading(),
+      });
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = "THEFULL";
+      const ws = workbook.addWorksheet("기물관리");
+
+      const headers = [
+        "구매일자",
+        "구매처",
+        "품목",
+        "규격",
+        "수량",
+        "신규/중고",
+        "구매가격",
+        "예상감가(60개월 기준)",
+        "제품사진",
+        "영수증사진1",
+        "영수증사진2",
+        "영수증사진3",
+        "비고",
+      ];
+
+      ws.columns = [
+        { width: 13 },
+        { width: 18 },
+        { width: 20 },
+        { width: 14 },
+        { width: 8 },
+        { width: 11 },
+        { width: 13 },
+        { width: 18 },
+        { width: 40 },
+        { width: 40 },
+        { width: 40 },
+        { width: 40 },
+        { width: 20 },
+      ];
+
+      ws.addRow(headers);
+      const borderThin = {
+        top: { style: "thin" },
+        left: { style: "thin" },
+        bottom: { style: "thin" },
+        right: { style: "thin" },
+      };
+
+      headers.forEach((_, idx) => {
+        const cell = ws.getCell(1, idx + 1);
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+        cell.border = borderThin;
+      });
+
+      const imageTasks = [];
+
+      rows.forEach((row, idx) => {
+        const excelRowNo = idx + 2;
+        const receiptImages = getReceiptImageValues(row);
+
+        ws.addRow([
+          row.purchase_dt || "",
+          row.purchase_name || "",
+          row.item || "",
+          row.spec || "",
+          parseNumber(row.qty || 0),
+          String(row.type) === "1" ? "중고" : "신규",
+          parseNumber(row.purchase_price || 0),
+          parseNumber(row.depreciation || 0),
+          "",
+          "",
+          "",
+          "",
+          row.note || "",
+        ]);
+
+        for (let c = 1; c <= 13; c += 1) {
+          const cell = ws.getCell(excelRowNo, c);
+          cell.border = borderThin;
+          cell.alignment = { horizontal: c >= 5 && c <= 8 ? "right" : "center", vertical: "middle" };
+          if ([5, 7, 8].includes(c)) cell.numFmt = "#,##0";
+          if ([9, 10, 11, 12, 13].includes(c)) cell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+        }
+
+        imageTasks.push({ rowNo: excelRowNo, colNo: 9, source: row.item_img, kind: "item" });
+        receiptImages
+          .filter((imageValue) => Boolean(imageValue))
+          .slice(0, 3)
+          .forEach((imageValue, imageIndex) => {
+            imageTasks.push({
+              rowNo: excelRowNo,
+              colNo: 10 + imageIndex,
+              source: imageValue,
+              kind: "receipt",
+            });
+          });
+      });
+
+      const runImageTask = async (task) => {
+        if (!task?.source) return;
+        const image = await loadImageForExcel(task.source);
+        if (!image) return;
+
+        const imageId = workbook.addImage({
+          base64: image.base64,
+          extension: image.extension,
+        });
+
+        const isReceiptImage = task.kind === "receipt";
+        const imageWidth = isReceiptImage ? 220 : 260;
+        const imageHeight = isReceiptImage ? 165 : 195;
+        const colOffset = 0.02;
+        const rowOffset = isReceiptImage ? 0.06 : 0.04;
+        const minRowHeight = isReceiptImage ? 190 : 210;
+
+        ws.getRow(task.rowNo).height = Math.max(ws.getRow(task.rowNo).height || 20, minRowHeight);
+        ws.addImage(imageId, {
+          tl: { col: task.colNo - 1 + colOffset, row: task.rowNo - 1 + rowOffset },
+          ext: { width: imageWidth, height: imageHeight },
+        });
+      };
+
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < imageTasks.length) {
+          const current = imageTasks[cursor];
+          cursor += 1;
+          try {
+            await runImageTask(current);
+          } catch (e) {
+            console.error("엑셀 이미지 삽입 실패:", e);
+          }
+        }
+      };
+
+      const workerCount = Math.min(4, imageTasks.length);
+      await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+
+      const accountLabel = selectedAccountOption?.label || "전체";
+      const filename = `기물관리_${accountLabel}_${dayjs().format("YYYYMM")}.xlsx`;
+      const a = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      Swal.close();
+      Swal.fire({
+        title: "완료",
+        text: "엑셀 다운로드가 완료되었습니다.",
+        icon: "success",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    } catch (error) {
+      console.error(error);
+      Swal.close();
+      Swal.fire({
+        title: "실패",
+        text: "엑셀 다운로드 중 오류가 발생했습니다.",
+        icon: "error",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    } finally {
+      setExcelDownloading(false);
+    }
+  }, [
+    excelDownloading,
+    rows,
+    selectedAccountOption?.label,
+    loadImageForExcel,
+  ]);
+
   // 🟧 감가상각 자동 계산 useEffect
   useEffect(() => {
     const updated = rows.map((row) => {
@@ -756,6 +1024,15 @@ function PropertySheetTab() {
             onSelectAccount={setSelectedAccountId}
           />
         )}
+
+        <MDButton
+          color="info"
+          onClick={handleExcelDownload}
+          disabled={excelDownloading}
+          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 90 : 110 }}
+        >
+          {excelDownloading ? "다운로드중" : "엑셀다운로드"}
+        </MDButton>
 
         <MDButton
           color="info"

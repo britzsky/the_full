@@ -291,7 +291,6 @@ export default function useAccountPurchaseTallyData() {
    * - [{type, name}, ...]
    */
   const fetchMappingList = async (filters) => {
-    setLoading(true);
     try {
       // account_id가 있으면 해당 거래처 매핑(V2), 없으면 전체 매핑 목록
       const hasAccountId = filters?.account_id && String(filters.account_id).trim() !== "";
@@ -341,8 +340,6 @@ export default function useAccountPurchaseTallyData() {
     } catch (err) {
       console.error("AccountMappingList 조회 실패:", err);
       setMappingRows([]);
-    } finally {
-      setLoading(false);
     }
   };
 

@@ -22,8 +22,8 @@ ChartJS.register(ArcElement, Tooltip, Legend);
 const TYPE_OPTIONS = [
   { value: "1", label: "행사" },
   { value: "2", label: "위생", color: "#F2921D" },
-  { value: "3", label: "관리", color: "#0046FF" },
-  { value: "4", label: "이슈", color: "#527853" },
+  { value: "3", label: "관리", color: "#595bd3d2" },
+  { value: "4", label: "이슈", color: "#96aa3f" },
   { value: "5", label: "미팅" },
   { value: "6", label: "오픈" },
   { value: "7", label: "오픈준비" },

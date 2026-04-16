@@ -28,19 +28,19 @@ const CTRL_HEIGHT = 38;
 const getTypeColor = (type) => {
   const t = String(type);
   switch (t) {
-    case "1": return "#FF5F00";
-    case "2": return "#F2921D";
-    case "3": return "#0046FF";
-    case "4": return "#527853";
-    case "5": return "#F266AB";
-    case "6": return "#A459D1";
-    case "7": return "#D71313";
-    case "8": return "#364F6B";
-    case "9": return "#1A0841";
-    case "10": return "#1A0841";
-    case "11": return "#1A0841";
-    case "12": return "#e53935";
-    case "13": return "#7B1FA2";
+    case "1": return "#FF5F00";  // 행사
+    case "2": return "#F2921D";  // 위생
+    case "3": return "#595bd3d2";  // 관리
+    case "4": return "#96aa3f";  // 이슈
+    case "5": return "#0046FF";  // 미팅
+    case "6": return "#527853";  // 오픈
+    case "7": return "#F266AB";  // 오픈준비
+    case "8": return "#A459D1";  // 외근
+    case "9": return "#D71313";  // 출장
+    case "10": return "#364F6B"; // 체크
+    case "11": return "#1A0841"; // 연차
+    case "12": return "#1A0841"; // 오전반차
+    case "13": return "#1A0841"; // 오후반차
     default: return "#F2921D";
   }
 };

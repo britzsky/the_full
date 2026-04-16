@@ -289,7 +289,6 @@ function AccountPurchaseDeadlineTab() {
   const resolveNextType = useCallback((opts, currentType, accountTypeCode = "") => {
     const cur = String(currentType ?? "");
     const accountType = String(accountTypeCode ?? "");
-    if (cur === "0") return cur;
     if (opts?.some((o) => o.value === cur)) return cur;
     if (accountType && opts?.some((o) => o.value === accountType)) return accountType;
     if (opts?.length) return String(opts[0].value);
@@ -1087,16 +1086,17 @@ function AccountPurchaseDeadlineTab() {
       ? rows.findIndex((r) => String(r.sale_id) === String(selectedSaleId))
       : -1;
 
-    const nextIdx = foundIdx >= 0 ? foundIdx : 0;
-    const nextSaleId = rows[nextIdx]?.sale_id;
+    if (foundIdx < 0) return;
+
+    const nextSaleId = rows[foundIdx]?.sale_id;
 
     if (!nextSaleId) return;
 
     if (String(nextSaleId) !== String(selectedSaleId)) {
       setSelectedSaleId(String(nextSaleId));
     }
-    if (selectedMasterIndex !== nextIdx) {
-      setSelectedMasterIndex(nextIdx);
+    if (selectedMasterIndex !== foundIdx) {
+      setSelectedMasterIndex(foundIdx);
     }
   }, [rows]); // ✅ rows만 감시 (fetch 없음)
 

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"http://127.0.0.1:8080/Account/AccountPurchaseTallyList?account_id=20250819193455&type=5&fromDate=2026-03-01&toDate=2026-03-31&payType=0\")",
+      "Bash(curl -s \"http://127.0.0.1:8080/Account/AccountPurchaseTallyForTallyTab?account_id=20250819193455&type=5&year=2026&month=3\")",
+      "Bash(curl -s \"http://127.0.0.1:8080/Account/AccountPurchaseTallyForTallyTab?account_id=20250819193455&type=0&year=2026&month=3\")",
+      "Bash(curl -s \"http://127.0.0.1:8080/Account/AccountPurchaseTallyForTallyTab?account_id=20250819193455&type=&year=2026&month=3\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(f'총 {len\\(data\\)}건'\\); [print\\(d.get\\('saleDate'\\), 'type:', d.get\\('type'\\)\\) for d in data[:5]]\")"
+    ]
+  }
+}

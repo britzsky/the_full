@@ -75,9 +75,9 @@ function AccountPurchaseTallyTab() {
     "(max-width:1279.95px) and (orientation: landscape)"
   );
   // 모바일/태블릿에서는 테이블이 너무 낮아지지 않도록 최소 높이를 보장
-  const tableMinHeight = isMobileTabletLandscape ? 250 : isMobileTablet ? 330 : 0;
+  const tableMinHeight = isMobileTabletLandscape ? 320 : isMobileTablet ? 330 : 0;
   const tableMaxHeight = isMobileTabletLandscape
-    ? "calc(100vh - 160px)"
+    ? "calc(100vh - 60px)"
     : isMobileTablet
       ? "calc(100vh - 200px)"
       : "calc(100vh - 140px)";
@@ -91,7 +91,7 @@ function AccountPurchaseTallyTab() {
     account_id: "",
   });
 
-  // 🔹 상단 거래처(사업장) select용 리스트
+  // 🔹 상단 거래처(거래처) select용 리스트
   const [accountList, setAccountList] = useState([]);
   const [accountInput, setAccountInput] = useState("");
 
@@ -117,6 +117,7 @@ function AccountPurchaseTallyTab() {
   const [isDateRenderPending, setIsDateRenderPending] = useState(false);
   const [tableViewportHeight, setTableViewportHeight] = useState(null);
   const [excelDownloading, setExcelDownloading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
 
   // ✅ account_id -> account_name 매핑
   const accountNameById = useMemo(() => {
@@ -480,6 +481,8 @@ function AccountPurchaseTallyTab() {
         }
       } catch (err) {
         console.error("데이터 조회 실패 (AccountList):", err);
+      } finally {
+        setIsInitialLoading(false);
       }
     })();
   }, []); // eslint-disable-line
@@ -753,7 +756,7 @@ function AccountPurchaseTallyTab() {
 
     const rect = tableWrapEl.getBoundingClientRect();
     // 페이지 전체 스크롤이 생기지 않도록 하단 여유를 두고 높이를 계산
-    const viewportBottomGap = 24;
+    const viewportBottomGap = isMobileTabletLandscape ? -100 : 24;
     const nextHeight = Math.max(
       tableMinHeight,
       Math.floor(window.innerHeight - rect.top - viewportBottomGap)
@@ -786,7 +789,7 @@ function AccountPurchaseTallyTab() {
 
   const renderColGroup = () => (
     <colgroup>
-      <col style={{ width: 120, minWidth: 120, maxWidth: 120 }} /> {/* 사업장 */}
+      <col style={{ width: 120, minWidth: 120, maxWidth: 120 }} /> {/* 거래처 */}
       <col style={{ width: 140, minWidth: 140, maxWidth: 140 }} /> {/* 날짜 */}
       <col style={{ width: 170, minWidth: 170, maxWidth: 170 }} /> {/* 구매처 */}
       <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 소모품 과/면세 */}
@@ -1046,7 +1049,7 @@ function AccountPurchaseTallyTab() {
 
       ws.views = [{ state: "frozen", ySplit: 2 }];
       ws.columns = [
-        { width: 14 }, // 사업장
+        { width: 14 }, // 거래처
         { width: 12 }, // 날짜
         { width: 22 }, // 구매처
         { width: 10 }, // 소모품 과/면세
@@ -1067,7 +1070,7 @@ function AccountPurchaseTallyTab() {
       ws.mergeCells("G1:I1");
       ws.mergeCells("J1:L1");
 
-      ws.getCell("A1").value = "사업장";
+      ws.getCell("A1").value = "거래처";
       ws.getCell("B1").value = "날짜";
       ws.getCell("C1").value = "구매처";
       ws.getCell("D1").value = "소모품";
@@ -1130,35 +1133,26 @@ function AccountPurchaseTallyTab() {
         }
       });
 
-      const expenRow = exportRows.length + 3;
-      ws.mergeCells(expenRow, 1, expenRow, 3);
-      ws.getCell(expenRow, 1).value = "소모품 소계";
-      ws.getCell(expenRow, 4).value = Number(summary.expen.taxTotal || 0);
-      ws.getCell(expenRow, 5).value = Number(summary.expen.vat || 0);
-      ws.getCell(expenRow, 6).value = Number(summary.expen.total || 0);
+      // 소계 행 (화면 소계 테이블과 동일: 1행에 모든 카테고리 소계)
+      const subtotalRow = exportRows.length + 3;
+      ws.mergeCells(subtotalRow, 1, subtotalRow, 3);
+      ws.getCell(subtotalRow, 1).value = "소계";
+      ws.getCell(subtotalRow, 4).value = Number(summary.expen.taxTotal || 0);
+      ws.getCell(subtotalRow, 5).value = Number(summary.expen.vat || 0);
+      ws.getCell(subtotalRow, 6).value = Number(summary.expen.total || 0);
+      ws.getCell(subtotalRow, 7).value = Number(summary.food.taxTotal || 0);
+      ws.getCell(subtotalRow, 8).value = Number(summary.food.vat || 0);
+      ws.getCell(subtotalRow, 9).value = Number(summary.food.total || 0);
+      ws.getCell(subtotalRow, 10).value = Number(summary.scenic.taxTotal || 0);
+      ws.getCell(subtotalRow, 11).value = Number(summary.scenic.vat || 0);
+      ws.getCell(subtotalRow, 12).value = Number(summary.scenic.total || 0);
 
-      const foodRow = expenRow + 1;
-      ws.mergeCells(foodRow, 1, foodRow, 3);
-      ws.getCell(foodRow, 1).value = "식자재 소계";
-      ws.getCell(foodRow, 7).value = Number(summary.food.taxTotal || 0);
-      ws.getCell(foodRow, 8).value = Number(summary.food.vat || 0);
-      ws.getCell(foodRow, 9).value = Number(summary.food.total || 0);
+      // 총합계 행
+      const totalRow = subtotalRow + 1;
+      ws.mergeCells(totalRow, 1, totalRow, 12);
+      ws.getCell(totalRow, 1).value = `총합계: ${Number(summary.total.total || 0).toLocaleString("ko-KR")}`;
 
-      const scenicRow = foodRow + 1;
-      ws.mergeCells(scenicRow, 1, scenicRow, 3);
-      ws.getCell(scenicRow, 1).value = "경관식 소계";
-      ws.getCell(scenicRow, 10).value = Number(summary.scenic.taxTotal || 0);
-      ws.getCell(scenicRow, 11).value = Number(summary.scenic.vat || 0);
-      ws.getCell(scenicRow, 12).value = Number(summary.scenic.total || 0);
-
-      const totalRow = scenicRow + 1;
-      ws.mergeCells(totalRow, 1, totalRow, 3);
-      ws.getCell(totalRow, 1).value = "총 합계";
-      ws.getCell(totalRow, 4).value = Number(summary.total.taxTotal || 0);
-      ws.getCell(totalRow, 5).value = Number(summary.total.vat || 0);
-      ws.getCell(totalRow, 6).value = Number(summary.total.total || 0);
-
-      for (let r = expenRow; r <= totalRow; r += 1) {
+      for (let r = subtotalRow; r <= totalRow; r += 1) {
         for (let c = 1; c <= 12; c += 1) {
           const cell = ws.getCell(r, c);
           cell.border = borderThin;
@@ -1169,7 +1163,7 @@ function AccountPurchaseTallyTab() {
             pattern: "solid",
             fgColor: { argb: r === totalRow ? "FFECECEC" : "FFF7F7F7" },
           };
-          if (c >= 4) cell.numFmt = "#,##0";
+          if (r === subtotalRow && c >= 4) cell.numFmt = "#,##0";
         }
       }
 
@@ -1395,7 +1389,7 @@ function AccountPurchaseTallyTab() {
     [rows, setRows, closeCtxMenu, fetchPurchaseList, buildSearchParams, filters]
   );
 
-  if (loading || isDateRenderPending) return <LoadingScreen />;
+  if (isInitialLoading || loading || isDateRenderPending) return <LoadingScreen />;
 
   return (
     <LocalizationProvider
@@ -1418,9 +1412,9 @@ function AccountPurchaseTallyTab() {
 
         {/* 🔹 조회조건 영역 */}
         <MDBox
-          mt={-0.25}
+          mt={isMobileTabletLandscape ? 0.5 : isMobileTablet ? 2 : -0.25}
           pt={0}
-          pb={1.25}
+          pb={isMobileTabletLandscape ? 0.5 : 1.25}
           sx={{
             display: "flex",
             justifyContent: isMobile ? "space-between" : "flex-end",
@@ -1537,24 +1531,6 @@ function AccountPurchaseTallyTab() {
           <MDButton
             variant="gradient"
             color="info"
-            onClick={handleAddRow}
-            sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
-          >
-            행추가
-          </MDButton>
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleSave}
-            sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
-          >
-            저장
-          </MDButton>
-
-          <MDButton
-            variant="gradient"
-            color="info"
             onClick={handleExcelDownload}
             disabled={excelDownloading}
             sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "11px" : "13px" }}
@@ -1564,7 +1540,7 @@ function AccountPurchaseTallyTab() {
         </MDBox>
 
         {/* 🔹 테이블 */}
-        <MDBox ref={tableWrapRef} pt={3.1} pb={0} sx={tableSx}>
+        <MDBox ref={tableWrapRef} pt={isMobileTabletLandscape ? 0 : isMobileTablet ? 0.5 : 3.1} pb={0} sx={tableSx}>
           <MDBox
             py={1}
             px={1}
@@ -1583,346 +1559,401 @@ function AccountPurchaseTallyTab() {
             </MDTypography>
           </MDBox>
 
-          <MDBox ref={bodyScrollRef} sx={tableBodySx}>
-            <table ref={dataTableRef}>
-              {renderColGroup()}
-              <thead>
-                <tr>
-                  <th
-                    rowSpan={2}
-                    style={{
-                      minWidth: 120,
-                      width: 120,
-                      maxWidth: 120,
-                      left: STICKY_LEFT_ACCOUNT,
-                      zIndex: 7,
-                      backgroundColor: "#fef6e4",
-                    }}
-                  >
-                    사업장
-                  </th>
-                  <th
-                    rowSpan={2}
-                    style={{
-                      minWidth: 140,
-                      width: 140,
-                      maxWidth: 140,
-                      left: STICKY_LEFT_DATE,
-                      zIndex: 7,
-                      backgroundColor: "#fef6e4",
-                    }}
-                  >
-                    날짜
-                  </th>
-                  <th
-                    rowSpan={2}
-                    style={{
-                      minWidth: 170,
-                      width: 170,
-                      maxWidth: 170,
-                      left: STICKY_LEFT_TYPE,
-                      zIndex: 7,
-                      backgroundColor: "#fef6e4",
-                    }}
-                  >
-                    구매처
-                  </th>
-
-                  <th
-                    colSpan={3}
-                    style={{
-                      minWidth: 270,
-                      top: 0,
-                      zIndex: 6,
-                      backgroundColor: "#fef6e4",
-                      height: HEADER_FIRST_ROW_HEIGHT,
-                      lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
-                      padding: "0 4px",
-                    }}
-                  >
-                    소모품
-                  </th>
-                  <th
-                    colSpan={3}
-                    style={{
-                      minWidth: 270,
-                      top: 0,
-                      zIndex: 6,
-                      backgroundColor: "#fef6e4",
-                      height: HEADER_FIRST_ROW_HEIGHT,
-                      lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
-                      padding: "0 4px",
-                    }}
-                  >
-                    식자재
-                  </th>
-                  <th
-                    colSpan={3}
-                    style={{
-                      minWidth: 270,
-                      top: 0,
-                      zIndex: 6,
-                      backgroundColor: "#fef6e4",
-                      height: HEADER_FIRST_ROW_HEIGHT,
-                      lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
-                      padding: "0 4px",
-                    }}
-                  >
-                    경관식
-                  </th>
-                </tr>
-                <tr>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    과/면세
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    부가세
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    합계
-                  </th>
-
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    과/면세
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    부가세
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    합계
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    과/면세
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    부가세
-                  </th>
-                  <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>
-                    합계
-                  </th>
-                </tr>
-              </thead>
-
-              <tbody>
-                {rows.length === 0 ? (
+          {/* 모바일/태블릿: 하나의 스크롤 컨테이너 안에 테이블+footer 통합 */}
+          {isMobileTablet ? (
+            <MDBox
+              ref={bodyScrollRef}
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                overflowX: "auto",
+                overflowY: "auto",
+                boxSizing: "border-box",
+              }}
+            >
+              <table
+                ref={dataTableRef}
+                style={{ minWidth: "max-content", borderCollapse: "separate", borderSpacing: 0 }}
+              >
+                {renderColGroup()}
+                <thead>
                   <tr>
-                    <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
-                      데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
+                    {/* 거래처: 세로/가로 모두 sticky */}
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 120,
+                        width: 120,
+                        maxWidth: 120,
+                        position: "sticky",
+                        left: STICKY_LEFT_ACCOUNT,
+                        top: 0,
+                        zIndex: 7,
+                        backgroundColor: "#fef6e4",
+                      }}
+                    >
+                      거래처
+                    </th>
+                    {/* 날짜: 가로(landscape)일 때만 sticky */}
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 140,
+                        width: 140,
+                        maxWidth: 140,
+                        ...(isMobileTabletLandscape
+                          ? { position: "sticky", left: STICKY_LEFT_DATE, top: 0, zIndex: 7 }
+                          : { position: "sticky", top: 0, zIndex: 2 }),
+                        backgroundColor: "#fef6e4",
+                      }}
+                    >
+                      날짜
+                    </th>
+                    {/* 구매처: 가로(landscape)일 때만 sticky */}
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 170,
+                        width: 170,
+                        maxWidth: 170,
+                        ...(isMobileTabletLandscape
+                          ? { position: "sticky", left: STICKY_LEFT_TYPE, top: 0, zIndex: 7 }
+                          : { position: "sticky", top: 0, zIndex: 2 }),
+                        backgroundColor: "#fef6e4",
+                      }}
+                    >
+                      구매처
+                    </th>
+
+                    <th
+                      colSpan={3}
+                      style={{
+                        minWidth: 270,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 6,
+                        backgroundColor: "#fef6e4",
+                        height: HEADER_FIRST_ROW_HEIGHT,
+                        lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
+                        padding: "0 4px",
+                      }}
+                    >
+                      소모품
+                    </th>
+                    <th
+                      colSpan={3}
+                      style={{
+                        minWidth: 270,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 6,
+                        backgroundColor: "#fef6e4",
+                        height: HEADER_FIRST_ROW_HEIGHT,
+                        lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
+                        padding: "0 4px",
+                      }}
+                    >
+                      식자재
+                    </th>
+                    <th
+                      colSpan={3}
+                      style={{
+                        minWidth: 270,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 6,
+                        backgroundColor: "#fef6e4",
+                        height: HEADER_FIRST_ROW_HEIGHT,
+                        lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
+                        padding: "0 4px",
+                      }}
+                    >
+                      경관식
+                    </th>
+                  </tr>
+                  <tr>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
+                        데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((row, rowIndex) => (
+                      <tr key={row._rowKey || rowIndex}>
+                        {/* 거래처: 항상 sticky */}
+                        <td
+                          style={{
+                            width: 120, minWidth: 120, maxWidth: 120,
+                            position: "sticky",
+                            left: STICKY_LEFT_ACCOUNT,
+                            zIndex: 3,
+                            backgroundColor: "#ffffff",
+                            height: FOOTER_ROW_HEIGHT,
+                          }}
+                        >
+                          {row.account_name || ""}
+                        </td>
+
+                        {/* 날짜: 가로일 때만 sticky */}
+                        <td
+                          style={{
+                            width: 140, minWidth: 140, maxWidth: 140,
+                            ...(isMobileTabletLandscape
+                              ? { position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3 }
+                              : {}),
+                            backgroundColor: "#ffffff",
+                            height: FOOTER_ROW_HEIGHT,
+                          }}
+                        >
+                          {String(row._saleMonth || "")}
+                        </td>
+
+                        {/* 구매처: 가로일 때만 sticky */}
+                        <td
+                          style={{
+                            width: 170, minWidth: 170, maxWidth: 170,
+                            ...(isMobileTabletLandscape
+                              ? { position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3 }
+                              : {}),
+                            backgroundColor: "#ffffff",
+                            height: FOOTER_ROW_HEIGHT,
+                          }}
+                        >
+                          {String(row.purchase_name || row.name || "")}
+                        </td>
+
+                        {AMOUNT_COLUMN_KEYS.map((k) => (
+                          <td key={k} style={{ width: 90, textAlign: "right", height: FOOTER_ROW_HEIGHT }}>
+                            {getAmountCellDisplayValue(row, k)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+
+                {/* footer: 세로=sticky bottom(거래처 고정, 날짜/구매처 공란), 가로=sticky bottom + 왼쪽 3컬럼 고정 */}
+                <tfoot>
+                  <tr>
+                    {/* 거래처: 세로/가로 모두 sticky left + sticky bottom */}
+                    <td
+                      style={{
+                        width: 120, minWidth: 120, maxWidth: 120,
+                        textAlign: "center", fontWeight: 700, background: "#f7f7f7",
+                        height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`,
+                        padding: "0 8px", border: "1px solid #686D76", fontSize: 12,
+                        position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                      }}
+                    >
+                      소계
+                    </td>
+                    {/* 날짜: 가로=sticky left+bottom, 세로=공란 */}
+                    <td
+                      style={{
+                        width: 140, minWidth: 140, maxWidth: 140,
+                        background: "#f7f7f7", height: FOOTER_ROW_HEIGHT,
+                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
+                        ...(isMobileTabletLandscape
+                          ? { position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_DATE, zIndex: 5 }
+                          : { position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2 }),
+                      }}
+                    />
+                    {/* 구매처: 가로=sticky left+bottom, 세로=공란 */}
+                    <td
+                      style={{
+                        width: 170, minWidth: 170, maxWidth: 170,
+                        background: "#f7f7f7", height: FOOTER_ROW_HEIGHT,
+                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
+                        ...(isMobileTabletLandscape
+                          ? { position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_TYPE, zIndex: 5 }
+                          : { position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2 }),
+                      }}
+                    />
+                    {/* 금액들: 세로/가로 모두 sticky bottom */}
+                    {[
+                      formatSummaryNumber(summary.expen.taxTotal),
+                      formatSummaryNumber(summary.expen.vat),
+                      formatSummaryNumber(summary.expen.total),
+                      formatSummaryNumber(summary.food.taxTotal),
+                      formatSummaryNumber(summary.food.vat),
+                      formatSummaryNumber(summary.food.total),
+                      formatSummaryNumber(summary.scenic.taxTotal),
+                      formatSummaryNumber(Number(summary.scenic.vat ?? 0)),
+                      formatSummaryNumber(summary.scenic.total),
+                    ].map((val, i) => (
+                      <td
+                        key={i}
+                        style={{
+                          textAlign: "right", fontWeight: 700, background: "#f7f7f7",
+                          height: FOOTER_ROW_HEIGHT, border: "1px solid #686D76",
+                          fontSize: 12, padding: "0 4px",
+                          position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2,
+                        }}
+                      >
+                        {val}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    {/* 거래처: 세로/가로 모두 sticky left + sticky bottom */}
+                    <td
+                      style={{
+                        width: 120, minWidth: 120, maxWidth: 120,
+                        textAlign: "center", fontWeight: 700, background: "#ececec",
+                        height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`,
+                        padding: "0 8px", border: "1px solid #686D76", fontSize: 12,
+                        position: "sticky", bottom: 0, left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                      }}
+                    >
+                      총합계
+                    </td>
+                    {/* 날짜: 가로=sticky left+bottom, 세로=공란 */}
+                    <td
+                      style={{
+                        width: 140, minWidth: 140, maxWidth: 140,
+                        background: "#ececec", height: FOOTER_ROW_HEIGHT,
+                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
+                        ...(isMobileTabletLandscape
+                          ? { position: "sticky", bottom: 0, left: STICKY_LEFT_DATE, zIndex: 5 }
+                          : { position: "sticky", bottom: 0, zIndex: 2 }),
+                      }}
+                    />
+                    {/* 구매처: 가로=sticky left+bottom, 세로=공란 */}
+                    <td
+                      style={{
+                        width: 170, minWidth: 170, maxWidth: 170,
+                        background: "#ececec", height: FOOTER_ROW_HEIGHT,
+                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
+                        ...(isMobileTabletLandscape
+                          ? { position: "sticky", bottom: 0, left: STICKY_LEFT_TYPE, zIndex: 5 }
+                          : { position: "sticky", bottom: 0, zIndex: 2 }),
+                      }}
+                    />
+                    {/* 총합계 금액: 세로=colSpan 9, 가로=colSpan 9, sticky bottom */}
+                    <td
+                      colSpan={9}
+                      style={{
+                        textAlign: "right", fontWeight: 700, background: "#ececec",
+                        height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`,
+                        padding: "0 12px", border: "1px solid #686D76", fontSize: 12,
+                        position: "sticky", bottom: 0, zIndex: 2,
+                      }}
+                    >
+                      {formatSummaryNumber(summary.total.total)}
                     </td>
                   </tr>
-                ) : (
-                  rows.map((row, rowIndex) => (
-                    <tr
-                      key={row._rowKey || rowIndex}
-                      onContextMenu={(e) => handleRowContextMenu(e, rowIndex)} // ✅ 우클릭
-                      style={{ cursor: "context-menu" }}
-                    >
-                      {/* 사업장 */}
-                      <td
-                        style={{
-                          ...getCellStyle(row, "account_name", row.account_name),
-                          width: 120,
-                          minWidth: 120,
-                          maxWidth: 120,
-                          position: "sticky",
-                          left: STICKY_LEFT_ACCOUNT,
-                          zIndex: 3,
-                          backgroundColor: "#ffffff",
-                        }}
-                      >
-                        {row.account_name || ""}
-                      </td>
-
-                      {/* 날짜(연월 텍스트 입력) */}
-                      <td
-                        style={{
-                          width: 140,
-                          minWidth: 140,
-                          maxWidth: 140,
-                          padding: "2px",
-                          position: "sticky",
-                          left: STICKY_LEFT_DATE,
-                          zIndex: 3,
-                          backgroundColor: "#ffffff",
-                        }}
-                      >
-                        {(() => {
-                          const cellColor = getCellColor(row, "_saleMonth", row._saleMonth);
-                          return (
-                            <input
-                              type="text"
-                              value={String(row._saleMonth || "")}
-                              placeholder="YYYY-MM"
-                              inputMode="numeric"
-                              onChange={(e) => {
-                                handleSaleMonthInputChange(rowIndex, String(e.target.value || ""));
-                              }}
-                              onBlur={(e) => {
-                                handleSaleMonthChange(rowIndex, String(e.target.value || ""));
-                              }}
-                              style={{
-                                width: "100%",
-                                height: 30,
-                                border: "1px solid #c4c4c4",
-                                borderRadius: 4,
-                                padding: "4px 6px",
-                                fontSize: 12,
-                                color: cellColor,
-                                textAlign: "center",
-                              }}
-                            />
-                          );
-                        })()}
-                      </td>
-
-                      {/* 구매처 */}
-                      <td
-                        style={{
-                          width: 170,
-                          minWidth: 170,
-                          maxWidth: 170,
-                          padding: "2px",
-                          position: "sticky",
-                          left: STICKY_LEFT_TYPE,
-                          zIndex: 3,
-                          backgroundColor: "#ffffff",
-                        }}
-                      >
-                        {(() => {
-                          const cellColor = getCellColor(row, "type", row.type);
-
-                          return (
-                            <TextField
-                              select
-                              size="small"
-                              value={String(row.type ?? "")}
-                              onChange={(e) => {
-                                const nextType = String(e.target.value ?? "");
-                                const nm = purchaseNameByType.get(nextType) || "";
-                                setRows((prev) =>
-                                  prev.map((r, i) =>
-                                    i === rowIndex
-                                      ? {
-                                        ...r,
-                                        type: nextType,
-                                        name: nm || r.name,
-                                        purchase_name: nm || r.purchase_name,
-                                        _isDirty: true,
-                                      }
-                                      : r
-                                  )
-                                );
-                              }}
-                              sx={{
-                                width: "100%",
-                                "& .MuiInputBase-root": { height: 30, fontSize: 12 },
-                                "& .MuiSelect-select": {
-                                  padding: "4px 8px",
-                                  color: cellColor,
-                                },
-                              }}
-                            >
-                              {(purchaseOptions || []).map((opt) => (
-                                <MenuItem key={opt.value} value={opt.value}>
-                                  {opt.label}
-                                </MenuItem>
-                              ))}
-                            </TextField>
-                          );
-                        })()}
-                      </td>
-
-                      {/* 금액 */}
-                      {AMOUNT_COLUMN_KEYS.map((k) => {
-                        const displayValue = getAmountCellDisplayValue(row, k);
-                        const styleCompareValue = TAX_TOTAL_KEY_TO_PREFIX[k] ? displayValue : row[k] ?? "";
-                        return (
-                          <td
-                            key={k}
-                            contentEditable={!k.endsWith("_total")}
-                            suppressContentEditableWarning
-                            onBlur={(e) => {
-                              const text = e.currentTarget.innerText;
-                              const formatted = formatComma(text);
-                              handleCellChange(rowIndex, k, formatted);
-                              e.currentTarget.innerText = formatted;
-                            }}
-                            style={{
-                              width: 90,
-                              ...getCellStyle(row, k, styleCompareValue),
-                            }}
-                          >
-                            {displayValue}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            <MDBox
-              sx={{
-                position: "sticky",
-                bottom: 0,
-                zIndex: 8,
-                backgroundColor: "#ffffff",
-                boxShadow: "0 -2px 6px rgba(0,0,0,0.12)",
-              }}
-            >
-              {renderSummaryTable()}
+                </tfoot>
+              </table>
             </MDBox>
-          </MDBox>
+          ) : (
+            /* 데스크탑: 기존 방식 유지 */
+            <MDBox ref={bodyScrollRef} sx={tableBodySx}>
+              <table ref={dataTableRef}>
+                {renderColGroup()}
+                <thead>
+                  <tr>
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 120, width: 120, maxWidth: 120,
+                        left: STICKY_LEFT_ACCOUNT, zIndex: 7, backgroundColor: "#fef6e4",
+                      }}
+                    >
+                      거래처
+                    </th>
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 140, width: 140, maxWidth: 140,
+                        left: STICKY_LEFT_DATE, zIndex: 7, backgroundColor: "#fef6e4",
+                      }}
+                    >
+                      날짜
+                    </th>
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 170, width: 170, maxWidth: 170,
+                        left: STICKY_LEFT_TYPE, zIndex: 7, backgroundColor: "#fef6e4",
+                      }}
+                    >
+                      구매처
+                    </th>
+                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>소모품</th>
+                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>식자재</th>
+                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>경관식</th>
+                  </tr>
+                  <tr>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>과/면세</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>부가세</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>합계</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>과/면세</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>부가세</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>합계</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>과/면세</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>부가세</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
+                        데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
+                      </td>
+                    </tr>
+                  ) : (
+                    rows.map((row, rowIndex) => (
+                      <tr key={row._rowKey || rowIndex}>
+                        <td style={{ width: 120, minWidth: 120, maxWidth: 120, position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                          {row.account_name || ""}
+                        </td>
+                        <td style={{ width: 140, minWidth: 140, maxWidth: 140, position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                          {String(row._saleMonth || "")}
+                        </td>
+                        <td style={{ width: 170, minWidth: 170, maxWidth: 170, position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                          {String(row.purchase_name || row.name || "")}
+                        </td>
+                        {AMOUNT_COLUMN_KEYS.map((k) => (
+                          <td key={k} style={{ width: 90, textAlign: "right", height: FOOTER_ROW_HEIGHT }}>
+                            {getAmountCellDisplayValue(row, k)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              <MDBox
+                sx={{
+                  position: "sticky",
+                  bottom: 0,
+                  zIndex: 8,
+                  backgroundColor: "#ffffff",
+                  boxShadow: "0 -2px 6px rgba(0,0,0,0.12)",
+                }}
+              >
+                {renderSummaryTable()}
+              </MDBox>
+            </MDBox>
+          )}
         </MDBox>
 
-        {/* ✅ 우클릭 컨텍스트 메뉴 (행 삭제) */}
-        {ctxMenu.open && (
-          <div
-            onClick={closeCtxMenu}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              closeCtxMenu();
-            }}
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: "100vw",
-              height: "100vh",
-              zIndex: 10000,
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                top: ctxMenu.mouseY,
-                left: ctxMenu.mouseX,
-                background: "#fff",
-                border: "1px solid #ddd",
-                borderRadius: 8,
-                boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
-                minWidth: 140,
-                overflow: "hidden",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <button
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "none",
-                  background: "transparent",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-                onClick={() => handleDeleteRow(ctxMenu.rowIndex)}
-              >
-                🗑️ 삭제
-              </button>
-            </div>
-          </div>
-        )}
+
       </DashboardLayout>
     </LocalizationProvider>
   );

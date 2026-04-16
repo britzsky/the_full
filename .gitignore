@@ -28,3 +28,7 @@ commit.sh
 src/layouts/temp/TestData.js
 src/layouts/temp/TestTab.js
 %file%
+AGENTS.md
+.gitignore
+CLAUDE.md
+.claude/settings.local.json

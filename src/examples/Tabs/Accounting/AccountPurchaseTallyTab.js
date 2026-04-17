@@ -8,6 +8,8 @@ import {
   Box,
   IconButton,
   MenuItem,
+  Tabs,
+  Tab,
 } from "@mui/material";
 
 import Autocomplete from "@mui/material/Autocomplete";
@@ -45,6 +47,7 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { koKR } from "@mui/x-date-pickers/locales";
 
 const MONEY_REFORMAT_MAX_ROWS = 700;
+const WELLSTORY_TYPES = new Set(["1", "2", "3", "4"]);
 const TAX_TOTAL_KEY_TO_PREFIX = {
   expen_taxTotal: "expen",
   food_taxTotal: "food",
@@ -82,12 +85,15 @@ function AccountPurchaseTallyTab() {
       ? "calc(100vh - 200px)"
       : "calc(100vh - 140px)";
 
-  // ✅ 조회조건 상태: year/month "0" = 전체, account_id "" = 전체
+  const [tallyTabValue, setTallyTabValue] = useState(0); // 0: 거래처 기준, 1: 구매처 기준
+
+  // ✅ 조회조건 상태: year/fromMonth/toMonth, account_id "" = 전체
   const now = new Date();
   const [filters, setFilters] = useState({
     type: "0",
     year: String(now.getFullYear()),
-    month: String(now.getMonth() + 1),
+    fromMonth: String(now.getMonth() + 1),
+    toMonth: "",
     account_id: "",
   });
 
@@ -118,6 +124,7 @@ function AccountPurchaseTallyTab() {
   const [tableViewportHeight, setTableViewportHeight] = useState(null);
   const [excelDownloading, setExcelDownloading] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [appliedToMonth, setAppliedToMonth] = useState("");
 
   // ✅ account_id -> account_name 매핑
   const accountNameById = useMemo(() => {
@@ -145,7 +152,16 @@ function AccountPurchaseTallyTab() {
       .filter((x) => x && String(x.del_yn) !== "Y");
     const uniq = [];
     const seen = new Set();
+    let wellstoryAdded = false;
     for (const o of mapped) {
+      if (WELLSTORY_TYPES.has(o.value)) {
+        if (!wellstoryAdded) {
+          uniq.push({ value: "wellstory", label: "삼성웰스토리(주)" });
+          seen.add("wellstory");
+          wellstoryAdded = true;
+        }
+        continue;
+      }
       if (seen.has(o.value)) continue;
       seen.add(o.value);
       uniq.push({ value: o.value, label: o.label });
@@ -171,6 +187,8 @@ function AccountPurchaseTallyTab() {
     }
 
     uniq.sort((a, b) => {
+      if (a.value === "wellstory") return -1;
+      if (b.value === "wellstory") return 1;
       const an = Number(a.value);
       const bn = Number(b.value);
       const aNum = Number.isFinite(an);
@@ -219,12 +237,16 @@ function AccountPurchaseTallyTab() {
     return cur;
   }, []);
 
-  const buildSearchParams = useCallback((f) => ({
-    account_id: String(f?.account_id ?? ""),
-    type: String(f?.type ?? "0"),
-    year: String(f?.year ?? "0"),
-    month: String(f?.month ?? "0"),
-  }), []);
+  const buildSearchParams = useCallback((f) => {
+    const type = String(f?.type ?? "0");
+    return {
+      account_id: String(f?.account_id ?? ""),
+      type: type === "wellstory" ? "0" : type,
+      year: String(f?.year ?? "0"),
+      fromMonth: String(f?.fromMonth ?? ""),
+      toMonth: String(f?.toMonth ?? ""),
+    };
+  }, []);
 
   // =========================================
   // ✅ (핵심) 행추가로 index 밀려도 기존행이 빨개지지 않게:
@@ -335,12 +357,21 @@ function AccountPurchaseTallyTab() {
   // ✅ 구매처 옵션 (mappingRows 기반)
   // =========================================
   const purchaseOptions = useMemo(() => {
-    return (mappingRows || [])
-      .map((m) => ({
-        value: String(m.type ?? ""),
-        label: String(m.name ?? ""),
-      }))
-      .filter((x) => x.value !== "");
+    const opts = [];
+    let wellstoryAdded = false;
+    for (const m of (mappingRows || [])) {
+      const value = String(m.type ?? "");
+      if (!value) continue;
+      if (WELLSTORY_TYPES.has(value)) {
+        if (!wellstoryAdded) {
+          opts.unshift({ value: "wellstory", label: "삼성웰스토리(주)" });
+          wellstoryAdded = true;
+        }
+        continue;
+      }
+      opts.push({ value, label: String(m.name ?? "") });
+    }
+    return opts;
   }, [mappingRows]);
 
   // ✅ type -> name 매핑
@@ -490,6 +521,7 @@ function AccountPurchaseTallyTab() {
   // ✅ 조회(버튼)
   const handleSearch = async () => {
     try {
+      setAppliedToMonth(filters.toMonth);
       await fetchPurchaseList(buildSearchParams(filters));
     } catch (e) {
       Swal.fire("오류", e.message, "error");
@@ -504,7 +536,7 @@ function AccountPurchaseTallyTab() {
   const getCellColor = () => "black";
 
   // =========================================
-  // ✅ 자동합계(의미 기반)
+  // ✅ 자동합계
   // =========================================
   const VAT_RATE = 0.1;
   const calcVatText = useCallback(
@@ -587,6 +619,67 @@ function AccountPurchaseTallyTab() {
     [setRows]
   );
 
+  const isRangeMode = Boolean(appliedToMonth);
+
+  // 날짜 컬럼 헤더/셀에 표시할 텍스트
+  const dateRangeLabel = isRangeMode
+    ? `${filters.year}.${String(filters.fromMonth).padStart(2, "0")} ~ ${filters.year}.${String(appliedToMonth).padStart(2, "0")}`
+    : "";
+
+  // =========================================
+  // ✅ 거래처 기준 표시 행: 거래처+type별 합산 (type 1~4는 합산하여 삼성웰스토리(주)로 표시)
+  // =========================================
+  const accountDisplayRows = useMemo(() => {
+    const map = new Map();
+    (rows || []).forEach((r) => {
+      const accountId = String(r?.account_id ?? "");
+      const type = String(r?.type ?? "");
+      const saleDate = isRangeMode ? "" : String(r?._saleMonth || r?.saleDate || "");
+      const isWellstory = WELLSTORY_TYPES.has(type);
+      const typeKey = isWellstory ? "wellstory" : type;
+      const baseKey = `${accountId}__${typeKey}`;
+      const key = isRangeMode ? baseKey : `${baseKey}__${saleDate}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          ...r,
+          type: isWellstory ? "wellstory" : type,
+          purchase_name: isWellstory ? "삼성웰스토리(주)" : (r?.purchase_name || r?.name || ""),
+          name: isWellstory ? "삼성웰스토리(주)" : (r?.name || ""),
+          saleDate: isRangeMode ? "" : saleDate,
+          expen_tax: 0, expen_vat: 0, expen_taxFree: 0, expen_total: 0,
+          food_tax: 0, food_vat: 0, food_taxFree: 0, food_total: 0,
+          scenic_tax: 0, scenic_vat: 0, scenic_taxFree: 0, scenic_total: 0,
+        });
+      }
+      const g = map.get(key);
+      g.expen_tax += toNum(r?.expen_tax);
+      g.expen_vat += toNum(r?.expen_vat);
+      g.expen_taxFree += toNum(r?.expen_taxFree);
+      g.expen_total += toNum(r?.expen_total);
+      g.food_tax += toNum(r?.food_tax);
+      g.food_vat += toNum(r?.food_vat);
+      g.food_taxFree += toNum(r?.food_taxFree);
+      g.food_total += toNum(r?.food_total);
+      g.scenic_tax += toNum(r?.scenic_tax);
+      g.scenic_vat += toNum(r?.scenic_vat);
+      g.scenic_taxFree += toNum(r?.scenic_taxFree);
+      g.scenic_total += toNum(r?.scenic_total);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      const accountCmp = String(a.account_name ?? "").localeCompare(String(b.account_name ?? ""), "ko");
+      if (accountCmp !== 0) return accountCmp;
+      // 같은 거래처 내에서 wellstory 먼저, 나머지는 type 순
+      const aIsWell = a.type === "wellstory";
+      const bIsWell = b.type === "wellstory";
+      if (aIsWell && !bIsWell) return -1;
+      if (!aIsWell && bIsWell) return 1;
+      const an = Number(a.type);
+      const bn = Number(b.type);
+      if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
+      return String(a.type ?? "").localeCompare(String(b.type ?? ""), "ko");
+    });
+  }, [rows, toNum, isRangeMode]); // eslint-disable-line
+
   // =========================================
   // ✅ 하단 합계(통합 소계/총합계 계산)
   // =========================================
@@ -595,7 +688,7 @@ function AccountPurchaseTallyTab() {
     const food = { taxTotal: 0, vat: 0, total: 0 };
     const scenic = { taxTotal: 0, vat: 0, total: 0 };
 
-    (rows || []).forEach((r) => {
+    (accountDisplayRows || []).forEach((r) => {
       // 과/면세 합산 = tax + taxFree
       expen.taxTotal += toNum(r?.expen_tax) + toNum(r?.expen_taxFree);
       expen.vat += toNum(r?.expen_vat);
@@ -617,9 +710,80 @@ function AccountPurchaseTallyTab() {
     };
 
     return { expen, food, scenic, total };
-  }, [rows, toNum]);
+  }, [accountDisplayRows, toNum]);
 
   const formatSummaryNumber = useCallback((v) => Number(v || 0).toLocaleString("ko-KR"), []);
+
+  // =========================================
+  // ✅ 구매처 기준 집계
+  // - 종료월 있으면 날짜 무시하고 구매처별 합산
+  // - 종료월 없으면 기존대로 구매처+날짜별 집계
+  // =========================================
+  const purchaseTypeRows = useMemo(() => {
+    const map = new Map();
+    (rows || []).forEach((r) => {
+      const type = String(r?.type ?? "");
+      const saleDate = isRangeMode ? "" : String(r?._saleMonth || r?.saleDate || "");
+      const isWellstory = WELLSTORY_TYPES.has(type);
+      const typeKey = isWellstory ? "wellstory" : type;
+      const key = isRangeMode ? typeKey : `${typeKey}__${saleDate}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          type: isWellstory ? "wellstory" : type,
+          purchase_name: isWellstory ? "삼성웰스토리(주)" : String(r?.purchase_name || r?.name || ""),
+          saleDate,
+          expen_tax: 0, expen_vat: 0, expen_taxFree: 0, expen_total: 0,
+          food_tax: 0, food_vat: 0, food_taxFree: 0, food_total: 0,
+          scenic_tax: 0, scenic_vat: 0, scenic_taxFree: 0, scenic_total: 0,
+        });
+      }
+      const g = map.get(key);
+      g.expen_tax += toNum(r?.expen_tax);
+      g.expen_vat += toNum(r?.expen_vat);
+      g.expen_taxFree += toNum(r?.expen_taxFree);
+      g.expen_total += toNum(r?.expen_total);
+      g.food_tax += toNum(r?.food_tax);
+      g.food_vat += toNum(r?.food_vat);
+      g.food_taxFree += toNum(r?.food_taxFree);
+      g.food_total += toNum(r?.food_total);
+      g.scenic_tax += toNum(r?.scenic_tax);
+      g.scenic_vat += toNum(r?.scenic_vat);
+      g.scenic_taxFree += toNum(r?.scenic_taxFree);
+      g.scenic_total += toNum(r?.scenic_total);
+    });
+    return Array.from(map.values()).sort((a, b) => {
+      const aIsWell = a.type === "wellstory";
+      const bIsWell = b.type === "wellstory";
+      if (aIsWell && !bIsWell) return -1;
+      if (!aIsWell && bIsWell) return 1;
+      const an = Number(a.type);
+      const bn = Number(b.type);
+      if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;
+      const typeCmp = String(a.type).localeCompare(String(b.type), "ko");
+      if (typeCmp !== 0) return typeCmp;
+      if (a.saleDate < b.saleDate) return -1;
+      if (a.saleDate > b.saleDate) return 1;
+      return 0;
+    });
+  }, [rows, toNum, isRangeMode]); // eslint-disable-line
+
+  const purchaseTypeSummary = useMemo(() => {
+    const expen = { taxTotal: 0, vat: 0, total: 0 };
+    const food = { taxTotal: 0, vat: 0, total: 0 };
+    const scenic = { taxTotal: 0, vat: 0, total: 0 };
+    purchaseTypeRows.forEach((r) => {
+      expen.taxTotal += r.expen_tax + r.expen_taxFree;
+      expen.vat += r.expen_vat;
+      expen.total += r.expen_total;
+      food.taxTotal += r.food_tax + r.food_taxFree;
+      food.vat += r.food_vat;
+      food.total += r.food_total;
+      scenic.taxTotal += r.scenic_tax + r.scenic_taxFree;
+      scenic.vat += r.scenic_vat;
+      scenic.total += r.scenic_total;
+    });
+    return { expen, food, scenic, total: { total: expen.total + food.total + scenic.total } };
+  }, [purchaseTypeRows]);
 
   const getAmountCellDisplayValue = useCallback(
     (row, key) => {
@@ -634,60 +798,38 @@ function AccountPurchaseTallyTab() {
   );
 
   // =========================================
-  // ✅ 행추가
+  // ✅ 행추가 (비활성화)
   // =========================================
-  const handleAddRow = useCallback(() => {
-    // 연/월 필터 값으로 신규 행의 기본 월 결정 (전체("0")이면 오늘 월 사용)
-    const y = filters.year && filters.year !== "0" ? filters.year : String(new Date().getFullYear());
-    const m = filters.month && filters.month !== "0" ? String(filters.month).padStart(2, "0") : String(new Date().getMonth() + 1).padStart(2, "0");
-    const month = `${y}-${m}`;
-
-    const firstPurchase = purchaseOptions?.[0] || null;
-    const type = firstPurchase ? String(firstPurchase.value) : "";
-    const mappedName = type ? purchaseNameByType.get(type) || firstPurchase?.label || "" : "";
-
-    const accountId = String(filters.account_id || "");
-    const accountName = accountNameById.get(accountId) || "";
-
-    const newRow = {
-      _isNew: true,
-      _rowKey: `new:${Date.now()}_${Math.random().toString(16).slice(2)}`,
-      item_id: null,
-      account_id: accountId,
-      account_name: accountName,
-
-      _saleMonth: month,
-      saleDate: month, // ✅ YYYY-MM
-
-      type,
-      name: mappedName,
-      purchase_name: mappedName,
-
-      expen_tax: "",
-      expen_vat: "",
-      expen_taxFree: "",
-      expen_total: "",
-      food_tax: "",
-      food_vat: "",
-      food_taxFree: "",
-      food_total: "",
-      scenic_tax: "",
-      scenic_vat: "",
-      scenic_taxFree: "",
-      scenic_total: "",
-      note: "",
-    };
-
-    setRows((prev) => [newRow, ...(prev || [])]);
-  }, [
-    filters.year,
-    filters.month,
-    filters.account_id,
-    purchaseOptions,
-    purchaseNameByType,
-    accountNameById,
-    setRows,
-  ]);
+  // const handleAddRow = useCallback(() => {
+  //   const y = filters.year && filters.year !== "0" ? filters.year : String(new Date().getFullYear());
+  //   const m = filters.month && filters.month !== "0" ? String(filters.month).padStart(2, "0") : String(new Date().getMonth() + 1).padStart(2, "0");
+  //   const month = `${y}-${m}`;
+  //   const firstPurchase = purchaseOptions?.[0] || null;
+  //   const type = firstPurchase ? String(firstPurchase.value) : "";
+  //   const mappedName = type ? purchaseNameByType.get(type) || firstPurchase?.label || "" : "";
+  //   const accountId = String(filters.account_id || "");
+  //   const accountName = accountNameById.get(accountId) || "";
+  //   const newRow = {
+  //     _isNew: true,
+  //     _rowKey: `new:${Date.now()}_${Math.random().toString(16).slice(2)}`,
+  //     item_id: null,
+  //     account_id: accountId,
+  //     account_name: accountName,
+  //     _saleMonth: month,
+  //     saleDate: month,
+  //     type,
+  //     name: mappedName,
+  //     purchase_name: mappedName,
+  //     expen_tax: "", expen_vat: "", expen_taxFree: "", expen_total: "",
+  //     food_tax: "", food_vat: "", food_taxFree: "", food_total: "",
+  //     scenic_tax: "", scenic_vat: "", scenic_taxFree: "", scenic_total: "",
+  //     note: "",
+  //   };
+  //   setRows((prev) => [newRow, ...(prev || [])]);
+  // }, [
+  //   filters.year, filters.month, filters.account_id,
+  //   purchaseOptions, purchaseNameByType, accountNameById, setRows,
+  // ]);
 
   // =========================================
   // ✅ 테이블 스타일
@@ -789,53 +931,53 @@ function AccountPurchaseTallyTab() {
 
   const renderColGroup = () => (
     <colgroup>
-      <col style={{ width: 120, minWidth: 120, maxWidth: 120 }} /> {/* 거래처 */}
-      <col style={{ width: 140, minWidth: 140, maxWidth: 140 }} /> {/* 날짜 */}
+      <col style={{ width: 150, minWidth: 150, maxWidth: 150 }} /> {/* 거래처 */}
+      <col style={{ width: 110, minWidth: 110, maxWidth: 110 }} /> {/* 날짜 */}
       <col style={{ width: 170, minWidth: 170, maxWidth: 170 }} /> {/* 구매처 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 소모품 과/면세 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 소모품 부가세 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 소모품 합계 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 식자재 과/면세 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 식자재 부가세 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 식자재 합계 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 경관식 과/면세 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 경관식 부가세 */}
-      <col style={{ width: 90, minWidth: 90, maxWidth: 90 }} /> {/* 경관식 합계 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 소모품 과/면세 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 소모품 부가세 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 소모품 합계 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 식자재 과/면세 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 식자재 부가세 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 식자재 합계 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 경관식 과/면세 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 경관식 부가세 */}
+      <col style={{ width: 110, minWidth: 110 }} /> {/* 경관식 합계 */}
     </colgroup>
   );
 
   // ✅ 고정 컬럼(left sticky) 좌표
   const STICKY_LEFT_ACCOUNT = 0;
-  const STICKY_LEFT_DATE = 120;
-  const STICKY_LEFT_TYPE = 260; // 120 + 140
+  const STICKY_LEFT_DATE = 150;
+  const STICKY_LEFT_TYPE = 260;
   const HEADER_FIRST_ROW_HEIGHT = 32;
   const HEADER_SECOND_ROW_TOP = HEADER_FIRST_ROW_HEIGHT;
   const FOOTER_ROW_HEIGHT = 36;
 
   const renderSummaryTable = useCallback(
-    (extraTableStyle = {}) => (
+    (extraTableStyle = {}) => {
+      const leftColSpan = isRangeMode ? 2 : 3;
+      return (
       <table className="summary-table" style={extraTableStyle}>
         {renderColGroup()}
         <tbody>
           <tr>
-            <td colSpan={3} style={{ textAlign: "center", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>
+            <td colSpan={leftColSpan} style={{ textAlign: "center", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>
               소계
             </td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.expen.taxTotal)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.expen.vat)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.expen.total)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.food.taxTotal)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.food.vat)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.food.total)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.scenic.taxTotal)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
-              {formatSummaryNumber(Number(summary.scenic.vat ?? 0))}
-            </td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>{formatSummaryNumber(summary.scenic.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.taxTotal)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.vat)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.taxTotal)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.vat)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.scenic.taxTotal)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(Number(summary.scenic.vat ?? 0))}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.scenic.total)}</td>
           </tr>
 
           <tr>
-            <td colSpan={3} style={{ textAlign: "center", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>
+            <td colSpan={leftColSpan} style={{ textAlign: "center", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>
               총합계
             </td>
             <td colSpan={9} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
@@ -844,8 +986,9 @@ function AccountPurchaseTallyTab() {
           </tr>
         </tbody>
       </table>
-    ),
-    [FOOTER_ROW_HEIGHT, formatSummaryNumber, summary, renderColGroup]
+      );
+    },
+    [FOOTER_ROW_HEIGHT, formatSummaryNumber, summary, renderColGroup, isRangeMode]
   );
 
   // =========================
@@ -1027,11 +1170,24 @@ function AccountPurchaseTallyTab() {
   const handleExcelDownload = useCallback(async () => {
     if (excelDownloading) return;
 
-    const exportRows = Array.isArray(rows) ? rows : [];
+    const isByPurchase = tallyTabValue === 1;
+    const exportRows = isByPurchase ? purchaseTypeRows : (Array.isArray(rows) ? rows : []);
     if (exportRows.length === 0) {
       Swal.fire("다운로드 불가", "다운로드할 데이터가 없습니다.", "warning");
       return;
     }
+
+    const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF6E4" } };
+    const borderThin = {
+      top: { style: "thin" }, left: { style: "thin" },
+      bottom: { style: "thin" }, right: { style: "thin" },
+    };
+    const ymLabel = filters.year && filters.fromMonth
+      ? (filters.toMonth
+        ? `${filters.year}-${String(filters.fromMonth).padStart(2, "0")}_${filters.year}-${String(filters.toMonth).padStart(2, "0")}`
+        : `${filters.year}-${String(filters.fromMonth).padStart(2, "0")}`)
+      : (filters.year || "전체");
+    const ymd = dayjs().format("YYYYMMDD");
 
     try {
       setExcelDownloading(true);
@@ -1045,151 +1201,268 @@ function AccountPurchaseTallyTab() {
 
       const wb = new ExcelJS.Workbook();
       wb.creator = "THEFULL";
-      const ws = wb.addWorksheet("매입마감");
 
-      ws.views = [{ state: "frozen", ySplit: 2 }];
-      ws.columns = [
-        { width: 14 }, // 거래처
-        { width: 12 }, // 날짜
-        { width: 22 }, // 구매처
-        { width: 10 }, // 소모품 과/면세
-        { width: 10 }, // 소모품 부가세
-        { width: 11 }, // 소모품 합계
-        { width: 10 }, // 식자재 과/면세
-        { width: 10 }, // 식자재 부가세
-        { width: 11 }, // 식자재 합계
-        { width: 10 }, // 경관식 과/면세
-        { width: 10 }, // 경관식 부가세
-        { width: 11 }, // 경관식 합계
-      ];
+      if (!isByPurchase) {
+        // ===== 거래처 기준 =====
+        const ws = wb.addWorksheet("매입마감_거래처기준");
+        ws.views = [{ state: "frozen", ySplit: 2 }];
+        ws.columns = [
+          { width: 16 }, { width: 12 }, { width: 22 },
+          { width: 16 }, { width: 16 }, { width: 16 },
+          { width: 16 }, { width: 16 }, { width: 16 },
+          { width: 16 }, { width: 16 }, { width: 16 },
+        ];
 
-      ws.mergeCells("A1:A2");
-      ws.mergeCells("B1:B2");
-      ws.mergeCells("C1:C2");
-      ws.mergeCells("D1:F1");
-      ws.mergeCells("G1:I1");
-      ws.mergeCells("J1:L1");
+        ws.mergeCells("A1:A2"); ws.mergeCells("B1:B2"); ws.mergeCells("C1:C2");
+        ws.mergeCells("D1:F1"); ws.mergeCells("G1:I1"); ws.mergeCells("J1:L1");
 
-      ws.getCell("A1").value = "거래처";
-      ws.getCell("B1").value = "날짜";
-      ws.getCell("C1").value = "구매처";
-      ws.getCell("D1").value = "소모품";
-      ws.getCell("G1").value = "식자재";
-      ws.getCell("J1").value = "경관식";
+        ws.getCell("A1").value = "거래처";
+        ws.getCell("B1").value = "날짜";
+        ws.getCell("C1").value = "구매처";
+        ws.getCell("D1").value = "소모품";
+        ws.getCell("G1").value = "식자재";
+        ws.getCell("J1").value = "경관식";
+        ws.getCell("D2").value = "과/면세"; ws.getCell("E2").value = "부가세"; ws.getCell("F2").value = "합계";
+        ws.getCell("G2").value = "과/면세"; ws.getCell("H2").value = "부가세"; ws.getCell("I2").value = "합계";
+        ws.getCell("J2").value = "과/면세"; ws.getCell("K2").value = "부가세"; ws.getCell("L2").value = "합계";
 
-      ws.getCell("D2").value = "과/면세";
-      ws.getCell("E2").value = "부가세";
-      ws.getCell("F2").value = "합계";
-      ws.getCell("G2").value = "과/면세";
-      ws.getCell("H2").value = "부가세";
-      ws.getCell("I2").value = "합계";
-      ws.getCell("J2").value = "과/면세";
-      ws.getCell("K2").value = "부가세";
-      ws.getCell("L2").value = "합계";
-
-      const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF6E4" } };
-      const borderThin = {
-        top: { style: "thin" },
-        left: { style: "thin" },
-        bottom: { style: "thin" },
-        right: { style: "thin" },
-      };
-
-      for (let r = 1; r <= 2; r += 1) {
-        for (let c = 1; c <= 12; c += 1) {
-          const cell = ws.getCell(r, c);
-          cell.fill = headerFill;
-          cell.border = borderThin;
-          cell.font = { bold: true };
-          cell.alignment = { horizontal: "center", vertical: "middle" };
+        for (let r = 1; r <= 2; r += 1) {
+          for (let c = 1; c <= 12; c += 1) {
+            const cell = ws.getCell(r, c);
+            cell.fill = headerFill; cell.border = borderThin;
+            cell.font = { bold: true }; cell.alignment = { horizontal: "center", vertical: "middle" };
+          }
         }
+
+        exportRows.forEach((row, idx) => {
+          const er = idx + 3;
+          const purchaseLabel = purchaseNameByType.get(String(row?.type ?? "")) || String(row?.purchase_name ?? row?.name ?? "");
+          ws.getCell(er, 1).value = row?.account_name || "";
+          ws.getCell(er, 2).value = normalizeSaleMonth(row?._saleMonth || row?.saleDate || "");
+          ws.getCell(er, 3).value = purchaseLabel;
+          ws.getCell(er, 4).value = toNum(row?.expen_tax) + toNum(row?.expen_taxFree);
+          ws.getCell(er, 5).value = toNum(row?.expen_vat);
+          ws.getCell(er, 6).value = toNum(row?.expen_total);
+          ws.getCell(er, 7).value = toNum(row?.food_tax) + toNum(row?.food_taxFree);
+          ws.getCell(er, 8).value = toNum(row?.food_vat);
+          ws.getCell(er, 9).value = toNum(row?.food_total);
+          ws.getCell(er, 10).value = toNum(row?.scenic_tax) + toNum(row?.scenic_taxFree);
+          ws.getCell(er, 11).value = toNum(row?.scenic_vat);
+          ws.getCell(er, 12).value = toNum(row?.scenic_total);
+          for (let c = 1; c <= 12; c += 1) {
+            const cell = ws.getCell(er, c);
+            cell.border = borderThin;
+            cell.alignment = { horizontal: c <= 3 ? "center" : "right", vertical: "middle" };
+            if (c >= 4) cell.numFmt = "#,##0";
+          }
+        });
+
+        const subtotalRow = exportRows.length + 3;
+        ws.mergeCells(subtotalRow, 1, subtotalRow, 3);
+        ws.getCell(subtotalRow, 1).value = "소계";
+        ws.getCell(subtotalRow, 4).value = Number(summary.expen.taxTotal || 0);
+        ws.getCell(subtotalRow, 5).value = Number(summary.expen.vat || 0);
+        ws.getCell(subtotalRow, 6).value = Number(summary.expen.total || 0);
+        ws.getCell(subtotalRow, 7).value = Number(summary.food.taxTotal || 0);
+        ws.getCell(subtotalRow, 8).value = Number(summary.food.vat || 0);
+        ws.getCell(subtotalRow, 9).value = Number(summary.food.total || 0);
+        ws.getCell(subtotalRow, 10).value = Number(summary.scenic.taxTotal || 0);
+        ws.getCell(subtotalRow, 11).value = Number(summary.scenic.vat || 0);
+        ws.getCell(subtotalRow, 12).value = Number(summary.scenic.total || 0);
+
+        const totalRow = subtotalRow + 1;
+        ws.mergeCells(totalRow, 1, totalRow, 3);
+        ws.getCell(totalRow, 1).value = "총합계";
+        ws.getCell(totalRow, 4).value = Number(summary.expen.taxTotal || 0);
+        ws.getCell(totalRow, 5).value = Number(summary.expen.vat || 0);
+        ws.getCell(totalRow, 6).value = Number(summary.expen.total || 0);
+        ws.getCell(totalRow, 7).value = Number(summary.food.taxTotal || 0);
+        ws.getCell(totalRow, 8).value = Number(summary.food.vat || 0);
+        ws.getCell(totalRow, 9).value = Number(summary.food.total || 0);
+        ws.getCell(totalRow, 10).value = Number(summary.scenic.taxTotal || 0);
+        ws.getCell(totalRow, 11).value = Number(summary.scenic.vat || 0);
+        ws.getCell(totalRow, 12).value = Number(summary.scenic.total || 0);
+
+        for (let r = subtotalRow; r <= totalRow; r += 1) {
+          for (let c = 1; c <= 12; c += 1) {
+            const cell = ws.getCell(r, c);
+            cell.border = borderThin;
+            cell.alignment = { horizontal: c <= 3 ? "center" : "right", vertical: "middle" };
+            cell.font = { bold: true };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r === totalRow ? "FFECECEC" : "FFF7F7F7" } };
+            if (c >= 4) cell.numFmt = "#,##0";
+          }
+        }
+
+        const accountLabel = filters.account_id ? accountNameById.get(String(filters.account_id)) || "선택거래처" : "전체";
+        const filename = `매입마감_거래처기준_${sanitizeFilename(accountLabel)}_${sanitizeFilename(ymLabel)}_${ymd}.xlsx`;
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        Swal.close();
+        downloadBlob(blob, filename);
+
+      } else {
+        // ===== 구매처 기준 =====
+        // 범위 조회면 날짜 컬럼 없음 (구매처+금액만)
+        const ptRangeMode = Boolean(filters.toMonth);
+        const ws = wb.addWorksheet("매입마감_구매처기준");
+        ws.views = [{ state: "frozen", ySplit: 2 }];
+
+        if (ptRangeMode) {
+          ws.columns = [
+            { width: 22 },
+            { width: 16 }, { width: 16 }, { width: 16 },
+            { width: 16 }, { width: 16 }, { width: 16 },
+            { width: 16 }, { width: 16 }, { width: 16 },
+          ];
+          ws.mergeCells("A1:A2");
+          ws.mergeCells("B1:D1"); ws.mergeCells("E1:G1"); ws.mergeCells("H1:J1");
+          ws.getCell("A1").value = "구매처";
+          ws.getCell("B1").value = "소모품";
+          ws.getCell("E1").value = "식자재";
+          ws.getCell("H1").value = "경관식";
+          ws.getCell("B2").value = "과/면세"; ws.getCell("C2").value = "부가세"; ws.getCell("D2").value = "합계";
+          ws.getCell("E2").value = "과/면세"; ws.getCell("F2").value = "부가세"; ws.getCell("G2").value = "합계";
+          ws.getCell("H2").value = "과/면세"; ws.getCell("I2").value = "부가세"; ws.getCell("J2").value = "합계";
+          for (let r = 1; r <= 2; r += 1) {
+            for (let c = 1; c <= 10; c += 1) {
+              const cell = ws.getCell(r, c);
+              cell.fill = headerFill; cell.border = borderThin;
+              cell.font = { bold: true }; cell.alignment = { horizontal: "center", vertical: "middle" };
+            }
+          }
+          exportRows.forEach((row, idx) => {
+            const er = idx + 3;
+            ws.getCell(er, 1).value = row.purchase_name;
+            ws.getCell(er, 2).value = row.expen_tax + row.expen_taxFree;
+            ws.getCell(er, 3).value = row.expen_vat;
+            ws.getCell(er, 4).value = row.expen_total;
+            ws.getCell(er, 5).value = row.food_tax + row.food_taxFree;
+            ws.getCell(er, 6).value = row.food_vat;
+            ws.getCell(er, 7).value = row.food_total;
+            ws.getCell(er, 8).value = row.scenic_tax + row.scenic_taxFree;
+            ws.getCell(er, 9).value = row.scenic_vat;
+            ws.getCell(er, 10).value = row.scenic_total;
+            for (let c = 1; c <= 10; c += 1) {
+              const cell = ws.getCell(er, c);
+              cell.border = borderThin;
+              cell.alignment = { horizontal: c === 1 ? "center" : "right", vertical: "middle" };
+              if (c >= 2) cell.numFmt = "#,##0";
+            }
+          });
+          const subtotalRow = exportRows.length + 3;
+          ws.getCell(subtotalRow, 1).value = "소계";
+          ws.getCell(subtotalRow, 2).value = Number(purchaseTypeSummary.expen.taxTotal || 0);
+          ws.getCell(subtotalRow, 3).value = Number(purchaseTypeSummary.expen.vat || 0);
+          ws.getCell(subtotalRow, 4).value = Number(purchaseTypeSummary.expen.total || 0);
+          ws.getCell(subtotalRow, 5).value = Number(purchaseTypeSummary.food.taxTotal || 0);
+          ws.getCell(subtotalRow, 6).value = Number(purchaseTypeSummary.food.vat || 0);
+          ws.getCell(subtotalRow, 7).value = Number(purchaseTypeSummary.food.total || 0);
+          ws.getCell(subtotalRow, 8).value = Number(purchaseTypeSummary.scenic.taxTotal || 0);
+          ws.getCell(subtotalRow, 9).value = Number(purchaseTypeSummary.scenic.vat || 0);
+          ws.getCell(subtotalRow, 10).value = Number(purchaseTypeSummary.scenic.total || 0);
+          const totalRow = subtotalRow + 1;
+          ws.getCell(totalRow, 1).value = "총합계";
+          ws.mergeCells(totalRow, 2, totalRow, 10);
+          ws.getCell(totalRow, 2).value = Number(purchaseTypeSummary.total.total || 0);
+          for (let r = subtotalRow; r <= totalRow; r += 1) {
+            for (let c = 1; c <= 10; c += 1) {
+              const cell = ws.getCell(r, c);
+              cell.border = borderThin;
+              cell.alignment = { horizontal: c === 1 ? "center" : "right", vertical: "middle" };
+              cell.font = { bold: true };
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r === totalRow ? "FFECECEC" : "FFF7F7F7" } };
+              if (c >= 2) cell.numFmt = "#,##0";
+            }
+          }
+        } else {
+          ws.columns = [
+            { width: 22 }, { width: 12 },
+            { width: 16 }, { width: 16 }, { width: 16 },
+            { width: 16 }, { width: 16 }, { width: 16 },
+            { width: 16 }, { width: 16 }, { width: 16 },
+          ];
+          ws.mergeCells("A1:A2"); ws.mergeCells("B1:B2");
+          ws.mergeCells("C1:E1"); ws.mergeCells("F1:H1"); ws.mergeCells("I1:K1");
+          ws.getCell("A1").value = "구매처";
+          ws.getCell("B1").value = "날짜";
+          ws.getCell("C1").value = "소모품";
+          ws.getCell("F1").value = "식자재";
+          ws.getCell("I1").value = "경관식";
+          ws.getCell("C2").value = "과/면세"; ws.getCell("D2").value = "부가세"; ws.getCell("E2").value = "합계";
+          ws.getCell("F2").value = "과/면세"; ws.getCell("G2").value = "부가세"; ws.getCell("H2").value = "합계";
+          ws.getCell("I2").value = "과/면세"; ws.getCell("J2").value = "부가세"; ws.getCell("K2").value = "합계";
+          for (let r = 1; r <= 2; r += 1) {
+            for (let c = 1; c <= 11; c += 1) {
+              const cell = ws.getCell(r, c);
+              cell.fill = headerFill; cell.border = borderThin;
+              cell.font = { bold: true }; cell.alignment = { horizontal: "center", vertical: "middle" };
+            }
+          }
+          exportRows.forEach((row, idx) => {
+            const er = idx + 3;
+            ws.getCell(er, 1).value = row.purchase_name;
+            ws.getCell(er, 2).value = row.saleDate;
+            ws.getCell(er, 3).value = row.expen_tax + row.expen_taxFree;
+            ws.getCell(er, 4).value = row.expen_vat;
+            ws.getCell(er, 5).value = row.expen_total;
+            ws.getCell(er, 6).value = row.food_tax + row.food_taxFree;
+            ws.getCell(er, 7).value = row.food_vat;
+            ws.getCell(er, 8).value = row.food_total;
+            ws.getCell(er, 9).value = row.scenic_tax + row.scenic_taxFree;
+            ws.getCell(er, 10).value = row.scenic_vat;
+            ws.getCell(er, 11).value = row.scenic_total;
+            for (let c = 1; c <= 11; c += 1) {
+              const cell = ws.getCell(er, c);
+              cell.border = borderThin;
+              cell.alignment = { horizontal: c <= 2 ? "center" : "right", vertical: "middle" };
+              if (c >= 3) cell.numFmt = "#,##0";
+            }
+          });
+          const subtotalRow = exportRows.length + 3;
+          ws.mergeCells(subtotalRow, 1, subtotalRow, 2);
+          ws.getCell(subtotalRow, 1).value = "소계";
+          ws.getCell(subtotalRow, 3).value = Number(purchaseTypeSummary.expen.taxTotal || 0);
+          ws.getCell(subtotalRow, 4).value = Number(purchaseTypeSummary.expen.vat || 0);
+          ws.getCell(subtotalRow, 5).value = Number(purchaseTypeSummary.expen.total || 0);
+          ws.getCell(subtotalRow, 6).value = Number(purchaseTypeSummary.food.taxTotal || 0);
+          ws.getCell(subtotalRow, 7).value = Number(purchaseTypeSummary.food.vat || 0);
+          ws.getCell(subtotalRow, 8).value = Number(purchaseTypeSummary.food.total || 0);
+          ws.getCell(subtotalRow, 9).value = Number(purchaseTypeSummary.scenic.taxTotal || 0);
+          ws.getCell(subtotalRow, 10).value = Number(purchaseTypeSummary.scenic.vat || 0);
+          ws.getCell(subtotalRow, 11).value = Number(purchaseTypeSummary.scenic.total || 0);
+          const totalRow = subtotalRow + 1;
+          ws.mergeCells(totalRow, 1, totalRow, 2);
+          ws.getCell(totalRow, 1).value = "총합계";
+          ws.getCell(totalRow, 3).value = Number(purchaseTypeSummary.expen.taxTotal || 0);
+          ws.getCell(totalRow, 4).value = Number(purchaseTypeSummary.expen.vat || 0);
+          ws.getCell(totalRow, 5).value = Number(purchaseTypeSummary.expen.total || 0);
+          ws.getCell(totalRow, 6).value = Number(purchaseTypeSummary.food.taxTotal || 0);
+          ws.getCell(totalRow, 7).value = Number(purchaseTypeSummary.food.vat || 0);
+          ws.getCell(totalRow, 8).value = Number(purchaseTypeSummary.food.total || 0);
+          ws.getCell(totalRow, 9).value = Number(purchaseTypeSummary.scenic.taxTotal || 0);
+          ws.getCell(totalRow, 10).value = Number(purchaseTypeSummary.scenic.vat || 0);
+          ws.getCell(totalRow, 11).value = Number(purchaseTypeSummary.scenic.total || 0);
+          for (let r = subtotalRow; r <= totalRow; r += 1) {
+            for (let c = 1; c <= 11; c += 1) {
+              const cell = ws.getCell(r, c);
+              cell.border = borderThin;
+              cell.alignment = { horizontal: c <= 2 ? "center" : "right", vertical: "middle" };
+              cell.font = { bold: true };
+              cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: r === totalRow ? "FFECECEC" : "FFF7F7F7" } };
+              if (c >= 3) cell.numFmt = "#,##0";
+            }
+          }
+        }
+
+        const filename = `매입마감_구매처기준_${sanitizeFilename(ymLabel)}_${ymd}.xlsx`;
+        const buffer = await wb.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+        Swal.close();
+        downloadBlob(blob, filename);
       }
 
-      exportRows.forEach((row, idx) => {
-        const excelRow = idx + 3;
-        const purchaseLabel =
-          purchaseNameByType.get(String(row?.type ?? "")) ||
-          String(row?.purchase_name ?? row?.name ?? "");
-        const monthText = normalizeSaleMonth(row?._saleMonth || row?.saleDate || "");
-
-        ws.getCell(excelRow, 1).value = row?.account_name || "";
-        ws.getCell(excelRow, 2).value = monthText;
-        ws.getCell(excelRow, 3).value = purchaseLabel;
-        ws.getCell(excelRow, 4).value = toNum(row?.expen_tax) + toNum(row?.expen_taxFree);
-        ws.getCell(excelRow, 5).value = toNum(row?.expen_vat);
-        ws.getCell(excelRow, 6).value = toNum(row?.expen_total);
-        ws.getCell(excelRow, 7).value = toNum(row?.food_tax) + toNum(row?.food_taxFree);
-        ws.getCell(excelRow, 8).value = toNum(row?.food_vat);
-        ws.getCell(excelRow, 9).value = toNum(row?.food_total);
-        ws.getCell(excelRow, 10).value = toNum(row?.scenic_tax) + toNum(row?.scenic_taxFree);
-        ws.getCell(excelRow, 11).value = toNum(row?.scenic_vat);
-        ws.getCell(excelRow, 12).value = toNum(row?.scenic_total);
-
-        for (let c = 1; c <= 12; c += 1) {
-          const cell = ws.getCell(excelRow, c);
-          cell.border = borderThin;
-          cell.alignment = { horizontal: c <= 3 ? "center" : "right", vertical: "middle" };
-          if (c >= 4) cell.numFmt = "#,##0";
-        }
-      });
-
-      // 소계 행 (화면 소계 테이블과 동일: 1행에 모든 카테고리 소계)
-      const subtotalRow = exportRows.length + 3;
-      ws.mergeCells(subtotalRow, 1, subtotalRow, 3);
-      ws.getCell(subtotalRow, 1).value = "소계";
-      ws.getCell(subtotalRow, 4).value = Number(summary.expen.taxTotal || 0);
-      ws.getCell(subtotalRow, 5).value = Number(summary.expen.vat || 0);
-      ws.getCell(subtotalRow, 6).value = Number(summary.expen.total || 0);
-      ws.getCell(subtotalRow, 7).value = Number(summary.food.taxTotal || 0);
-      ws.getCell(subtotalRow, 8).value = Number(summary.food.vat || 0);
-      ws.getCell(subtotalRow, 9).value = Number(summary.food.total || 0);
-      ws.getCell(subtotalRow, 10).value = Number(summary.scenic.taxTotal || 0);
-      ws.getCell(subtotalRow, 11).value = Number(summary.scenic.vat || 0);
-      ws.getCell(subtotalRow, 12).value = Number(summary.scenic.total || 0);
-
-      // 총합계 행
-      const totalRow = subtotalRow + 1;
-      ws.mergeCells(totalRow, 1, totalRow, 12);
-      ws.getCell(totalRow, 1).value = `총합계: ${Number(summary.total.total || 0).toLocaleString("ko-KR")}`;
-
-      for (let r = subtotalRow; r <= totalRow; r += 1) {
-        for (let c = 1; c <= 12; c += 1) {
-          const cell = ws.getCell(r, c);
-          cell.border = borderThin;
-          cell.alignment = { horizontal: c <= 3 ? "center" : "right", vertical: "middle" };
-          cell.font = { bold: true };
-          cell.fill = {
-            type: "pattern",
-            pattern: "solid",
-            fgColor: { argb: r === totalRow ? "FFECECEC" : "FFF7F7F7" },
-          };
-          if (r === subtotalRow && c >= 4) cell.numFmt = "#,##0";
-        }
-      }
-
-      const accountLabel = filters.account_id
-        ? accountNameById.get(String(filters.account_id)) || "선택거래처"
-        : "전체";
-      const ymLabel =
-        filters.year !== "0" && filters.month !== "0"
-          ? `${filters.year}-${String(filters.month).padStart(2, "0")}`
-          : "전체";
-      const ymd = dayjs().format("YYYYMMDD");
-      const filename = `매입마감_${sanitizeFilename(accountLabel)}_${sanitizeFilename(ymLabel)}_${ymd}.xlsx`;
-
-      const buffer = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-
-      Swal.close();
-      downloadBlob(blob, filename);
-      await Swal.fire({
-        title: "완료",
-        text: "엑셀 다운로드가 완료되었습니다.",
-        icon: "success",
-        confirmButtonText: "확인",
-      });
+      await Swal.fire({ title: "완료", text: "엑셀 다운로드가 완료되었습니다.", icon: "success", confirmButtonText: "확인" });
     } catch (e) {
       Swal.close();
       Swal.fire("엑셀 다운로드 실패", e?.message || "오류가 발생했습니다.", "error");
@@ -1198,7 +1471,10 @@ function AccountPurchaseTallyTab() {
     }
   }, [
     excelDownloading,
+    tallyTabValue,
     rows,
+    purchaseTypeRows,
+    purchaseTypeSummary,
     purchaseNameByType,
     normalizeSaleMonth,
     toNum,
@@ -1239,14 +1515,12 @@ function AccountPurchaseTallyTab() {
       const nextId = opt ? String(opt.value ?? "") : "";
       const nextLabel = String(opt?.label ?? "");
 
-      // "전체" 옵션 선택 시: 전체로 변경 후 즉시 조회
+      // "전체" 옵션 선택 시: 필터만 변경
       if (nextId === "") {
         setTypeOptions([]);
         setAccountInput(nextLabel || "전체");
-        const next = { ...filters, account_id: "", type: "0" };
-        setFilters(next);
+        setFilters((prev) => ({ ...prev, account_id: "", type: "0" }));
         fetchMappingList({});
-        await fetchPurchaseList(buildSearchParams(next));
         return;
       }
 
@@ -1258,23 +1532,18 @@ function AccountPurchaseTallyTab() {
       // ✅ 2) 타입 옵션 재조회
       const opts = await fetchTypeOptions(nextId);
 
-      // ✅ 3) 기존 type이 새 옵션에 없으면 첫 번째 타입으로 보정
+      // ✅ 3) 기존 type이 새 옵션에 없으면 첫 번째 타입으로 보정 (조회는 하지 않음)
       setFilters((prev) => {
         const nextType = resolveNextType(opts, prev.type);
-        const next = { ...prev, account_id: nextId, type: nextType };
-        fetchPurchaseList(buildSearchParams(next));
-        return next;
+        return { ...prev, account_id: nextId, type: nextType };
       });
     },
-    [filters, fetchPurchaseList, fetchMappingList, fetchTypeOptions, resolveNextType, buildSearchParams]
+    [filters, fetchMappingList, fetchTypeOptions, resolveNextType]
   );
 
   const selectAccountByInput = useCallback(async () => {
     const q = String(accountInput || "").trim();
-    if (!q) {
-      await fetchPurchaseList(buildSearchParams(filters));
-      return;
-    }
+    if (!q) return;
 
     if (q === "전체") {
       await handleAccountChange(null, { value: "", label: "전체" }, "selectOption");
@@ -1294,12 +1563,8 @@ function AccountPurchaseTallyTab() {
     if (partial) {
       await handleAccountChange(null, partial, "selectOption");
       setAccountInput(partial.label || q);
-      return;
     }
-
-    // 입력값이 매칭되지 않아도 엔터는 현재 조건으로 조회
-    await fetchPurchaseList(buildSearchParams(filters));
-  }, [accountInput, accountOptions, handleAccountChange, fetchPurchaseList, buildSearchParams, filters]);
+  }, [accountInput, accountOptions, handleAccountChange]);
 
   // =========================================
   // ✅ (NEW) 우클릭 메뉴 열기/닫기 + 삭제
@@ -1420,7 +1685,7 @@ function AccountPurchaseTallyTab() {
             justifyContent: isMobile ? "space-between" : "flex-end",
             alignItems: "center",
             gap: isMobile ? 1 : 2,
-            flexWrap: isMobile ? "wrap" : "nowrap",
+            flexWrap: "wrap",
             // 모바일에서는 검색/버튼 영역도 본문과 함께 스크롤
             position: isMobile ? "static" : "sticky",
             zIndex: isMobile ? "auto" : 10,
@@ -1464,20 +1729,38 @@ function AccountPurchaseTallyTab() {
             ))}
           </TextField>
 
-          {/* 월 셀렉트 */}
+          {/* 조회 시작월 */}
           <TextField
             select
-            label="월"
+            label="조회 시작월"
             size="small"
-            onChange={(e) => setFilters((prev) => ({ ...prev, month: e.target.value }))}
-            sx={{ minWidth: isMobile ? 100 : 120 }}
+            onChange={(e) => setFilters((prev) => ({ ...prev, fromMonth: e.target.value }))}
+            sx={{ minWidth: isMobile ? 100 : 110 }}
             SelectProps={{ native: true }}
-            value={filters.month}
+            value={filters.fromMonth}
           >
-            <option value="0">전체</option>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
               <option key={m} value={String(m)}>{m}월</option>
             ))}
+          </TextField>
+
+          {/* 조회 종료월 */}
+          <TextField
+            select
+            label="조회 종료월"
+            size="small"
+            onChange={(e) => setFilters((prev) => ({ ...prev, toMonth: e.target.value }))}
+            sx={{ minWidth: isMobile ? 100 : 110 }}
+            SelectProps={{ native: true, displayEmpty: true }}
+            InputLabelProps={{ shrink: true }}
+            value={filters.toMonth}
+          >
+            <option value="">{filters.fromMonth ? `선택(${filters.fromMonth}월로만 조회)` : "선택"}</option>
+            {Array.from({ length: 12 }, (_, i) => i + 1)
+              .filter((m) => !filters.fromMonth || m > Number(filters.fromMonth))
+              .map((m) => (
+                <option key={m} value={String(m)}>{m}월</option>
+              ))}
           </TextField>
 
           {/* 거래처 검색: 전체 포함 */}
@@ -1552,15 +1835,146 @@ function AccountPurchaseTallyTab() {
             display="flex"
             justifyContent="space-between"
             alignItems="center"
-            sx={{ position: "sticky", top: 0, zIndex: 3, mt: 0.4 }}
+            sx={{ position: "sticky", top: 0, zIndex: 3, mt: 0.4, userSelect: "none" }}
           >
             <MDTypography variant="h6" color="white" sx={{ mt: 0.2 }}>
               매입마감
             </MDTypography>
+            <Tabs
+              value={tallyTabValue}
+              onChange={(_, v) => {
+                Swal.fire({ title: "불러오는 중...", allowOutsideClick: false, allowEscapeKey: false, didOpen: () => Swal.showLoading() });
+                setTimeout(() => { setTallyTabValue(v); Swal.close(); }, 300);
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+              textColor="inherit"
+              indicatorColor="secondary"
+              sx={{
+                minHeight: 36,
+                "& .MuiTab-root": {
+                  minHeight: 36,
+                  color: "rgba(255,255,255,0.85)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  textTransform: "none",
+                  minWidth: 120,
+                  padding: "0 20px",
+                },
+                "& .Mui-selected": { color: "#fff" },
+              }}
+            >
+              <Tab label="거래처 기준" />
+              <Tab label="구매처 기준" />
+            </Tabs>
           </MDBox>
 
+          {tallyTabValue === 1 && (
+            <MDBox ref={bodyScrollRef} sx={tableBodySx}>
+              <table ref={dataTableRef}>
+                <colgroup>
+                  <col style={{ width: 170, minWidth: 170 }} />
+                  {!isRangeMode && <col style={{ width: 140, minWidth: 140 }} />}
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 110, minWidth: 110 }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th rowSpan={2} style={{ minWidth: 170, position: "sticky", left: 0, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>구매처</th>
+                    <th rowSpan={2} style={{ minWidth: 140, position: "sticky", left: 170, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>{isRangeMode ? dateRangeLabel : "날짜"}</th>
+                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>소모품</th>
+                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>식자재</th>
+                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>경관식</th>
+                  </tr>
+                  <tr>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchaseTypeRows.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} style={{ textAlign: "center", padding: "12px" }}>
+                        데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
+                      </td>
+                    </tr>
+                  ) : (
+                    purchaseTypeRows.map((row, i) => (
+                      <tr key={`pt-${row.type}-${row.saleDate}-${i}`}>
+                        <td style={{ width: 170, minWidth: 170, maxWidth: 170, position: "sticky", left: 0, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                          {row.purchase_name}
+                        </td>
+                        <td style={{ width: 140, minWidth: 140, maxWidth: 140, position: "sticky", left: 170, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                          {isRangeMode ? dateRangeLabel : row.saleDate}
+                        </td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.expen_tax + row.expen_taxFree)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.expen_vat)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.expen_total)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.food_tax + row.food_taxFree)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.food_vat)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.food_total)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.scenic_tax + row.scenic_taxFree)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.scenic_vat)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.scenic_total)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              <MDBox sx={{ position: "sticky", bottom: 0, zIndex: 8, backgroundColor: "#ffffff", boxShadow: "0 -2px 6px rgba(0,0,0,0.12)" }}>
+                <table className="summary-table" style={{ width: "100%" }}>
+                  <colgroup>
+                    <col style={{ width: isRangeMode ? 170 : 310, minWidth: isRangeMode ? 170 : 310 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 110, minWidth: 110 }} />
+                  </colgroup>
+                  <tbody>
+                    <tr>
+                      <td colSpan={1} style={{ textAlign: "center", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>소계</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.taxTotal)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.vat)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.total)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.food.taxTotal)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.food.vat)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.food.total)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.taxTotal)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.vat)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.total)}</td>
+                    </tr>
+                    <tr>
+                      <td colSpan={1} style={{ textAlign: "center", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>총합계</td>
+                      <td colSpan={9} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
+                        {formatSummaryNumber(purchaseTypeSummary.total.total)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </MDBox>
+            </MDBox>
+          )}
+
           {/* 모바일/태블릿: 하나의 스크롤 컨테이너 안에 테이블+footer 통합 */}
-          {isMobileTablet ? (
+          {tallyTabValue === 0 && (isMobileTablet ? (
             <MDBox
               ref={bodyScrollRef}
               sx={{
@@ -1594,7 +2008,7 @@ function AccountPurchaseTallyTab() {
                     >
                       거래처
                     </th>
-                    {/* 날짜: 가로(landscape)일 때만 sticky */}
+                    {/* 날짜 */}
                     <th
                       rowSpan={2}
                       style={{
@@ -1607,7 +2021,7 @@ function AccountPurchaseTallyTab() {
                         backgroundColor: "#fef6e4",
                       }}
                     >
-                      날짜
+                      {isRangeMode ? dateRangeLabel : "날짜"}
                     </th>
                     {/* 구매처: 가로(landscape)일 때만 sticky */}
                     <th
@@ -1685,14 +2099,14 @@ function AccountPurchaseTallyTab() {
                 </thead>
 
                 <tbody>
-                  {rows.length === 0 ? (
+                  {accountDisplayRows.length === 0 ? (
                     <tr>
                       <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
                         데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
                       </td>
                     </tr>
                   ) : (
-                    rows.map((row, rowIndex) => (
+                    accountDisplayRows.map((row, rowIndex) => (
                       <tr key={row._rowKey || rowIndex}>
                         {/* 거래처: 항상 sticky */}
                         <td
@@ -1708,7 +2122,7 @@ function AccountPurchaseTallyTab() {
                           {row.account_name || ""}
                         </td>
 
-                        {/* 날짜: 가로일 때만 sticky */}
+                        {/* 날짜 */}
                         <td
                           style={{
                             width: 140, minWidth: 140, maxWidth: 140,
@@ -1719,7 +2133,7 @@ function AccountPurchaseTallyTab() {
                             height: FOOTER_ROW_HEIGHT,
                           }}
                         >
-                          {String(row._saleMonth || "")}
+                          {isRangeMode ? dateRangeLabel : String(row._saleMonth || "")}
                         </td>
 
                         {/* 구매처: 가로일 때만 sticky */}
@@ -1754,15 +2168,15 @@ function AccountPurchaseTallyTab() {
                       style={{
                         width: 120, minWidth: 120, maxWidth: 120,
                         textAlign: "center", fontWeight: 700, background: "#f7f7f7",
-                        height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`,
-                        padding: "0 8px", border: "1px solid #686D76", fontSize: 12,
+                        height: FOOTER_ROW_HEIGHT, padding: "0 8px",
+                        border: "1px solid #686D76", fontSize: 12,
                         position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_ACCOUNT, zIndex: 5,
                       }}
                     >
                       소계
                     </td>
-                    {/* 날짜: 가로=sticky left+bottom, 세로=공란 */}
-                    <td
+                    {/* 날짜: 범위조회 아닐 때만 표시 */}
+                    {!isRangeMode && <td
                       style={{
                         width: 140, minWidth: 140, maxWidth: 140,
                         background: "#f7f7f7", height: FOOTER_ROW_HEIGHT,
@@ -1771,7 +2185,7 @@ function AccountPurchaseTallyTab() {
                           ? { position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_DATE, zIndex: 5 }
                           : { position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2 }),
                       }}
-                    />
+                    />}
                     {/* 구매처: 가로=sticky left+bottom, 세로=공란 */}
                     <td
                       style={{
@@ -1814,15 +2228,15 @@ function AccountPurchaseTallyTab() {
                       style={{
                         width: 120, minWidth: 120, maxWidth: 120,
                         textAlign: "center", fontWeight: 700, background: "#ececec",
-                        height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`,
-                        padding: "0 8px", border: "1px solid #686D76", fontSize: 12,
+                        height: FOOTER_ROW_HEIGHT, padding: "0 8px",
+                        border: "1px solid #686D76", fontSize: 12,
                         position: "sticky", bottom: 0, left: STICKY_LEFT_ACCOUNT, zIndex: 5,
                       }}
                     >
                       총합계
                     </td>
-                    {/* 날짜: 가로=sticky left+bottom, 세로=공란 */}
-                    <td
+                    {/* 날짜: 범위조회 아닐 때만 표시 */}
+                    {!isRangeMode && <td
                       style={{
                         width: 140, minWidth: 140, maxWidth: 140,
                         background: "#ececec", height: FOOTER_ROW_HEIGHT,
@@ -1831,7 +2245,7 @@ function AccountPurchaseTallyTab() {
                           ? { position: "sticky", bottom: 0, left: STICKY_LEFT_DATE, zIndex: 5 }
                           : { position: "sticky", bottom: 0, zIndex: 2 }),
                       }}
-                    />
+                    />}
                     {/* 구매처: 가로=sticky left+bottom, 세로=공란 */}
                     <td
                       style={{
@@ -1848,8 +2262,8 @@ function AccountPurchaseTallyTab() {
                       colSpan={9}
                       style={{
                         textAlign: "right", fontWeight: 700, background: "#ececec",
-                        height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`,
-                        padding: "0 12px", border: "1px solid #686D76", fontSize: 12,
+                        height: FOOTER_ROW_HEIGHT, padding: "0 12px",
+                        border: "1px solid #686D76", fontSize: 12,
                         position: "sticky", bottom: 0, zIndex: 2,
                       }}
                     >
@@ -1869,21 +2283,21 @@ function AccountPurchaseTallyTab() {
                     <th
                       rowSpan={2}
                       style={{
-                        minWidth: 120, width: 120, maxWidth: 120,
+                        minWidth: 150, width: 150, maxWidth: 150,
                         left: STICKY_LEFT_ACCOUNT, zIndex: 7, backgroundColor: "#fef6e4",
                       }}
                     >
                       거래처
                     </th>
-                    <th
+                    {!isRangeMode && <th
                       rowSpan={2}
                       style={{
-                        minWidth: 140, width: 140, maxWidth: 140,
+                        minWidth: 110, width: 110, maxWidth: 110,
                         left: STICKY_LEFT_DATE, zIndex: 7, backgroundColor: "#fef6e4",
                       }}
                     >
                       날짜
-                    </th>
+                    </th>}
                     <th
                       rowSpan={2}
                       style={{
@@ -1910,21 +2324,21 @@ function AccountPurchaseTallyTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.length === 0 ? (
+                  {accountDisplayRows.length === 0 ? (
                     <tr>
                       <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
                         데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
                       </td>
                     </tr>
                   ) : (
-                    rows.map((row, rowIndex) => (
+                    accountDisplayRows.map((row, rowIndex) => (
                       <tr key={row._rowKey || rowIndex}>
-                        <td style={{ width: 120, minWidth: 120, maxWidth: 120, position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                        <td style={{ width: 150, minWidth: 150, maxWidth: 150, position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {row.account_name || ""}
                         </td>
-                        <td style={{ width: 140, minWidth: 140, maxWidth: 140, position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                        {!isRangeMode && <td style={{ width: 110, minWidth: 110, maxWidth: 110, position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {String(row._saleMonth || "")}
-                        </td>
+                        </td>}
                         <td style={{ width: 170, minWidth: 170, maxWidth: 170, position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {String(row.purchase_name || row.name || "")}
                         </td>
@@ -1950,9 +2364,8 @@ function AccountPurchaseTallyTab() {
                 {renderSummaryTable()}
               </MDBox>
             </MDBox>
-          )}
+          ))}
         </MDBox>
-
 
       </DashboardLayout>
     </LocalizationProvider>

@@ -129,23 +129,42 @@ export default function useAccountPurchaseTallyData() {
   /**
    * 매입 집계 조회
    * - AccountPurchaseTallyForTallyTab API 사용
-   *   (일반 타입: tb_account_purchase_tally/_detail, 1002/1003: 본사 법인카드 결제 테이블 기준)
-   * - saleDate(YYYY-MM)를 fromDate(월 1일)~toDate(월 말일)로 변환해서 전송
-   * - type이 "0"이면 전체 타입 조회
-   * @param {Object} filters - { type, saleDate(YYYY-MM), account_id, ... }
+   * - fromMonth(YYYY-MM)~toMonth(YYYY-MM) 범위 조회 지원
+   * - toMonth 없으면 fromMonth 단일 월 조회
+   * @param {Object} filters - { type, fromMonth(YYYY-MM), toMonth(YYYY-MM), account_id, ... }
    */
   const fetchPurchaseList = async (filters) => {
     setLoading(true);
     try {
-      // ✅ year/month를 그대로 전달 (SQL에서 YEAR/MONTH 함수로 처리)
-      // "0" = 전체 조회, 숫자면 해당 연/월만 조회
-      // "0"은 전체 선택 값 → 빈값("")으로 변환해서 SQL <if> 조건에서 제외되게 함
       const toParam = (v) => (!v || v === "0" ? "" : v);
+      const year = toParam(filters?.year);
+      const fromMonth = toParam(filters?.fromMonth); // 월 숫자 문자열
+      const toMonth = toParam(filters?.toMonth);     // 월 숫자 문자열 (optional)
+
+      let startDate = "";
+      let endDate = "";
+      if (year && fromMonth) {
+        const y = Number(year);
+        const fm = Number(fromMonth);
+        startDate = `${year}-${String(fm).padStart(2, "0")}-01`;
+        if (toMonth) {
+          const tm = Number(toMonth);
+          const next = new Date(y, tm, 1); // tm월 다음달 1일
+          endDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
+        } else {
+          const next = new Date(y, fm, 1);
+          endDate = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-01`;
+        }
+      } else if (year) {
+        startDate = `${year}-01-01`;
+        endDate = `${Number(year) + 1}-01-01`;
+      }
+
       const params = {
         account_id: toParam(filters?.account_id),
-        type:       toParam(filters?.type),
-        year:       toParam(filters?.year),
-        month:      toParam(filters?.month),
+        type: toParam(filters?.type),
+        startDate,
+        endDate,
       };
 
       const res = await api.get("/Account/AccountPurchaseTallyForTallyTab", { params });
@@ -159,20 +178,20 @@ export default function useAccountPurchaseTallyData() {
         type_name: item.type_name || "",
         saleDate: item.saleDate || item.sale_date || "",
         // 소모품(itemType=2): 과세 공급가 / 부가세 / 면세 / 합계
-        expen_tax:     formatNumber(item.expen_tax),
-        expen_vat:     formatNumber(item.expen_vat),
+        expen_tax: formatNumber(item.expen_tax),
+        expen_vat: formatNumber(item.expen_vat),
         expen_taxFree: formatNumber(item.expen_taxFree),
-        expen_total:   formatNumber(item.expen_total),
+        expen_total: formatNumber(item.expen_total),
         // 식재료(itemType=1): 과세 공급가 / 부가세 / 면세 / 합계
-        food_tax:     formatNumber(item.food_tax),
-        food_vat:     formatNumber(item.food_vat),
+        food_tax: formatNumber(item.food_tax),
+        food_vat: formatNumber(item.food_vat),
         food_taxFree: formatNumber(item.food_taxFree),
-        food_total:   formatNumber(item.food_total),
+        food_total: formatNumber(item.food_total),
         // 경관식(itemType=3): 과세 공급가 / 부가세 / 면세 / 합계
-        scenic_tax:     formatNumber(item.scenic_tax),
-        scenic_vat:     formatNumber(item.scenic_vat),
+        scenic_tax: formatNumber(item.scenic_tax),
+        scenic_vat: formatNumber(item.scenic_vat),
         scenic_taxFree: formatNumber(item.scenic_taxFree),
-        scenic_total:   formatNumber(item.scenic_total),
+        scenic_total: formatNumber(item.scenic_total),
         use_name: item.use_name || "",
         note: item.note || "",
         bizNo: item.bizNo || "",
@@ -201,8 +220,35 @@ export default function useAccountPurchaseTallyData() {
       }
 
       // sale_id 기준으로 상세를 조회해 itemtype/taxtype 집계값을 우선 반영
-      // 병렬 폭주로 상세 API가 실패하지 않도록 순차 조회
+      // 5개씩 청크 단위 병렬 조회
+      const CHUNK_SIZE = 5;
       const detailSummaryCache = new Map();
+
+      const uniqueSaleIds = [...new Set(
+        mappedBase.map((r) => String(r?.sale_id ?? "").trim()).filter(Boolean)
+      )];
+
+      for (let i = 0; i < uniqueSaleIds.length; i += CHUNK_SIZE) {
+        const chunk = uniqueSaleIds.slice(i, i + CHUNK_SIZE);
+        await Promise.all(
+          chunk.map((saleId) => {
+            if (detailSummaryCache.has(saleId)) return Promise.resolve();
+            const req = api
+              .get("/Account/AccountPurchaseDetailList_tmp", { params: { sale_id: saleId } })
+              .then((r) => {
+                const detailList = Array.isArray(r.data) ? r.data : r.data?.rows || r.data?.data || [];
+                return detailList.length > 0 ? summarizeTallyByDetail(detailList) : null;
+              })
+              .catch((err) => {
+                console.error("매입 상세 집계 조회 실패:", err);
+                return null;
+              });
+            detailSummaryCache.set(saleId, req);
+            return req;
+          })
+        );
+      }
+
       const mapped = [];
       for (const row of mappedBase) {
         const saleId = String(row?.sale_id ?? "").trim();
@@ -211,27 +257,7 @@ export default function useAccountPurchaseTallyData() {
           continue;
         }
 
-        const cacheKey = saleId;
-        if (!detailSummaryCache.has(cacheKey)) {
-          const req = api
-            .get("/Account/AccountPurchaseDetailList_tmp", {
-              params: { sale_id: saleId },
-            })
-            .then((r) => {
-              const detailList = Array.isArray(r.data) ? r.data : r.data?.rows || r.data?.data || [];
-              if (!Array.isArray(detailList) || detailList.length === 0) {
-                return null;
-              }
-              return summarizeTallyByDetail(detailList);
-            })
-            .catch((err) => {
-              console.error("매입 상세 집계 조회 실패:", err);
-              return null;
-            });
-          detailSummaryCache.set(cacheKey, req);
-        }
-
-        const summary = await detailSummaryCache.get(cacheKey);
+        const summary = await detailSummaryCache.get(saleId);
         if (!summary) {
           mapped.push(row);
           continue;

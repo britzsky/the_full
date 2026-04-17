@@ -1280,6 +1280,8 @@ function DinersNumberSheet() {
   const tableCardHeight = "calc(95vh - 120px)";
   // ✅ 하단 고정 합계/평균 행 겹침 방지를 위한 기준 높이
   const summaryStickyRowHeight = 28;
+  // ✅ 상단 고정 영역이 테이블 sticky 셀보다 항상 위에 오도록 z-index 기준값
+  const pageStickyZIndex = (theme?.zIndex?.appBar || 1100) + 2;
 
   const filterAndActionArea = (
     <MDBox
@@ -1411,7 +1413,7 @@ function DinersNumberSheet() {
             sx={{
               position: "sticky",
               top: 0,
-              zIndex: 12,
+              zIndex: pageStickyZIndex,
               backgroundColor: "#ffffff",
             }}
           >
@@ -1424,7 +1426,7 @@ function DinersNumberSheet() {
           sx={{
             position: "sticky",
             top: 0,
-            zIndex: 12,
+            zIndex: pageStickyZIndex,
             backgroundColor: "#ffffff",
           }}
         >
@@ -1485,7 +1487,7 @@ function DinersNumberSheet() {
                               ...(rowIdx === 0 && i === 0
                                 ? {
                                   left: 0,
-                                  zIndex: 12,
+                                  zIndex: 11,
                                 }
                                 : {}),
                             }}

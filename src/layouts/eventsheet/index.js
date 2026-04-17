@@ -6,8 +6,7 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import dayjs from "dayjs";
 import Swal from "sweetalert2";
-import api from "api/api";
-import { Modal, Box, Button, TextField, Typography, Select, MenuItem, useMediaQuery } from "@mui/material";
+import { Modal, Box, Button, TextField, Typography, Select, MenuItem, Autocomplete, useMediaQuery } from "@mui/material";
 
 // ✅ 커스텀 훅 import
 import useEventsheetData from "./data/EventSheetData";
@@ -18,7 +17,7 @@ function EventSheetTab() {
   const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
-  const { eventListRows, eventList, loading } = useEventsheetData(currentYear, currentMonth);
+  const { eventListRows, eventList, loading, accountList, fetchAccountList, saveEvent, deleteEvent } = useEventsheetData(currentYear, currentMonth);
 
   const [displayDate, setDisplayDate] = useState(dayjs());
   const [events, setEvents] = useState([]);
@@ -35,6 +34,9 @@ function EventSheetTab() {
   const [selectedType, setSelectedType] = useState("2"); // 기본값: 본사행사
   const [isEventClicked, setIsEventClicked] = useState(false);
 
+  // 거래처
+  const [selectedAccount, setSelectedAccount] = useState(null);
+
   // ✅ type별 색상
   const getTypeColor = (type) => {
     const t = String(type);
@@ -43,9 +45,11 @@ function EventSheetTab() {
     return "#F2921D"; // 기타
   };
 
+
   // ✅ 1. 초기 조회
   useEffect(() => {
     eventList();
+    fetchAccountList(accountList);
   }, []);
 
   // ✅ 2. 월 변경 시 자동 조회
@@ -85,43 +89,27 @@ function EventSheetTab() {
     setEvents(mapped);
   }, [eventListRows, currentYear, currentMonth]);
 
-  // ✅ 날짜 클릭 (빈칸 클릭 시 등록)
-  const handleDateClick = (arg) => {
-    // eventClick 후 dateClick 같이 들어오는 것 방지
-    if (isEventClicked) {
-      setIsEventClicked(false);
-      return;
-    }
-
-    setSelectedDate(arg.dateStr);
-    setSelectedEndDate(arg.dateStr); // 1일짜리 기본
-    setSelectedEvent(null);
-
-    setInputValue("");
-    setSelectedType("2");
-    setIsDeleteMode(false);
-
-    setOpen(true);
-  };
-
-  // ✅ 여러 날짜 드래그로 기간 선택
-  const handleSelectRange = (info) => {
+  // 날짜 클릭/드래그 (단일 클릭도 select로 처리 - end_date 일관성 보장)
+  const handleSelectRange = async (info) => {
+    if (isEventClicked) { setIsEventClicked(false); return; }
     const start = dayjs(info.start).format("YYYY-MM-DD");
     const end = dayjs(info.end).subtract(1, "day").format("YYYY-MM-DD"); // end는 exclusive
 
     setSelectedDate(start);
-    setSelectedEndDate(end);
+    setSelectedEndDate(end); // 단일 클릭 시 start==end, 드래그 시 범위
 
     setSelectedEvent(null);
     setInputValue("");
     setSelectedType("2");
     setIsDeleteMode(false);
+    setSelectedAccount(null);
+    await fetchAccountList(accountList);
 
     setOpen(true);
   };
 
   // ✅ 이벤트 클릭 (일정 보기/수정)
-  const handleEventClick = (info) => {
+  const handleEventClick = async (info) => {
     setIsEventClicked(true);
 
     const clickedEvent = info.event;
@@ -149,6 +137,16 @@ function EventSheetTab() {
     setSelectedType(clickedEvent.extendedProps?.type?.toString() || "2");
     setIsDeleteMode(false);
 
+    const fetchedAccounts = await fetchAccountList(accountList);
+    const accId = clickedEvent.extendedProps?.account_id;
+    if (accId) {
+      const sourceAccounts = Array.isArray(fetchedAccounts) ? fetchedAccounts : accountList;
+      const found = sourceAccounts.find((a) => String(a.account_id) === String(accId));
+      setSelectedAccount(found || null);
+    } else {
+      setSelectedAccount(null);
+    }
+
     setOpen(true);
   };
 
@@ -171,22 +169,9 @@ function EventSheetTab() {
       return;
     }
 
-    const payload = {
-      idx: selectedEvent?.extendedProps?.idx || null,
-      content: inputValue,
-      menu_date: selectedDate,
-      end_date: selectedEndDate || selectedDate,
-      type: selectedType,
-      del_yn: "N",
-      reg_user_id: localStorage.getItem("user_id"),
-    };
-
     try {
-      const response = await api.post("/HeadOffice/EventSave", payload, {
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (response.data.code === 200) {
+      const result = await saveEvent({ inputValue, selectedDate, selectedEndDate, selectedType, selectedAccount, selectedEvent });
+      if (result.code === 200) {
         Swal.fire("저장 완료", "일정이 저장되었습니다.", "success");
         eventList();
       } else {
@@ -204,22 +189,9 @@ function EventSheetTab() {
   const handleDelete = async () => {
     if (!selectedEvent) return;
 
-    const payload = {
-      idx: selectedEvent?.extendedProps?.idx || null,
-      content: inputValue,
-      menu_date: selectedDate,
-      end_date: selectedEndDate || selectedDate,
-      type: selectedType,
-      del_yn: "Y",
-      reg_user_id: localStorage.getItem("user_id"),
-    };
-
     try {
-      const response = await api.post("/HeadOffice/EventSave", payload, {
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (response.data.code === 200) {
+      const result = await deleteEvent({ inputValue, selectedDate, selectedEndDate, selectedType, selectedAccount, selectedEvent });
+      if (result.code === 200) {
         Swal.fire("삭제 완료", "일정이 삭제되었습니다.", "success");
         eventList();
       } else {
@@ -293,7 +265,6 @@ function EventSheetTab() {
         headerToolbar={false}
         initialDate={displayDate.toDate()}
         events={events}
-        dateClick={handleDateClick}
         eventClick={handleEventClick}
         selectable={true}
         selectMirror={true}
@@ -325,7 +296,13 @@ function EventSheetTab() {
                 lineHeight: 1.2,
               }}
             >
-              {arg.event.title}
+              {(() => {
+                const accId = arg.event.extendedProps?.account_id;
+                const accName = accId
+                  ? String((accountList.find((a) => String(a.account_id) === String(accId))?.account_name) || "").trim()
+                  : "";
+                return accName ? `[${accName}] ${arg.event.title}` : arg.event.title;
+              })()}
             </div>
           </div>
         )}
@@ -360,25 +337,56 @@ function EventSheetTab() {
           </Typography>
 
           {/* 행사 유형 선택 */}
-          <Select
-            size="small"
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            sx={{ minWidth: 170, mb: 2, width: isMobileTablet ? "100%" : "auto" }}
-          >
-            <MenuItem value="2">
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#007BFF" }} />
-                본사행사
-              </Box>
-            </MenuItem>
-            <MenuItem value="3">
-              <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#2ECC71" }} />
-                외부행사
-              </Box>
-            </MenuItem>
-          </Select>
+          <Box sx={{ display: "flex", flexDirection: isMobileTablet ? "column" : "row", gap: 1, mb: 2 }}>
+            <Select
+              size="small"
+              value={selectedType}
+              onChange={(e) => setSelectedType(e.target.value)}
+              sx={{ minWidth: 170, width: isMobileTablet ? "100%" : "auto", height: 38, "& .MuiOutlinedInput-root": { height: 38 } }}
+            >
+              <MenuItem value="2">
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#007BFF" }} />
+                  본사행사
+                </Box>
+              </MenuItem>
+              <MenuItem value="3">
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#2ECC71" }} />
+                  외부행사
+                </Box>
+              </MenuItem>
+            </Select>
+
+            {/* 외부행사일 때만 거래처 입력 */}
+            {selectedType === "3" && (
+              <Autocomplete
+                size="small"
+                options={accountList}
+                value={selectedAccount}
+                onChange={(_, newValue) => setSelectedAccount(newValue)}
+                autoHighlight
+                getOptionLabel={(option) => option?.account_name || ""}
+                isOptionEqualToValue={(option, value) =>
+                  String(option?.account_id ?? "") === String(value?.account_id ?? "")
+                }
+                filterOptions={(options, { inputValue }) => {
+                  const kw = String(inputValue || "").trim().toLowerCase();
+                  if (!kw) return options;
+                  return options.filter((o) => String(o?.account_name || "").toLowerCase().includes(kw));
+                }}
+                sx={{
+                  flex: 1,
+                  width: isMobileTablet ? "100%" : undefined,
+                  "& .MuiOutlinedInput-root": { height: 38, paddingTop: "0 !important", paddingBottom: "0 !important" },
+                  "& .MuiOutlinedInput-input": { height: "38px", boxSizing: "border-box" },
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder="거래처 선택 (선택사항)" size="small" />
+                )}
+              />
+            )}
+          </Box>
 
           {/* 일정 내용 입력 */}
           <TextField

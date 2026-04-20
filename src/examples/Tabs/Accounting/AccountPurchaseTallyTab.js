@@ -518,11 +518,16 @@ function AccountPurchaseTallyTab() {
     })();
   }, []); // eslint-disable-line
 
+  // ✅ 조회 실행 공통 함수 (버튼/엔터 동일 경로 사용)
+  const runSearchWithFilters = useCallback(async (nextFilters) => {
+    setAppliedToMonth(nextFilters.toMonth);
+    await fetchPurchaseList(buildSearchParams(nextFilters));
+  }, [fetchPurchaseList, buildSearchParams]);
+
   // ✅ 조회(버튼)
   const handleSearch = async () => {
     try {
-      setAppliedToMonth(filters.toMonth);
-      await fetchPurchaseList(buildSearchParams(filters));
+      await runSearchWithFilters(filters);
     } catch (e) {
       Swal.fire("오류", e.message, "error");
     }
@@ -785,6 +790,12 @@ function AccountPurchaseTallyTab() {
     return { expen, food, scenic, total: { total: expen.total + food.total + scenic.total } };
   }, [purchaseTypeRows]);
 
+  // ✅ 행 단위 소계(소모품/식자재/경관식 합계의 합) 계산
+  const getRowSubtotal = useCallback(
+    (row) => toNum(row?.expen_total) + toNum(row?.food_total) + toNum(row?.scenic_total),
+    [toNum]
+  );
+
   const getAmountCellDisplayValue = useCallback(
     (row, key) => {
       const prefix = TAX_TOTAL_KEY_TO_PREFIX[key];
@@ -943,6 +954,7 @@ function AccountPurchaseTallyTab() {
       <col style={{ width: 110, minWidth: 110 }} /> {/* 경관식 과/면세 */}
       <col style={{ width: 110, minWidth: 110 }} /> {/* 경관식 부가세 */}
       <col style={{ width: 110, minWidth: 110 }} /> {/* 경관식 합계 */}
+      <col style={{ width: 120, minWidth: 120 }} /> {/* 소계 */}
     </colgroup>
   );
 
@@ -968,19 +980,21 @@ function AccountPurchaseTallyTab() {
                 textAlign: "center", fontWeight: 700, background: "#f7f7f7",
                 height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
                 position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                borderRight: "2px solid #686D76",
               }}
             >
               소계
             </td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.taxTotal)}</td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.vat)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.expen.total)}</td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.taxTotal)}</td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.vat)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.food.total)}</td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.scenic.taxTotal)}</td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(Number(summary.scenic.vat ?? 0))}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.scenic.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.scenic.total)}</td>
+            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.total.total)}</td>
           </tr>
 
           <tr>
@@ -991,11 +1005,12 @@ function AccountPurchaseTallyTab() {
                 textAlign: "center", fontWeight: 700, background: "#ececec",
                 height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
                 position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                borderRight: "2px solid #686D76",
               }}
             >
               총합계
             </td>
-            <td colSpan={9} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
+            <td colSpan={10} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
               {formatSummaryNumber(summary.total.total)}
             </td>
           </tr>
@@ -1567,7 +1582,12 @@ function AccountPurchaseTallyTab() {
     if (!q) return;
 
     if (q === "전체") {
-      await handleAccountChange(null, { value: "", label: "전체" }, "selectOption");
+      const nextFilters = { ...filters, account_id: "", type: "0" };
+      setTypeOptions([]);
+      setAccountInput("전체");
+      setFilters(nextFilters);
+      fetchMappingList({});
+      await runSearchWithFilters(nextFilters);
       return;
     }
 
@@ -1582,10 +1602,25 @@ function AccountPurchaseTallyTab() {
           .includes(qLower)
       );
     if (partial) {
-      await handleAccountChange(null, partial, "selectOption");
-      setAccountInput(partial.label || q);
+      const nextId = String(partial.value ?? "");
+      const nextLabel = String(partial.label ?? q);
+      setAccountInput(nextLabel);
+      fetchMappingList({ account_id: nextId });
+      const opts = await fetchTypeOptions(nextId);
+      const nextType = resolveNextType(opts, filters.type);
+      const nextFilters = { ...filters, account_id: nextId, type: nextType };
+      setFilters(nextFilters);
+      await runSearchWithFilters(nextFilters);
     }
-  }, [accountInput, accountOptions, handleAccountChange]);
+  }, [
+    accountInput,
+    accountOptions,
+    filters,
+    fetchMappingList,
+    fetchTypeOptions,
+    resolveNextType,
+    runSearchWithFilters,
+  ]);
 
   // =========================================
   // ✅ (NEW) 우클릭 메뉴 열기/닫기 + 삭제
@@ -1904,31 +1939,33 @@ function AccountPurchaseTallyTab() {
                   <col style={{ width: 110, minWidth: 110 }} />
                   <col style={{ width: 110, minWidth: 110 }} />
                   <col style={{ width: 110, minWidth: 110 }} />
+                  <col style={{ width: 120, minWidth: 120 }} />
                 </colgroup>
                 <thead>
                   <tr>
                     <th rowSpan={2} style={{ minWidth: 170, position: "sticky", left: 0, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>구매처</th>
-                    <th rowSpan={2} style={{ minWidth: 140, position: "sticky", left: 170, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>날짜</th>
-                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>소모품</th>
-                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>식자재</th>
-                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>경관식</th>
+                    <th rowSpan={2} style={{ minWidth: 140, position: "sticky", left: 170, top: 0, zIndex: 7, backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>날짜</th>
+                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px", borderRight: "2px solid #686D76" }}>소모품</th>
+                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px", borderRight: "2px solid #686D76" }}>식자재</th>
+                    <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px", borderRight: "2px solid #686D76" }}>경관식</th>
+                    <th rowSpan={2} style={{ minWidth: 120, top: 0, zIndex: 6, backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>소계</th>
                   </tr>
                   <tr>
                     <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
                     <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
-                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>합계</th>
                     <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
                     <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
-                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>합계</th>
                     <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
                     <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
-                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>합계</th>
                   </tr>
                 </thead>
                 <tbody>
                   {purchaseTypeRows.length === 0 ? (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: "center", padding: "12px" }}>
+                      <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
                         데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
                       </td>
                     </tr>
@@ -1938,18 +1975,19 @@ function AccountPurchaseTallyTab() {
                         <td style={{ width: 170, minWidth: 170, maxWidth: 170, position: "sticky", left: 0, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {row.purchase_name}
                         </td>
-                        <td style={{ width: 140, minWidth: 140, maxWidth: 140, position: "sticky", left: 170, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                        <td style={{ width: 140, minWidth: 140, maxWidth: 140, position: "sticky", left: 170, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76" }}>
                           {isRangeMode ? dateRangeLabel : row.saleDate}
                         </td>
                         <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.expen_tax + row.expen_taxFree)}</td>
                         <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.expen_vat)}</td>
-                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.expen_total)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76" }}>{formatComma(row.expen_total)}</td>
                         <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.food_tax + row.food_taxFree)}</td>
                         <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.food_vat)}</td>
-                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.food_total)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76" }}>{formatComma(row.food_total)}</td>
                         <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.scenic_tax + row.scenic_taxFree)}</td>
                         <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.scenic_vat)}</td>
-                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT }}>{formatComma(row.scenic_total)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76" }}>{formatComma(row.scenic_total)}</td>
+                        <td style={{ textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76", fontWeight: 700 }}>{formatComma(getRowSubtotal(row))}</td>
                       </tr>
                     ))
                   )}
@@ -1969,6 +2007,7 @@ function AccountPurchaseTallyTab() {
                     <col style={{ width: 110, minWidth: 110 }} />
                     <col style={{ width: 110, minWidth: 110 }} />
                     <col style={{ width: 110, minWidth: 110 }} />
+                    <col style={{ width: 120, minWidth: 120 }} />
                   </colgroup>
                   <tbody>
                     <tr>
@@ -1979,19 +2018,21 @@ function AccountPurchaseTallyTab() {
                           textAlign: "center", fontWeight: 700, background: "#f7f7f7",
                           height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
                           position: "sticky", left: 0, zIndex: 5,
+                          borderRight: "2px solid #686D76",
                         }}
                       >
                         소계
                       </td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.taxTotal)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.vat)}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.total)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(purchaseTypeSummary.expen.total)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.food.taxTotal)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.food.vat)}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.food.total)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(purchaseTypeSummary.food.total)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.taxTotal)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.vat)}</td>
-                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.total)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.total)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(purchaseTypeSummary.total.total)}</td>
                     </tr>
                     <tr>
                       <td
@@ -2001,11 +2042,12 @@ function AccountPurchaseTallyTab() {
                           textAlign: "center", fontWeight: 700, background: "#ececec",
                           height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
                           position: "sticky", left: 0, zIndex: 5,
+                          borderRight: "2px solid #686D76",
                         }}
                       >
                         총합계
                       </td>
-                      <td colSpan={9} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
+                      <td colSpan={10} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
                         {formatSummaryNumber(purchaseTypeSummary.total.total)}
                       </td>
                     </tr>
@@ -2078,6 +2120,7 @@ function AccountPurchaseTallyTab() {
                         top: 0,
                         zIndex: 7,
                         backgroundColor: "#fef6e4",
+                        borderRight: "2px solid #686D76",
                       }}
                     >
                       구매처
@@ -2094,6 +2137,7 @@ function AccountPurchaseTallyTab() {
                         height: HEADER_FIRST_ROW_HEIGHT,
                         lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
                         padding: "0 4px",
+                        borderRight: "2px solid #686D76",
                       }}
                     >
                       소모품
@@ -2109,6 +2153,7 @@ function AccountPurchaseTallyTab() {
                         height: HEADER_FIRST_ROW_HEIGHT,
                         lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
                         padding: "0 4px",
+                        borderRight: "2px solid #686D76",
                       }}
                     >
                       식자재
@@ -2124,28 +2169,42 @@ function AccountPurchaseTallyTab() {
                         height: HEADER_FIRST_ROW_HEIGHT,
                         lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`,
                         padding: "0 4px",
+                        borderRight: "2px solid #686D76",
                       }}
                     >
                       경관식
+                    </th>
+                    <th
+                      rowSpan={2}
+                      style={{
+                        minWidth: 120,
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 6,
+                        backgroundColor: "#fef6e4",
+                        borderRight: "2px solid #686D76",
+                      }}
+                    >
+                      소계
                     </th>
                   </tr>
                   <tr>
                     <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
                     <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
-                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>합계</th>
                     <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
                     <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
-                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>합계</th>
                     <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>과/면세</th>
                     <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>부가세</th>
-                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4" }}>합계</th>
+                    <th style={{ minWidth: 90, position: "sticky", top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", backgroundColor: "#fef6e4", borderRight: "2px solid #686D76" }}>합계</th>
                   </tr>
                 </thead>
 
                 <tbody>
                   {accountDisplayRows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
+                      <td colSpan={13} style={{ textAlign: "center", padding: "12px" }}>
                         데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
                       </td>
                     </tr>
@@ -2189,16 +2248,20 @@ function AccountPurchaseTallyTab() {
                             zIndex: 3,
                             backgroundColor: "#ffffff",
                             height: FOOTER_ROW_HEIGHT,
+                            borderRight: "2px solid #686D76",
                           }}
                         >
                           {String(row.purchase_name || row.name || "")}
                         </td>
 
-                        {AMOUNT_COLUMN_KEYS.map((k) => (
-                          <td key={k} style={{ width: 90, textAlign: "right", height: FOOTER_ROW_HEIGHT }}>
+                        {AMOUNT_COLUMN_KEYS.map((k, idx) => (
+                          <td key={k} style={{ width: 90, textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: idx === 2 || idx === 5 || idx === 8 ? "2px solid #686D76" : undefined }}>
                             {getAmountCellDisplayValue(row, k)}
                           </td>
                         ))}
+                        <td style={{ width: 120, textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76", fontWeight: 700 }}>
+                          {formatComma(getRowSubtotal(row))}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -2216,6 +2279,7 @@ function AccountPurchaseTallyTab() {
                         height: FOOTER_ROW_HEIGHT, padding: "0 8px",
                         border: "1px solid #686D76", fontSize: 12,
                         position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                        borderRight: "2px solid #686D76",
                       }}
                     >
                       소계
@@ -2231,6 +2295,7 @@ function AccountPurchaseTallyTab() {
                       formatSummaryNumber(summary.scenic.taxTotal),
                       formatSummaryNumber(Number(summary.scenic.vat ?? 0)),
                       formatSummaryNumber(summary.scenic.total),
+                      formatSummaryNumber(summary.total.total),
                     ].map((val, i) => (
                       <td
                         key={i}
@@ -2239,6 +2304,7 @@ function AccountPurchaseTallyTab() {
                           height: FOOTER_ROW_HEIGHT, border: "1px solid #686D76",
                           fontSize: 12, padding: "0 4px",
                           position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2,
+                          borderRight: i === 2 || i === 5 || i === 8 || i === 9 ? "2px solid #686D76" : undefined,
                         }}
                       >
                         {val}
@@ -2255,13 +2321,14 @@ function AccountPurchaseTallyTab() {
                         height: FOOTER_ROW_HEIGHT, padding: "0 8px",
                         border: "1px solid #686D76", fontSize: 12,
                         position: "sticky", bottom: 0, left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                        borderRight: "2px solid #686D76",
                       }}
                     >
                       총합계
                     </td>
-                    {/* 총합계 금액: 세로=colSpan 9, 가로=colSpan 9, sticky bottom */}
+                    {/* 총합계 금액: 세로=colSpan 10, 가로=colSpan 10, sticky bottom */}
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       style={{
                         textAlign: "right", fontWeight: 700, background: "#ececec",
                         height: FOOTER_ROW_HEIGHT, padding: "0 12px",
@@ -2304,31 +2371,32 @@ function AccountPurchaseTallyTab() {
                       rowSpan={2}
                       style={{
                         minWidth: 160, width: 160, maxWidth: 160,
-                        left: STICKY_LEFT_TYPE, zIndex: 7, backgroundColor: "#fef6e4",
+                        left: STICKY_LEFT_TYPE, zIndex: 7, backgroundColor: "#fef6e4", borderRight: "2px solid #686D76",
                       }}
                     >
                       구매처
                     </th>
-                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>소모품</th>
-                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>식자재</th>
-                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>경관식</th>
+                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px", borderRight: "2px solid #686D76" }}>소모품</th>
+                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px", borderRight: "2px solid #686D76" }}>식자재</th>
+                    <th colSpan={3} style={{ minWidth: 270, top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px", borderRight: "2px solid #686D76" }}>경관식</th>
+                    <th rowSpan={2} style={{ minWidth: 120, top: 0, zIndex: 6, padding: "0 4px", borderRight: "2px solid #686D76" }}>소계</th>
                   </tr>
                   <tr>
                     <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>과/면세</th>
                     <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>부가세</th>
-                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>합계</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", borderRight: "2px solid #686D76" }}>합계</th>
                     <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>과/면세</th>
                     <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>부가세</th>
-                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>합계</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", borderRight: "2px solid #686D76" }}>합계</th>
                     <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>과/면세</th>
                     <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>부가세</th>
-                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px" }}>합계</th>
+                    <th style={{ minWidth: 90, top: HEADER_SECOND_ROW_TOP, zIndex: 6, padding: "2px 4px", borderRight: "2px solid #686D76" }}>합계</th>
                   </tr>
                 </thead>
                 <tbody>
                   {accountDisplayRows.length === 0 ? (
                     <tr>
-                      <td colSpan={12} style={{ textAlign: "center", padding: "12px" }}>
+                      <td colSpan={13} style={{ textAlign: "center", padding: "12px" }}>
                         데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
                       </td>
                     </tr>
@@ -2341,14 +2409,17 @@ function AccountPurchaseTallyTab() {
                         <td style={{ width: 120, minWidth: 120, maxWidth: 120, position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {isRangeMode ? dateRangeLabel : String(row._saleMonth || "")}
                         </td>
-                        <td style={{ width: 160, minWidth: 160, maxWidth: 160, position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                        <td style={{ width: 160, minWidth: 160, maxWidth: 160, position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76" }}>
                           {String(row.purchase_name || row.name || "")}
                         </td>
-                        {AMOUNT_COLUMN_KEYS.map((k) => (
-                          <td key={k} style={{ width: 90, textAlign: "right", height: FOOTER_ROW_HEIGHT }}>
+                        {AMOUNT_COLUMN_KEYS.map((k, idx) => (
+                          <td key={k} style={{ width: 90, textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: idx === 2 || idx === 5 || idx === 8 ? "2px solid #686D76" : undefined }}>
                             {getAmountCellDisplayValue(row, k)}
                           </td>
                         ))}
+                        <td style={{ width: 120, textAlign: "right", height: FOOTER_ROW_HEIGHT, borderRight: "2px solid #686D76", fontWeight: 700 }}>
+                          {formatComma(getRowSubtotal(row))}
+                        </td>
                       </tr>
                     ))
                   )}

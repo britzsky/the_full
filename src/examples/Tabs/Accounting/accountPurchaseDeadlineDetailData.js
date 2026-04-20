@@ -81,6 +81,7 @@ export default function useAccountPurchaseDeadlineDetailData() {
     originalDetailRows,
     setOriginalDetailRows,
     detailLoading,
+    setDetailLoading,
     fetchPurchaseDetailList,
   };
 }

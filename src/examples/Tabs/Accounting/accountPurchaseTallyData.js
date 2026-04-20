@@ -80,6 +80,8 @@ const summarizeTallyByDetail = (detailRows) => {
     if (itemType !== "1" && itemType !== "2" && itemType !== "3") return;
 
     const amountRaw = pickField(item, ["amount", "total_amount", "totalAmount"]);
+    const taxRaw = pickField(item, ["tax", "tax_amount", "supply", "supply_amount"]);
+    const vatRaw = pickField(item, ["vat", "vat_amount"]);
     const qtyRaw = pickField(item, ["qty", "quantity"]);
     const unitPriceRaw = pickField(item, ["unitPrice", "unitprice", "unit_price"]);
     const qty = parseNumber(qtyRaw);
@@ -93,13 +95,34 @@ const summarizeTallyByDetail = (detailRows) => {
 
     // taxtype: 1=과세, 2=면세
     if (taxType === "1") {
-      // 과세는 상세 금액 기준으로 자동 계산 (VAT=amount/11, TAX=amount-VAT)
-      const vat = Math.floor(amount / 11);
-      const tax = Math.max(amount - vat, 0);
+      // 과세는 detail의 tax/vat/amount를 그대로 사용하고, 누락 시에만 amount 기반으로 보정한다.
+      const hasTaxInput = hasValue(taxRaw);
+      const hasVatInput = hasValue(vatRaw);
+      const hasAmountInput = hasValue(amountRaw);
+      let tax = hasTaxInput ? parseNumber(taxRaw) : 0;
+      let vat = hasVatInput ? parseNumber(vatRaw) : 0;
+      let total = hasAmountInput ? parseNumber(amountRaw) : 0;
+
+      if (!hasTaxInput && !hasVatInput) {
+        const autoVat = Math.floor(amount / 11);
+        const autoTax = Math.max(amount - autoVat, 0);
+        tax = autoTax;
+        vat = autoVat;
+        total = amount;
+      } else if (!hasTaxInput && hasAmountInput && amount >= vat) {
+        tax = Math.max(amount - vat, 0);
+      } else if (!hasVatInput && hasAmountInput && amount >= tax) {
+        vat = Math.max(amount - tax, 0);
+      }
+
+      if (!hasAmountInput) {
+        total = tax + vat;
+      }
+
       sum[`${prefix}_tax_rows`] += 1;
       sum[`${prefix}_tax`] += tax;
       sum[`${prefix}_vat`] += vat;
-      sum[`${prefix}_total`] += amount;
+      sum[`${prefix}_total`] += total;
       return;
     }
 
@@ -268,34 +291,34 @@ export default function useAccountPurchaseTallyData() {
           // ✅ 소모품: itemType=2 상세가 있을 때만 total 반영
           expen_total:
             summary.expen_item_rows > 0 ? formatNumber(summary.expen_total) : row.expen_total,
-          // ✅ 소모품 과세/면세는 taxType 1/2가 있을 때만 덮어쓰기 (없으면 기존값 유지)
+          // ✅ 소모품 과세/면세/부가세도 상세가 있으면 동일 기준으로 반영
           expen_tax:
-            summary.expen_tax_rows > 0 ? formatNumber(summary.expen_tax) : row.expen_tax,
+            summary.expen_item_rows > 0 ? formatNumber(summary.expen_tax) : row.expen_tax,
           expen_vat:
-            summary.expen_tax_rows > 0 ? formatNumber(summary.expen_vat) : row.expen_vat,
+            summary.expen_item_rows > 0 ? formatNumber(summary.expen_vat) : row.expen_vat,
           expen_taxFree:
-            summary.expen_tax_rows > 0 ? formatNumber(summary.expen_taxFree) : row.expen_taxFree,
+            summary.expen_item_rows > 0 ? formatNumber(summary.expen_taxFree) : row.expen_taxFree,
 
           // ✅ 식재료: itemType=1 상세가 있을 때만 total 반영
           food_total:
             summary.food_item_rows > 0 ? formatNumber(summary.food_total) : row.food_total,
-          // ✅ 식재료 과세/면세는 taxType 1/2가 있을 때만 덮어쓰기 (없으면 기존값 유지)
+          // ✅ 식재료 과세/면세/부가세도 상세가 있으면 동일 기준으로 반영
           food_tax:
-            summary.food_tax_rows > 0 ? formatNumber(summary.food_tax) : row.food_tax,
+            summary.food_item_rows > 0 ? formatNumber(summary.food_tax) : row.food_tax,
           food_vat:
-            summary.food_tax_rows > 0 ? formatNumber(summary.food_vat) : row.food_vat,
+            summary.food_item_rows > 0 ? formatNumber(summary.food_vat) : row.food_vat,
           food_taxFree:
-            summary.food_tax_rows > 0 ? formatNumber(summary.food_taxFree) : row.food_taxFree,
+            summary.food_item_rows > 0 ? formatNumber(summary.food_taxFree) : row.food_taxFree,
 
           // ✅ 경관식: itemType=3 상세가 있을 때만 반영
           scenic_total:
             summary.scenic_item_rows > 0 ? formatNumber(summary.scenic_total) : row.scenic_total,
           scenic_tax:
-            summary.scenic_tax_rows > 0 ? formatNumber(summary.scenic_tax) : row.scenic_tax,
+            summary.scenic_item_rows > 0 ? formatNumber(summary.scenic_tax) : row.scenic_tax,
           scenic_vat:
-            summary.scenic_tax_rows > 0 ? formatNumber(summary.scenic_vat) : row.scenic_vat,
+            summary.scenic_item_rows > 0 ? formatNumber(summary.scenic_vat) : row.scenic_vat,
           scenic_taxFree:
-            summary.scenic_tax_rows > 0 ? formatNumber(summary.scenic_taxFree) : row.scenic_taxFree,
+            summary.scenic_item_rows > 0 ? formatNumber(summary.scenic_taxFree) : row.scenic_taxFree,
         });
       }
 

@@ -454,25 +454,13 @@ function PreviewOverlay({
 
   const isQuarterRotation = Math.abs(imageRotation % 180) === 90;
 
-  const imageFrameSize = useMemo(() => {
-    if (typeof window === "undefined") {
-      return { width: 240, height: 240 };
-    }
-
-    const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, "image");
-    const availableWidth = Math.max(180, (window.innerWidth * widthRatio) - (isMobile ? 48 : 72));
-    const availableHeight = Math.max(180, (window.innerHeight * heightRatio) - (isMobile ? 84 : 96));
-
-    return {
-      width: Math.max(120, Math.round(availableWidth)),
-      height: Math.max(120, Math.round(availableHeight)),
-    };
-  }, [isMobile, isQuarterRotation]);
-
+  // 이미지 크기: 고정 px 대신 100%로 창 크기에 맞게 자동 조절
   const rotatedImageStyle = useMemo(
     () => ({
-      width: isQuarterRotation ? imageFrameSize.height : imageFrameSize.width,
-      height: isQuarterRotation ? imageFrameSize.width : imageFrameSize.height,
+      width: isQuarterRotation ? "100%" : "100%",
+      height: isQuarterRotation ? "100%" : "100%",
+      maxWidth: "100%",
+      maxHeight: "100%",
       borderRadius: 12,
       display: "block",
       objectFit: "contain",
@@ -480,7 +468,7 @@ function PreviewOverlay({
       transformOrigin: "center center",
       boxShadow: "0 18px 40px rgba(0,0,0,0.28)",
     }),
-    [imageFrameSize.height, imageFrameSize.width, imageRotation, isQuarterRotation]
+    [imageRotation, isQuarterRotation]
   );
 
   if (!open || !currentFile) return null;
@@ -769,33 +757,15 @@ function PreviewOverlay({
                       </button>
                     </div>
 
-                    <TransformComponent>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          padding: isMobile ? 8 : 12,
-                          width: "100%",
-                          height: "100%",
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: imageFrameSize.width,
-                            height: imageFrameSize.height,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                        >
-                          <img
-                            src={currentFileViewUrl}
-                            alt={currentFile.name || "미리보기"}
-                            style={rotatedImageStyle}
-                          />
-                        </div>
-                      </div>
+                    <TransformComponent
+                      wrapperStyle={{ width: "100%", height: "100%" }}
+                      contentStyle={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >
+                      <img
+                        src={currentFileViewUrl}
+                        alt={currentFile.name || "미리보기"}
+                        style={rotatedImageStyle}
+                      />
                     </TransformComponent>
                   </>
                 )}

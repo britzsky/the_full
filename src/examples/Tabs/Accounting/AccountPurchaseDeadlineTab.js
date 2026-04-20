@@ -88,13 +88,27 @@ const DETAIL_TAX_TYPES = [
   { value: "3", label: "알수없음" },
 ];
 
+// 하단 상세 상품구분 옵션
 const DETAIL_ITEM_TYPES = [
   { value: "1", label: "식재료" },
   { value: "2", label: "소모품" },
   { value: "3", label: "경관식" },
 ];
 
+// 영수증 업로드 버튼 너비 (px)
 const RECEIPT_UPLOAD_BTN_WIDTH = 78;
+
+
+// 숫자 입력 전용: onInput에서 비숫자 즉시 제거 (한글 모음·자음 포함)
+const onNumInput = (e) => {
+  const el = e.currentTarget;
+  const prev = el.value;
+  const next = prev.replace(/[^\d\-,]/g, "");
+  if (prev === next) return;
+  const pos = Math.max(0, (el.selectionStart ?? prev.length) - (prev.length - next.length));
+  el.value = next;
+  try { el.setSelectionRange(pos, pos); } catch (_) { }
+};
 
 // ✅ contentEditable: 입력 중 커서를 오른쪽에 고정 (글씨는 왼쪽으로 밀림)
 const keepEditableTailVisible = (el) => {
@@ -144,6 +158,7 @@ const normalizeReceiptTypeVal = (v, rowType) => {
   return opts[0]?.value ?? "UNKNOWN";
 };
 
+// 거래처 업종 문자열 → 숫자 코드 변환 (타입 옵션 보정용)
 const resolveAccountTypeCode = (v) => {
   const raw = String(v ?? "").trim();
   if (!raw) return "";
@@ -188,104 +203,7 @@ function AccountPurchaseDeadlineTab() {
   const qtyRefs = useRef({});
   const unitPriceRefs = useRef({});
 
-  // ✅ 타입(요양원/산업체/학교) 옵션: 거래처(account_id) 기준으로 서버에서 받기
-  const [typeOptions, setTypeOptions] = useState([]); // [{value, label}]
-  const [typeLoading, setTypeLoading] = useState(false);
-
-  const normalizeTypeOptions = useCallback((data) => {
-    // res.data 형태가 무엇이든 최대한 안전하게 배열로 만들기
-    const arr = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
-
-    const mapped = arr
-      .map((x) => {
-        const value = x?.type ?? x?.account_type ?? x?.mapping_type ?? x?.code ?? x?.value ?? x?.id;
-        const delYn = String(x?.del_yn ?? "N");
-
-        const label =
-          x?.type_name ??
-          x?.account_type_name ??
-          x?.mapping_name ??
-          x?.name ??
-          x?.label ??
-          x?.text ??
-          x?.value_name ??
-          x?.type ??
-          x?.account_type ??
-          x?.code ??
-          x?.value;
-
-        if (value === null || value === undefined || String(value).trim() === "") return null;
-
-        return { value: String(value), label: String(label ?? value), del_yn: delYn };
-      })
-      .filter((x) => x && String(x.del_yn) !== "Y");
-
-    // 중복 제거(값 기준)
-    const uniq = [];
-    const seen = new Set();
-    for (const o of mapped) {
-      if (seen.has(o.value)) continue;
-      seen.add(o.value);
-      uniq.push({ value: o.value, label: o.label });
-    }
-
-    // 기본 기타 타입(1002/1003)이 응답에서 누락된 경우 보강
-    const blockedSpecial = new Set(
-      arr
-        .map((x) => ({
-          type: String(x?.type ?? x?.value ?? ""),
-          del_yn: String(x?.del_yn ?? "N"),
-        }))
-        .filter((x) => (x.type === "1002" || x.type === "1003") && x.del_yn === "Y")
-        .map((x) => x.type)
-    );
-    if (!seen.has("1002") && !blockedSpecial.has("1002")) {
-      uniq.push({ value: "1002", label: "기타경비" });
-      seen.add("1002");
-    }
-    if (!seen.has("1003") && !blockedSpecial.has("1003")) {
-      uniq.push({ value: "1003", label: "기타" });
-      seen.add("1003");
-    }
-
-    uniq.sort((a, b) => {
-      const an = Number(a.value);
-      const bn = Number(b.value);
-      const aNum = Number.isFinite(an);
-      const bNum = Number.isFinite(bn);
-      if (aNum && bNum) return an - bn;
-      return String(a.value).localeCompare(String(b.value), "ko");
-    });
-    return uniq;
-  }, []);
-
-  const fetchTypeOptions = useCallback(
-    async (accountId) => {
-      if (!accountId) {
-        setTypeOptions([]);
-        return [];
-      }
-
-      try {
-        setTypeLoading(true);
-        const res = await api.get("/Operate/AccountMappingV2List", {
-          params: { account_id: accountId, _ts: Date.now() },
-        });
-        const opts = normalizeTypeOptions(res?.data);
-
-        setTypeOptions(opts);
-        return opts;
-      } catch (e) {
-        console.error("타입 옵션 조회 실패(/Operate/AccountMappingV2List):", e);
-        setTypeOptions([]);
-        return [];
-      } finally {
-        setTypeLoading(false);
-      }
-    },
-    [normalizeTypeOptions]
-  );
-
+  // 타입 옵션 변경 시 현재 선택값 유지 또는 첫 번째 옵션으로 보정
   const resolveNextType = useCallback((opts, currentType, accountTypeCode = "") => {
     const cur = String(currentType ?? "");
     const accountType = String(accountTypeCode ?? "");
@@ -296,8 +214,10 @@ function AccountPurchaseDeadlineTab() {
   }, []);
 
   // ✅ (상단) 데이터 훅 사용
-  const { rows, setRows, originalRows, setOriginalRows, loading, fetchPurchaseList } =
-    useAccountPurchaseDeadlineData();
+  const {
+    rows, setRows, originalRows, setOriginalRows, loading, fetchPurchaseList,
+    typeOptions, setTypeOptions, typeLoading, fetchTypeOptions,
+  } = useAccountPurchaseDeadlineData();
 
   // =========================
   // ✅ (하단) 상세 테이블 훅/상태
@@ -308,13 +228,20 @@ function AccountPurchaseDeadlineTab() {
     originalDetailRows,
     setOriginalDetailRows,
     detailLoading,
+    setDetailLoading,
     fetchPurchaseDetailList,
   } = useAccountPurchaseDeadlineDetailData();
 
+  // 선택된 상단 행 식별자 및 인덱스
   const [selectedSaleId, setSelectedSaleId] = useState("");
   const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
+  // 테이블 강제 리렌더링용 키 (defaultValue 기반 input 초기화 시 사용)
   const [masterTableKey, setMasterTableKey] = useState(0);
   const [detailTableKey, setDetailTableKey] = useState(0);
+
+  // 미저장 하단 변경 누적 보관소: sale_id → detailRows 배열
+  // 다른 상단 행으로 이동해도 수정값을 유지하기 위한 임시 저장소
+  const [pendingDetailMap, setPendingDetailMap] = useState(new Map());
 
   // =========================================
   // ✅ 금액 키들: 화면에는 콤마, 저장은 콤마 제거
@@ -325,11 +252,13 @@ function AccountPurchaseDeadlineTab() {
   );
   const DETAIL_MONEY_KEYS = useMemo(() => ["qty", "unitPrice", "amount", "tax", "vat"], []);
 
+  // 콤마·공백 제거 (숫자 비교 및 저장 시 사용)
   const stripComma = useCallback((v) => {
     if (v === null || v === undefined) return "";
     return String(v).replace(/,/g, "").replace(/\s+/g, "").trim();
   }, []);
 
+  // 숫자 → 콤마 포맷 (화면 표시용)
   const formatComma = useCallback(
     (v) => {
       const raw = stripComma(v);
@@ -387,8 +316,24 @@ function AccountPurchaseDeadlineTab() {
   }, []); // ✅ 의도적으로 1회만
 
   // ✅ 조회조건 변경 (기본 TextField용)
-  const handleFilterChange = (e) => {
+  const handleFilterChange = async (e) => {
     const { name, value } = e.target;
+    if (name === "type" || name === "payType") {
+      if (hasDirtyRowsEarly()) {
+        const result = await Swal.fire({
+          title: "미저장 변경사항이 있습니다.",
+          text: "저장 후 이동하시겠습니까?",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "저장 후 이동",
+          cancelButtonText: "취소",
+          confirmButtonColor: "#1976d2",
+          cancelButtonColor: "#9e9e9e",
+        });
+        if (!result.isConfirmed) return;
+        await handleSaveRef.current?.();
+      }
+    }
     setFilters((prev) => {
       const next = { ...prev, [name]: value };
       if (name === "account_id" || name === "type" || name === "payType") {
@@ -418,6 +363,7 @@ function AccountPurchaseDeadlineTab() {
     };
   }, [rows, stripComma]);
 
+  // 상단 합계 콤마 포맷 문자열 (푸터 표시용)
   const masterSumText = useMemo(
     () => ({
       tax: masterSums.tax.toLocaleString("ko-KR"),
@@ -428,38 +374,51 @@ function AccountPurchaseDeadlineTab() {
     [masterSums]
   );
 
-  // ✅ 미저장 변경 여부 (handleAccountChange/handleSearch보다 먼저 선언)
+  // 미저장 변경 여부 확인: 상단 rows, 현재 하단 detailRows, 누적 보관소(pendingDetailMap) 포함
   const hasDirtyRowsEarly = useCallback(() => {
-    return rows.some((r) => r.__dirty) || detailRows.some((r) => r.__dirty);
-  }, [rows, detailRows]);
+    if (rows.some((r) => r.__dirty)) return true;
+    if (detailRows.some((r) => r.__dirty)) return true;
+    // 누적 보관소에 저장된 다른 sale_id의 변경분 존재 여부
+    for (const saved of pendingDetailMap.values()) {
+      const arr = Array.isArray(saved) ? saved : (saved?.rows ?? []);
+      if (arr.some((r) => r.__dirty)) return true;
+    }
+    return false;
+  }, [rows, detailRows, pendingDetailMap]);
 
   // handleSave는 아래 정의되므로 ref로 참조
   const handleSaveRef = useRef(null);
+  // 저장 중 selectedSaleId useEffect의 자동 상세 재조회 방지용 플래그
+  const isSavingRef = useRef(false);
 
+  // 거래처 변경 핸들러: 미저장 확인 → 타입 옵션 재조회 → 데이터 조회
   const handleAccountChange = useCallback(
     async (_, opt) => {
-      // ✅ 미저장 체크
+      const nextId = opt ? String(opt.value) : "";
+      const nextAccountTypeCode = opt ? String(opt.account_type_code ?? "") : "";
+
+      // 미저장 변경 있으면 확인
       if (hasDirtyRowsEarly()) {
         const result = await Swal.fire({
-          title: "저장하지 않은 변경사항이 있습니다.",
+          title: "미저장 변경사항이 있습니다.",
           text: "저장 후 이동하시겠습니까?",
           icon: "warning",
           showCancelButton: true,
           confirmButtonText: "저장 후 이동",
           cancelButtonText: "취소",
+          confirmButtonColor: "#1976d2",
+          cancelButtonColor: "#9e9e9e",
         });
         if (!result.isConfirmed) return;
-        if (handleSaveRef.current) await handleSaveRef.current();
+        await handleSaveRef.current?.();
       }
 
-      const nextId = opt ? String(opt.value) : "";
-      const nextAccountTypeCode = opt ? String(opt.account_type_code ?? "") : "";
-
-      // ✅ 공통 초기화
+      // 공통 초기화 (거래처 변경 시 누적 보관소도 초기화)
       setSelectedSaleId("");
       setSelectedMasterIndex(-1);
       setDetailRows([]);
       setOriginalDetailRows([]);
+      setPendingDetailMap(new Map());
 
       if (!nextId) {
         setTypeOptions([]);
@@ -485,40 +444,45 @@ function AccountPurchaseDeadlineTab() {
       resolveNextType,
       setDetailRows,
       setOriginalDetailRows,
-      hasDirtyRowsEarly,
     ]
   );
 
   // ✅ 미저장 변경 여부 (handleSearch용 alias)
   const hasDirtyRows = hasDirtyRowsEarly;
 
-  // ✅ 조회 버튼 클릭
-  const handleSearch = async () => {
-    if (hasDirtyRows()) {
-      const result = await Swal.fire({
-        title: "저장하지 않은 변경사항이 있습니다.",
-        text: "저장 후 조회하시겠습니까?",
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonText: "저장 후 조회",
-        cancelButtonText: "취소",
-      });
-      if (!result.isConfirmed) return;
-      if (handleSaveRef.current) await handleSaveRef.current();
-      return; // handleSave 내부에서 fetchPurchaseList 이미 호출
-    }
-    try {
-      // 조회 시 미저장 수정값은 즉시 폐기하고 화면 DOM도 새로 마운트
-      setRows((originalRows || []).map((r) => ({ ...r })));
-      setDetailRows((originalDetailRows || []).map((r) => ({ ...r })));
-      setMasterTableKey((k) => k + 1);
-      setDetailTableKey((k) => k + 1);
+  // 실제 조회 실행 (dirty 확인 없이 바로 조회)
+  const doSearch = async (targetFilters) => {
+    setRows((originalRows || []).map((r) => ({ ...r })));
+    setDetailRows((originalDetailRows || []).map((r) => ({ ...r })));
+    setMasterTableKey((k) => k + 1);
+    setDetailTableKey((k) => k + 1);
+    setPendingDetailMap(new Map());
+    setSelectedSaleId("");
+    setSelectedMasterIndex(-1);
+    setDetailRows([]);
+    setOriginalDetailRows([]);
+    await fetchPurchaseList(targetFilters ?? filters);
+  };
 
-      setSelectedSaleId("");
-      setSelectedMasterIndex(-1);
-      setDetailRows([]);
-      setOriginalDetailRows([]);
-      await fetchPurchaseList(filters);
+  // 조회 버튼 클릭: 미저장 변경 있으면 [저장 후 이동] / [취소] 확인
+  const handleSearch = async () => {
+    try {
+      if (hasDirtyRows()) {
+        const result = await Swal.fire({
+          title: "미저장 변경사항이 있습니다.",
+          text: "저장 후 조회하시겠습니까?",
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "저장 후 이동",
+          cancelButtonText: "취소",
+          confirmButtonColor: "#1976d2",
+          cancelButtonColor: "#9e9e9e",
+        });
+        if (!result.isConfirmed) return;
+        await handleSaveRef.current?.();
+        return;
+      }
+      await doSearch();
     } catch (e) {
       Swal.fire("오류", e.message, "error");
     }
@@ -534,15 +498,16 @@ function AccountPurchaseDeadlineTab() {
     return m;
   }, [originalRows]);
 
+  // 문자열 공백 정규화 (변경 감지 비교 시 좌우 공백·연속 공백 제거)
   const normalizeStr = useCallback(
     (value) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : value),
     []
   );
 
+  // 셀 변경 여부에 따른 글자색 반환 (변경 시 빨간색, 신규 행 포함)
   const getCellStyle = useCallback(
     (row, key, value) => {
-      if (row?.__dirty) return { color: "red" };
-
+      if (row?.__isNew) return { color: "red" };
       const saleId = String(row?.sale_id ?? "");
       const original = saleId ? originalRowsMap.get(saleId)?.[key] : undefined;
       if (original === undefined) return { color: "black" };
@@ -551,15 +516,14 @@ function AccountPurchaseDeadlineTab() {
         return stripComma(original) !== stripComma(value) ? { color: "red" } : { color: "black" };
       }
       if (typeof original === "string" && typeof value === "string") {
-        return normalizeStr(original) !== normalizeStr(value)
-          ? { color: "red" }
-          : { color: "black" };
+        return normalizeStr(original) !== normalizeStr(value) ? { color: "red" } : { color: "black" };
       }
       return original !== value ? { color: "red" } : { color: "black" };
     },
     [originalRowsMap, MONEY_KEYS, stripComma, normalizeStr]
   );
 
+  // 상단 셀 값 변경 핸들러 (total=0 시 하단 금액 전체 초기화 포함)
   const handleCellChange = useCallback((rowIndex, key, value) => {
     setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value, __dirty: true } : r)));
 
@@ -584,6 +548,7 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [setRows, setDetailRows, setDetailTableKey]);
 
+  // 사업자번호 포맷 변환 (숫자 10자리 → XXX-XX-XXXXX)
   const formatBizNo = useCallback((v) => {
     const digits = String(v ?? "")
       .replace(/\D/g, "")
@@ -599,6 +564,7 @@ function AccountPurchaseDeadlineTab() {
     return `${a}-${b}-${c}`;
   }, []);
 
+  // 상단 테이블 MUI sx 스타일 (스크롤·테두리·헤더 고정)
   const tableSx = {
     overflow: "auto",
     border: "1px solid #ddd",
@@ -641,9 +607,12 @@ function AccountPurchaseDeadlineTab() {
       border: "none",
       background: "transparent",
       textAlign: "center",
+      boxSizing: "border-box",
+      fontFamily: "inherit",
     },
   };
 
+  // 하단 상세 테이블 MUI sx 스타일
   const detailTableSx = {
     flex: 1,
     overflow: "auto",
@@ -685,9 +654,12 @@ function AccountPurchaseDeadlineTab() {
       border: "none",
       background: "transparent",
       textAlign: "center",
+      boxSizing: "border-box",
+      fontFamily: "inherit",
     },
   };
 
+  // 고정 너비 컬럼 인라인 스타일 생성 (width/minWidth/maxWidth 동일 설정)
   const fixedColStyle = useCallback(
     (size, extra = {}) => ({
       width: size,
@@ -705,6 +677,7 @@ function AccountPurchaseDeadlineTab() {
     return map;
   }, [typeOptions]);
 
+  // 상단 테이블 컬럼 정의 (전체 타입 조회 시 타입 컬럼 동적 추가)
   const masterColumns = useMemo(() => {
     const isAllType = String(filters.type ?? "") === "0";
     const typeCol = {
@@ -731,16 +704,19 @@ function AccountPurchaseDeadlineTab() {
     return base;
   }, [filters.type, typeNameByValue]);
 
+  // 합계금액 컬럼 인덱스 (푸터 colspan 계산용)
   const masterTotalColIndex = useMemo(
     () => masterColumns.findIndex((c) => c.accessorKey === "total"),
     [masterColumns]
   );
 
+  // 합계금액 오른쪽 컬럼 수 (푸터 빈 칸 colspan)
   const masterSummaryTailColSpan = useMemo(() => {
     const totalIndex = masterTotalColIndex >= 0 ? masterTotalColIndex : 8;
     return Math.max(masterColumns.length - (totalIndex + 1), 0);
   }, [masterColumns.length, masterTotalColIndex]);
 
+  // 하단 상세 테이블 컬럼 정의
   const detailColumns = useMemo(
     () => [
       { header: "상품명", accessorKey: "name", size: 220 },
@@ -755,6 +731,7 @@ function AccountPurchaseDeadlineTab() {
     []
   );
 
+  // 금액 컬럼 인덱스 (하단 푸터 colspan 계산용)
   const detailAmountColIndex = useMemo(
     () => detailColumns.findIndex((c) => c.accessorKey === "amount"),
     [detailColumns]
@@ -779,6 +756,7 @@ function AccountPurchaseDeadlineTab() {
     return `${base}/Account/AccountStoredFileView?${params.toString()}`;
   }, []);
 
+  // 파일 경로에서 확장자 추출
   const getExt = (p = "") => {
     const clean = String(p).split("?")[0].split("#")[0];
     return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
@@ -786,6 +764,7 @@ function AccountPurchaseDeadlineTab() {
 
   const isPdfFile = (p) => getExt(p) === "pdf";
 
+  // 미리보기 가능한 파일 목록 (영수증 이미지/PDF 경로 포함 행만 추출)
   const fileItems = useMemo(() => {
     return (rows || [])
       .filter((r) => !!r?.receipt_image)
@@ -800,6 +779,7 @@ function AccountPurchaseDeadlineTab() {
       });
   }, [rows, buildFilePreviewUrl]);
 
+  // 영수증 없음 알림
   const handleNoImageAlert = () => {
     Swal.fire("이미지 없음", "등록된 증빙자료가 없습니다.", "warning");
   };
@@ -809,6 +789,7 @@ function AccountPurchaseDeadlineTab() {
     masterRowsRef.current = rows;
   }, [rows]);
 
+  // 파일 다운로드 핸들러 (새 탭 열기 방식)
   const handleDownload = useCallback(
     (path) => {
       if (!path || typeof path !== "string") return;
@@ -927,10 +908,12 @@ function AccountPurchaseDeadlineTab() {
   // =========================
   // ✅ 파일 뷰어
   // =========================
+  // 파일 뷰어 열림 상태 및 현재 인덱스
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
 
+  // 영수증 미리보기 열기 (해당 파일의 인덱스로 이동)
   const handleViewImage = useCallback(
     (path) => {
       if (!path) return;
@@ -971,6 +954,7 @@ function AccountPurchaseDeadlineTab() {
     []
   );
 
+  // 상단 행 변경 여부 판별 (저장 대상 필터링용)
   const isRowChanged = useCallback(
     (orig, cur) => {
       if (cur?.__dirty) return true;
@@ -988,6 +972,7 @@ function AccountPurchaseDeadlineTab() {
     [SAVE_KEYS, MONEY_KEYS, stripComma, normalizeStr]
   );
 
+  // 상단 행 저장 형태로 변환 (콤마 제거, 불필요 필드 삭제, payType 보정)
   const buildRowForSave = useCallback(
     (r) => {
       const user_id = localStorage.getItem("user_id") || "";
@@ -1033,9 +1018,9 @@ function AccountPurchaseDeadlineTab() {
     []
   );
 
+  // 하단 상세 행 변경 여부 판별
   const isDetailRowChanged = useCallback(
     (orig, cur) => {
-      if (cur?.__dirty) return true;
       return DETAIL_SAVE_KEYS.some((k) => {
         const a = orig?.[k];
         const b = cur?.[k];
@@ -1048,6 +1033,7 @@ function AccountPurchaseDeadlineTab() {
     [DETAIL_SAVE_KEYS, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
   );
 
+  // 하단 상세 행 저장 형태로 변환 (임시 플래그 제거, 금액 콤마 제거)
   const buildDetailRowForSave = useCallback(
     (r) => {
       const user_id = localStorage.getItem("user_id") || "";
@@ -1075,6 +1061,8 @@ function AccountPurchaseDeadlineTab() {
   // ✅ rows 바뀔 때: 선택만 유지/보정 (상세 재조회 X)
   useEffect(() => {
     if (!rows || rows.length === 0) {
+      // 저장 후 재조회 중에는 일시적으로 rows가 비었어도 선택 초기화 안 함
+      if (isSavingRef.current) return;
       setSelectedSaleId("");
       setSelectedMasterIndex(-1);
       setDetailRows([]);
@@ -1100,35 +1088,80 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [rows]); // ✅ rows만 감시 (fetch 없음)
 
-  // ✅ selectedSaleId 바뀔 때만: 상세 재조회
+  // selectedSaleId 변경 시 상세 처리:
+  // 누적 보관소에 해당 sale_id 캐시가 있으면 복원, 없으면 서버 조회
   useEffect(() => {
     if (!selectedSaleId) return;
+    // 저장 중 직접 fetchPurchaseDetailList 호출하므로 여기선 실행 안 함
+    if (isSavingRef.current) return;
+
+    const cached = pendingDetailMap.get(String(selectedSaleId));
+    if (cached) {
+      setDetailRows(cached.rows ?? cached);
+      setOriginalDetailRows(cached.originalRows ?? []);
+      setDetailLoading(false);
+      setDetailTableKey((k) => k + 1);
+      return;
+    }
 
     const master = (rows || []).find((r) => String(r.sale_id) === String(selectedSaleId));
     fetchPurchaseDetailList({
       sale_id: selectedSaleId,
       account_id: master?.account_id || filters.account_id,
     });
-  }, [selectedSaleId]); // ✅ rows 변화로는 재조회 안 함
+  }, [selectedSaleId]); // rows 변화로는 재조회 안 함
 
-  // ✅ 상단 행 클릭 → 하단 조회 (중복 account_id 제거)
+  // 상단 행 클릭 핸들러:
+  // 1) 현재 하단 수정값이 있으면 누적 보관소에 저장 후 이동
+  // 2) 이동 대상 sale_id의 캐시가 보관소에 있으면 복원, 없으면 서버 조회
   const handleMasterRowClick = useCallback(
     (row, rowIndex) => {
       const saleId = row?.sale_id;
       if (!saleId) return;
 
-      // ✅ (중요) 다른 행 클릭 시 이전 상세가 남아있어서 상단 합계를 건드리는 문제 방지
+      // 현재 하단에 미저장 수정값이 있을 때만 보관소에 보존 (원본도 함께)
+      const hasDirtyDetail = detailRows.some((r) => r.__dirty || r.__isNew);
+      if (selectedSaleId && hasDirtyDetail && String(selectedSaleId) !== String(saleId)) {
+        setPendingDetailMap((prev) => {
+          const next = new Map(prev);
+          next.set(String(selectedSaleId), { rows: detailRows, originalRows: originalDetailRows });
+          return next;
+        });
+      }
+
+      // 다른 행 클릭 시 이전 상세가 남아 상단 합계를 건드리는 문제 방지
       setDetailRows([]);
       setOriginalDetailRows([]);
+      setDetailLoading(true);
 
       if (String(selectedSaleId) !== String(saleId)) {
         setSelectedSaleId(String(saleId));
       } else {
-        // 같은 행을 다시 눌러도 상세 조회가 다시 실행되도록 처리
-        fetchPurchaseDetailList({
-          sale_id: String(saleId),
-          account_id: row?.account_id || filters.account_id,
-        });
+        // 같은 행 재클릭: dirty 있으면 캐시 저장 후 복원, 없으면 캐시 or 서버 조회
+        if (hasDirtyDetail) {
+          setPendingDetailMap((prev) => {
+            const next = new Map(prev);
+            next.set(String(saleId), { rows: detailRows, originalRows: originalDetailRows });
+            return next;
+          });
+          setDetailRows(detailRows);
+          setOriginalDetailRows(originalDetailRows);
+          setDetailLoading(false);
+          setDetailTableKey((k) => k + 1);
+        } else {
+          const cached = pendingDetailMap.get(String(saleId));
+          if (cached) {
+            setDetailRows(cached.rows ?? cached);
+            setOriginalDetailRows(cached.originalRows ?? []);
+            setDetailLoading(false);
+            setDetailTableKey((k) => k + 1);
+          } else {
+            fetchPurchaseDetailList({
+              sale_id: String(saleId),
+              account_id: row?.account_id || filters.account_id,
+            });
+          }
+        }
       }
       if (selectedMasterIndex !== rowIndex) {
         setSelectedMasterIndex(rowIndex);
@@ -1141,6 +1174,8 @@ function AccountPurchaseDeadlineTab() {
       fetchPurchaseDetailList,
       setDetailRows,
       setOriginalDetailRows,
+      detailRows,
+      pendingDetailMap,
     ]
   );
 
@@ -1206,94 +1241,129 @@ function AccountPurchaseDeadlineTab() {
     return m;
   }, [originalRows]);
 
-  // ✅ 저장(상단 + 하단 같이)
+  // 하단 dirty가 있는 sale_id 집합 (상단 행 글씨색 표시용)
+  const dirtyDetailSaleIds = useMemo(() => {
+    const ids = new Set();
+    // 현재 화면의 하단 rows
+    if (detailRows.some((r) => r.__dirty || r.__isNew)) {
+      if (selectedSaleId) ids.add(String(selectedSaleId));
+    }
+    // pendingDetailMap에 저장된 다른 행들
+    for (const [saleId, v] of pendingDetailMap.entries()) {
+      const arr = Array.isArray(v) ? v : (v?.rows ?? []);
+      if (arr.some((r) => r.__dirty || r.__isNew)) ids.add(String(saleId));
+    }
+    return ids;
+  }, [detailRows, selectedSaleId, pendingDetailMap]);
+
+  // 저장 처리: 상단 + 현재 하단 + 누적 보관소의 모든 변경분 일괄 저장
   const handleSave = useCallback(async () => {
     try {
-      // ✅ 포커스된 셀이 있으면 blur를 강제로 발생시켜 onBlur 먼저 실행
+      // 포커스된 셀 blur 강제 실행 (onBlur 우선 처리)
       const active = document.activeElement;
       if (active && (active.isContentEditable || active.tagName === "INPUT")) {
         active.blur();
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      // ✅ 하단 변경분 먼저 확정
-      let modifiedDetail = (detailRows || [])
-        .map((r, idx) => {
-          const o = originalDetailRows?.[idx];
-          if (!o) return buildDetailRowForSave(r);
-          return isDetailRowChanged(o, r) ? buildDetailRowForSave(r) : null;
-        })
-        .filter(Boolean);
-
-      // ✅ master가 변경됐고 detail이 없으면 → 현재 detailRows 전체를 저장 대상에 포함
-      // (상단 합계 수정 시 하단도 같이 저장)
-      const masterChanged = (rows || []).some((r) => {
-        const key = String(r?.sale_id ?? "");
-        const o = originalMasterMap.get(key);
-        if (!o) return true;
-        return isRowChanged(o, r);
-      });
-      if (masterChanged && modifiedDetail.length === 0 && selectedSaleId && Array.isArray(detailRows) && detailRows.length > 0) {
-        modifiedDetail = detailRows.map((r) => buildDetailRowForSave(r));
-      }
-
-      // ✅ detail이 변경됐으면 현재 detailRows 기준으로 master 자동계산값을 직접 계산
-      // useEffect에 의존하지 않고 handleSave 시점에 즉시 반영
-      let currentRows = rows || [];
-      if (modifiedDetail.length > 0 && selectedSaleId) {
-        const toNumForSave = (v) => {
-          const n = Number(String(v ?? "").replace(/,/g, "").trim());
-          return Number.isFinite(n) ? n : 0;
-        };
-        const calcMasterTotalsForSave = (list) => {
-          let total = 0;
-          let tax = 0;
-          let vat = 0;
-          let taxFree = 0;
-
-          (list || []).forEach((r) => {
-            const amt = toNumForSave(r?.amount);
-            const taxType = String(r?.taxType ?? "");
-            const autoVat = taxType === "1" ? Math.floor(amt / 11) : 0;
-            const autoTax = taxType === "1" ? amt - autoVat : 0;
-            const inputTax = toNumForSave(r?.tax);
-            const inputVat = toNumForSave(r?.vat);
-            const hasManualFlag = !!r?.__taxManual;
-            const hasManualValue =
-              taxType === "1" &&
-              (String(r?.tax ?? "").trim() !== "" || String(r?.vat ?? "").trim() !== "") &&
-              (inputTax !== autoTax || inputVat !== autoVat);
-
-            total += amt;
-            if (hasManualFlag || hasManualValue) {
-              tax += inputTax;
-              vat += inputVat;
-            } else if (taxType === "1") {
-              tax += autoTax;
-              vat += autoVat;
-            } else if (taxType === "2") {
-              taxFree += amt;
-            }
-          });
-
-          return { total, tax, vat, taxFree };
-        };
-
-        const { total, tax, vat, taxFree } = calcMasterTotalsForSave(detailRows || []);
-        currentRows = currentRows.map((r) => {
-          if (String(r?.sale_id ?? "") !== String(selectedSaleId)) return r;
-          return {
-            ...r,
-            tax: tax.toLocaleString("ko-KR"),
-            vat: vat.toLocaleString("ko-KR"),
-            total: total.toLocaleString("ko-KR"),
-            taxFree: taxFree.toLocaleString("ko-KR"),
-            __dirty: true,
-          };
+      // 금액 합계 계산 헬퍼 (detail 기반 master 자동계산용)
+      const toNumForSave = (v) => {
+        const n = Number(String(v ?? "").replace(/,/g, "").trim());
+        return Number.isFinite(n) ? n : 0;
+      };
+      const calcMasterTotalsForSave = (list) => {
+        let total = 0, tax = 0, vat = 0, taxFree = 0;
+        (list || []).forEach((r) => {
+          const amt = toNumForSave(r?.amount);
+          const taxType = String(r?.taxType ?? "");
+          const autoVat = taxType === "1" ? Math.floor(amt / 11) : 0;
+          const autoTax = taxType === "1" ? amt - autoVat : 0;
+          const inputTax = toNumForSave(r?.tax);
+          const inputVat = toNumForSave(r?.vat);
+          const hasManualFlag = !!r?.__taxManual;
+          const hasManualValue =
+            taxType === "1" &&
+            (String(r?.tax ?? "").trim() !== "" || String(r?.vat ?? "").trim() !== "") &&
+            (inputTax !== autoTax || inputVat !== autoVat);
+          total += amt;
+          if (hasManualFlag || hasManualValue) {
+            tax += inputTax; vat += inputVat;
+          } else if (taxType === "1") {
+            tax += autoTax; vat += autoVat;
+          } else if (taxType === "2") {
+            taxFree += amt;
+          }
         });
+        return { total, tax, vat, taxFree };
+      };
+
+      // 누적 보관소에 현재 하단 수정값 반영 (저장 직전 최신 상태로 병합)
+      // pendingDetailMap 값은 { rows, originalRows } 객체
+      const fullDetailMap = new Map();
+      for (const [k, v] of pendingDetailMap.entries()) {
+        const r = Array.isArray(v) ? v : (v?.rows ?? []);
+        const o = Array.isArray(v) ? [] : (v?.originalRows ?? []);
+        fullDetailMap.set(k, { rows: r, originalRows: o });
+      }
+      if (selectedSaleId && detailRows.length > 0) {
+        fullDetailMap.set(String(selectedSaleId), { rows: detailRows, originalRows: originalDetailRows });
       }
 
-      // ✅ 상단: 변경된 행만 (자동계산 반영된 currentRows 기준)
+      // 누적 보관소 전체 sale_id의 하단 변경분 취합
+      let allModifiedDetail = [];
+      let currentRows = rows || [];
+
+      for (const [saleId, { rows: savedDetailRows, originalRows: savedOriginalRows }] of fullDetailMap.entries()) {
+        // item_id 기반 원본 Map 생성
+        const origMap = new Map();
+        (savedOriginalRows || []).forEach((r) => {
+          const k = String(r?.item_id ?? "");
+          if (k) origMap.set(k, r);
+        });
+
+        const detailForSave = (savedDetailRows || [])
+          .map((r) => {
+            if (r.__isNew) return buildDetailRowForSave(r);
+            const itemId = String(r?.item_id ?? "");
+            const o = itemId ? origMap.get(itemId) : null;
+            if (!o) return buildDetailRowForSave(r);
+            return isDetailRowChanged(o, r) ? buildDetailRowForSave(r) : null;
+          })
+          .filter(Boolean);
+
+        // master 변경 여부 확인 후 detail 강제 포함 여부 결정
+        const masterRowChanged = (() => {
+          const masterRow = (rows || []).find((r) => String(r?.sale_id ?? "") === String(saleId));
+          if (!masterRow) return false;
+          const o = originalMasterMap.get(String(saleId));
+          if (!o) return true;
+          return isRowChanged(o, masterRow);
+        })();
+        const finalDetailForSave =
+          masterRowChanged && detailForSave.length === 0 && savedDetailRows.length > 0
+            ? savedDetailRows.map((r) => buildDetailRowForSave(r))
+            : detailForSave;
+
+        allModifiedDetail = allModifiedDetail.concat(finalDetailForSave);
+
+        // detail 변경 시 해당 sale_id의 master 합계 자동 반영
+        if (finalDetailForSave.length > 0) {
+          const { total, tax, vat, taxFree } = calcMasterTotalsForSave(savedDetailRows);
+          currentRows = currentRows.map((r) => {
+            if (String(r?.sale_id ?? "") !== String(saleId)) return r;
+            return {
+              ...r,
+              tax: tax.toLocaleString("ko-KR"),
+              vat: vat.toLocaleString("ko-KR"),
+              total: total.toLocaleString("ko-KR"),
+              taxFree: taxFree.toLocaleString("ko-KR"),
+              __dirty: true,
+            };
+          });
+        }
+      }
+
+      // 상단: 변경된 행만 (자동계산 반영된 currentRows 기준)
       const modifiedMaster = currentRows
         .filter((r) => {
           const key = String(r?.sale_id ?? "");
@@ -1303,18 +1373,18 @@ function AccountPurchaseDeadlineTab() {
         })
         .map((r) => buildRowForSave(r));
 
-      if (modifiedMaster.length === 0 && modifiedDetail.length === 0) {
+      if (modifiedMaster.length === 0 && allModifiedDetail.length === 0) {
         return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
       }
 
-      // 하단 detail: 과세구분(taxType) / 상품구분(itemType) 미선택 체크
-      const invalidDetail = (detailRows || []).filter(
+      // 실제 저장 대상(allModifiedDetail)에서만 과세구분/상품구분 미선택 체크
+      const invalidDetailCount = allModifiedDetail.filter(
         (r) => !String(r?.taxType ?? "").trim() || !String(r?.itemType ?? "").trim()
-      );
-      if (invalidDetail.length > 0) {
+      ).length;
+      if (invalidDetailCount > 0) {
         return Swal.fire(
           "저장 불가",
-          `하단 상세 ${invalidDetail.length}행에 과세구분 또는 상품구분이 선택되지 않았습니다.\n선택 후 저장해주세요.`,
+          `하단 상세 ${invalidDetailCount}행에 과세구분 또는 상품구분이 선택되지 않았습니다.\n선택 후 저장해주세요.`,
           "warning"
         );
       }
@@ -1327,9 +1397,9 @@ function AccountPurchaseDeadlineTab() {
         didOpen: () => Swal.showLoading(),
       });
 
-      // ✅ 순서: detail 먼저 → master(자동계산 포함) 저장
-      if (Array.isArray(detailRows) && detailRows.length > 0 && modifiedDetail.length > 0) {
-        const res2 = await api.post("/Account/AccountPurchaseDetailSave", modifiedDetail, {
+      // 모든 sale_id의 detail 변경분을 한 번에 저장
+      if (allModifiedDetail.length > 0) {
+        const res2 = await api.post("/Account/AccountPurchaseDetailSave", allModifiedDetail, {
           headers: { "Content-Type": "application/json" },
           validateStatus: () => true,
         });
@@ -1352,18 +1422,29 @@ function AccountPurchaseDeadlineTab() {
         }
       }
 
+      // 저장 완료 후 누적 보관소 초기화
+      setPendingDetailMap(new Map());
+
+      // 저장 중 플래그: selectedSaleId useEffect의 자동 재조회 방지
+      isSavingRef.current = true;
+      const savedSaleId = selectedSaleId; // 재조회 시점의 sale_id 고정
+      try {
+        // DB 기준으로 재조회 (Swal 확인 전에 먼저 완료)
+        await fetchPurchaseList(filters);
+
+        if (savedSaleId) {
+          await fetchPurchaseDetailList({
+            sale_id: savedSaleId,
+            account_id: filters.account_id,
+          });
+          setDetailTableKey((k) => k + 1);
+        }
+      } finally {
+        isSavingRef.current = false;
+      }
+
       Swal.close();
       Swal.fire("성공", "저장되었습니다.", "success");
-      // 상단 재조회 (selectedSaleId는 rows useEffect에서 자동 복원)
-      await fetchPurchaseList(filters);
-
-      if (selectedSaleId) {
-        await fetchPurchaseDetailList({
-          sale_id: selectedSaleId,
-          account_id: filters.account_id,
-        });
-        setDetailTableKey((k) => k + 1);
-      }
 
       // 선택된 행으로 스크롤
       if (selectedMasterIndex >= 0 && masterWrapRef.current) {
@@ -1393,6 +1474,7 @@ function AccountPurchaseDeadlineTab() {
     isDetailRowChanged,
     buildDetailRowForSave,
     setDetailTableKey,
+    pendingDetailMap,
   ]);
 
   // handleSave ref 동기화 (handleAccountChange에서 forward 참조용)
@@ -1407,22 +1489,27 @@ function AccountPurchaseDeadlineTab() {
   // const handleExcelMenuOpen = (e) => setExcelAnchorEl(e.currentTarget);
   // const handleExcelMenuClose = () => setExcelAnchorEl(null);
 
+  // 엑셀용 숫자 파싱 (콤마 포함 문자열 → 숫자)
   const parseNumber = (v) => {
     if (v === null || v === undefined) return 0;
     const n = Number(String(v).replace(/,/g, "").trim());
     return Number.isFinite(n) ? n : 0;
   };
 
+  // 결제구분 코드 → 표시 텍스트 변환
   const payTypeText = (v) => {
     const s = String(v);
     if (s === "0") return "전체";
     return s === "2" ? "카드" : "현금";
   };
+
+  // 현재 선택된 거래처명 반환
   const getAccountName = () => {
     const found = accountList.find((a) => String(a.account_id) === String(filters.account_id));
     return found?.account_name || "";
   };
 
+  // Blob → 파일 다운로드 트리거
   const downloadBlob = (blob, filename) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1434,6 +1521,7 @@ function AccountPurchaseDeadlineTab() {
     URL.revokeObjectURL(url);
   };
 
+  // 세금계산서 엑셀 다운로드 (공급자별 시트 분리)
   const downloadTaxInvoiceExcel = async () => {
     if (!rows || rows.length === 0) {
       Swal.fire("다운로드 불가", "다운로드할 데이터가 없습니다.", "warning");
@@ -1856,32 +1944,52 @@ function AccountPurchaseDeadlineTab() {
   //   Swal.fire("준비중", "현재는 세금계산서만 먼저 구현되어 있어요.", "info");
   // };
 
-  // ✅ 하단 셀 스타일/값 변경 유틸 (select에도 사용)
-  const getDetailCellStyle = useCallback(
-    (row, index, key, val) => {
-      if (row?.__dirty) return { color: "red" };
+  // 하단 원본 Map: item_id 기준 (index 의존 제거, 보관소 복원 시에도 정확한 비교)
+  const originalDetailMap = useMemo(() => {
+    const m = new Map();
+    (originalDetailRows || []).forEach((r) => {
+      const k = String(r?.item_id ?? "");
+      if (k) m.set(k, r);
+    });
+    return m;
+  }, [originalDetailRows]);
 
-      const o = originalDetailRows?.[index] || {};
-      const ov = o?.[key];
+  // 하단 셀 스타일: 원본과 실제 값이 다를 때만 빨간색
+  const getDetailCellStyle = useCallback(
+    (row, key, value) => {
+      if (row?.__isNew) return { color: "red" };
+      const itemId = String(row?.item_id ?? "");
+      const original = itemId ? originalDetailMap.get(itemId)?.[key] : undefined;
+      if (original === undefined) return { color: "black" };
 
       if (DETAIL_MONEY_KEYS.includes(key)) {
-        return stripComma(ov) !== stripComma(val) ? { color: "red" } : { color: "black" };
+        return stripComma(original) !== stripComma(value) ? { color: "red" } : { color: "black" };
       }
-      if (typeof ov === "string" && typeof val === "string") {
-        return normalizeStr(ov) !== normalizeStr(val) ? { color: "red" } : { color: "black" };
+      if (typeof original === "string" && typeof value === "string") {
+        return normalizeStr(original) !== normalizeStr(value) ? { color: "red" } : { color: "black" };
       }
-      return ov !== val ? { color: "red" } : { color: "black" };
+      return original !== value ? { color: "red" } : { color: "black" };
     },
-    [originalDetailRows, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
+    [originalDetailMap, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
   );
 
+  // 하단 셀 값 변경 핸들러: qty/unitPrice → amount 자동계산, amount/taxType → vat/tax 자동계산
   const setDetailCell = useCallback(
     (rowIndex, key, value) => {
       setDetailRows((prev) =>
         prev.map((x, idx) => {
           if (idx !== rowIndex) return x;
 
-          const updated = { ...x, [key]: value, __dirty: true };
+          const rawValue = value?.__autoCalc ? value.value : value;
+          const itemId = String(x?.item_id ?? "");
+          const origRow = itemId ? originalDetailMap.get(itemId) : undefined;
+          const origVal = origRow?.[key];
+          const actuallyChanged = origRow === undefined
+            ? false
+            : DETAIL_MONEY_KEYS.includes(key)
+              ? stripComma(origVal) !== stripComma(rawValue)
+              : normalizeStr(String(origVal ?? "")) !== normalizeStr(String(rawValue ?? ""));
+          const updated = { ...x, [key]: value, __dirty: x.__dirty || actuallyChanged };
 
           // tax/vat 직접 수기 입력 시 자동계산 비활성화 플래그
           if (key === "tax" || key === "vat") {
@@ -1928,9 +2036,10 @@ function AccountPurchaseDeadlineTab() {
         })
       );
     },
-    [setDetailRows]
+    [setDetailRows, originalDetailMap, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
   );
 
+  // 콤마 포함 문자열 → 숫자 변환 (연산용)
   const toNum = useCallback(
     (v) => {
       const n = Number(stripComma(v));
@@ -1939,6 +2048,7 @@ function AccountPurchaseDeadlineTab() {
     [stripComma]
   );
 
+  // 수량 × 단가 → 금액 계산
   const computeAmount = useCallback(
     (qty, unitPrice) => {
       const q = toNum(qty);
@@ -1971,6 +2081,7 @@ function AccountPurchaseDeadlineTab() {
     return (detailRows || []).reduce((sum, r) => sum + toNum(r?.amount), 0);
   }, [detailRows, toNum]);
 
+  // 하단 금액 합계 콤마 포맷 (푸터 표시용)
   const detailAmountSumText = useMemo(
     () => detailAmountSum.toLocaleString("ko-KR"),
     [detailAmountSum]
@@ -2017,6 +2128,7 @@ function AccountPurchaseDeadlineTab() {
     [toNum, computeVat, computeTax, stripComma]
   );
 
+  // 하단 상세 변경 시 해당 상단 행의 과세/부가세/면세/합계 자동 동기화
   useEffect(() => {
     if (!selectedSaleId) return;
     if (detailLoading) return;
@@ -2076,12 +2188,14 @@ function AccountPurchaseDeadlineTab() {
     [accountList]
   );
 
+  // 현재 선택된 거래처 Autocomplete 옵션값
   const selectedAccountOption = useMemo(() => {
     const v = String(filters.account_id ?? "");
     const found = (accountList || []).find((a) => String(a.account_id) === v);
     return found ? { value: String(found.account_id), label: found.account_name } : null;
   }, [filters.account_id, accountList]);
 
+  // 텍스트 입력으로 거래처 검색 후 자동 선택 (완전 일치 우선, 부분 일치 폴백)
   const selectAccountByInput = useCallback((inputText) => {
     const q = String(inputText ?? accountInputRef.current ?? "").trim();
     if (!q) return;
@@ -2320,240 +2434,268 @@ function AccountPurchaseDeadlineTab() {
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row, rowIndex) => (
-                    <tr
-                      key={rowIndex}
-                      onClick={() => handleMasterRowClick(row, rowIndex)}
-                      style={{
-                        cursor: "pointer",
-                        backgroundColor:
-                          rowIndex === selectedMasterIndex
-                            ? "rgba(25,118,210,0.10)"
-                            : "transparent",
-                      }}
-                    >
-                      {masterColumns.map((col) => {
-                        const key = col.accessorKey;
-                        const value = key === "type" ? (row.type_name || "") : row[key] ?? "";
-                        if (key === "saleDate") {
-                          const v = String(value || "");
-                          const d = dayjs(v, "YYYY-MM-DD", true).isValid()
-                            ? dayjs(v, "YYYY-MM-DD")
-                            : null;
+                  rows.map((row, rowIndex) => {
+                    const rowSaleId = String(row?.sale_id ?? "");
+                    const hasDetailDirty = dirtyDetailSaleIds.has(rowSaleId);
+                    const cellStyle = (key, value) => {
+                      const base = getCellStyle(row, key, value);
+                      return hasDetailDirty ? { ...base, color: "red" } : base;
+                    };
+                    return (
+                      <tr
+                        key={rowIndex}
+                        onClick={() => handleMasterRowClick(row, rowIndex)}
+                        style={{
+                          cursor: "pointer",
+                          backgroundColor:
+                            rowIndex === selectedMasterIndex
+                              ? "rgba(25,118,210,0.10)"
+                              : "transparent",
+                        }}
+                      >
+                        {masterColumns.map((col) => {
+                          const key = col.accessorKey;
+                          const value = key === "type" ? (row.type_name || "") : row[key] ?? "";
+                          if (key === "saleDate") {
+                            const v = String(value || "");
+                            const d = dayjs(v, "YYYY-MM-DD", true).isValid()
+                              ? dayjs(v, "YYYY-MM-DD")
+                              : null;
 
-                          return (
-                            <td
-                              key={key}
-                              style={fixedColStyle(col.size, {
-                                ...getCellStyle(row, key, value),
-                                padding: "4px",
-                              })}
-                              onClick={(e) => e.stopPropagation()} // ✅ 행 클릭(상세조회) 방지
-                            >
-                              <DatePicker
-                                value={d}
-                                onChange={(newVal) => {
-                                  // ✅ 달력 선택/직접입력 모두 여기로 들어옴
-                                  const next =
-                                    newVal && newVal.isValid() ? newVal.format("YYYY-MM-DD") : "";
-                                  handleCellChange(rowIndex, key, next);
-                                }}
-                                format="YYYY-MM-DD"
-                                slotProps={{
-                                  textField: {
-                                    variant: "standard",
-                                    fullWidth: true,
-                                    inputProps: {
-                                      style: {
-                                        textAlign: "center",
-                                        fontSize: "12px",
-                                        padding: "2x",
-                                        color: "inherit", // ✅ td의 빨간색/검은색 상속
+                            return (
+                              <td
+                                key={key}
+                                style={fixedColStyle(col.size, {
+                                  ...cellStyle(key, value),
+                                  padding: "4px",
+                                })}
+                                onClick={(e) => e.stopPropagation()} // ✅ 행 클릭(상세조회) 방지
+                              >
+                                <DatePicker
+                                  value={d}
+                                  onChange={(newVal) => {
+                                    // ✅ 달력 선택/직접입력 모두 여기로 들어옴
+                                    const next =
+                                      newVal && newVal.isValid() ? newVal.format("YYYY-MM-DD") : "";
+                                    handleCellChange(rowIndex, key, next);
+                                  }}
+                                  format="YYYY-MM-DD"
+                                  slotProps={{
+                                    textField: {
+                                      variant: "standard",
+                                      fullWidth: true,
+                                      inputProps: {
+                                        style: {
+                                          textAlign: "center",
+                                          fontSize: "12px",
+                                          padding: "2x",
+                                          color: "inherit", // ✅ td의 빨간색/검은색 상속
+                                        },
+                                      },
+                                      InputProps: {
+                                        disableUnderline: true,
+                                        style: { color: "inherit" }, // ✅ 빨간색 상속
                                       },
                                     },
-                                    InputProps: {
-                                      disableUnderline: true,
-                                      style: { color: "inherit" }, // ✅ 빨간색 상속
+                                    // ✅ 테이블 overflow/z-index 때문에 캘린더가 잘리는 경우 방지
+                                    popper: {
+                                      disablePortal: false, // 기본이 portal이긴 한데 명시해두면 안전
+                                      sx: { zIndex: 25000 },
                                     },
-                                  },
-                                  // ✅ 테이블 overflow/z-index 때문에 캘린더가 잘리는 경우 방지
-                                  popper: {
-                                    disablePortal: false, // 기본이 portal이긴 한데 명시해두면 안전
-                                    sx: { zIndex: 25000 },
-                                  },
-                                }}
-                              />
-                            </td>
-                          );
-                        }
-                        // ✅ 타입(type)은 읽기 전용 표시
-                        if (key === "type") {
-                          return (
-                            <td
-                              key={key}
-                              style={fixedColStyle(col.size, {
-                                color: "#111",
-                                backgroundColor: "rgba(0,0,0,0.03)",
-                                cursor: "default",
-                                textAlign: "center",
-                              })}
-                            >
-                              {typeNameByValue.get(String(value ?? "")) || String(value ?? "")}
-                            </td>
-                          );
-                        }
-
-                        // ✅ 사업장(account_name)은 수정 불가
-                        if (key === "account_name") {
-                          return (
-                            <td
-                              key={key}
-                              style={fixedColStyle(col.size, {
-                                color: "#111",
-                                backgroundColor: "rgba(0,0,0,0.03)",
-                                cursor: "default",
-                              })}
-                              title="사업장명은 수정할 수 없습니다."
-                            >
-                              {value}
-                            </td>
-                          );
-                        }
-
-                        if (key === "receipt_type") {
-                          const rowType = String(row.type ?? "");
-                          const receiptOpts = getReceiptTypesByType(rowType);
-                          const color = getCellStyle(row, key, value)?.color || "black";
-                          const safeVal = normalizeReceiptTypeVal(value, rowType);
-                          return (
-                            <td key={key} style={fixedColStyle(col.size)} onClick={(e) => e.stopPropagation()}>
-                              <Select
-                                size="small"
-                                fullWidth
-                                value={safeVal}
-                                onChange={(e) =>
-                                  handleCellChange(
-                                    rowIndex,
-                                    key,
-                                    normalizeReceiptTypeVal(e.target.value, rowType)
-                                  )
-                                }
-                                sx={{
-                                  fontSize: 12,
-                                  height: 25,
-                                  "& .MuiSelect-select": { color },
-                                  "& .MuiSvgIcon-root": { color },
-                                }}
-                              >
-                                {receiptOpts.map((opt) => (
-                                  <MenuItem key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                  </MenuItem>
-                                ))}
-                              </Select>
-                            </td>
-                          );
-                        }
-
-                        if (key === "payType") {
-                          const safePayType = String(value ?? "").trim();
-                          const selectValue =
-                            safePayType === "1" || safePayType === "2" ? safePayType : "1";
-
-                          return (
-                            <td
-                              key={key}
-                              style={fixedColStyle(col.size, {
-                                ...getCellStyle(row, key, value),
-                              })}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <select
-                                value={selectValue}
-                                onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
-                                style={{
-                                  fontSize: "12px",
-                                  border: "none",
-                                  background: "transparent",
-                                  textAlign: "center",
-                                  width: "100%",
-                                }}
-                              >
-                                <option value="1">현금</option>
-                                <option value="2">카드</option>
-                              </select>
-                            </td>
-                          );
-                        }
-
-                        if (key === "receipt_image") {
-                          const has = !!value;
-                          const stableKey = String(row.sale_id ?? rowIndex);
-                          const inputId = `receipt-${stableKey}`;
-                          const cellStyle = getCellStyle(row, key, value);
-                          const iconColor = cellStyle?.color === "red" ? "red" : has ? "#1976d2" : "#d32f2f";
-
-                          return (
-                            <td key={key} style={fixedColStyle(col.size)}>
-                              <Box
-                                sx={{
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  gap: 0.5,
-                                  width: "100%",
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  id={inputId}
-                                  style={{ display: "none" }}
-                                  ref={(el) => { if (el) fileInputRefs.current[inputId] = el; }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    e.currentTarget.value = "";
-                                  }}
-                                  onChange={(e) => {
-                                    e.stopPropagation();
-                                    const f = e.target.files?.[0];
-                                    e.currentTarget.value = "";
-                                    if (!f) return;
-                                    handleImageUpload(f, rowIndex);
                                   }}
                                 />
+                              </td>
+                            );
+                          }
+                          // ✅ 타입(type)은 읽기 전용 표시
+                          if (key === "type") {
+                            return (
+                              <td
+                                key={key}
+                                style={fixedColStyle(col.size, {
+                                  color: "#111",
+                                  backgroundColor: "rgba(0,0,0,0.03)",
+                                  cursor: "default",
+                                  textAlign: "center",
+                                })}
+                              >
+                                {typeNameByValue.get(String(value ?? "")) || String(value ?? "")}
+                              </td>
+                            );
+                          }
 
-                                {has ? (
-                                  <>
-                                    <Tooltip title="다운로드">
-                                      <span>
+                          // ✅ 사업장(account_name)은 수정 불가
+                          if (key === "account_name") {
+                            return (
+                              <td
+                                key={key}
+                                style={fixedColStyle(col.size, {
+                                  color: "#111",
+                                  backgroundColor: "rgba(0,0,0,0.03)",
+                                  cursor: "default",
+                                })}
+                                title="사업장명은 수정할 수 없습니다."
+                              >
+                                {value}
+                              </td>
+                            );
+                          }
+
+                          if (key === "receipt_type") {
+                            const rowType = String(row.type ?? "");
+                            const receiptOpts = getReceiptTypesByType(rowType);
+                            const color = cellStyle(key, value)?.color || "black";
+                            const safeVal = normalizeReceiptTypeVal(value, rowType);
+                            return (
+                              <td key={key} style={fixedColStyle(col.size)} onClick={(e) => e.stopPropagation()}>
+                                <Select
+                                  size="small"
+                                  fullWidth
+                                  value={safeVal}
+                                  onChange={(e) =>
+                                    handleCellChange(
+                                      rowIndex,
+                                      key,
+                                      normalizeReceiptTypeVal(e.target.value, rowType)
+                                    )
+                                  }
+                                  sx={{
+                                    fontSize: 12,
+                                    height: 25,
+                                    "& .MuiSelect-select": { color },
+                                    "& .MuiSvgIcon-root": { color },
+                                  }}
+                                >
+                                  {receiptOpts.map((opt) => (
+                                    <MenuItem key={opt.value} value={opt.value}>
+                                      {opt.label}
+                                    </MenuItem>
+                                  ))}
+                                </Select>
+                              </td>
+                            );
+                          }
+
+                          if (key === "payType") {
+                            const safePayType = String(value ?? "").trim();
+                            const selectValue =
+                              safePayType === "1" || safePayType === "2" ? safePayType : "1";
+
+                            return (
+                              <td
+                                key={key}
+                                style={fixedColStyle(col.size, {
+                                  ...cellStyle(key, value),
+                                })}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <select
+                                  value={selectValue}
+                                  onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
+                                  style={{
+                                    fontSize: "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    textAlign: "center",
+                                    width: "100%",
+                                  }}
+                                >
+                                  <option value="1">현금</option>
+                                  <option value="2">카드</option>
+                                </select>
+                              </td>
+                            );
+                          }
+
+                          if (key === "receipt_image") {
+                            const has = !!value;
+                            const stableKey = String(row.sale_id ?? rowIndex);
+                            const inputId = `receipt-${stableKey}`;
+                            const rowCellStyle = cellStyle(key, value);
+                            const iconColor = rowCellStyle?.color === "red" ? "red" : has ? "#1976d2" : "#d32f2f";
+
+                            return (
+                              <td key={key} style={fixedColStyle(col.size)}>
+                                <Box
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    gap: 0.5,
+                                    width: "100%",
+                                    flexWrap: "wrap",
+                                  }}
+                                >
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    id={inputId}
+                                    style={{ display: "none" }}
+                                    ref={(el) => { if (el) fileInputRefs.current[inputId] = el; }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      e.currentTarget.value = "";
+                                    }}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      const f = e.target.files?.[0];
+                                      e.currentTarget.value = "";
+                                      if (!f) return;
+                                      handleImageUpload(f, rowIndex);
+                                    }}
+                                  />
+
+                                  {has ? (
+                                    <>
+                                      <Tooltip title="다운로드">
+                                        <span>
+                                          <IconButton
+                                            size="small"
+                                            sx={{ color: iconColor }}
+                                            onClick={(ev) => {
+                                              ev.stopPropagation();
+                                              handleDownload(value);
+                                            }}
+                                          >
+                                            <DownloadIcon fontSize="small" />
+                                          </IconButton>
+                                        </span>
+                                      </Tooltip>
+
+                                      <Tooltip title="미리보기(창)">
                                         <IconButton
                                           size="small"
                                           sx={{ color: iconColor }}
                                           onClick={(ev) => {
                                             ev.stopPropagation();
-                                            handleDownload(value);
+                                            handleViewImage(value);
                                           }}
                                         >
-                                          <DownloadIcon fontSize="small" />
+                                          <ImageSearchIcon fontSize="small" />
                                         </IconButton>
-                                      </span>
-                                    </Tooltip>
+                                      </Tooltip>
 
-                                    <Tooltip title="미리보기(창)">
-                                      <IconButton
+                                      <MDButton
+                                        type="button"
                                         size="small"
-                                        sx={{ color: iconColor }}
+                                        color="info"
+                                        sx={{
+                                          minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
+                                          width: RECEIPT_UPLOAD_BTN_WIDTH,
+                                          px: 0.5,
+                                          whiteSpace: "nowrap",
+                                        }}
                                         onClick={(ev) => {
+                                          ev.preventDefault();
                                           ev.stopPropagation();
-                                          handleViewImage(value);
+                                          const el = fileInputRefs.current[inputId];
+                                          if (el) { el.value = ""; el.click(); }
                                         }}
                                       >
-                                        <ImageSearchIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-
+                                        재업로드
+                                      </MDButton>
+                                    </>
+                                  ) : (
                                     <MDButton
                                       type="button"
                                       size="small"
@@ -2571,90 +2713,70 @@ function AccountPurchaseDeadlineTab() {
                                         if (el) { el.value = ""; el.click(); }
                                       }}
                                     >
-                                      재업로드
+                                      업로드
                                     </MDButton>
-                                  </>
-                                ) : (
-                                  <MDButton
-                                    type="button"
-                                    size="small"
-                                    color="info"
-                                    sx={{
-                                      minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
-                                      width: RECEIPT_UPLOAD_BTN_WIDTH,
-                                      px: 0.5,
-                                      whiteSpace: "nowrap",
-                                    }}
-                                    onClick={(ev) => {
-                                      ev.preventDefault();
-                                      ev.stopPropagation();
-                                      const el = fileInputRefs.current[inputId];
-                                      if (el) { el.value = ""; el.click(); }
-                                    }}
-                                  >
-                                    업로드
-                                  </MDButton>
-                                )}
-                              </Box>
-                            </td>
-                          );
-                        }
+                                  )}
+                                </Box>
+                              </td>
+                            );
+                          }
 
-                        if (key === "reg_dt") {
+                          if (key === "reg_dt") {
+                            return (
+                              <td
+                                key={key}
+                                style={fixedColStyle(col.size, {
+                                  color: "#111",
+                                  backgroundColor: "rgba(0,0,0,0.03)",
+                                  cursor: "default",
+                                })}
+                                title="등록일자는 수정할 수 없습니다."
+                              >
+                                {value}
+                              </td>
+                            );
+                          }
+
                           return (
                             <td
                               key={key}
+                              contentEditable
+                              suppressContentEditableWarning
+                              onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
+                              onKeyDown={(e) => e.stopPropagation()}
+                              onFocus={(e) => keepEditableTailVisible(e.currentTarget)}
+                              onInput={(e) => keepEditableTailVisible(e.currentTarget)}
+                              onBlur={(e) => {
+                                const text = e.target.innerText;
+
+                                // ✅ bizNo 자동 포맷
+                                if (key === "bizNo") {
+                                  const formatted = formatBizNo(text);
+                                  handleCellChange(rowIndex, key, formatted);
+                                  e.target.innerText = formatted;
+                                  return;
+                                }
+
+                                if (MONEY_KEYS.includes(key)) {
+                                  const formatted = formatComma(text);
+                                  handleCellChange(rowIndex, key, formatted);
+                                  e.target.innerText = formatted;
+                                  return;
+                                }
+
+                                handleCellChange(rowIndex, key, text);
+                              }}
                               style={fixedColStyle(col.size, {
-                                color: "#111",
-                                backgroundColor: "rgba(0,0,0,0.03)",
-                                cursor: "default",
+                                ...cellStyle(key, value),
                               })}
-                              title="등록일자는 수정할 수 없습니다."
                             >
                               {value}
                             </td>
                           );
-                        }
-
-                        return (
-                          <td
-                            key={key}
-                            contentEditable
-                            suppressContentEditableWarning
-                            onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            onFocus={(e) => keepEditableTailVisible(e.currentTarget)}
-                            onInput={(e) => keepEditableTailVisible(e.currentTarget)}
-                            onBlur={(e) => {
-                              const text = e.target.innerText;
-
-                              // ✅ bizNo 자동 포맷
-                              if (key === "bizNo") {
-                                const formatted = formatBizNo(text);
-                                handleCellChange(rowIndex, key, formatted);
-                                e.target.innerText = formatted;
-                                return;
-                              }
-
-                              if (MONEY_KEYS.includes(key)) {
-                                const formatted = formatComma(text);
-                                handleCellChange(rowIndex, key, formatted);
-                                e.target.innerText = formatted;
-                                return;
-                              }
-
-                              handleCellChange(rowIndex, key, text);
-                            }}
-                            style={fixedColStyle(col.size, {
-                              ...getCellStyle(row, key, value),
-                            })}
-                          >
-                            {value}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))
+                        })}
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
               {rows.length > 0 && (
@@ -2748,14 +2870,18 @@ function AccountPurchaseDeadlineTab() {
                     </tr>
                   ) : (
                     detailRows.map((r, i) => {
-                      const o = originalDetailRows?.[i] || {};
-                      const rowChanged = isDetailRowChanged(o, r);
-
                       return (
                         <tr
                           key={r.__key ?? r.item_id ?? i}
                           style={{
-                            backgroundColor: rowChanged ? "rgba(211,47,47,0.04)" : "transparent",
+                            backgroundColor: (() => {
+                              if (r.__isNew) return "rgba(211,47,47,0.10)";
+                              const itemId = String(r?.item_id ?? "");
+                              if (!itemId) return "transparent";
+                              const orig = originalDetailMap.get(itemId);
+                              if (!orig) return "transparent";
+                              return isDetailRowChanged(orig, r) ? "rgba(211,47,47,0.10)" : "transparent";
+                            })(),
                           }}
                         >
                           <td
@@ -2769,7 +2895,7 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(220),
                               textAlign: "left",
-                              ...getDetailCellStyle(r, i, "name", r.name),
+                              ...getDetailCellStyle(r, "name", r.name),
                             }}
                           >
                             {r.name ?? ""}
@@ -2779,14 +2905,16 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(90),
                               textAlign: "right",
-                              ...getDetailCellStyle(r, i, "qty", r.qty),
+                              ...getDetailCellStyle(r, "qty", r.qty),
                             }}
                           >
                             <input
                               key={`qty-${i}-${detailTableKey}`}
                               type="text"
+                              inputMode="numeric"
                               defaultValue={r.qty ?? ""}
                               ref={(el) => { if (el) qtyRefs.current[i] = el; }}
+                              onInput={onNumInput}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
                                 e.target.value = formatted;
@@ -2800,7 +2928,7 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(r, i, "qty", r.qty)?.color || "inherit",
+                                color: getDetailCellStyle(r, "qty", r.qty)?.color || "inherit",
                               }}
                             />
                           </td>
@@ -2809,14 +2937,16 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(110),
                               textAlign: "right",
-                              ...getDetailCellStyle(r, i, "unitPrice", r.unitPrice),
+                              ...getDetailCellStyle(r, "unitPrice", r.unitPrice),
                             }}
                           >
                             <input
                               key={`up-${i}-${detailTableKey}`}
                               type="text"
+                              inputMode="numeric"
                               defaultValue={r.unitPrice ?? ""}
                               ref={(el) => { if (el) unitPriceRefs.current[i] = el; }}
+                              onInput={onNumInput}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
                                 e.target.value = formatted;
@@ -2830,7 +2960,7 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(r, i, "unitPrice", r.unitPrice)?.color || "inherit",
+                                color: getDetailCellStyle(r, "unitPrice", r.unitPrice)?.color || "inherit",
                               }}
                             />
                           </td>
@@ -2839,13 +2969,15 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(110),
                               textAlign: "right",
-                              ...getDetailCellStyle(r, i, "tax", r.tax),
+                              ...getDetailCellStyle(r, "tax", r.tax),
                             }}
                           >
                             <input
                               type="text"
+                              inputMode="numeric"
                               value={r.tax ?? ""}
-                              onChange={(e) => setDetailCell(i, "tax", e.target.value)}
+                              onInput={onNumInput}
+                              onChange={(e) => setDetailCell(i, "tax", e.target.value.replace(/[^\d\-,]/g, ""))}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
                                 setDetailCell(i, "tax", formatted);
@@ -2857,7 +2989,7 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(r, i, "tax", r.tax)?.color || "inherit",
+                                color: getDetailCellStyle(r, "tax", r.tax)?.color || "inherit",
                               }}
                             />
                           </td>
@@ -2866,13 +2998,15 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(110),
                               textAlign: "right",
-                              ...getDetailCellStyle(r, i, "vat", r.vat),
+                              ...getDetailCellStyle(r, "vat", r.vat),
                             }}
                           >
                             <input
                               type="text"
+                              inputMode="numeric"
                               value={r.vat ?? ""}
-                              onChange={(e) => setDetailCell(i, "vat", e.target.value)}
+                              onInput={onNumInput}
+                              onChange={(e) => setDetailCell(i, "vat", e.target.value.replace(/[^\d\-,]/g, ""))}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
                                 setDetailCell(i, "vat", formatted);
@@ -2884,7 +3018,7 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(r, i, "vat", r.vat)?.color || "inherit",
+                                color: getDetailCellStyle(r, "vat", r.vat)?.color || "inherit",
                               }}
                             />
                           </td>
@@ -2893,12 +3027,14 @@ function AccountPurchaseDeadlineTab() {
                             style={{
                               ...fixedColStyle(120),
                               textAlign: "right",
-                              ...getDetailCellStyle(r, i, "amount", r.amount),
+                              ...getDetailCellStyle(r, "amount", r.amount),
                             }}
                           >
                             <input
                               type="text"
+                              inputMode="numeric"
                               defaultValue={r.amount ?? ""}
+                              onInput={onNumInput}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
                                 e.target.value = formatted;
@@ -2911,14 +3047,14 @@ function AccountPurchaseDeadlineTab() {
                                 border: "none",
                                 outline: "none",
                                 background: "transparent",
-                                color: getDetailCellStyle(r, i, "amount", r.amount)?.color || "inherit",
+                                color: getDetailCellStyle(r, "amount", r.amount)?.color || "inherit",
                               }}
                             />
                           </td>
 
                           <td
                             style={fixedColStyle(110, {
-                              ...getDetailCellStyle(r, i, "taxType", r.taxType),
+                              ...getDetailCellStyle(r, "taxType", r.taxType),
                             })}
                           >
                             <Select
@@ -2936,10 +3072,10 @@ function AccountPurchaseDeadlineTab() {
                                 fontSize: 12,
                                 height: 25,
                                 "& .MuiSelect-select": {
-                                  color: getDetailCellStyle(r, i, "taxType", r.taxType)?.color || "black",
+                                  color: getDetailCellStyle(r, "taxType", r.taxType)?.color || "black",
                                 },
                                 "& .MuiSvgIcon-root": {
-                                  color: getDetailCellStyle(r, i, "taxType", r.taxType)?.color || "black",
+                                  color: getDetailCellStyle(r, "taxType", r.taxType)?.color || "black",
                                 },
                               }}
                             >
@@ -2956,7 +3092,7 @@ function AccountPurchaseDeadlineTab() {
 
                           <td
                             style={fixedColStyle(110, {
-                              ...getDetailCellStyle(r, i, "itemType", r.itemType),
+                              ...getDetailCellStyle(r, "itemType", r.itemType),
                             })}
                           >
                             <Select
@@ -2974,10 +3110,10 @@ function AccountPurchaseDeadlineTab() {
                                 fontSize: 12,
                                 height: 25,
                                 "& .MuiSelect-select": {
-                                  color: getDetailCellStyle(r, i, "itemType", r.itemType)?.color || "black",
+                                  color: getDetailCellStyle(r, "itemType", r.itemType)?.color || "black",
                                 },
                                 "& .MuiSvgIcon-root": {
-                                  color: getDetailCellStyle(r, i, "itemType", r.itemType)?.color || "black",
+                                  color: getDetailCellStyle(r, "itemType", r.itemType)?.color || "black",
                                 },
                               }}
                             >

@@ -1,3 +1,21 @@
+* {
+  cursor: default !important;
+  user-select: none;
+}
+
+
+input, textarea, [contenteditable] {
+  user-select: text;
+}
+
+input, textarea {
+  cursor: text;
+}
+
+a, button, [role="button"] {
+  cursor: pointer;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',

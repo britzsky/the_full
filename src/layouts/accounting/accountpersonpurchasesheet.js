@@ -197,6 +197,28 @@ const selectAllContent = (el) => {
   sel.addRange(range);
 };
 
+const moveCaretToEnd = (el) => {
+  if (!el) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  if (!sel) return;
+  sel.removeAllRanges();
+  sel.addRange(range);
+};
+
+const enforceDigitsOnlyEditable = (el) => {
+  if (!el) return "";
+  const raw = String(el.innerText ?? "");
+  const digits = onlyDigits(raw);
+  if (raw !== digits) {
+    el.innerText = digits;
+    moveCaretToEnd(el);
+  }
+  return digits;
+};
+
 // ============================================================
 // ✅ 특정 거래처(account_id) 조건
 // - 사용처(use_name) 상단 셀: Select 고정 (value=1 / text=웰스토리)
@@ -2133,7 +2155,30 @@ function AccountCorporateCardSheet() {
                               });
                             }}
                             onInput={(ev) => {
-                              if (!isNumCol) keepEditableTailVisible(ev.currentTarget);
+                              if (isNumCol) {
+                                enforceDigitsOnlyEditable(ev.currentTarget);
+                                return;
+                              }
+                              keepEditableTailVisible(ev.currentTarget);
+                            }}
+                            onKeyDown={(ev) => {
+                              if (!isNumCol) return;
+                              if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+                              const allowKeys = [
+                                "Backspace",
+                                "Delete",
+                                "ArrowLeft",
+                                "ArrowRight",
+                                "ArrowUp",
+                                "ArrowDown",
+                                "Tab",
+                                "Home",
+                                "End",
+                              ];
+                              if (allowKeys.includes(ev.key)) return;
+                              if (!/^\d$/.test(ev.key)) {
+                                ev.preventDefault();
+                              }
                             }}
                             onClick={(ev) => ev.stopPropagation()}
                             onBlur={(e) => {

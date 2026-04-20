@@ -100,6 +100,7 @@ function SidenavCollapse({
             primary={name}
             sx={{
               m: 0,
+              userSelect: "none",
               textAlign: "left", // ✅ 메인/서브 모두 왼쪽 정렬
               "& .MuiListItemText-primary": {
                 fontSize: depth === 0 ? 15 : 13,

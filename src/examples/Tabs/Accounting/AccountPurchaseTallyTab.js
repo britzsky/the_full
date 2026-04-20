@@ -1,4 +1,4 @@
-// src/layouts/account/AccountPurchaseTallyTab.js
+﻿// src/layouts/account/AccountPurchaseTallyTab.js
 /* eslint-disable react/function-component-definition */
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
@@ -106,8 +106,17 @@ function AccountPurchaseTallyTab() {
   const [typeLoading, setTypeLoading] = useState(false);
 
   // ✅ 데이터 훅 사용
-  const { rows, setRows, originalRows, mappingRows, loading, fetchPurchaseList, fetchMappingList } =
-    useAccountPurchaseTallyData();
+  const {
+    rows,
+    setRows,
+    originalRows,
+    mappingRows,
+    loading,
+    fetchPurchaseList,
+    fetchMappingList,
+    fetchAccountList,
+    fetchTypeOptionList,
+  } = useAccountPurchaseTallyData();
 
   // ✅ (NEW) 우클릭(컨텍스트) 메뉴 상태 (행 삭제)
   const [ctxMenu, setCtxMenu] = useState({
@@ -208,10 +217,8 @@ function AccountPurchaseTallyTab() {
       }
       try {
         setTypeLoading(true);
-        const res = await api.get("/Operate/AccountMappingV2List", {
-          params: { account_id: accountId, _ts: Date.now() },
-        });
-        const opts = normalizeTypeOptions(res?.data);
+        const data = await fetchTypeOptionList(accountId);
+        const opts = normalizeTypeOptions(data);
         setTypeOptions(opts);
         return opts;
       } catch (e) {
@@ -222,7 +229,7 @@ function AccountPurchaseTallyTab() {
         setTypeLoading(false);
       }
     },
-    [normalizeTypeOptions]
+    [normalizeTypeOptions, fetchTypeOptionList]
   );
 
   // ✅ 현재 type이 옵션에 없으면 첫 번째 옵션으로 보정
@@ -486,8 +493,8 @@ function AccountPurchaseTallyTab() {
 
     (async () => {
       try {
-        const res = await api.get("/Account/AccountListV2", { params: { account_type: "0" } });
-        const list = (res.data || []).map((item) => ({
+        const rawList = await fetchAccountList({ account_type: "0" });
+        const list = (rawList || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
         }));
@@ -1247,10 +1254,12 @@ function AccountPurchaseTallyTab() {
           { width: 16 }, { width: 16 }, { width: 16 },
           { width: 16 }, { width: 16 }, { width: 16 },
           { width: 16 }, { width: 16 }, { width: 16 },
+          { width: 16 },
         ];
 
         ws.mergeCells("A1:A2"); ws.mergeCells("B1:B2"); ws.mergeCells("C1:C2");
         ws.mergeCells("D1:F1"); ws.mergeCells("G1:I1"); ws.mergeCells("J1:L1");
+        ws.mergeCells("M1:M2");
 
         ws.getCell("A1").value = "거래처";
         ws.getCell("B1").value = "날짜";
@@ -1258,12 +1267,13 @@ function AccountPurchaseTallyTab() {
         ws.getCell("D1").value = "소모품";
         ws.getCell("G1").value = "식자재";
         ws.getCell("J1").value = "경관식";
+        ws.getCell("M1").value = "소계";
         ws.getCell("D2").value = "과/면세"; ws.getCell("E2").value = "부가세"; ws.getCell("F2").value = "합계";
         ws.getCell("G2").value = "과/면세"; ws.getCell("H2").value = "부가세"; ws.getCell("I2").value = "합계";
         ws.getCell("J2").value = "과/면세"; ws.getCell("K2").value = "부가세"; ws.getCell("L2").value = "합계";
 
         for (let r = 1; r <= 2; r += 1) {
-          for (let c = 1; c <= 12; c += 1) {
+          for (let c = 1; c <= 13; c += 1) {
             const cell = ws.getCell(r, c);
             cell.fill = headerFill; cell.border = borderThin;
             cell.font = { bold: true }; cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -1285,7 +1295,8 @@ function AccountPurchaseTallyTab() {
           ws.getCell(er, 10).value = toNum(row?.scenic_tax) + toNum(row?.scenic_taxFree);
           ws.getCell(er, 11).value = toNum(row?.scenic_vat);
           ws.getCell(er, 12).value = toNum(row?.scenic_total);
-          for (let c = 1; c <= 12; c += 1) {
+          ws.getCell(er, 13).value = toNum(row?.expen_total) + toNum(row?.food_total) + toNum(row?.scenic_total);
+          for (let c = 1; c <= 13; c += 1) {
             const cell = ws.getCell(er, c);
             cell.border = borderThin;
             cell.alignment = { horizontal: c <= 3 ? "center" : "right", vertical: "middle" };
@@ -1305,22 +1316,16 @@ function AccountPurchaseTallyTab() {
         ws.getCell(subtotalRow, 10).value = Number(summary.scenic.taxTotal || 0);
         ws.getCell(subtotalRow, 11).value = Number(summary.scenic.vat || 0);
         ws.getCell(subtotalRow, 12).value = Number(summary.scenic.total || 0);
+        ws.getCell(subtotalRow, 13).value = Number(summary.total.total || 0);
 
         const totalRow = subtotalRow + 1;
         ws.mergeCells(totalRow, 1, totalRow, 3);
         ws.getCell(totalRow, 1).value = "총합계";
-        ws.getCell(totalRow, 4).value = Number(summary.expen.taxTotal || 0);
-        ws.getCell(totalRow, 5).value = Number(summary.expen.vat || 0);
-        ws.getCell(totalRow, 6).value = Number(summary.expen.total || 0);
-        ws.getCell(totalRow, 7).value = Number(summary.food.taxTotal || 0);
-        ws.getCell(totalRow, 8).value = Number(summary.food.vat || 0);
-        ws.getCell(totalRow, 9).value = Number(summary.food.total || 0);
-        ws.getCell(totalRow, 10).value = Number(summary.scenic.taxTotal || 0);
-        ws.getCell(totalRow, 11).value = Number(summary.scenic.vat || 0);
-        ws.getCell(totalRow, 12).value = Number(summary.scenic.total || 0);
+        ws.mergeCells(totalRow, 4, totalRow, 13);
+        ws.getCell(totalRow, 4).value = Number(summary.total.total || 0);
 
         for (let r = subtotalRow; r <= totalRow; r += 1) {
-          for (let c = 1; c <= 12; c += 1) {
+          for (let c = 1; c <= 13; c += 1) {
             const cell = ws.getCell(r, c);
             cell.border = borderThin;
             cell.alignment = { horizontal: c <= 3 ? "center" : "right", vertical: "middle" };
@@ -1350,18 +1355,21 @@ function AccountPurchaseTallyTab() {
             { width: 16 }, { width: 16 }, { width: 16 },
             { width: 16 }, { width: 16 }, { width: 16 },
             { width: 16 }, { width: 16 }, { width: 16 },
+            { width: 16 },
           ];
           ws.mergeCells("A1:A2");
           ws.mergeCells("B1:D1"); ws.mergeCells("E1:G1"); ws.mergeCells("H1:J1");
+          ws.mergeCells("K1:K2");
           ws.getCell("A1").value = "구매처";
           ws.getCell("B1").value = "소모품";
           ws.getCell("E1").value = "식자재";
           ws.getCell("H1").value = "경관식";
+          ws.getCell("K1").value = "소계";
           ws.getCell("B2").value = "과/면세"; ws.getCell("C2").value = "부가세"; ws.getCell("D2").value = "합계";
           ws.getCell("E2").value = "과/면세"; ws.getCell("F2").value = "부가세"; ws.getCell("G2").value = "합계";
           ws.getCell("H2").value = "과/면세"; ws.getCell("I2").value = "부가세"; ws.getCell("J2").value = "합계";
           for (let r = 1; r <= 2; r += 1) {
-            for (let c = 1; c <= 10; c += 1) {
+            for (let c = 1; c <= 11; c += 1) {
               const cell = ws.getCell(r, c);
               cell.fill = headerFill; cell.border = borderThin;
               cell.font = { bold: true }; cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -1379,7 +1387,8 @@ function AccountPurchaseTallyTab() {
             ws.getCell(er, 8).value = row.scenic_tax + row.scenic_taxFree;
             ws.getCell(er, 9).value = row.scenic_vat;
             ws.getCell(er, 10).value = row.scenic_total;
-            for (let c = 1; c <= 10; c += 1) {
+            ws.getCell(er, 11).value = toNum(row.expen_total) + toNum(row.food_total) + toNum(row.scenic_total);
+            for (let c = 1; c <= 11; c += 1) {
               const cell = ws.getCell(er, c);
               cell.border = borderThin;
               cell.alignment = { horizontal: c === 1 ? "center" : "right", vertical: "middle" };
@@ -1397,12 +1406,13 @@ function AccountPurchaseTallyTab() {
           ws.getCell(subtotalRow, 8).value = Number(purchaseTypeSummary.scenic.taxTotal || 0);
           ws.getCell(subtotalRow, 9).value = Number(purchaseTypeSummary.scenic.vat || 0);
           ws.getCell(subtotalRow, 10).value = Number(purchaseTypeSummary.scenic.total || 0);
+          ws.getCell(subtotalRow, 11).value = Number(purchaseTypeSummary.total.total || 0);
           const totalRow = subtotalRow + 1;
           ws.getCell(totalRow, 1).value = "총합계";
-          ws.mergeCells(totalRow, 2, totalRow, 10);
+          ws.mergeCells(totalRow, 2, totalRow, 11);
           ws.getCell(totalRow, 2).value = Number(purchaseTypeSummary.total.total || 0);
           for (let r = subtotalRow; r <= totalRow; r += 1) {
-            for (let c = 1; c <= 10; c += 1) {
+            for (let c = 1; c <= 11; c += 1) {
               const cell = ws.getCell(r, c);
               cell.border = borderThin;
               cell.alignment = { horizontal: c === 1 ? "center" : "right", vertical: "middle" };
@@ -1417,19 +1427,22 @@ function AccountPurchaseTallyTab() {
             { width: 16 }, { width: 16 }, { width: 16 },
             { width: 16 }, { width: 16 }, { width: 16 },
             { width: 16 }, { width: 16 }, { width: 16 },
+            { width: 16 },
           ];
           ws.mergeCells("A1:A2"); ws.mergeCells("B1:B2");
           ws.mergeCells("C1:E1"); ws.mergeCells("F1:H1"); ws.mergeCells("I1:K1");
+          ws.mergeCells("L1:L2");
           ws.getCell("A1").value = "구매처";
           ws.getCell("B1").value = "날짜";
           ws.getCell("C1").value = "소모품";
           ws.getCell("F1").value = "식자재";
           ws.getCell("I1").value = "경관식";
+          ws.getCell("L1").value = "소계";
           ws.getCell("C2").value = "과/면세"; ws.getCell("D2").value = "부가세"; ws.getCell("E2").value = "합계";
           ws.getCell("F2").value = "과/면세"; ws.getCell("G2").value = "부가세"; ws.getCell("H2").value = "합계";
           ws.getCell("I2").value = "과/면세"; ws.getCell("J2").value = "부가세"; ws.getCell("K2").value = "합계";
           for (let r = 1; r <= 2; r += 1) {
-            for (let c = 1; c <= 11; c += 1) {
+            for (let c = 1; c <= 12; c += 1) {
               const cell = ws.getCell(r, c);
               cell.fill = headerFill; cell.border = borderThin;
               cell.font = { bold: true }; cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -1448,7 +1461,8 @@ function AccountPurchaseTallyTab() {
             ws.getCell(er, 9).value = row.scenic_tax + row.scenic_taxFree;
             ws.getCell(er, 10).value = row.scenic_vat;
             ws.getCell(er, 11).value = row.scenic_total;
-            for (let c = 1; c <= 11; c += 1) {
+            ws.getCell(er, 12).value = toNum(row.expen_total) + toNum(row.food_total) + toNum(row.scenic_total);
+            for (let c = 1; c <= 12; c += 1) {
               const cell = ws.getCell(er, c);
               cell.border = borderThin;
               cell.alignment = { horizontal: c <= 2 ? "center" : "right", vertical: "middle" };
@@ -1467,20 +1481,14 @@ function AccountPurchaseTallyTab() {
           ws.getCell(subtotalRow, 9).value = Number(purchaseTypeSummary.scenic.taxTotal || 0);
           ws.getCell(subtotalRow, 10).value = Number(purchaseTypeSummary.scenic.vat || 0);
           ws.getCell(subtotalRow, 11).value = Number(purchaseTypeSummary.scenic.total || 0);
+          ws.getCell(subtotalRow, 12).value = Number(purchaseTypeSummary.total.total || 0);
           const totalRow = subtotalRow + 1;
           ws.mergeCells(totalRow, 1, totalRow, 2);
           ws.getCell(totalRow, 1).value = "총합계";
-          ws.getCell(totalRow, 3).value = Number(purchaseTypeSummary.expen.taxTotal || 0);
-          ws.getCell(totalRow, 4).value = Number(purchaseTypeSummary.expen.vat || 0);
-          ws.getCell(totalRow, 5).value = Number(purchaseTypeSummary.expen.total || 0);
-          ws.getCell(totalRow, 6).value = Number(purchaseTypeSummary.food.taxTotal || 0);
-          ws.getCell(totalRow, 7).value = Number(purchaseTypeSummary.food.vat || 0);
-          ws.getCell(totalRow, 8).value = Number(purchaseTypeSummary.food.total || 0);
-          ws.getCell(totalRow, 9).value = Number(purchaseTypeSummary.scenic.taxTotal || 0);
-          ws.getCell(totalRow, 10).value = Number(purchaseTypeSummary.scenic.vat || 0);
-          ws.getCell(totalRow, 11).value = Number(purchaseTypeSummary.scenic.total || 0);
+          ws.mergeCells(totalRow, 3, totalRow, 12);
+          ws.getCell(totalRow, 3).value = Number(purchaseTypeSummary.total.total || 0);
           for (let r = subtotalRow; r <= totalRow; r += 1) {
-            for (let c = 1; c <= 11; c += 1) {
+            for (let c = 1; c <= 12; c += 1) {
               const cell = ws.getCell(r, c);
               cell.border = borderThin;
               cell.alignment = { horizontal: c <= 2 ? "center" : "right", vertical: "middle" };
@@ -2446,3 +2454,4 @@ function AccountPurchaseTallyTab() {
 }
 
 export default AccountPurchaseTallyTab;
+

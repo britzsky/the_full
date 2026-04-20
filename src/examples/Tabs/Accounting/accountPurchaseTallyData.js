@@ -392,6 +392,21 @@ export default function useAccountPurchaseTallyData() {
     }
   };
 
+  // 거래처 목록 조회 API
+  const fetchAccountList = async (params = { account_type: "0" }) => {
+    const res = await api.get("/Account/AccountListV2", { params });
+    return Array.isArray(res?.data) ? res.data : res?.data?.rows || res?.data?.data || [];
+  };
+
+  // 거래처 기준 타입 옵션 조회 API
+  const fetchTypeOptionList = async (accountId) => {
+    if (!accountId) return [];
+    const res = await api.get("/Operate/AccountMappingV2List", {
+      params: { account_id: accountId, _ts: Date.now() },
+    });
+    return res?.data;
+  };
+
   return {
     rows,
     setRows,
@@ -401,6 +416,8 @@ export default function useAccountPurchaseTallyData() {
     loading,
     fetchPurchaseList,
     fetchMappingList,
+    fetchAccountList,
+    fetchTypeOptionList,
   };
 }
 

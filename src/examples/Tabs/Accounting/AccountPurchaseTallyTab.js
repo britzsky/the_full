@@ -932,8 +932,8 @@ function AccountPurchaseTallyTab() {
   const renderColGroup = () => (
     <colgroup>
       <col style={{ width: 150, minWidth: 150, maxWidth: 150 }} /> {/* 거래처 */}
-      <col style={{ width: 110, minWidth: 110, maxWidth: 110 }} /> {/* 날짜 */}
-      <col style={{ width: 170, minWidth: 170, maxWidth: 170 }} /> {/* 구매처 */}
+      <col style={{ width: 120, minWidth: 120, maxWidth: 120 }} /> {/* 날짜 */}
+      <col style={{ width: 160, minWidth: 160, maxWidth: 160 }} /> {/* 구매처 */}
       <col style={{ width: 110, minWidth: 110 }} /> {/* 소모품 과/면세 */}
       <col style={{ width: 110, minWidth: 110 }} /> {/* 소모품 부가세 */}
       <col style={{ width: 110, minWidth: 110 }} /> {/* 소모품 합계 */}
@@ -949,20 +949,27 @@ function AccountPurchaseTallyTab() {
   // ✅ 고정 컬럼(left sticky) 좌표
   const STICKY_LEFT_ACCOUNT = 0;
   const STICKY_LEFT_DATE = 150;
-  const STICKY_LEFT_TYPE = 260;
+  const STICKY_LEFT_TYPE = 270;
   const HEADER_FIRST_ROW_HEIGHT = 32;
   const HEADER_SECOND_ROW_TOP = HEADER_FIRST_ROW_HEIGHT;
   const FOOTER_ROW_HEIGHT = 36;
 
   const renderSummaryTable = useCallback(
     (extraTableStyle = {}) => {
-      const leftColSpan = isRangeMode ? 2 : 3;
       return (
       <table className="summary-table" style={extraTableStyle}>
         {renderColGroup()}
         <tbody>
           <tr>
-            <td colSpan={leftColSpan} style={{ textAlign: "center", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>
+            <td
+              colSpan={3}
+              style={{
+                width: 430, minWidth: 430, maxWidth: 430,
+                textAlign: "center", fontWeight: 700, background: "#f7f7f7",
+                height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
+                position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+              }}
+            >
               소계
             </td>
             <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.taxTotal)}</td>
@@ -977,7 +984,15 @@ function AccountPurchaseTallyTab() {
           </tr>
 
           <tr>
-            <td colSpan={leftColSpan} style={{ textAlign: "center", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>
+            <td
+              colSpan={3}
+              style={{
+                width: 430, minWidth: 430, maxWidth: 430,
+                textAlign: "center", fontWeight: 700, background: "#ececec",
+                height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
+                position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+              }}
+            >
               총합계
             </td>
             <td colSpan={9} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
@@ -988,7 +1003,13 @@ function AccountPurchaseTallyTab() {
       </table>
       );
     },
-    [FOOTER_ROW_HEIGHT, formatSummaryNumber, summary, renderColGroup, isRangeMode]
+    [
+      FOOTER_ROW_HEIGHT,
+      formatSummaryNumber,
+      summary,
+      renderColGroup,
+      STICKY_LEFT_ACCOUNT,
+    ]
   );
 
   // =========================
@@ -1873,7 +1894,7 @@ function AccountPurchaseTallyTab() {
               <table ref={dataTableRef}>
                 <colgroup>
                   <col style={{ width: 170, minWidth: 170 }} />
-                  {!isRangeMode && <col style={{ width: 140, minWidth: 140 }} />}
+                  <col style={{ width: 140, minWidth: 140 }} />
                   <col style={{ width: 110, minWidth: 110 }} />
                   <col style={{ width: 110, minWidth: 110 }} />
                   <col style={{ width: 110, minWidth: 110 }} />
@@ -1887,7 +1908,7 @@ function AccountPurchaseTallyTab() {
                 <thead>
                   <tr>
                     <th rowSpan={2} style={{ minWidth: 170, position: "sticky", left: 0, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>구매처</th>
-                    <th rowSpan={2} style={{ minWidth: 140, position: "sticky", left: 170, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>{isRangeMode ? dateRangeLabel : "날짜"}</th>
+                    <th rowSpan={2} style={{ minWidth: 140, position: "sticky", left: 170, top: 0, zIndex: 7, backgroundColor: "#fef6e4" }}>날짜</th>
                     <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>소모품</th>
                     <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>식자재</th>
                     <th colSpan={3} style={{ top: 0, zIndex: 6, backgroundColor: "#fef6e4", height: HEADER_FIRST_ROW_HEIGHT, lineHeight: `${HEADER_FIRST_ROW_HEIGHT - 2}px`, padding: "0 4px" }}>경관식</th>
@@ -1937,7 +1958,8 @@ function AccountPurchaseTallyTab() {
               <MDBox sx={{ position: "sticky", bottom: 0, zIndex: 8, backgroundColor: "#ffffff", boxShadow: "0 -2px 6px rgba(0,0,0,0.12)" }}>
                 <table className="summary-table" style={{ width: "100%" }}>
                   <colgroup>
-                    <col style={{ width: isRangeMode ? 170 : 310, minWidth: isRangeMode ? 170 : 310 }} />
+                    <col style={{ width: 170, minWidth: 170 }} />
+                    <col style={{ width: 140, minWidth: 140 }} />
                     <col style={{ width: 110, minWidth: 110 }} />
                     <col style={{ width: 110, minWidth: 110 }} />
                     <col style={{ width: 110, minWidth: 110 }} />
@@ -1950,7 +1972,17 @@ function AccountPurchaseTallyTab() {
                   </colgroup>
                   <tbody>
                     <tr>
-                      <td colSpan={1} style={{ textAlign: "center", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>소계</td>
+                      <td
+                        colSpan={2}
+                        style={{
+                          width: 310, minWidth: 310, maxWidth: 310,
+                          textAlign: "center", fontWeight: 700, background: "#f7f7f7",
+                          height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
+                          position: "sticky", left: 0, zIndex: 5,
+                        }}
+                      >
+                        소계
+                      </td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.taxTotal)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.vat)}</td>
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.expen.total)}</td>
@@ -1962,7 +1994,17 @@ function AccountPurchaseTallyTab() {
                       <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(purchaseTypeSummary.scenic.total)}</td>
                     </tr>
                     <tr>
-                      <td colSpan={1} style={{ textAlign: "center", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px" }}>총합계</td>
+                      <td
+                        colSpan={2}
+                        style={{
+                          width: 310, minWidth: 310, maxWidth: 310,
+                          textAlign: "center", fontWeight: 700, background: "#ececec",
+                          height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
+                          position: "sticky", left: 0, zIndex: 5,
+                        }}
+                      >
+                        총합계
+                      </td>
                       <td colSpan={9} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
                         {formatSummaryNumber(purchaseTypeSummary.total.total)}
                       </td>
@@ -2012,27 +2054,29 @@ function AccountPurchaseTallyTab() {
                     <th
                       rowSpan={2}
                       style={{
-                        minWidth: 140,
-                        width: 140,
-                        maxWidth: 140,
-                        ...(isMobileTabletLandscape
-                          ? { position: "sticky", left: STICKY_LEFT_DATE, top: 0, zIndex: 7 }
-                          : { position: "sticky", top: 0, zIndex: 2 }),
+                        minWidth: 150,
+                        width: 150,
+                        maxWidth: 150,
+                        position: "sticky",
+                        left: STICKY_LEFT_DATE,
+                        top: 0,
+                        zIndex: 7,
                         backgroundColor: "#fef6e4",
                       }}
                     >
-                      {isRangeMode ? dateRangeLabel : "날짜"}
+                      날짜
                     </th>
-                    {/* 구매처: 가로(landscape)일 때만 sticky */}
+                    {/* 구매처 */}
                     <th
                       rowSpan={2}
                       style={{
-                        minWidth: 170,
-                        width: 170,
-                        maxWidth: 170,
-                        ...(isMobileTabletLandscape
-                          ? { position: "sticky", left: STICKY_LEFT_TYPE, top: 0, zIndex: 7 }
-                          : { position: "sticky", top: 0, zIndex: 2 }),
+                        minWidth: 160,
+                        width: 160,
+                        maxWidth: 160,
+                        position: "sticky",
+                        left: STICKY_LEFT_TYPE,
+                        top: 0,
+                        zIndex: 7,
                         backgroundColor: "#fef6e4",
                       }}
                     >
@@ -2125,10 +2169,10 @@ function AccountPurchaseTallyTab() {
                         {/* 날짜 */}
                         <td
                           style={{
-                            width: 140, minWidth: 140, maxWidth: 140,
-                            ...(isMobileTabletLandscape
-                              ? { position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3 }
-                              : {}),
+                            width: 150, minWidth: 150, maxWidth: 150,
+                            position: "sticky",
+                            left: STICKY_LEFT_DATE,
+                            zIndex: 3,
                             backgroundColor: "#ffffff",
                             height: FOOTER_ROW_HEIGHT,
                           }}
@@ -2136,13 +2180,13 @@ function AccountPurchaseTallyTab() {
                           {isRangeMode ? dateRangeLabel : String(row._saleMonth || "")}
                         </td>
 
-                        {/* 구매처: 가로일 때만 sticky */}
+                        {/* 구매처 */}
                         <td
                           style={{
-                            width: 170, minWidth: 170, maxWidth: 170,
-                            ...(isMobileTabletLandscape
-                              ? { position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3 }
-                              : {}),
+                            width: 160, minWidth: 160, maxWidth: 160,
+                            position: "sticky",
+                            left: STICKY_LEFT_TYPE,
+                            zIndex: 3,
                             backgroundColor: "#ffffff",
                             height: FOOTER_ROW_HEIGHT,
                           }}
@@ -2163,10 +2207,11 @@ function AccountPurchaseTallyTab() {
                 {/* footer: 세로=sticky bottom(거래처 고정, 날짜/구매처 공란), 가로=sticky bottom + 왼쪽 3컬럼 고정 */}
                 <tfoot>
                   <tr>
-                    {/* 거래처: 세로/가로 모두 sticky left + sticky bottom */}
+                    {/* 거래처~구매처 병합 */}
                     <td
+                      colSpan={3}
                       style={{
-                        width: 120, minWidth: 120, maxWidth: 120,
+                        width: 430, minWidth: 430, maxWidth: 430,
                         textAlign: "center", fontWeight: 700, background: "#f7f7f7",
                         height: FOOTER_ROW_HEIGHT, padding: "0 8px",
                         border: "1px solid #686D76", fontSize: 12,
@@ -2175,28 +2220,6 @@ function AccountPurchaseTallyTab() {
                     >
                       소계
                     </td>
-                    {/* 날짜: 범위조회 아닐 때만 표시 */}
-                    {!isRangeMode && <td
-                      style={{
-                        width: 140, minWidth: 140, maxWidth: 140,
-                        background: "#f7f7f7", height: FOOTER_ROW_HEIGHT,
-                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
-                        ...(isMobileTabletLandscape
-                          ? { position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_DATE, zIndex: 5 }
-                          : { position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2 }),
-                      }}
-                    />}
-                    {/* 구매처: 가로=sticky left+bottom, 세로=공란 */}
-                    <td
-                      style={{
-                        width: 170, minWidth: 170, maxWidth: 170,
-                        background: "#f7f7f7", height: FOOTER_ROW_HEIGHT,
-                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
-                        ...(isMobileTabletLandscape
-                          ? { position: "sticky", bottom: FOOTER_ROW_HEIGHT, left: STICKY_LEFT_TYPE, zIndex: 5 }
-                          : { position: "sticky", bottom: FOOTER_ROW_HEIGHT, zIndex: 2 }),
-                      }}
-                    />
                     {/* 금액들: 세로/가로 모두 sticky bottom */}
                     {[
                       formatSummaryNumber(summary.expen.taxTotal),
@@ -2223,10 +2246,11 @@ function AccountPurchaseTallyTab() {
                     ))}
                   </tr>
                   <tr>
-                    {/* 거래처: 세로/가로 모두 sticky left + sticky bottom */}
+                    {/* 거래처~구매처 병합 */}
                     <td
+                      colSpan={3}
                       style={{
-                        width: 120, minWidth: 120, maxWidth: 120,
+                        width: 430, minWidth: 430, maxWidth: 430,
                         textAlign: "center", fontWeight: 700, background: "#ececec",
                         height: FOOTER_ROW_HEIGHT, padding: "0 8px",
                         border: "1px solid #686D76", fontSize: 12,
@@ -2235,28 +2259,6 @@ function AccountPurchaseTallyTab() {
                     >
                       총합계
                     </td>
-                    {/* 날짜: 범위조회 아닐 때만 표시 */}
-                    {!isRangeMode && <td
-                      style={{
-                        width: 140, minWidth: 140, maxWidth: 140,
-                        background: "#ececec", height: FOOTER_ROW_HEIGHT,
-                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
-                        ...(isMobileTabletLandscape
-                          ? { position: "sticky", bottom: 0, left: STICKY_LEFT_DATE, zIndex: 5 }
-                          : { position: "sticky", bottom: 0, zIndex: 2 }),
-                      }}
-                    />}
-                    {/* 구매처: 가로=sticky left+bottom, 세로=공란 */}
-                    <td
-                      style={{
-                        width: 170, minWidth: 170, maxWidth: 170,
-                        background: "#ececec", height: FOOTER_ROW_HEIGHT,
-                        border: "1px solid #686D76", fontSize: 12, padding: "0 4px",
-                        ...(isMobileTabletLandscape
-                          ? { position: "sticky", bottom: 0, left: STICKY_LEFT_TYPE, zIndex: 5 }
-                          : { position: "sticky", bottom: 0, zIndex: 2 }),
-                      }}
-                    />
                     {/* 총합계 금액: 세로=colSpan 9, 가로=colSpan 9, sticky bottom */}
                     <td
                       colSpan={9}
@@ -2289,19 +2291,19 @@ function AccountPurchaseTallyTab() {
                     >
                       거래처
                     </th>
-                    {!isRangeMode && <th
+                    <th
                       rowSpan={2}
                       style={{
-                        minWidth: 110, width: 110, maxWidth: 110,
+                        minWidth: 120, width: 120, maxWidth: 120,
                         left: STICKY_LEFT_DATE, zIndex: 7, backgroundColor: "#fef6e4",
                       }}
                     >
                       날짜
-                    </th>}
+                    </th>
                     <th
                       rowSpan={2}
                       style={{
-                        minWidth: 170, width: 170, maxWidth: 170,
+                        minWidth: 160, width: 160, maxWidth: 160,
                         left: STICKY_LEFT_TYPE, zIndex: 7, backgroundColor: "#fef6e4",
                       }}
                     >
@@ -2336,10 +2338,10 @@ function AccountPurchaseTallyTab() {
                         <td style={{ width: 150, minWidth: 150, maxWidth: 150, position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {row.account_name || ""}
                         </td>
-                        {!isRangeMode && <td style={{ width: 110, minWidth: 110, maxWidth: 110, position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
-                          {String(row._saleMonth || "")}
-                        </td>}
-                        <td style={{ width: 170, minWidth: 170, maxWidth: 170, position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                        <td style={{ width: 120, minWidth: 120, maxWidth: 120, position: "sticky", left: STICKY_LEFT_DATE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
+                          {isRangeMode ? dateRangeLabel : String(row._saleMonth || "")}
+                        </td>
+                        <td style={{ width: 160, minWidth: 160, maxWidth: 160, position: "sticky", left: STICKY_LEFT_TYPE, zIndex: 3, backgroundColor: "#ffffff", height: FOOTER_ROW_HEIGHT }}>
                           {String(row.purchase_name || row.name || "")}
                         </td>
                         {AMOUNT_COLUMN_KEYS.map((k) => (

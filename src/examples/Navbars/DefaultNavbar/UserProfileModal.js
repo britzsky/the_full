@@ -578,6 +578,8 @@ function UserProfileModal({ open, onClose }) {
                         <MenuItem value="5">운영팀</MenuItem>
                         <MenuItem value="6">개발팀</MenuItem>
                         {/* <MenuItem value="7">현장</MenuItem> */}
+                        <MenuItem value="8">급식사업부</MenuItem>
+                        <MenuItem value="9">기획팀</MenuItem>
                       </Select>
                       {errors.department && (
                         <MDTypography variant="caption" color="error" sx={{ mt: 0.5, ml: 1 }}>

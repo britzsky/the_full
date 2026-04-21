@@ -360,7 +360,7 @@ const routes = [
     key: "accounting",
     icon: <Icon fontSize="small">table_view</Icon>,
     allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
-    allowUserIds: ["yh2"], //   
+    allowUserIds: ["yh2"], // 이윤희 실장님 
     accessMode: "OR",
     collapse: [
       {
@@ -372,7 +372,7 @@ const routes = [
         route: "/purchaseDeadLineTally/purchasetally",
         component: <PurchaseDeadLineTally />,
         allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 팀장님
+        allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "OR",
       },
       {
@@ -383,7 +383,7 @@ const routes = [
         route: "/purchase/headofficecorporatecard",
         component: <HeadOfficeCorporateCardManager />,
         allowedDepartments: [0, 2, 5, 6, 9], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 팀장님
+        allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "OR",
       },
       {
@@ -394,7 +394,7 @@ const routes = [
         route: "/purchase/accountcorporatecard",
         component: <AccountCorporateCardManager />,
         allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 팀장님
+        allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "OR",
       },
       {
@@ -405,7 +405,7 @@ const routes = [
         route: "/purchase/accountpersonpurchase",
         component: <AccountPersonPurchaseManager />,
         allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 팀장님
+        allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "OR",
       },
       {
@@ -417,7 +417,7 @@ const routes = [
         route: "/purchaseTally/purchasetally",
         component: <PurchaseTally />,
         allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 팀장님
+        allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "OR",
       },
     ],
@@ -440,9 +440,10 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/fieldstaff_1",
         component: <HumanResourceTab_1 />,
-        allowedDepartments: [0, 3, 6], // 🔹 부서권한
+        allowedDepartments: [0, 3, 6, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
+        allowUserIds: ["yh2"], // 이윤희 실장님
       },
       // {
       //   type: "collapse",

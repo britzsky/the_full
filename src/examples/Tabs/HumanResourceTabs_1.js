@@ -72,7 +72,7 @@ function OperateTabs_2() {
       label: "👥 현장 직원관리",
       iconIndex: 0,
       component: <AccountMemberSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
@@ -81,16 +81,16 @@ function OperateTabs_2() {
       label: "📦 현장 근태관리",
       iconIndex: 1,
       component: <AccountAnnualLeaveTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
-     {
+    {
       key: "property",
       label: "👥 현장 파출관리",
       iconIndex: 1,
       component: <AccountDispatchMemberSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },

@@ -66,8 +66,8 @@ function OperateTabs() {
   // ✅ 숫자 이모지 아이콘
   const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 
-  // 부서코드: 0:대표, 1:신사업, 2:회계, 3:인사, 4:영업, 5:운영, 6:개발, 7:현장
-  // 직책코드: 0:대표, 1:팀장, 2:부장, 3:차장, 4:과장, 5:대리, 6:주임, 7:사원
+  // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+  // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
 
   // 🔹 탭 설정 + 권한 정의
   const tabConfig = [
@@ -76,7 +76,7 @@ function OperateTabs() {
       label: "🧹 위생관리",
       iconIndex: 0,
       component: <HygieneSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
@@ -85,7 +85,7 @@ function OperateTabs() {
       label: "📦 기물관리",
       iconIndex: 1,
       component: <PropertySheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
@@ -94,7 +94,7 @@ function OperateTabs() {
       label: "🏢 거래처관리",
       iconIndex: 2,
       component: <RetailBusinessTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
@@ -103,7 +103,7 @@ function OperateTabs() {
       label: "🏢 대체업체관리",
       iconIndex: 3,
       component: <SubRestaurantTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
@@ -112,7 +112,7 @@ function OperateTabs() {
       label: "🔁 인수인계 관리",
       iconIndex: 4,
       component: <HandOverSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },
@@ -121,7 +121,7 @@ function OperateTabs() {
       label: "📋 면허증 및 자격증 관리",
       iconIndex: 5,
       component: <AccountMembersFilesTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },

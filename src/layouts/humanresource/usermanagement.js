@@ -39,6 +39,8 @@ const DEPT_LABELS = {
   5: "운영팀",
   6: "개발팀",
   7: "현장",
+  8: "급식사업부",
+  9: "기획팀",
 };
 
 const HQ_DEPARTMENT_OPTIONS = Object.entries(DEPT_LABELS)
@@ -1307,7 +1309,7 @@ function UserManagement() {
               onChange={(e) => {
                 handleUtilMemberTypeChange(row.user_id, e.target.value);
               }}
-            sx={{
+              sx={{
                 ...compactSelectSx,
                 ...(positionChanged ? changedSelectSx : {}),
                 minWidth: 88,

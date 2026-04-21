@@ -47,6 +47,8 @@ import WeekMenuManager from "layouts/weekmenusheet";
 import EventManager from "layouts/eventsheet";
 import CarManager from "examples/Tabs/Business/CorCarTab";
 import ElectronicPaymentManager from "layouts/headoffice/headofficetab_2";
+import HeadofficeScheduleSheet from "layouts/headoffice/HeadofficeScheduleSheetTab";
+
 // 영업
 import BusinessSchedule from "layouts/business/BusinessScheduleSheet";
 import TeleManager from "layouts/business/telemanager";
@@ -96,14 +98,14 @@ const routes = [
     component: <HomeSwitcher />,
   },
   {
-    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
+    // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "본사",
     key: "tables",
     icon: <Icon fontSize="small">table_view</Icon>,
-    allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+    allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
     accessMode: "AND",
     collapse: [
       {
@@ -113,13 +115,13 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/HeadOffice/PeopleCountingTab",
         component: <PeopleCountingManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1], // 🔹 직책권한
 
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
         allowUserIds: [
-          "jr1", // 김주람 파트장
-          "sy7", // 이수연 파트장
+          "jr1", // 김주람 팀장
+          "sy7", // 이수연 매니저(운영)
           "mh3", // 이미희 매니저
           "dh2", // 민다희 매니저
           "ys",  // 박이슬 매니저
@@ -138,13 +140,23 @@ const routes = [
       },
       {
         type: "collapse",
+        name: "📅 급식사업부 일정관리",
+        key: "headoffice_schedule",
+        route: "/headoffice/schedule",
+        component: <HeadofficeScheduleSheet />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
+        allowedPositions: [0, 1, 2, 3],
+        accessMode: "AND",
+      },
+      {
+        type: "collapse",
         name: "🎉 행사",
         key: "event",
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/event",
         component: <EventManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -154,8 +166,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/weekmenu",
         component: <WeekMenuManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -165,8 +177,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/carManager",
         component: <CarManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -187,22 +199,21 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/electronicpaymentmanager",
         component: <ElectronicPaymentManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
-        // allowedDepartments: [6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
     ],
   },
   {
-    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
+    // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "영업",
     key: "business",
     icon: <Icon fontSize="small">table_view</Icon>,
-    allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+    allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
     accessMode: "AND",
     collapse: [
       {
@@ -212,8 +223,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/businessschedule",
         component: <BusinessSchedule />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -223,8 +234,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/accountinfosheet/index",
         component: <ContractManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -234,8 +245,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/businessaccount/telemanager",
         component: <TeleManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -245,22 +256,22 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/AccountSales/AccountSalesTab",
         component: <AccountSales />,
-        allowedDepartments: [0, 5, 4, 6], // 🔹 부서권한
+        allowedDepartments: [0, 4, 5, 6, 8, 9], // 🔹 부서권한
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["dh2", "mh2", "ww1", "hh2", "mh3"],
+        allowUserIds: ["dh2", "ww1", "hh2", "mh3"],
         accessMode: "OR",
       },
     ],
   },
   {
-    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
+    // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "운영",
     key: "operate",
     icon: <Icon fontSize="small">table_view</Icon>,
-    allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+    allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
     accessMode: "AND",
     collapse: [
       {
@@ -270,8 +281,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/operateschedule",
         component: <OperateTab_5 />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -281,8 +292,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/budget/budgetManager",
         component: <BudgetManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -302,8 +313,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/fieldstaff2",
         component: <OperateTab_3 />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -313,8 +324,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/account",
         component: <Tables />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -324,8 +335,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/Operate/OperateTabs",
         component: <OperateTab />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       {
@@ -335,20 +346,20 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/Operate/accountissuesheet2",
         component: <AccountIssueManager2 />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
     ],
   },
   {
-    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
+    // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "회계",
     key: "accounting",
     icon: <Icon fontSize="small">table_view</Icon>,
-    allowedDepartments: [0, 2, 6], // 🔹 부서권한
+    allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
     allowUserIds: ["yh2"], //   
     accessMode: "OR",
     collapse: [
@@ -360,7 +371,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchaseDeadLineTally/purchasetally",
         component: <PurchaseDeadLineTally />,
-        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
@@ -371,7 +382,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/headofficecorporatecard",
         component: <HeadOfficeCorporateCardManager />,
-        allowedDepartments: [0, 2, 5, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 5, 6, 9], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
@@ -382,7 +393,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/accountcorporatecard",
         component: <AccountCorporateCardManager />,
-        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
@@ -393,7 +404,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/accountpersonpurchase",
         component: <AccountPersonPurchaseManager />,
-        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
@@ -405,21 +416,21 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchaseTally/purchasetally",
         component: <PurchaseTally />,
-        allowedDepartments: [0, 2, 6], // 🔹 부서권한
+        allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 팀장님
         accessMode: "OR",
       },
     ],
   },
   {
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
-    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
+    // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "인사",
     key: "human",
     icon: <Icon fontSize="small">table_view</Icon>,
-    allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-    allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+    allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+    allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
     accessMode: "AND",
     collapse: [
       {
@@ -429,8 +440,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/fieldstaff_1",
         component: <HumanResourceTab_1 />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+        allowedDepartments: [0, 3, 6], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       // {
@@ -440,8 +451,8 @@ const routes = [
       //   icon: <Icon fontSize="small">*</Icon>,
       //   route: "/tables",
       //   component: <Tables />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
-      //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
+      //   allowedPositions: [0, 1, 2, 3],   // 🔹 직책권한
       //   accessMode: "AND",
       // },
       // {
@@ -469,8 +480,8 @@ const routes = [
       //   icon: <Icon fontSize="small">*</Icon>,
       //   route: "/business/telemanager",
       //   component: <TeleManager />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
-      //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
+      //   allowedPositions: [0, 1, 2, 3],   // 🔹 직책권한
       //   accessMode: "AND",
       // },
       // {
@@ -480,15 +491,15 @@ const routes = [
       //   icon: <Icon fontSize="small">*</Icon>,
       //   route: "/business/telemanager",
       //   component: <TeleManager />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
       //   allowedPositions: [0, 1],   // 🔹 직책권한
       //   accessMode: "AND",
       // },
     ],
   },
   {
-    // 직책 -> (0: 대표, 1:팀장, 2: 부장, 3:차장, 4: 과장, 5: 대리, 6: 주임, 7: 사원,)
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장)
+    // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "현장",
     key: "site",

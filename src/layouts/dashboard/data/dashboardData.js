@@ -87,36 +87,38 @@ export default function useDashBoardData() {
     );
 
   // ✅ 여기: 오늘 날짜를 params로 함께 전달
+  // 운영팀(team_code=2) 당일 일정
   const fetchOpsSchedules = (account_id) => {
     const today = getTodayYmd();
     return api
-      .get("/Operate/OperateScheduleTodayList", { params: { today: today } })
+      .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 2 } })
       .then((res) =>
         (res.data || []).map((x) => ({
-          content: x.content || x.content || "",
-          user_name: x.user_name || x.user_name || "",
-          type: x.type || x.type || "",
-          position_name: x.position_name || x.position_name || "",
+          content: x.content || "",
+          user_name: x.user_name || "",
+          type: x.type || "",
+          position_name: x.position_name || "",
           account_id: x.account_id || "",
           account_name: x.account_name || "",
-          department: x.department || x.department || "",
+          department: x.department || "",
         }))
       );
   };
 
+  // 영업팀(team_code=1) 당일 일정
   const fetchSalesSchedules = (account_id) => {
     const today = getTodayYmd();
     return api
-      .get("/Business/BusinessScheduleTodayList", { params: { today: today } })
+      .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 1 } })
       .then((res) =>
         (res.data || []).map((x) => ({
-          content: x.content || x.content || "",
-          user_name: x.user_name || x.user_name || "",
-          type: x.type || x.type || "",
-          position_name: x.position_name || x.position_name || "",
+          content: x.content || "",
+          user_name: x.user_name || "",
+          type: x.type || "",
+          position_name: x.position_name || "",
           account_id: x.account_id || "",
           account_name: x.account_name || "",
-          department: x.department || x.department || "",
+          department: x.department || "",
         }))
       );
   };

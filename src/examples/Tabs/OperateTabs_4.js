@@ -65,7 +65,7 @@ function OperateTabs_2() {
       label: "👥 긴급인력 확인",
       iconIndex: 0,
       component: <AccountMemberRecordMainTableTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },
@@ -74,7 +74,7 @@ function OperateTabs_2() {
       label: "🙋 인력관리",
       iconIndex: 1,
       component: <AccountEmergencyMemberSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },
@@ -83,7 +83,7 @@ function OperateTabs_2() {
       label: "🛣️ 권역관리",
       iconIndex: 2,
       component: <AccountRootTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },
@@ -92,7 +92,7 @@ function OperateTabs_2() {
       label: "🗺️ 근무가능지역 관리",
       iconIndex: 3,
       component: <AccountFieldMemberTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },

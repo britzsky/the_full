@@ -2,53 +2,37 @@
 import { useState } from "react";
 import api from "api/api";
 
+// team_code: 1=영업팀, 2=운영팀, 3=급식사업부
+const OPERATE_TEAM_CODE = 2;
+
 export default function useOperateSchedulesheetData(currentYear, currentMonth) {
   const [eventListRows, setEventListRows] = useState([]);
   const [operateMemberList, setOperateMemberList] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // 운영 일정 월별 조회
+  // 운영팀(team_code=2) 월별 일정 조회
   const eventList = async () => {
     setLoading(true);
     try {
-
-      // ✅ 월이 한 자리일 경우 앞에 0 붙이기
       const formattedMonth = currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
-
-      const res = await api.get("/Operate/OperateScheduleList", {
-        params: { year: currentYear, month: formattedMonth },
+      const res = await api.get("/Business/BusinessScheduleList", {
+        params: { year: currentYear, month: formattedMonth, team_code: OPERATE_TEAM_CODE },
       });
-
-      const rows = (res.data || []).map((item) => ({
-        idx: item.idx,
-        start_date: item.start_date,
-        end_date: item.end_date,
-        content: item.content || "",
-        type: item.type,
-        update_dt: item.update_dt,
-        reg_dt: item.reg_dt,
-        del_yn: item.del_yn,
-        user_id: item.user_id,
-        account_id: item.account_id,
-        account_name: item.account_name,
-        reg_user_id: item.reg_user_id,
-        user_name: item.user_name
-      }));
-
-      setEventListRows(rows);
+      setEventListRows(res.data || []);
     } catch (err) {
-      console.error("📛 주간 식단 조회 실패:", err);
+      console.error("운영팀 일정 조회 실패:", err);
       setEventListRows([]);
     } finally {
       setLoading(false);
     }
   };
 
-  // 운영팀 담당자 목록 조회
+  // 운영팀(team_code=2) 담당자 목록 조회
   const fetchOperateMemberList = async (force = false) => {
     if (!force && operateMemberList.length > 0) return operateMemberList;
-    const res = await api.get("/Operate/OperateMemberList", {
+    const res = await api.get("/Business/BusinessMemberList", {
+      params: { team_code: OPERATE_TEAM_CODE },
       headers: { "Content-Type": "application/json" },
     });
     const rows = res.data || [];
@@ -65,9 +49,9 @@ export default function useOperateSchedulesheetData(currentYear, currentMonth) {
     return rows;
   };
 
-  // 운영 일정 저장(신규/수정/취소/복원 공용)
+  // 일정 저장 (team_code=2 고정)
   const saveOperateSchedule = async (payload) => {
-    return api.post("/Operate/OperateScheduleSave", payload, {
+    return api.post("/Business/BusinessScheduleSave", { ...payload, team_code: OPERATE_TEAM_CODE }, {
       headers: { "Content-Type": "application/json" },
     });
   };

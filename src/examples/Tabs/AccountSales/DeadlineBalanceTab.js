@@ -752,35 +752,35 @@ export default function DeadlineBalanceTab() {
               : item.color;
 
           return (
-        <Box
-          key={item.label}
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 0.6,
-            px: 0.8,
-            py: 0.3,
-            borderRadius: 999,
-            bgcolor: "rgba(0,0,0,0.03)",
-            border: "1px solid rgba(0,0,0,0.08)",
-          }}
-        >
-          <Box
-            sx={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              bgcolor: item.color,
-              border: `1px solid ${markerBorderColor}`,
-              boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
-            }}
-          />
-          <Typography
-            sx={{ fontSize: 12, fontWeight: 700, color: "#333", position: "relative", top: "1px" }}
-          >
-            {item.label}
-          </Typography>
-        </Box>
+            <Box
+              key={item.label}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.6,
+                px: 0.8,
+                py: 0.3,
+                borderRadius: 999,
+                bgcolor: "rgba(0,0,0,0.03)",
+                border: "1px solid rgba(0,0,0,0.08)",
+              }}
+            >
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  bgcolor: item.color,
+                  border: `1px solid ${markerBorderColor}`,
+                  boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
+                }}
+              />
+              <Typography
+                sx={{ fontSize: 12, fontWeight: 700, color: "#333", position: "relative", top: "1px" }}
+              >
+                {item.label}
+              </Typography>
+            </Box>
           );
         })()
       ))}
@@ -1994,7 +1994,7 @@ export default function DeadlineBalanceTab() {
                             <td key={key}>
                               {y > 0 && m > 0
                                 ? `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`
-                              : "0000-00"}
+                                : "0000-00"}
                             </td>
                           );
                         }

@@ -63,7 +63,7 @@ function OperateTabs_2() {
       label: "👥 현장 직원목록",
       iconIndex: 0,
       component: <AccountMemberCardSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },
@@ -72,7 +72,7 @@ function OperateTabs_2() {
       label: "📦 현장 채용현황",
       iconIndex: 1,
       component: <AccountMemberRecSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7], // 🔹 부서권한
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
       accessMode: "AND",
     },

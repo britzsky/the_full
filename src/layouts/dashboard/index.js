@@ -595,6 +595,8 @@ ContractTableCard.defaultProps = {
 
 function Dashboard() {
   const navigate = useNavigate();
+  const userDeptCode = Number(localStorage.getItem("department"));
+  const isSalesDept = userDeptCode === 4;
 
   const {
     accountList,
@@ -661,27 +663,41 @@ function Dashboard() {
           <Grid container spacing={2.2}>
             <Grid item xs={12} lg={9}>
               <Grid container spacing={2.2}>
-                {/* ✅ 운영팀 일정: OperateSchedule 로 연결된 라우트 경로로 이동 */}
-                <Grid item xs={12} md={6}>
-                  <HeaderCard
-                    title={`운영팀 일정(${dayjs().format("YYYY-MM-DD")})`}
-                    minHeight={170}
-                    onClick={() => navigate("/operateschedule")}
-                  >
-                    <ScheduleLines items={opsSchedules} />
-                  </HeaderCard>
-                </Grid>
+                {isSalesDept ? (
+                  <Grid item xs={12}>
+                    <HeaderCard
+                      title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
+                      minHeight={170}
+                      onClick={() => navigate("/businessschedule")}
+                    >
+                      <ScheduleLines items={salesSchedules} />
+                    </HeaderCard>
+                  </Grid>
+                ) : (
+                  <>
+                    {/* 운영팀 일정: OperateSchedule 로 연결된 라우트 경로로 이동 */}
+                    <Grid item xs={12} md={6}>
+                      <HeaderCard
+                        title={`운영팀 일정(${dayjs().format("YYYY-MM-DD")})`}
+                        minHeight={170}
+                        onClick={() => navigate("/operateschedule")}
+                      >
+                        <ScheduleLines items={opsSchedules} />
+                      </HeaderCard>
+                    </Grid>
 
-                {/* ✅ 영업팀 일정: BusinessSchedule 로 연결된 라우트 경로로 이동 */}
-                <Grid item xs={12} md={6}>
-                  <HeaderCard
-                    title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
-                    minHeight={170}
-                    onClick={() => navigate("/businessschedule")}
-                  >
-                    <ScheduleLines items={salesSchedules} />
-                  </HeaderCard>
-                </Grid>
+                    {/* 영업팀 일정: BusinessSchedule 로 연결된 라우트 경로로 이동 */}
+                    <Grid item xs={12} md={6}>
+                      <HeaderCard
+                        title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
+                        minHeight={170}
+                        onClick={() => navigate("/businessschedule")}
+                      >
+                        <ScheduleLines items={salesSchedules} />
+                      </HeaderCard>
+                    </Grid>
+                  </>
+                )}
               </Grid>
 
               <MDBox mt={2.2}>

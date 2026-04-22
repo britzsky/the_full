@@ -2,6 +2,31 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "api/api";
 
+// 일정 목록에서 동일 일정이 중복 응답될 경우 1건만 유지
+const dedupeSchedulesByIdx = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const seen = new Set();
+
+  return list.filter((item) => {
+    const idx = item?.idx;
+    const key =
+      idx !== undefined && idx !== null && idx !== ""
+        ? `idx:${String(idx)}`
+        : `row:${[
+          item?.content ?? "",
+          item?.user_name ?? "",
+          item?.type ?? "",
+          item?.position_name ?? "",
+          item?.account_id ?? "",
+          item?.account_name ?? "",
+          item?.department ?? "",
+        ].join("|")}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 export default function useDashBoardData() {
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -93,15 +118,20 @@ export default function useDashBoardData() {
     return api
       .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 2 } })
       .then((res) =>
-        (res.data || []).map((x) => ({
-          content: x.content || "",
-          user_name: x.user_name || "",
-          type: x.type || "",
-          position_name: x.position_name || "",
-          account_id: x.account_id || "",
-          account_name: x.account_name || "",
-          department: x.department || "",
-        }))
+        dedupeSchedulesByIdx(
+          (res.data || [])
+            .filter((x) => String(x?.del_yn || "N") !== "Y")
+            .map((x) => ({
+              idx: x.idx ?? null,
+              content: x.content || "",
+              user_name: x.user_name || "",
+              type: x.type || "",
+              position_name: x.position_name || "",
+              account_id: x.account_id || "",
+              account_name: x.account_name || "",
+              department: x.department || "",
+            }))
+        )
       );
   };
 
@@ -111,15 +141,20 @@ export default function useDashBoardData() {
     return api
       .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 1 } })
       .then((res) =>
-        (res.data || []).map((x) => ({
-          content: x.content || "",
-          user_name: x.user_name || "",
-          type: x.type || "",
-          position_name: x.position_name || "",
-          account_id: x.account_id || "",
-          account_name: x.account_name || "",
-          department: x.department || "",
-        }))
+        dedupeSchedulesByIdx(
+          (res.data || [])
+            .filter((x) => String(x?.del_yn || "N") !== "Y")
+            .map((x) => ({
+              idx: x.idx ?? null,
+              content: x.content || "",
+              user_name: x.user_name || "",
+              type: x.type || "",
+              position_name: x.position_name || "",
+              account_id: x.account_id || "",
+              account_name: x.account_name || "",
+              department: x.department || "",
+            }))
+        )
       );
   };
 

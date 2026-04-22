@@ -27,6 +27,12 @@ function SidenavCollapse({
   const { miniSidenav } = controller;
 
   const isOpen = openKey === myKey;
+  // 하위 경로 포함 활성 메뉴 판별
+  const isRouteActive = (route, path) => {
+    const base = String(route || "").trim();
+    if (!base) return false;
+    return path === base || path.startsWith(`${base}/`);
+  };
 
   const ACTIVE_BG = "#F4FF63";
   const ACTIVE_TEXT = "#1C2633";
@@ -133,7 +139,7 @@ function SidenavCollapse({
               <SidenavCollapse
                 name={item.name}
                 icon={item.icon}
-                active={item.route === currentPath}
+                active={isRouteActive(item.route, currentPath)}
                 subMenu={item.collapse}
                 openKey={openKey}
                 setOpenKey={setOpenKey}

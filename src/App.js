@@ -62,7 +62,7 @@ import RecordSheet from "layouts/recordsheet";
 import MemberSheet from "layouts/membersheet";
 import DinersNumberSheet from "layouts/dinersnumbersheet";
 import PropertySheet from "layouts/propertysheet";
-import AccountInfoSheet from "layouts/accountinfosheet";
+import AccountInfoSheet from "layouts/tables/accountinfosheet";
 import NewRecordSheet from "layouts/newrecordsheet";
 
 // 신사업 메뉴
@@ -515,6 +515,7 @@ export default function App() {
       <Route path="/membersheet/:account_id" element={<MemberSheet />} />
       <Route path="/dinersnumbersheet/:account_id" element={<DinersNumberSheet />} />
       <Route path="/propertysheet/:account_id" element={<PropertySheet />} />
+      <Route path="/account/:account_id" element={<AccountInfoSheet />} />
       <Route path="/accountinfosheet/:account_id" element={<AccountInfoSheet />} />
       <Route path="/newrecordsheet" element={<NewRecordSheet />} />
       <Route path="/newrecordsheet/:account_id" element={<NewRecordSheet />} />

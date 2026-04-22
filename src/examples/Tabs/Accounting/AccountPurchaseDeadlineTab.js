@@ -203,6 +203,55 @@ function AccountPurchaseDeadlineTab() {
   const qtyRefs = useRef({});
   const unitPriceRefs = useRef({});
 
+  // 저장 성공 후 상단 선택 복원/스크롤에 사용하는 렌더 대기 함수
+  const waitForNextPaint = useCallback(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }),
+    []
+  );
+
+  // sale_id로 상단 행 DOM을 찾는다.
+  const findMasterRowElementBySaleId = useCallback((saleId) => {
+    const sid = String(saleId ?? "").trim();
+    if (!sid || !masterWrapRef.current) return null;
+    const rowEls = masterWrapRef.current.querySelectorAll("tbody tr");
+    for (const rowEl of rowEls) {
+      if (String(rowEl.getAttribute("data-sale-id") ?? "") === sid) return rowEl;
+    }
+    return null;
+  }, []);
+
+  // 상단 행을 실제 클릭한 것과 동일하게 동작시킨다.
+  const triggerMasterRowClickBySaleId = useCallback(
+    (saleId) => {
+      const targetRow = findMasterRowElementBySaleId(saleId);
+      if (!targetRow) return false;
+      targetRow.click();
+      return true;
+    },
+    [findMasterRowElementBySaleId]
+  );
+
+  // 저장 완료 후 성공 팝업 확인 시점에 상단 선택 복원 + 하단 재조회를 수행한다.
+  const restoreMasterSelectionAfterSave = useCallback(
+    async (saleId, keepScrollTop = null) => {
+      const sid = String(saleId ?? "").trim();
+      if (!sid) return;
+      for (let retry = 0; retry < 6; retry += 1) {
+        await waitForNextPaint();
+        const clicked = triggerMasterRowClickBySaleId(sid);
+        if (!clicked) continue;
+        if (typeof keepScrollTop === "number" && masterWrapRef.current) {
+          masterWrapRef.current.scrollTop = keepScrollTop;
+        }
+        return;
+      }
+    },
+    [waitForNextPaint, triggerMasterRowClickBySaleId]
+  );
+
   // 타입 옵션 변경 시 현재 선택값 유지 또는 첫 번째 옵션으로 보정
   const resolveNextType = useCallback((opts, currentType, accountTypeCode = "") => {
     const cur = String(currentType ?? "");
@@ -578,6 +627,11 @@ function AccountPurchaseDeadlineTab() {
     },
     "& tfoot td": {
       borderTop: "2px solid #333",
+      backgroundColor: "#fafafa",
+      position: "sticky",
+      bottom: 0,
+      zIndex: 3,
+      fontWeight: 700,
     },
     "& th, & td": {
       border: "1px solid #686D76",
@@ -989,6 +1043,7 @@ function AccountPurchaseDeadlineTab() {
       if (!next.account_id) next.account_id = filters.account_id;
       next.user_id = next.user_id || user_id;
       next.type = next.type || filters.type;
+      next.savetype = 1;
       next.receipt_type = normalizeReceiptTypeVal(next.receipt_type);
       // ✅ "행의 payType"만 쓴다. (빈 값이면 기본 1로 고정)
       const pt = String(next.payType ?? "").trim();
@@ -1048,6 +1103,7 @@ function AccountPurchaseDeadlineTab() {
       if (!next.account_id) next.account_id = filters.account_id;
 
       next.user_id = next.user_id || user_id;
+      next.savetype = 2;
 
       delete next.__isNew;
       delete next.__dirty;
@@ -1425,35 +1481,23 @@ function AccountPurchaseDeadlineTab() {
       // 저장 완료 후 누적 보관소 초기화
       setPendingDetailMap(new Map());
 
-      // 저장 중 플래그: selectedSaleId useEffect의 자동 재조회 방지
-      isSavingRef.current = true;
-      const savedSaleId = selectedSaleId; // 재조회 시점의 sale_id 고정
-      try {
-        // DB 기준으로 재조회 (Swal 확인 전에 먼저 완료)
-        await fetchPurchaseList(filters);
+      const keepMasterScrollTop = masterWrapRef.current?.scrollTop ?? 0;
+      const savedSaleId = String(selectedSaleId ?? "").trim(); // 재조회 시점의 sale_id 고정
+      Swal.close();
+      await Swal.fire("성공", "저장되었습니다.", "success");
 
-        if (savedSaleId) {
-          await fetchPurchaseDetailList({
-            sale_id: savedSaleId,
-            account_id: filters.account_id,
-          });
-          setDetailTableKey((k) => k + 1);
-        }
+      // 성공 팝업 확인 후 DB 기준 재조회
+      setDetailRows([]);
+      setOriginalDetailRows([]);
+      setDetailTableKey((k) => k + 1);
+      isSavingRef.current = true;
+      try {
+        await fetchPurchaseList(filters);
       } finally {
         isSavingRef.current = false;
       }
 
-      Swal.close();
-      Swal.fire("성공", "저장되었습니다.", "success");
-
-      // 선택된 행으로 스크롤
-      if (selectedMasterIndex >= 0 && masterWrapRef.current) {
-        const tbody = masterWrapRef.current.querySelector("tbody");
-        const targetRow = tbody?.querySelectorAll("tr")?.[selectedMasterIndex];
-        if (targetRow) {
-          targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
-        }
-      }
+      await restoreMasterSelectionAfterSave(savedSaleId, keepMasterScrollTop);
     } catch (e) {
       Swal.close();
       Swal.fire("오류", e?.message || "저장 중 오류가 발생했습니다.", "error");
@@ -1468,13 +1512,13 @@ function AccountPurchaseDeadlineTab() {
     selectedSaleId,
     selectedMasterIndex,
     fetchPurchaseList,
-    fetchPurchaseDetailList,
     detailRows,
     originalDetailRows,
     isDetailRowChanged,
     buildDetailRowForSave,
     setDetailTableKey,
     pendingDetailMap,
+    restoreMasterSelectionAfterSave,
   ]);
 
   // handleSave ref 동기화 (handleAccountChange에서 forward 참조용)
@@ -2263,7 +2307,7 @@ function AccountPurchaseDeadlineTab() {
           >
             <option value="0">전체</option>
             {typeOptions
-              .filter((o) => String(o?.value ?? "") !== "0")
+              .filter((o) => !["0", "1000", "1002", "1003", "1008"].includes(String(o?.value ?? "")))
               .map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -2444,6 +2488,7 @@ function AccountPurchaseDeadlineTab() {
                     return (
                       <tr
                         key={rowIndex}
+                        data-sale-id={rowSaleId}
                         onClick={() => handleMasterRowClick(row, rowIndex)}
                         style={{
                           cursor: "pointer",
@@ -2782,17 +2827,14 @@ function AccountPurchaseDeadlineTab() {
               {rows.length > 0 && (
                 <tfoot>
                   <tr>
-                    <td
-                      colSpan={Math.max(masterTotalColIndex, 1)}
-                      style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}
-                    >
-                      합계
-                    </td>
-                    <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7" }}>
-                      {masterSumText.total}
-                    </td>
+                    {/* 합계 라벨: total 컬럼 전까지(과세 이전) */}
+                    <td colSpan={Math.max(masterTotalColIndex - 3, 1)} style={fixedColStyle(null)}>합계</td>
+                    <td style={fixedColStyle(masterColumns[masterTotalColIndex - 3]?.size)}>{masterSumText.tax}</td>
+                    <td style={fixedColStyle(masterColumns[masterTotalColIndex - 2]?.size)}>{masterSumText.vat}</td>
+                    <td style={fixedColStyle(masterColumns[masterTotalColIndex - 1]?.size)}>{masterSumText.taxFree}</td>
+                    <td style={fixedColStyle(masterColumns[masterTotalColIndex]?.size)}>{masterSumText.total}</td>
                     {masterSummaryTailColSpan > 0 && (
-                      <td colSpan={masterSummaryTailColSpan} style={{ background: "#f7f7f7" }} />
+                      <td colSpan={masterSummaryTailColSpan} style={fixedColStyle(null)} />
                     )}
                   </tr>
                 </tfoot>
@@ -2874,14 +2916,8 @@ function AccountPurchaseDeadlineTab() {
                         <tr
                           key={r.__key ?? r.item_id ?? i}
                           style={{
-                            backgroundColor: (() => {
-                              if (r.__isNew) return "rgba(211,47,47,0.10)";
-                              const itemId = String(r?.item_id ?? "");
-                              if (!itemId) return "transparent";
-                              const orig = originalDetailMap.get(itemId);
-                              if (!orig) return "transparent";
-                              return isDetailRowChanged(orig, r) ? "rgba(211,47,47,0.10)" : "transparent";
-                            })(),
+                            backgroundColor:
+                              r.__isNew || r.__dirty ? "rgba(211,47,47,0.10)" : "transparent",
                           }}
                         >
                           <td

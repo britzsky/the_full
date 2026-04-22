@@ -545,7 +545,7 @@ function HygieneSheetTab() {
       </MDBox>
 
       {/* 테이블 영역 */}
-      <MDBox pt={1} pb={3} sx={tableSx}>
+      <MDBox pt={0} pb={3} sx={tableSx}>
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <table>

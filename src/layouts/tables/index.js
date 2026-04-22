@@ -1,6 +1,5 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   useReactTable,
   getCoreRowModel,
@@ -39,17 +38,12 @@ import "./tables.css";
 export default function Tables() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
-  const navigate = useNavigate();
   const [selectedType, setSelectedType] = useState("0");
-  // ✅ 삭제여부 조회값 (전체/정상/삭제)
+  // 삭제여부 조회값 상태
   const [selectedDelYn, setSelectedDelYn] = useState("ALL");
-  // ✅ 삭제여부 Y 조회 결과(전체/삭제 조회에서 사용)
-  const [delYnRows, setDelYnRows] = useState([]);
-  // ✅ 삭제여부 Y 조회 로딩 상태(전체/삭제 조회에서 사용)
-  const [delYnLoading, setDelYnLoading] = useState(false);
-  // ✅ 고객사 목록 정렬 기준(기본: 거래처명)
+  // 고객사 목록 정렬 기준 상태
   const [accountSortKey, setAccountSortKey] = useState("account_name");
-  // ✅ 정렬 변경 시 로딩 화면 노출용 상태
+  // 정렬 변경 로딩 상태
   const [sortLoading, setSortLoading] = useState(false);
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 22 });
 
@@ -69,149 +63,16 @@ export default function Tables() {
     del_yn: "",
   });
 
-  // ✅ 데이터 조회 Hook
-  const { columns, rows, loading } = useTableData(selectedType, refreshKey);
+  // 고객사 목록 조회 훅
+  const { columns, rows, loading } = useTableData(selectedType, refreshKey, selectedDelYn);
+  const rowsByDelYn = rows;
 
-  // ✅ authorsTableData 수정 없이 index.js에서만 삭제여부 Y 조회용 매핑
-  const mapAccountRowsForDelYn = useCallback(
-    (list) =>
-      (Array.isArray(list) ? list : []).map((item) => {
-        const to = (path, color, text) => (
-          <MDTypography
-            component="a"
-            onClick={(e) => {
-              e.preventDefault();
-              navigate(path);
-            }}
-            variant="caption"
-            sx={{ color, cursor: "pointer" }}
-            fontWeight="medium"
-          >
-            {text}
-          </MDTypography>
-        );
-
-        return {
-          account_id: item.account_id,
-          meal_type: item.meal_type,
-          del_yn: item.del_yn,
-          account_name: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_name}
-            </MDTypography>
-          ),
-          account_address: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_address || "-"}
-            </MDTypography>
-          ),
-          account_type: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_type || "-"}
-            </MDTypography>
-          ),
-          account_rqd_member: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_rqd_member ?? "-"}
-            </MDTypography>
-          ),
-          account_headcount: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_headcount ?? "-"}
-            </MDTypography>
-          ),
-          info: to(
-            `/accountinfosheet/${item.account_id}?name=${item.account_name}`,
-            "#896C6C",
-            "상세보기"
-          ),
-          members: to(`/membersheet/${item.account_id}?name=${item.account_name}`, "#FF6600", "확인"),
-          record: to(`/recordsheet/${item.account_id}?name=${item.account_name}`, "#FFC107", "확인"),
-          ceremony: to(
-            `/ceremonysheet/${item.account_id}?name=${item.account_name}`,
-            "#36BA98",
-            "확인"
-          ),
-          dinners: to(
-            `/dinersnumbersheet/${item.account_id}?name=${item.account_name}`,
-            "#0D92F4",
-            "확인"
-          ),
-          wares: to(`/propertysheet/${item.account_id}?name=${item.account_name}`, "#125B9A", "확인"),
-          inventory: to(
-            `/inventorysheet/${item.account_id}?name=${item.account_name}`,
-            "#9112BC",
-            "확인"
-          ),
-        };
-      }),
-    [navigate]
-  );
-
-  // ✅ 삭제여부 조회
-  useEffect(() => {
-    let active = true;
-
-    const fetchDelYnRows = async () => {
-      // ✅ 삭제 포함 조회(전체/삭제)일 때만 Y 목록을 별도로 조회
-      if (!["ALL", "Y"].includes(String(selectedDelYn || "").toUpperCase())) {
-        setDelYnRows([]);
-        setDelYnLoading(false);
-        return;
-      }
-
-      setDelYnLoading(true);
-      try {
-        const res = await api.get("/Account/AccountList", {
-          params: {
-            account_type: selectedType || "0",
-            del_yn: "Y",
-          },
-        });
-        if (!active) return;
-        setDelYnRows(mapAccountRowsForDelYn(res?.data || []));
-      } catch (error) {
-        console.error("삭제여부 Y 조회 실패:", error);
-        if (active) setDelYnRows([]);
-      } finally {
-        if (active) setDelYnLoading(false);
-      }
-    };
-
-    fetchDelYnRows();
-    return () => {
-      active = false;
-    };
-  }, [selectedDelYn, selectedType, refreshKey, mapAccountRowsForDelYn]);
-
-  // ✅ 전체는 N(rows)+Y(delYnRows)를 합치고, 정상/삭제는 기존 분기 그대로 사용
-  const rowsByDelYn = useMemo(() => {
-    const normalized = String(selectedDelYn || "ALL").trim().toUpperCase();
-    if (normalized === "Y") return delYnRows;
-    if (normalized === "ALL") {
-      const merged = [...(Array.isArray(rows) ? rows : []), ...(Array.isArray(delYnRows) ? delYnRows : [])];
-      const seen = new Set();
-      return merged.filter((row, idx) => {
-        const key =
-          row?.account_id != null && String(row.account_id).trim() !== ""
-            ? String(row.account_id)
-            : `row-${idx}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-    }
-    return rows;
-  }, [selectedDelYn, rows, delYnRows]);
-
-  // =========================
-  // ✅ 값 정리 유틸 (rows에 ReactElement가 섞여있을 수 있어서)
-  // =========================
+  // 목록 값 문자열 정리 유틸
   const toPlainText = useCallback((v) => {
     if (v == null) return "";
     if (typeof v === "string" || typeof v === "number") return String(v);
 
-    // ✅ React import를 했으니 안전
+    // React 엘리먼트 자식 문자열 추출
     if (React.isValidElement(v)) {
       const c = v.props?.children;
       if (c == null) return "";
@@ -263,12 +124,10 @@ export default function Tables() {
     return String(v).replace(/[^0-9]/g, "");
   }, []);
 
-  // =========================
-  // ✅ rows를 로컬 편집용으로 복사
-  // =========================
+  // 로컬 편집용 목록 상태
   const [localRows, setLocalRows] = useState([]);
 
-  // ✅ 원래값 저장(빨간색 비교용)
+  // 변경 비교 기준 원본값 상태
   const [originalMap, setOriginalMap] = useState({});
 
   useEffect(() => {
@@ -283,29 +142,29 @@ export default function Tables() {
         _rowKey: rowKey,
         account_rqd_member: toNumberString(toPlainText(r?.account_rqd_member)),
         account_headcount: toNumberString(toPlainText(r?.account_headcount)),
-        del_yn: (toPlainText(r?.del_yn) || "N").toUpperCase(), // ✅ 추가
+        del_yn: (toPlainText(r?.del_yn) || "N").toUpperCase(), // 삭제여부 대문자 정규화
       };
     });
 
-    // ✅ localRows 세팅
+    // 로컬 편집 목록 반영
     setLocalRows(next);
 
-    // ✅ originalMap 세팅(원래값)
+    // 변경 비교 원본값 구성
     const om = {};
     next.forEach((r) => {
       om[r._rowKey] = {
         account_rqd_member: String(r.account_rqd_member ?? ""),
         account_headcount: String(r.account_headcount ?? ""),
-        del_yn: String(r.del_yn ?? "N").toUpperCase(), // ✅ 추가
+        del_yn: String(r.del_yn ?? "N").toUpperCase(), // 삭제여부 대문자 정규화
       };
     });
     setOriginalMap(om);
 
-    // ✅ 서버 rows가 바뀌었을 때(필터/조회 변경)는 페이지 0
+    // 조회결과 변경 시 첫 페이지 이동
     setPagination((p) => ({ ...p, pageIndex: 0 }));
   }, [rowsByDelYn, toPlainText, toNumberString]);
 
-  // ✅ 수정된 값만 따로 (rowKey 기준)
+  // 수정값 누적 상태
   const [editedMap, setEditedMap] = useState({});
 
   useEffect(() => {
@@ -314,7 +173,7 @@ export default function Tables() {
 
   const onSearchList = (e) => setSelectedType(e.target.value);
 
-  // ✅ 삭제여부(전체/정상/삭제) 조회 셀렉트 변경
+  // 삭제여부 필터 변경 핸들러
   const handledelynChange = (e) => {
     const nextDelYn = String(e.target.value || "ALL").trim().toUpperCase();
     if (nextDelYn === selectedDelYn) return;
@@ -327,7 +186,7 @@ export default function Tables() {
     }, 0);
   };
 
-  // ✅ 정렬 변경 시 로딩 화면을 먼저 보여주고 정렬 반영
+  // 정렬 기준 변경 핸들러
   const handleSortChange = (e) => {
     const nextKey = String(e.target.value);
     if (nextKey === accountSortKey) return;
@@ -340,10 +199,10 @@ export default function Tables() {
     }, 0);
   };
 
-  // ✅ 화면 표시 순서만 정렬(원본 localRows/저장 로직은 유지)
+  // 화면 표시 전용 정렬 목록
   const sortedLocalRows = useMemo(() => {
     const copied = Array.isArray(localRows) ? [...localRows] : [];
-    // ✅ 삭제여부(전체/정상/삭제) 1차 필터
+    // 삭제여부 1차 필터
     const normalizedDelYn = String(selectedDelYn ?? "ALL").trim().toUpperCase();
     const filtered =
       normalizedDelYn === "ALL"
@@ -799,7 +658,7 @@ export default function Tables() {
     autoResetPageIndex: false,
   });
 
-  if (loading || sortLoading || (["ALL", "Y"].includes(selectedDelYn) && delYnLoading))
+  if (loading || sortLoading)
     return <LoadingScreen />;
 
   return (

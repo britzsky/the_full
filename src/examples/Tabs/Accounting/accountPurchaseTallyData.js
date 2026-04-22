@@ -3,6 +3,8 @@
 import { useState } from "react";
 import api from "api/api";
 
+const EXCLUDED_ALL_TYPES = new Set(["1000", "1002", "1003", "1008"]);
+
 // 숫자 파싱
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -160,6 +162,8 @@ export default function useAccountPurchaseTallyData() {
     setLoading(true);
     try {
       const toParam = (v) => (!v || v === "0" ? "" : v);
+      const selectedRawType = String(filters?.rawType ?? filters?.type ?? "0");
+      const isAllTypeQuery = selectedRawType === "0" || selectedRawType === "";
       const year = toParam(filters?.year);
       const fromMonth = toParam(filters?.fromMonth); // 월 숫자 문자열
       const toMonth = toParam(filters?.toMonth);     // 월 숫자 문자열 (optional)
@@ -222,10 +226,17 @@ export default function useAccountPurchaseTallyData() {
         reg_dt: item.reg_dt || "",
       }));
 
+      // 전체 조회일 때는 타입 필터에서 숨긴 코드도 결과에서 동일하게 제외
+      const applyAllTypeExclusion = (targetRows) =>
+        isAllTypeQuery
+          ? (targetRows || []).filter((row) => !EXCLUDED_ALL_TYPES.has(String(row?.type ?? "")))
+          : (targetRows || []);
+
       const hasSaleIdRow = mappedBase.some((row) => String(row?.sale_id ?? "").trim() !== "");
       if (!hasSaleIdRow) {
-        setRows(mappedBase);
-        setOriginalRows(mappedBase.map((r) => ({ ...r })));
+        const visibleBaseRows = applyAllTypeExclusion(mappedBase);
+        setRows(visibleBaseRows);
+        setOriginalRows(visibleBaseRows.map((r) => ({ ...r })));
         return;
       }
 
@@ -233,12 +244,12 @@ export default function useAccountPurchaseTallyData() {
       // - 전체 조회(account_id 미선택)에서 행 수가 많으면 상세 API N회 호출이 매우 느려진다.
       // - 이 경우 서버 집계(AccountPurchaseTallyForTallyTab) 값을 그대로 사용한다.
       const isAllAccountQuery = String(toParam(filters?.account_id)) === "";
-      const isAllTypeQuery = String(toParam(filters?.type)) === "";
       const isBroadQuery = isAllAccountQuery && isAllTypeQuery;
       const useDetailRecalc = !isBroadQuery && (!isAllAccountQuery || mappedBase.length <= 300);
       if (!useDetailRecalc) {
-        setRows(mappedBase);
-        setOriginalRows(mappedBase.map((r) => ({ ...r })));
+        const visibleBaseRows = applyAllTypeExclusion(mappedBase);
+        setRows(visibleBaseRows);
+        setOriginalRows(visibleBaseRows.map((r) => ({ ...r })));
         return;
       }
 
@@ -322,8 +333,9 @@ export default function useAccountPurchaseTallyData() {
         });
       }
 
-      setRows(mapped);
-      setOriginalRows(mapped.map((r) => ({ ...r })));
+      const visibleMappedRows = applyAllTypeExclusion(mapped);
+      setRows(visibleMappedRows);
+      setOriginalRows(visibleMappedRows.map((r) => ({ ...r })));
     } catch (err) {
       console.error("매입 집계 조회 실패:", err);
       setRows([]);

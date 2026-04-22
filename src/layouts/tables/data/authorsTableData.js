@@ -5,7 +5,24 @@ import { useNavigate } from "react-router-dom";
 import api from "api/api";
 import MDTypography from "components/MDTypography";
 
-// 🔹 각 행의 클릭 이동용 링크 컴포넌트
+// 계약일자 문자열 정규화
+const normalizeYmd = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(raw)) return raw.slice(0, 10);
+  return "";
+};
+
+// 계약기간 표시 문자열 변환
+const formatContractPeriod = (start, end) => {
+  const startText = normalizeYmd(start);
+  const endText = normalizeYmd(end);
+  if (!startText || !endText) return "";
+  return `${startText} ~ ${endText}`;
+};
+
+// 행 이동 링크 컴포넌트
 function NavLink({ to, color, text }) {
   const navigate = useNavigate();
   return (
@@ -21,25 +38,28 @@ function NavLink({ to, color, text }) {
   );
 }
 
-export default function useTableData(accountType, refreshKey = 0) {
+export default function useTableData(accountType, refreshKey = 0, delYn = "N") {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const MIN_LOADING_TIME = 1000; // 최소 1초 로딩 유지
-    const startTime = Date.now();
+    let active = true;
 
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await api.get("/Account/AccountList", {
-          params: { account_type: accountType || "0" },
+        const res = await api.get("/Account/AccountListV2", {
+          params: {
+            account_type: accountType || "0",
+            del_yn: String(delYn || "N").toUpperCase(),
+          },
         });
 
-        const mapped = res.data.map((item) => ({
+        const list = Array.isArray(res?.data) ? res.data : [];
+        const mapped = list.map((item) => ({
           account_id: item.account_id,
           meal_type: item.meal_type,
-          del_yn: item.del_yn, // ✅ 여기서는 원본값 그대로(테이블에서 Select로 바꿔서 쓰면 됨)
+          del_yn: item.del_yn, // 삭제여부 원본값 유지
 
           account_name: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
@@ -49,6 +69,11 @@ export default function useTableData(accountType, refreshKey = 0) {
           account_address: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
               {item.account_address || "-"}
+            </MDTypography>
+          ),
+          contract_period: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {formatContractPeriod(item.contract_start, item.contract_end)}
             </MDTypography>
           ),
           account_type: (
@@ -67,12 +92,12 @@ export default function useTableData(accountType, refreshKey = 0) {
             </MDTypography>
           ),
 
-          // ✅ 각 버튼별로 독립된 navigate 경로
+          // 화면별 상세 링크 경로
           info: (
             <NavLink
-              to={`/accountinfosheet/${item.account_id}?name=${item.account_name}`}
+              to={`/account/${item.account_id}?name=${item.account_name}`}
               color="#896C6C"
-              text="상세보기"
+              text="이동"
             />
           ),
           members: (
@@ -126,29 +151,32 @@ export default function useTableData(accountType, refreshKey = 0) {
           ),
         }));
 
+        if (!active) return;
         setRows(mapped);
       } catch (error) {
         console.error("데이터 조회 실패:", error);
-        setRows([]);
+        if (active) setRows([]);
       } finally {
-        const elapsed = Date.now() - startTime;
-        const remaining = MIN_LOADING_TIME - elapsed;
-        if (remaining > 0) setTimeout(() => setLoading(false), remaining);
-        else setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
     fetchData();
-    // ✅ refreshKey가 변하면 재조회
-  }, [accountType, refreshKey]);
+    return () => {
+      active = false;
+    };
+    // 조회조건 변경 기반 재조회 트리거
+  }, [accountType, refreshKey, delYn]);
 
   const columns = [
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },
     { Header: "주소", accessor: "account_address", size: "10%", align: "left" },
+    { Header: "계약기간", accessor: "contract_period", size: "8%", align: "left" },
     { Header: "구분", accessor: "account_type", size: "3%", align: "left" },
     { Header: "필요조리인력", accessor: "account_rqd_member", size: "3%", align: "center" },
     { Header: "현재인력", accessor: "account_headcount", size: "3%", align: "center" },
     { Header: "삭제여부", accessor: "del_yn", size: "3%", align: "center" },
+    { Header: "상세정보", accessor: "info", size: "3%", align: "center" },
     { Header: "집계표", accessor: "tally", size: "3%", align: "center" },
     // { Header: "인사기록카드", accessor: "members", size: "3%", align: "center" },
     // { Header: "출근부", accessor: "record", size: "3%", align: "center" },

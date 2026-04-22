@@ -69,6 +69,7 @@ const AMOUNT_COLUMN_KEYS = [
   "scenic_vat",
   "scenic_total",
 ];
+const EXCLUDED_TYPE_FILTER_VALUES = new Set(["1000", "1002", "1003", "1008"]);
 
 function AccountPurchaseTallyTab() {
   const theme = useTheme();
@@ -249,6 +250,7 @@ function AccountPurchaseTallyTab() {
     return {
       account_id: String(f?.account_id ?? ""),
       type: type === "wellstory" ? "0" : type,
+      rawType: type,
       year: String(f?.year ?? "0"),
       fromMonth: String(f?.fromMonth ?? ""),
       toMonth: String(f?.toMonth ?? ""),
@@ -1770,11 +1772,13 @@ function AccountPurchaseTallyTab() {
           >
             {/* 전체 옵션: "0" = 전체 조회 (AccountPurchaseTallyList SQL과 일치) */}
             <option value="0">전체</option>
-            {typeOptions.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
+            {typeOptions
+              .filter((o) => !EXCLUDED_TYPE_FILTER_VALUES.has(String(o?.value ?? "")))
+              .map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
           </TextField>
 
           {/* 연도 셀렉트 */}

@@ -219,6 +219,18 @@ const enforceDigitsOnlyEditable = (el) => {
   return digits;
 };
 
+const enforceAmountEditable = (el) => {
+  if (!el) return "";
+  const raw = String(el.innerText ?? "");
+  // 맨 앞 -만 유지, 나머지는 숫자만
+  const cleaned = raw.replace(/[^\d-]/g, "").replace(/(?!^)-/g, "");
+  if (raw !== cleaned) {
+    el.innerText = cleaned;
+    moveCaretToEnd(el);
+  }
+  return cleaned;
+};
+
 // ============================================================
 // ✅ 특정 거래처(account_id) 조건
 // - 사용처(use_name) 상단 셀: Select 고정 (value=1 / text=웰스토리)
@@ -307,8 +319,16 @@ function AccountCorporateCardSheet() {
 
   const [detailRows, setDetailRows] = useState([]);
   const [origDetailRows, setOrigDetailRows] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const [selectedMaster, setSelectedMaster] = useState(null);
+  const selectedMasterRef = useRef(null);
+  const detailEditedRef = useRef(false);
+
+  const [selectedSaleId, setSelectedSaleId] = useState("");
+  const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
+  const [pendingDetailMap, setPendingDetailMap] = useState(new Map());
+  const isSavingRef = useRef(false);
 
   // ✅ 거래처 검색조건 (string id 유지)
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -350,6 +370,69 @@ function AccountCorporateCardSheet() {
     const el = detailWrapRef.current;
     if (el) detailScrollPosRef.current = el.scrollTop;
   }, []);
+
+  // 저장 성공 후 상단 선택 복원/스크롤에 사용하는 렌더 대기 함수
+  const waitForNextPaint = useCallback(
+    () =>
+      new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }),
+    []
+  );
+
+  // sale_id로 상단 행 DOM을 찾는다.
+  const findMasterRowElementBySaleId = useCallback((saleId) => {
+    const sid = String(saleId ?? "").trim();
+    if (!sid || !masterWrapRef.current) return null;
+    const rowEls = masterWrapRef.current.querySelectorAll("tbody tr");
+    for (const rowEl of rowEls) {
+      if (String(rowEl.getAttribute("data-sale-id") ?? "") === sid) return rowEl;
+    }
+    return null;
+  }, []);
+
+  // 상단 행을 실제 클릭한 것처럼 선택하고 하단을 조회한다.
+  const triggerMasterRowClickBySaleId = useCallback(
+    (saleId) => {
+      const targetRow = findMasterRowElementBySaleId(saleId);
+      if (!targetRow) return false;
+      targetRow.click();
+      return true;
+    },
+    [findMasterRowElementBySaleId]
+  );
+
+  // 선택된 상단 행이 화면 밖이면 보이도록 스크롤한다.
+  const scrollMasterRowIntoViewBySaleId = useCallback(
+    (saleId) => {
+      const targetRow = findMasterRowElementBySaleId(saleId);
+      if (!targetRow) return false;
+      targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      return true;
+    },
+    [findMasterRowElementBySaleId]
+  );
+
+  // 저장 완료 후 성공 팝업 확인 시점에 상단 선택 복원 + 하단 재조회 + 스크롤을 수행한다.
+  const restoreMasterSelectionAfterSave = useCallback(
+    async (saleId) => {
+      const sid = String(saleId ?? "").trim();
+      if (!sid) return;
+      for (let retry = 0; retry < 6; retry += 1) {
+        await waitForNextPaint();
+        const clicked = triggerMasterRowClickBySaleId(sid);
+        if (!clicked) continue;
+        await waitForNextPaint();
+        scrollMasterRowIntoViewBySaleId(sid);
+        return;
+      }
+    },
+    [
+      waitForNextPaint,
+      triggerMasterRowClickBySaleId,
+      scrollMasterRowIntoViewBySaleId,
+    ]
+  );
 
   const fileIconSx = { color: "#1e88e5" };
 
@@ -439,6 +522,9 @@ function AccountCorporateCardSheet() {
     setSelectedMaster(null);
     setDetailRows([]);
     setOrigDetailRows([]);
+    setPendingDetailMap(new Map());
+    setSelectedSaleId("");
+    setSelectedMasterIndex(-1);
     forceServerSyncRef.current = true;
     skipPendingNewMergeRef.current = true;
     await handleFetchMaster();
@@ -451,6 +537,9 @@ function AccountCorporateCardSheet() {
     setSelectedMaster(null);
     setDetailRows([]);
     setOrigDetailRows([]);
+    setPendingDetailMap(new Map());
+    setSelectedSaleId("");
+    setSelectedMasterIndex(-1);
 
     forceServerSyncRef.current = true;
     skipPendingNewMergeRef.current = true;
@@ -517,6 +606,9 @@ function AccountCorporateCardSheet() {
     setSelectedMaster(null);
     setDetailRows([]);
     setOrigDetailRows([]);
+    setPendingDetailMap(new Map());
+    setSelectedSaleId("");
+    setSelectedMasterIndex(-1);
 
     setMasterRenderKey((k) => k + 1);
   }, [paymentRows, selectedAccountId, saveMasterScroll]);
@@ -531,7 +623,8 @@ function AccountCorporateCardSheet() {
     }));
     setDetailRows(copy);
     setOrigDetailRows(copy);
-
+    detailEditedRef.current = false;
+    setDetailLoading(false);
     setDetailRenderKey((k) => k + 1);
   }, [paymentDetailRows, saveDetailScroll]);
 
@@ -573,6 +666,7 @@ function AccountCorporateCardSheet() {
           ? parseNumMaybe(nextRaw) ?? 0
           : nextRaw;
 
+      detailEditedRef.current = true;
       return prev.map((r, i) => (i === rowIndex ? { ...r, [key]: nextVal } : r));
     });
   }, []);
@@ -659,6 +753,7 @@ function AccountCorporateCardSheet() {
 
     setDetailRows((prev) => [...(prev || []), newDetail]);
     setOrigDetailRows((prev) => [...(prev || []), {}]);
+    detailEditedRef.current = true;
     setDetailRenderKey((k) => k + 1);
 
     requestAnimationFrame(() => scrollDetailToBottom(true));
@@ -842,6 +937,104 @@ function AccountCorporateCardSheet() {
     [masterRows, handleFetchMaster, fetchAccountCorporateCardPaymentDetailList]
   );
 
+  // ========================= 마스터 행 클릭 (pendingDetailMap 보존/복원) =========================
+  const calcMasterTotalsFromDetail = useCallback((rows) => {
+    const list = rows || [];
+    let total = 0, tax = 0, vat = 0, taxFree = 0;
+    list.forEach((r) => {
+      const amt = parseNumber(r?.amount);
+      const tt = parseNumMaybe(r?.taxType);
+      total += amt;
+      if (tt === 1) {
+        const supply = Math.round(amt / 1.1);
+        tax += supply;
+        vat += amt - supply;
+      } else if (tt === 2) {
+        taxFree += amt;
+      }
+    });
+    return { total, tax, vat, taxFree };
+  }, []);
+
+  const handleMasterRowClick = useCallback(
+    (row, rowIndex) => {
+      const saleId = row?.sale_id;
+      saveMasterScroll();
+
+      const nextSaleId = saleId ? String(saleId) : null;
+      const prevSaleId = selectedSaleId ? String(selectedSaleId) : null;
+
+      const hasDirty = detailEditedRef.current;
+      const isSameRow = nextSaleId && nextSaleId === prevSaleId;
+
+      // 같은 행 재클릭 + 수정 있으면 현재 rows 그대로 유지
+      if (isSameRow && hasDirty) {
+        setSelectedMaster(row);
+        if (selectedMasterIndex !== rowIndex) setSelectedMasterIndex(rowIndex);
+        return;
+      }
+
+      // 다른 행으로 이동 시 수정 있으면 map에 저장
+      if (prevSaleId && hasDirty && !isSameRow) {
+        setPendingDetailMap((prev) => {
+          const next = new Map(prev);
+          next.set(prevSaleId, { rows: detailRows, originalRows: origDetailRows });
+          return next;
+        });
+      }
+
+      setDetailRows([]);
+      setOrigDetailRows([]);
+      detailEditedRef.current = false;
+
+      if (!nextSaleId) {
+        setSelectedMaster(row);
+        if (selectedMasterIndex !== rowIndex) setSelectedMasterIndex(rowIndex);
+        return;
+      }
+
+      setSelectedMaster(row);
+      if (selectedMasterIndex !== rowIndex) setSelectedMasterIndex(rowIndex);
+      if (nextSaleId !== prevSaleId) setSelectedSaleId(nextSaleId);
+
+      // map에 캐시가 있으면 복원, 없으면 API 조회
+      const cached = pendingDetailMap.get(nextSaleId);
+      if (cached) {
+        setDetailRows(cached.rows ?? []);
+        setOrigDetailRows(cached.originalRows ?? []);
+        return;
+      }
+
+      setDetailLoading(true);
+      fetchAccountCorporateCardPaymentDetailList({
+        sale_id: nextSaleId,
+        account_id: row.account_id,
+        saleDate: row.saleDate,
+      });
+    },
+    [
+      selectedSaleId,
+      selectedMasterIndex,
+      detailRows,
+      origDetailRows,
+      pendingDetailMap,
+      saveMasterScroll,
+      fetchAccountCorporateCardPaymentDetailList,
+    ]
+  );
+
+  // 하단 dirty가 있는 sale_id 집합 (상단 행 글씨색/배경색 표시용)
+  const dirtyDetailSaleIds = useMemo(() => {
+    const ids = new Set();
+    if (selectedSaleId && detailRows.some((r) => r.__dirty || r.isNew || r.isForcedRed)) {
+      ids.add(String(selectedSaleId));
+    }
+    for (const [saleId] of pendingDetailMap.entries()) {
+      ids.add(String(saleId));
+    }
+    return ids;
+  }, [detailRows, selectedSaleId, pendingDetailMap]);
+
   // ========================= 저장: main + item 한 번에 =========================
   const origMasterBySaleId = useMemo(() => {
     const m = new Map();
@@ -880,102 +1073,127 @@ function AccountCorporateCardSheet() {
   }, []);
 
   const saveAll = useCallback(async () => {
-    const userId = localStorage.getItem("user_id") || "";
-    const typeForThisAccount = getSaveTypeByAccount(selectedAccountId);
-
-    // ✅ (추가) 결제일자 필수 검증 함수
-    const hasPaymentDate = (r) => !!toDateInputValue(r?.saleDate);
-
-    // ✅ (추가) "저장 대상 main"을 먼저 계산하기 위해, 저장 대상 여부만 판정
-    const willSaveMain = (r) => {
-      if (r.isNew) return true;
-
-      const sid = String(r.sale_id || "");
-      const o = sid ? origMasterBySaleId.get(sid) : null;
-      if (!o) return true;
-
-      const changed = Object.keys(r).some((k) => {
-        if (MASTER_NUMBER_KEYS.includes(k)) return parseNumber(o[k]) !== parseNumber(r[k]);
-        return isChangedValue(o[k], r[k]);
-      });
-
-      return changed;
-    };
-
-    // ✅ (추가) main 저장 대상 중 결제일자 없는 행 있으면 저장 차단
-    const missingMainPayDtIdx = (masterRows || []).findIndex(
-      (r) => willSaveMain(r) && !hasPaymentDate(r)
-    );
-    if (missingMainPayDtIdx >= 0) {
-      return Swal.fire(
-        "경고",
-        `결제일자가 없으면 저장할 수 없습니다.\n(상단 ${
-          missingMainPayDtIdx + 1
-        }번째 행 결제일자 확인)`,
-        "warning"
-      );
-    }
-
-    // ✅ (추가) item 저장이 발생하는데 선택된 상단 결제일자 없으면 저장 차단
-    // (detailRows는 항상 selectedMaster 기준이므로 여기서 한번 더 막아주면 안전)
-    const willSaveAnyItem = (detailRows || []).some((r, i) => {
-      if (r?.isNew) return true;
-      if (isForcedRedRow(r)) return true;
-      const o = origDetailRows[i] || {};
-      return Object.keys(r).some((k) => isDetailFieldChanged(k, o[k], r[k]));
-    });
-
-    if (willSaveAnyItem) {
-      const masterPayDt = toDateInputValue(selectedMaster?.saleDate);
-      if (!masterPayDt) {
-        return Swal.fire("경고", "결제일자가 없으면 상세내역 저장이 불가합니다.", "warning");
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      const active = document.activeElement;
+      if (active && (active.isContentEditable || active.tagName === "INPUT")) {
+        active.blur();
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
-    }
 
-    // ---- 여기부터 기존 코드 그대로(main/item payload 생성) ----
-    const main = masterRows
-      .map((r) => {
-        if (r.isNew) return normalizeMasterForSave(r);
+      const userId = localStorage.getItem("user_id") || "";
 
+      // 결제일자 필수 검증
+      const hasPaymentDate = (r) => !!toDateInputValue(r?.saleDate);
+      const willSaveMain = (r) => {
+        if (r.isNew) return true;
         const sid = String(r.sale_id || "");
         const o = sid ? origMasterBySaleId.get(sid) : null;
-        if (!o) return normalizeMasterForSave(r);
-
-        const changed = Object.keys(r).some((k) => {
+        if (!o) return true;
+        return Object.keys(r).some((k) => {
           if (MASTER_NUMBER_KEYS.includes(k)) return parseNumber(o[k]) !== parseNumber(r[k]);
           return isChangedValue(o[k], r[k]);
         });
+      };
+      const missingMainPayDtIdx = (masterRows || []).findIndex(
+        (r) => willSaveMain(r) && !hasPaymentDate(r)
+      );
+      if (missingMainPayDtIdx >= 0) {
+        return Swal.fire(
+          "경고",
+          `결제일자가 없으면 저장할 수 없습니다.\n(상단 ${missingMainPayDtIdx + 1}번째 행 결제일자 확인)`,
+          "warning"
+        );
+      }
 
-        return changed ? normalizeMasterForSave(r) : null;
-      })
-      .filter(Boolean)
-      .map((r) => ({
-        ...r,
-        user_id: userId,
-        type: getSaveTypeByAccount(r.account_id),
-      }));
+      // 누적 보관소에 현재 하단 수정값 병합
+      const fullDetailMap = new Map();
+      for (const [k, v] of pendingDetailMap.entries()) {
+        const r = Array.isArray(v) ? v : (v?.rows ?? []);
+        const o = Array.isArray(v) ? [] : (v?.originalRows ?? []);
+        fullDetailMap.set(k, { rows: r, originalRows: o });
+      }
+      if (selectedSaleId && detailRows.length > 0) {
+        fullDetailMap.set(String(selectedSaleId), { rows: detailRows, originalRows: origDetailRows });
+      }
 
-    const item = detailRows
-      .map((r, i) => {
-        if (r?.isNew) return cleanDetailRow(r);
-        if (isForcedRedRow(r)) return cleanDetailRow(r);
+      // 모든 sale_id의 하단 변경분 취합 + 마스터 합계 자동계산
+      let allModifiedDetail = [];
+      let currentMasterRows = masterRows || [];
 
-        const o = origDetailRows[i] || {};
-        const changed = Object.keys(r).some((k) => isDetailFieldChanged(k, o[k], r[k]));
-        return changed ? cleanDetailRow(r) : null;
-      })
-      .filter(Boolean)
-      .map((r) => ({
-        ...r,
-        user_id: userId,
-        type: typeForThisAccount,
-      }));
+      for (const [saleId, { rows: savedDetailRows, originalRows: savedOriginalRows }] of fullDetailMap.entries()) {
+        const origMap = new Map();
+        (savedOriginalRows || []).forEach((r) => {
+          const k = String(r?.item_id ?? "");
+          if (k) origMap.set(k, r);
+        });
 
-    if (main.length === 0 && item.length === 0) {
-      return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
-    }
+        const detailForSave = (savedDetailRows || [])
+          .map((r) => {
+            if (r?.isNew || isForcedRedRow(r)) return cleanDetailRow({ ...r, user_id: userId, type: getSaveTypeByAccount(r.account_id) });
+            const itemId = String(r?.item_id ?? "");
+            const o = itemId ? origMap.get(itemId) : null;
+            if (!o) return cleanDetailRow({ ...r, user_id: userId, type: getSaveTypeByAccount(r.account_id) });
+            const changed = Object.keys(r).some((k) => isDetailFieldChanged(k, o[k], r[k]));
+            return changed ? cleanDetailRow({ ...r, user_id: userId, type: getSaveTypeByAccount(r.account_id) }) : null;
+          })
+          .filter(Boolean);
 
-    try {
+        allModifiedDetail = allModifiedDetail.concat(detailForSave);
+
+        if (detailForSave.length > 0) {
+          const { total, tax, vat, taxFree } = calcMasterTotalsFromDetail(savedDetailRows);
+          currentMasterRows = currentMasterRows.map((r) => {
+            if (String(r?.sale_id ?? "") !== String(saleId)) return r;
+            return { ...r, total, tax, vat, taxFree };
+          });
+        }
+      }
+
+      // detail 저장 발생 시 결제일자 검증
+      if (allModifiedDetail.length > 0) {
+        const masterPayDt = toDateInputValue(selectedMaster?.saleDate);
+        if (!masterPayDt) {
+          return Swal.fire("경고", "결제일자가 없으면 상세내역 저장이 불가합니다.", "warning");
+        }
+      }
+
+      // 상단: 변경된 행만
+      const main = currentMasterRows
+        .map((r) => {
+          if (r.isNew) return { ...normalizeMasterForSave(r), user_id: userId, type: getSaveTypeByAccount(r.account_id) };
+          const sid = String(r.sale_id || "");
+          const o = sid ? origMasterBySaleId.get(sid) : null;
+          if (!o) return { ...normalizeMasterForSave(r), user_id: userId, type: getSaveTypeByAccount(r.account_id) };
+          const changed = Object.keys(r).some((k) => {
+            if (MASTER_NUMBER_KEYS.includes(k)) return parseNumber(o[k]) !== parseNumber(r[k]);
+            return isChangedValue(o[k], r[k]);
+          });
+          return changed ? { ...normalizeMasterForSave(r), user_id: userId, type: getSaveTypeByAccount(r.account_id) } : null;
+        })
+        .filter(Boolean);
+
+      if (main.length === 0 && allModifiedDetail.length === 0) {
+        return Swal.fire("안내", "변경된 내용이 없습니다.", "info");
+      }
+
+      // 과세구분/상품구분 미선택 검증
+      const invalidRows = allModifiedDetail.filter(
+        (r) => !String(r?.taxType ?? "").trim() || !String(r?.itemType ?? "").trim()
+      );
+      if (invalidRows.length > 0) {
+        const missingTax = invalidRows.some((r) => !String(r?.taxType ?? "").trim());
+        const missingItem = invalidRows.some((r) => !String(r?.itemType ?? "").trim());
+        const missingMsg =
+          missingTax && missingItem
+            ? "과세구분과 상품구분이"
+            : missingTax
+            ? "과세구분이"
+            : "상품구분이";
+        return Swal.fire("저장 불가", `하단 상세 ${invalidRows.length}행에 ${missingMsg} 선택되지 않았습니다.\n선택 후 저장해주세요.`, "warning");
+      }
+
       Swal.fire({
         title: "저장 중...",
         text: "잠시만 기다려 주세요.",
@@ -986,7 +1204,7 @@ function AccountCorporateCardSheet() {
 
       const res = await api.post(
         "/Account/AccountPersonPurchasePaymentAllSave",
-        { main, item },
+        { main, item: allModifiedDetail },
         { headers: { "Content-Type": "application/json" } }
       );
 
@@ -995,37 +1213,56 @@ function AccountCorporateCardSheet() {
         return Swal.fire("실패", res.data?.message || "저장 실패", "error");
       }
 
-      Swal.close();
-      Swal.fire("성공", "저장되었습니다.", "success");
+      setPendingDetailMap(new Map());
+      detailEditedRef.current = false;
 
+      // 저장 성공 시 로컬 dirty/new/강조 플래그를 즉시 해제
+      setMasterRows((prev) =>
+        (prev || []).map((r) => ({
+          ...r,
+          __dirty: false,
+          isNew: false,
+          isForcedRed: false,
+          __receiptImageDirty: false,
+        }))
+      );
+      setOrigDetailRows((prev) =>
+        (prev || []).map((x) => ({ ...x, __dirty: false, isForcedRed: false, isNew: false }))
+      );
+      setDetailRows((prev) =>
+        (prev || []).map((x) => ({ ...x, __dirty: false, isForcedRed: false, isNew: false }))
+      );
+      setDetailRenderKey((k) => k + 1);
+
+      const savedSaleId = String(selectedSaleId || selectedMaster?.sale_id || "").trim();
+
+      Swal.close();
+      await Swal.fire("성공", "저장되었습니다.", "success");
+
+      // 성공 팝업 확인 후 DB 기준 재조회
       skipPendingNewMergeRef.current = true;
       await handleFetchMaster();
 
-      if (selectedMaster?.sale_id) {
-        await fetchAccountCorporateCardPaymentDetailList({
-          sale_id: selectedMaster.sale_id,
-          account_id: selectedMaster.account_id,
-          saleDate: selectedMaster.saleDate,
-        });
-      } else {
-        setOrigDetailRows(detailRows.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
-        setDetailRows((prev) => prev.map((x) => ({ ...x, isForcedRed: false, isNew: false })));
-        setDetailRenderKey((k) => k + 1);
-      }
+      await restoreMasterSelectionAfterSave(savedSaleId);
     } catch (e) {
       Swal.close();
       Swal.fire("오류", e.message || "저장 중 오류", "error");
+    } finally {
+      isSavingRef.current = false;
     }
   }, [
     masterRows,
     detailRows,
     origDetailRows,
+    pendingDetailMap,
+    selectedSaleId,
     handleFetchMaster,
     selectedMaster,
-    fetchAccountCorporateCardPaymentDetailList,
     origMasterBySaleId,
     normalizeMasterForSave,
+    calcMasterTotalsFromDetail,
     selectedAccountId,
+    restoreMasterSelectionAfterSave,
   ]);
 
   // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
@@ -1147,8 +1384,8 @@ function AccountCorporateCardSheet() {
     () => [
       { header: "상품명", key: "name", editable: true, size: 220 },
       { header: "수량", key: "qty", editable: true, size: 80 },
-      { header: "금액", key: "amount", editable: true, size: 100 },
       { header: "단가", key: "unitPrice", editable: true, size: 100 },
+      { header: "금액", key: "amount", editable: true, size: 100 },
       {
         header: "과세구분",
         key: "taxType",
@@ -1196,12 +1433,18 @@ function AccountCorporateCardSheet() {
     [detailRows]
   );
 
+  useEffect(() => {
+    selectedMasterRef.current = selectedMaster;
+  }, [selectedMaster]);
+
   // ========================= ✅ 하단 수정 → 상단 자동 반영 =========================
   useEffect(() => {
+    const selectedMaster = selectedMasterRef.current;
     if (!selectedMaster) return;
 
     // ✅ 핵심: 하단 행이 없으면 상단 합계를 절대 건드리지 않음
     if (!detailRows || detailRows.length === 0) return;
+    if (!detailEditedRef.current) return;
 
     const masterKey = selectedMaster.sale_id
       ? { type: "sale_id", value: String(selectedMaster.sale_id) }
@@ -1257,7 +1500,7 @@ function AccountCorporateCardSheet() {
     setSelectedMaster((prev) =>
       prev ? { ...prev, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree } : prev
     );
-  }, [detailRows, sumDetailAmount, selectedMaster]);
+  }, [detailRows, sumDetailAmount]);
 
   if (loading) return <LoadingScreen />;
 
@@ -1363,12 +1606,12 @@ function AccountCorporateCardSheet() {
               ))}
             </Select>
 
-            <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
-              행추가
-            </MDButton>
-
             <MDButton color="info" onClick={handleSearchMaster} sx={{ minWidth: 80 }}>
               조회
+            </MDButton>
+
+            <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
+              행추가
             </MDButton>
 
             <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
@@ -1407,6 +1650,7 @@ function AccountCorporateCardSheet() {
               tableLayout: "fixed",
             },
             "& tfoot td": {
+              borderTop: "2px solid #333",
               backgroundColor: "#fafafa",
               position: "sticky",
               bottom: 0,
@@ -1449,32 +1693,24 @@ function AccountCorporateCardSheet() {
             </thead>
 
             <tbody>
-              {masterRows.map((row, rowIndex) => (
+              {masterRows.length === 0 ? (
+                <tr>
+                  <td colSpan={masterColumns.length} style={{ textAlign: "center", padding: "12px" }}>
+                    데이터가 없습니다. 조회 조건을 선택한 후 [조회] 버튼을 눌러주세요.
+                  </td>
+                </tr>
+              ) : masterRows.map((row, rowIndex) => (
                 <tr
                   key={row.sale_id || row.client_id || rowIndex}
+                  data-sale-id={String(row.sale_id || "")}
                   style={{
                     background:
-                      selectedMaster?.sale_id &&
-                      selectedMaster?.sale_id === row.sale_id &&
-                      row.sale_id
+                      selectedMaster?.sale_id && selectedMaster?.sale_id === row.sale_id && row.sale_id
                         ? "#d3f0ff"
                         : "white",
                     cursor: "pointer",
                   }}
-                  onClick={async () => {
-                    saveMasterScroll();
-                    if (!row.sale_id) {
-                      setSelectedMaster(row);
-                      return;
-                    }
-
-                    setSelectedMaster(row);
-                    await fetchAccountCorporateCardPaymentDetailList({
-                      sale_id: row.sale_id,
-                      account_id: row.account_id,
-                      saleDate: row.saleDate,
-                    });
-                  }}
+                  onClick={() => handleMasterRowClick(row, rowIndex)}
                 >
                   {masterColumns.map((c) => {
                     const key = c.key;
@@ -1483,9 +1719,10 @@ function AccountCorporateCardSheet() {
                     const val = MASTER_NUMBER_KEYS.includes(key) ? formatNumber(rawVal) : rawVal;
 
                     const origRaw = origMasterRows[rowIndex]?.[key];
+                    const hasDetailDirty = row.sale_id ? dirtyDetailSaleIds.has(String(row.sale_id)) : false;
                     const changed = row.isNew
                       ? true
-                      : row.__dirty
+                      : row.__dirty || hasDetailDirty
                       ? true
                       : MASTER_NUMBER_KEYS.includes(key)
                       ? parseNumber(origRaw) !== parseNumber(rawVal)
@@ -1495,7 +1732,15 @@ function AccountCorporateCardSheet() {
                       const acctName =
                         accountNameById.get(String(row.account_id)) || String(row.account_id || "");
                       return (
-                        <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
+                        <td
+                          key={key}
+                          style={fixedColStyle(c.size, {
+                            color: changed ? "red" : "#111",
+                            backgroundColor: "rgba(0,0,0,0.03)",
+                            cursor: "default",
+                          })}
+                          title="거래처는 수정할 수 없습니다."
+                        >
                           {acctName}
                         </td>
                       );
@@ -1932,50 +2177,19 @@ function AccountCorporateCardSheet() {
               ))}
             </tbody>
 
-            <tfoot>
-              <tr>
-                {masterColumns.map((c, i) => {
-                  if (i === 0) {
-                    return (
-                      <td key={c.key} style={fixedColStyle(c.size)}>
-                        합계
-                      </td>
-                    );
-                  }
-
-                  if (c.key === "tax") {
-                    return (
-                      <td key={c.key} style={fixedColStyle(c.size)}>
-                        {formatNumber(sumMasterTax)}
-                      </td>
-                    );
-                  }
-                  if (c.key === "vat") {
-                    return (
-                      <td key={c.key} style={fixedColStyle(c.size)}>
-                        {formatNumber(sumMasterVat)}
-                      </td>
-                    );
-                  }
-                  if (c.key === "taxFree") {
-                    return (
-                      <td key={c.key} style={fixedColStyle(c.size)}>
-                        {formatNumber(sumMasterTaxFree)}
-                      </td>
-                    );
-                  }
-                  if (c.key === "total") {
-                    return (
-                      <td key={c.key} style={fixedColStyle(c.size)}>
-                        {formatNumber(sumMasterTotal)}
-                      </td>
-                    );
-                  }
-
-                  return <td key={c.key} style={fixedColStyle(c.size)} />;
-                })}
-              </tr>
-            </tfoot>
+            {/* 상단 합계 — 데이터 있을 때만 표시 */}
+            {masterRows.length > 0 && (
+              <tfoot>
+                <tr>
+                  <td colSpan={4} style={fixedColStyle(null)}>합계</td>
+                  <td style={fixedColStyle(masterColumns[4]?.size)}>{formatNumber(sumMasterTax)}</td>
+                  <td style={fixedColStyle(masterColumns[5]?.size)}>{formatNumber(sumMasterVat)}</td>
+                  <td style={fixedColStyle(masterColumns[6]?.size)}>{formatNumber(sumMasterTaxFree)}</td>
+                  <td style={fixedColStyle(masterColumns[7]?.size)}>{formatNumber(sumMasterTotal)}</td>
+                  <td colSpan={masterColumns.length - 8} style={fixedColStyle(null)} />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </MDBox>
 
@@ -2064,8 +2278,37 @@ function AccountCorporateCardSheet() {
               </thead>
 
               <tbody>
-                {detailRows.map((row, rowIndex) => (
-                  <tr key={rowIndex}>
+                {detailLoading ? (
+                  <tr>
+                    <td colSpan={detailColumns.length} style={{ textAlign: "center", padding: "12px" }}>
+                      상세 조회 중...
+                    </td>
+                  </tr>
+                ) : !selectedSaleId ? (
+                  <tr>
+                    <td colSpan={detailColumns.length} style={{ textAlign: "center", padding: "12px" }}>
+                      상단에서 행을 클릭하면 상세가 조회됩니다.
+                    </td>
+                  </tr>
+                ) : detailRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={detailColumns.length} style={{ textAlign: "center", padding: "12px" }}>
+                      상세 데이터가 없습니다. [상세 행추가]로 입력할 수 있습니다.
+                    </td>
+                  </tr>
+                ) : detailRows.map((row, rowIndex) => {
+                  const origRow = origDetailRows[rowIndex] || {};
+                  const isDetailRowChanged =
+                    row.isNew || row.isForcedRed
+                      ? true
+                      : Object.keys(row).some((k) => isDetailFieldChanged(k, origRow[k], row[k]));
+                  return (
+                  <tr
+                    key={rowIndex}
+                    style={{
+                      backgroundColor: isDetailRowChanged ? "rgba(211,47,47,0.10)" : "transparent",
+                    }}
+                  >
                     {detailColumns.map((c) => {
                       const key = c.key;
                       const rawVal = row[key] ?? "";
@@ -2078,6 +2321,7 @@ function AccountCorporateCardSheet() {
                         : isDetailFieldChanged(key, orig, rawVal);
 
                       const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
+                      const isAmountCol = key === "amount";
                       const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
 
                       if (c.type === "select") {
@@ -2155,6 +2399,10 @@ function AccountCorporateCardSheet() {
                               });
                             }}
                             onInput={(ev) => {
+                              if (isAmountCol) {
+                                enforceAmountEditable(ev.currentTarget);
+                                return;
+                              }
                               if (isNumCol) {
                                 enforceDigitsOnlyEditable(ev.currentTarget);
                                 return;
@@ -2176,6 +2424,7 @@ function AccountCorporateCardSheet() {
                                 "End",
                               ];
                               if (allowKeys.includes(ev.key)) return;
+                              if (isAmountCol && ev.key === "-") return;
                               if (!/^\d$/.test(ev.key)) {
                                 ev.preventDefault();
                               }
@@ -2205,40 +2454,23 @@ function AccountCorporateCardSheet() {
                       );
                     })}
                   </tr>
-                ))}
+                ); })}
               </tbody>
 
-              <tfoot>
-                <tr>
-                  {detailColumns.map((c, i) => {
-                    if (i === 0) {
-                      return (
-                        <td key={c.key} style={fixedColStyle(c.size)}>
-                          합계
-                        </td>
-                      );
-                    }
-
-                    if (c.key === "qty") {
-                      return (
-                        <td key={c.key} style={fixedColStyle(c.size)}>
-                          {formatNumber(sumDetailQty)}
-                        </td>
-                      );
-                    }
-
-                    if (c.key === "amount") {
-                      return (
-                        <td key={c.key} style={fixedColStyle(c.size)}>
-                          {formatNumber(sumDetailAmount)}
-                        </td>
-                      );
-                    }
-
-                    return <td key={c.key} style={fixedColStyle(c.size)} />;
-                  })}
-                </tr>
-              </tfoot>
+              {/* 하단 합계 — 데이터 있을 때만 표시 */}
+              {detailRows.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan={3} style={fixedColStyle(null)}>합계</td>
+                    <td style={fixedColStyle(detailColumns[3]?.size)}>
+                      {formatNumber(sumDetailAmount)}
+                    </td>
+                    {detailColumns.slice(4).map((c) => (
+                      <td key={c.key} style={fixedColStyle(c.size)} />
+                    ))}
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </MDBox>
         </MDBox>

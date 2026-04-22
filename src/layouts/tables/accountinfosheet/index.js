@@ -39,7 +39,7 @@ import useAccountInfosheetData from "./data/AccountInfoSheetData";
 import PropTypes from "prop-types";
 import Swal from "sweetalert2";
 import api from "api/api";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE_URL } from "config";
 
 // =========================
@@ -156,6 +156,7 @@ function AccountInfoSheet() {
   );
 
   const { account_id: paramAccountId } = useParams();
+  const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState(paramAccountId || "");
   const [accountInput, setAccountInput] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
@@ -376,7 +377,7 @@ function AccountInfoSheet() {
         if (cached?.url) {
           try {
             URL.revokeObjectURL(cached.url);
-          } catch (e) {}
+          } catch (e) { }
         }
 
         const url = URL.createObjectURL(it.file);
@@ -398,7 +399,7 @@ function AccountInfoSheet() {
         if (url) {
           try {
             URL.revokeObjectURL(url);
-          } catch (e) {}
+          } catch (e) { }
         }
       });
       blobCacheRef.current = {};
@@ -497,16 +498,25 @@ function AccountInfoSheet() {
     [safeJoinUrl, getSrcOfItem]
   );
 
-  // ✅ input 클릭 시 미리보기 열기(값이 있으면)
-  const handleInputClick = (type) => {
-    const v = selectedFiles[type];
-    if (!v) return;
+  // 첨부파일 유형별 미리보기 열기
+  const handlePreviewByType = useCallback(
+    (type) => {
+      const it = getItemFromSelected(type);
+      if (!it) return;
+      handleViewByType(type);
+    },
+    [getItemFromSelected, handleViewByType]
+  );
 
-    // File이든 path든 있으면 viewer 오픈
-    if (v instanceof File) return handleViewByType(type);
-    if (typeof v === "object" && v.path) return handleViewByType(type);
-    if (typeof v === "string" && v) return handleViewByType(type);
-  };
+  // 첨부파일 유형별 다운로드 실행
+  const handleDownloadByType = useCallback(
+    (type) => {
+      const it = getItemFromSelected(type);
+      if (!it) return;
+      handleDownloadAny(it);
+    },
+    [getItemFromSelected, handleDownloadAny]
+  );
 
   // 버튼 클릭 시 input 클릭
   const handleFileSelect = (type) => {
@@ -752,7 +762,7 @@ function AccountInfoSheet() {
         name: extraSource[`extra_diet${idx}_name`] || "",
         price:
           extraSource[`extra_diet${idx}_price`] !== undefined &&
-          extraSource[`extra_diet${idx}_price`] !== null
+            extraSource[`extra_diet${idx}_price`] !== null
             ? String(extraSource[`extra_diet${idx}_price`])
             : "",
       };
@@ -1314,7 +1324,7 @@ function AccountInfoSheet() {
           name: extraSource[`extra_diet${idx}_name`] || "",
           price:
             extraSource[`extra_diet${idx}_price`] !== undefined &&
-            extraSource[`extra_diet${idx}_price`] !== null
+              extraSource[`extra_diet${idx}_price`] !== null
               ? String(extraSource[`extra_diet${idx}_price`])
               : "",
         };
@@ -1379,13 +1389,15 @@ function AccountInfoSheet() {
         pb={2}
         sx={{
           display: "flex",
-          justifyContent: "space-between",
+          flexDirection: "row",
+          justifyContent: "flex-start",
           alignItems: "center",
           gap: 1,
           flexWrap: "wrap",
+          width: "100%",
         }}
       >
-        {/* ✅ 왼쪽: 업로드 버튼 + input */}
+        {/* 첨부파일 업로드 및 미리보기 영역 */}
         <MDBox
           onMouseDownCapture={isDeletedAccount ? handleBlockedMouseAction : undefined}
           onClickCapture={isDeletedAccount ? handleBlockedMouseAction : undefined}
@@ -1394,6 +1406,7 @@ function AccountInfoSheet() {
             gap: 0.5,
             alignItems: "center",
             flexWrap: "wrap",
+            justifyContent: "flex-start",
             ...(isDeletedAccount ? { cursor: "not-allowed" } : {}),
           }}
         >
@@ -1403,7 +1416,7 @@ function AccountInfoSheet() {
               !!v && (v instanceof File || !!v?.path || (typeof v === "string" && v));
 
             return (
-              <React.Fragment key={type}>
+              <Box key={type} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
                 <MDButton
                   variant="gradient"
                   color="success"
@@ -1420,26 +1433,47 @@ function AccountInfoSheet() {
                   {label}
                 </MDButton>
 
-                <MDInput
-                  value={
-                    selectedFiles[type]?.name ||
-                    (selectedFiles[type] instanceof File ? selectedFiles[type].name : "") ||
-                    ""
-                  }
-                  readOnly
-                  inputProps={{ readOnly: true }}
+                <Box
                   sx={{
-                    width: 100,
-                    "& input": {
-                      height: 32,
-                      boxSizing: "border-box",
-                      padding: "0 8px",
-                      fontSize: 12,
-                      cursor: hasPreview ? "pointer" : "default",
-                    },
+                    minWidth: 70,
+                    height: 32,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 0.5,
+                    px: 0.5,
+                    border: "1px solid #CFD8DC",
+                    borderRadius: "6px",
+                    backgroundColor: "#fff",
+                    mt: 0.06,
                   }}
-                  onClick={() => handleInputClick(type)}
-                />
+                >
+                  <Tooltip title={hasPreview ? "다운로드" : "다운로드 불가"}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={!hasPreview}
+                        sx={hasPreview ? { ...fileIconSx, mt: -0.25 } : { color: "#bdbdbd", mt: -0.25 }}
+                        onClick={() => handleDownloadByType(type)}
+                      >
+                        <DownloadIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip title={hasPreview ? "미리보기(창)" : "미리보기 불가"}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={!hasPreview}
+                        sx={hasPreview ? { ...fileIconSx, mt: -0.25 } : { color: "#bdbdbd", mt: -0.25 }}
+                        onClick={() => handlePreviewByType(type)}
+                      >
+                        <OpenInNewIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
 
                 <input
                   type="file"
@@ -1448,7 +1482,7 @@ function AccountInfoSheet() {
                   disabled={isDeletedAccount}
                   onChange={(e) => handleFileChange(type, e)}
                 />
-              </React.Fragment>
+              </Box>
             );
           })}
 
@@ -1469,12 +1503,21 @@ function AccountInfoSheet() {
           </MDButton>
         </MDBox>
 
-        {/* ✅ 오른쪽: 거래처 검색 + 저장 */}
-        <MDBox sx={{ display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap" }}>
+        {/* 거래처 검색, 목록 이동, 저장 영역 */}
+        <MDBox
+          sx={{
+            display: "flex",
+            gap: 1,
+            alignItems: "center",
+            justifyContent: "flex-start",
+            flexWrap: "wrap",
+            ml: "auto",
+          }}
+        >
           {(accountList || []).length > 0 && (
             <Autocomplete
               size="small"
-              sx={{ minWidth: 220 }}
+              sx={{ minWidth: 220, mt: 0.25 }}
               options={accountList || []}
               value={selectedAccountOption}
               onChange={(_, newValue) => {
@@ -1529,6 +1572,16 @@ function AccountInfoSheet() {
 
           <MDButton
             variant="gradient"
+            color="secondary"
+            size="small"
+            onClick={() => navigate("/account")}
+            sx={{ minWidth: 88, height: 32, px: 1, fontSize: 12, lineHeight: 1 }}
+          >
+            목록보기
+          </MDButton>
+
+          <MDButton
+            variant="gradient"
             color="info"
             size="small"
             onClick={handleSave}
@@ -1556,474 +1609,523 @@ function AccountInfoSheet() {
 
         {/* 상단 기본 정보 */}
         <Card sx={{ p: 2, mb: 1 }}>
-        <Grid container spacing={2}>
-          {/* 왼쪽 */}
-          <Grid item xs={12} md={6}>
-            <Grid container spacing={2}>
-              {/* 업장명 + 계약기간 */}
-              <Grid item xs={12} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                <MDTypography
-                  sx={{
-                    minWidth: "75px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                  }}
-                >
-                  업장명
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 1,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("account_name", formData.account_name),
-                    },
-                  }}
-                  value={formData.account_name || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("account_name", e.target.value)}
-                />
-                <MDTypography
-                  sx={{
-                    minWidth: "75px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                  }}
-                >
-                  계약기간
-                </MDTypography>
-                {/* ✅ 계약 시작: 달력 + 직접입력(포커스 안날아감) */}
-                <DatePicker
-                  selected={startDate}
-                  value={contractStartText}
-                  dateFormat="yyyy-MM-dd"
-                  placeholderText="YYYY-MM-DD"
-                  disabled={isDeletedAccount}
-                  customInput={
-                    <DatePickerTextInput
-                      placeholder="YYYY-MM-DD"
-                      inputColor={
-                        String(contractStartText || "") ===
-                        String(originalBasic.contract_start ?? "")
-                          ? "black"
-                          : "red"
+          <Grid container spacing={2}>
+            {/* 왼쪽 */}
+            <Grid item xs={12} md={6}>
+              <Grid container spacing={2}>
+                {/* 업장명 + 계약기간 */}
+                <Grid item xs={12} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <MDTypography
+                    sx={{
+                      minWidth: "75px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    업장명
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 1,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("account_name", formData.account_name),
+                      },
+                    }}
+                    value={formData.account_name || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("account_name", e.target.value)}
+                  />
+                  <MDTypography
+                    sx={{
+                      minWidth: "75px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    계약기간
+                  </MDTypography>
+                  {/* ✅ 계약 시작: 달력 + 직접입력(포커스 안날아감) */}
+                  <DatePicker
+                    selected={startDate}
+                    value={contractStartText}
+                    dateFormat="yyyy-MM-dd"
+                    placeholderText="YYYY-MM-DD"
+                    disabled={isDeletedAccount}
+                    customInput={
+                      <DatePickerTextInput
+                        placeholder="YYYY-MM-DD"
+                        inputColor={
+                          String(contractStartText || "") ===
+                            String(originalBasic.contract_start ?? "")
+                            ? "black"
+                            : "red"
+                        }
+                      />
+                    }
+                    onChange={(date) => {
+                      if (isDeletedAccount) return;
+                      setStartDate(date);
+                      const ymd = date ? formatDateObj(date) : "";
+                      setContractStartText(ymd);
+                      handleChange("contract_start", ymd);
+                    }}
+                    onChangeRaw={(e) => {
+                      if (isDeletedAccount) return;
+                      const formatted = formatYMDInput(e.target.value);
+                      setContractStartText(formatted);
+                      handleChange("contract_start", formatted);
+
+                      if (!formatted) {
+                        setStartDate(null);
+                        return;
                       }
-                    />
-                  }
-                  onChange={(date) => {
-                    if (isDeletedAccount) return;
-                    setStartDate(date);
-                    const ymd = date ? formatDateObj(date) : "";
-                    setContractStartText(ymd);
-                    handleChange("contract_start", ymd);
-                  }}
-                  onChangeRaw={(e) => {
-                    if (isDeletedAccount) return;
-                    const formatted = formatYMDInput(e.target.value);
-                    setContractStartText(formatted);
-                    handleChange("contract_start", formatted);
-
-                    if (!formatted) {
-                      setStartDate(null);
-                      return;
-                    }
-                    if (formatted.length === 10) {
-                      const parsed = tryParseYMD(formatted);
-                      if (parsed) setStartDate(parsed);
-                    }
-                  }}
-                />
-                ~{/* ✅ 계약 종료: 달력 + 직접입력(포커스 안날아감) */}
-                <DatePicker
-                  selected={endDate}
-                  value={contractEndText}
-                  dateFormat="yyyy-MM-dd"
-                  placeholderText="YYYY-MM-DD"
-                  disabled={isDeletedAccount}
-                  customInput={
-                    <DatePickerTextInput
-                      placeholder="YYYY-MM-DD"
-                      inputColor={
-                        String(contractEndText || "") === String(originalBasic.contract_end ?? "")
-                          ? "black"
-                          : "red"
+                      if (formatted.length === 10) {
+                        const parsed = tryParseYMD(formatted);
+                        if (parsed) setStartDate(parsed);
                       }
-                    />
-                  }
-                  onChange={(date) => {
-                    if (isDeletedAccount) return;
-                    setEndDate(date);
-                    const ymd = date ? formatDateObj(date) : "";
-                    setContractEndText(ymd);
-                    handleChange("contract_end", ymd);
-                  }}
-                  onChangeRaw={(e) => {
-                    if (isDeletedAccount) return;
-                    const formatted = formatYMDInput(e.target.value);
-                    setContractEndText(formatted);
-                    handleChange("contract_end", formatted);
-
-                    if (!formatted) {
-                      setEndDate(null);
-                      return;
+                    }}
+                  />
+                  ~{/* ✅ 계약 종료: 달력 + 직접입력(포커스 안날아감) */}
+                  <DatePicker
+                    selected={endDate}
+                    value={contractEndText}
+                    dateFormat="yyyy-MM-dd"
+                    placeholderText="YYYY-MM-DD"
+                    disabled={isDeletedAccount}
+                    customInput={
+                      <DatePickerTextInput
+                        placeholder="YYYY-MM-DD"
+                        inputColor={
+                          String(contractEndText || "") === String(originalBasic.contract_end ?? "")
+                            ? "black"
+                            : "red"
+                        }
+                      />
                     }
-                    if (formatted.length === 10) {
-                      const parsed = tryParseYMD(formatted);
-                      if (parsed) setEndDate(parsed);
-                    }
-                  }}
-                />
-              </Grid>
+                    onChange={(date) => {
+                      if (isDeletedAccount) return;
+                      setEndDate(date);
+                      const ymd = date ? formatDateObj(date) : "";
+                      setContractEndText(ymd);
+                      handleChange("contract_end", ymd);
+                    }}
+                    onChangeRaw={(e) => {
+                      if (isDeletedAccount) return;
+                      const formatted = formatYMDInput(e.target.value);
+                      setContractEndText(formatted);
+                      handleChange("contract_end", formatted);
 
-              {/* 주소 */}
-              <Grid
-                item
-                xs={12}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                  paddingTop: "10px !important",
-                }}
-              >
-                <MDTypography
-                  sx={{
-                    minWidth: "75px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                  }}
-                >
-                  주소
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 1,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("account_address", formData.account_address),
-                    },
-                  }}
-                  value={formData.account_address || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("account_address", e.target.value)}
-                />
-                <MDInput
-                  sx={{
-                    flex: 1,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("account_address_detail", formData.account_address_detail),
-                    },
-                  }}
-                  value={formData.account_address_detail || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("account_address_detail", e.target.value)}
-                />
-              </Grid>
+                      if (!formatted) {
+                        setEndDate(null);
+                        return;
+                      }
+                      if (formatted.length === 10) {
+                        const parsed = tryParseYMD(formatted);
+                        if (parsed) setEndDate(parsed);
+                      }
+                    }}
+                  />
+                </Grid>
 
-              {/* 담당자1 */}
-              <Grid
-                item
-                xs={12}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  paddingTop: "10px !important",
-                }}
-              >
-                <MDTypography
+                {/* 주소 */}
+                <Grid
+                  item
+                  xs={12}
                   sx={{
-                    minWidth: "65px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    paddingTop: "10px !important",
                   }}
                 >
-                  1.담당자명
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 0.8,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("manager_name", formData.manager_name),
-                    },
-                  }}
-                  value={formData.manager_name || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("manager_name", e.target.value)}
-                />
-                <MDTypography
-                  sx={{
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                    minWidth: "50px",
-                  }}
-                >
-                  연락처
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 0.8,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("manager_tel", formData.manager_tel),
-                    },
-                  }}
-                  value={formData.manager_tel || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("manager_tel", e.target.value)}
-                />
+                  <MDTypography
+                    sx={{
+                      minWidth: "75px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    주소
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 1,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("account_address", formData.account_address),
+                      },
+                    }}
+                    value={formData.account_address || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("account_address", e.target.value)}
+                  />
+                  <MDInput
+                    sx={{
+                      flex: 1,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("account_address_detail", formData.account_address_detail),
+                      },
+                    }}
+                    value={formData.account_address_detail || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("account_address_detail", e.target.value)}
+                  />
+                </Grid>
 
-                {/* ✅ account_type 선택 */}
-                <MDTypography
+                {/* 담당자1 */}
+                <Grid
+                  item
+                  xs={12}
                   sx={{
-                    minWidth: "70px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    paddingTop: "10px !important",
                   }}
                 >
-                  업종유형
-                </MDTypography>
-                <TextField
-                  select
-                  size="small"
-                  value={formData.account_type || ""}
-                  disabled={isDeletedAccount}
-                  onChange={(e) => handleChange("account_type", e.target.value)}
-                  sx={{
-                    width: 130,
-                    "& select": { fontSize: "13px", padding: "6px" },
-                  }}
-                >
-                  <MenuItem value={1}>위탁급식</MenuItem>
-                  <MenuItem value={2}>도소매</MenuItem>
-                  <MenuItem value={3}>프랜차이즈</MenuItem>
-                  <MenuItem value={4}>산업체</MenuItem>
-                </TextField>
-              </Grid>
+                  <MDTypography
+                    sx={{
+                      minWidth: "65px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    1.담당자명
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 0.8,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("manager_name", formData.manager_name),
+                      },
+                    }}
+                    value={formData.manager_name || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("manager_name", e.target.value)}
+                  />
+                  <MDTypography
+                    sx={{
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                      minWidth: "50px",
+                    }}
+                  >
+                    연락처
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 0.8,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("manager_tel", formData.manager_tel),
+                      },
+                    }}
+                    value={formData.manager_tel || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("manager_tel", e.target.value)}
+                  />
 
-              {/* 담당자2 */}
-              <Grid
-                item
-                xs={12}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  paddingTop: "10px !important",
-                }}
-              >
-                <MDTypography
-                  sx={{
-                    minWidth: "65px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                  }}
-                >
-                  2.담당자명
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 0.8,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("manager_name2", formData.manager_name2),
-                    },
-                  }}
-                  value={formData.manager_name2 || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("manager_name2", e.target.value)}
-                />
-                <MDTypography
-                  sx={{
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                    minWidth: "50px",
-                  }}
-                >
-                  연락처
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 0.8,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("manager_tel2", formData.manager_tel2),
-                    },
-                  }}
-                  value={formData.manager_tel2 || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("manager_tel2", e.target.value)}
-                />
+                  {/* ✅ account_type 선택 */}
+                  <MDTypography
+                    sx={{
+                      minWidth: "70px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    업종유형
+                  </MDTypography>
+                  <TextField
+                    select
+                    size="small"
+                    value={formData.account_type || ""}
+                    disabled={isDeletedAccount}
+                    onChange={(e) => handleChange("account_type", e.target.value)}
+                    sx={{
+                      width: 130,
+                      "& select": { fontSize: "13px", padding: "6px" },
+                    }}
+                  >
+                    <MenuItem value={1}>위탁급식</MenuItem>
+                    <MenuItem value={2}>도소매</MenuItem>
+                    <MenuItem value={3}>프랜차이즈</MenuItem>
+                    <MenuItem value={4}>산업체</MenuItem>
+                  </TextField>
+                </Grid>
 
-                {/* ✅ meal_type 선택 */}
-                <MDTypography
+                {/* 담당자2 */}
+                <Grid
+                  item
+                  xs={12}
                   sx={{
-                    minWidth: "70px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    paddingTop: "10px !important",
                   }}
                 >
-                  식단유형
-                </MDTypography>
-                <TextField
-                  select
-                  size="small"
-                  value={formData.meal_type || ""}
-                  disabled={isDeletedAccount}
-                  onChange={(e) => handleChange("meal_type", e.target.value)}
-                  sx={{
-                    width: 130,
-                    "& select": { fontSize: "13px", padding: "6px" },
-                  }}
-                >
-                  <MenuItem value={1}>요양주간</MenuItem>
-                  <MenuItem value={2}>요양직원</MenuItem>
-                  <MenuItem value={3}>요양</MenuItem>
-                  <MenuItem value={4}>주간보호</MenuItem>
-                  <MenuItem value={5}>산업체</MenuItem>
-                </TextField>
-              </Grid>
+                  <MDTypography
+                    sx={{
+                      minWidth: "65px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    2.담당자명
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 0.8,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("manager_name2", formData.manager_name2),
+                      },
+                    }}
+                    value={formData.manager_name2 || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("manager_name2", e.target.value)}
+                  />
+                  <MDTypography
+                    sx={{
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                      minWidth: "50px",
+                    }}
+                  >
+                    연락처
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 0.8,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("manager_tel2", formData.manager_tel2),
+                      },
+                    }}
+                    value={formData.manager_tel2 || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("manager_tel2", e.target.value)}
+                  />
 
-              {/* 마감 담당자 */}
-              <Grid
-                item
-                xs={12}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                  paddingTop: "10px !important",
-                }}
-              >
-                <MDTypography
-                  sx={{
-                    minWidth: "75px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
-                  }}
-                >
-                  마감담당자명
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 1,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("closing_name", formData.closing_name),
-                    },
-                  }}
-                  value={formData.closing_name || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("closing_name", e.target.value)}
-                />
-                <MDTypography sx={{ fontSize: "13px", textAlign: "right", fontWeight: "bold" }}>
-                  연락처
-                </MDTypography>
-                <MDInput
-                  sx={{
-                    flex: 1,
-                    fontSize: "13px",
-                    "& input": {
-                      padding: "4px 4px",
-                      color: getColor("closing_tel", formData.closing_tel),
-                    },
-                  }}
-                  value={formData.closing_tel || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("closing_tel", e.target.value)}
-                />
-              </Grid>
+                  {/* ✅ meal_type 선택 */}
+                  <MDTypography
+                    sx={{
+                      minWidth: "70px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    식단유형
+                  </MDTypography>
+                  <TextField
+                    select
+                    size="small"
+                    value={formData.meal_type || ""}
+                    disabled={isDeletedAccount}
+                    onChange={(e) => handleChange("meal_type", e.target.value)}
+                    sx={{
+                      width: 130,
+                      "& select": { fontSize: "13px", padding: "6px" },
+                    }}
+                  >
+                    <MenuItem value={1}>요양주간</MenuItem>
+                    <MenuItem value={2}>요양직원</MenuItem>
+                    <MenuItem value={3}>요양</MenuItem>
+                    <MenuItem value={4}>주간보호</MenuItem>
+                    <MenuItem value={5}>산업체</MenuItem>
+                  </TextField>
+                </Grid>
 
-              {/* 시설기기 */}
-              <Grid
-                item
-                xs={12}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 2,
-                  paddingTop: "10px !important",
-                }}
-              >
-                <MDTypography
+                {/* 마감 담당자 */}
+                <Grid
+                  item
+                  xs={12}
                   sx={{
-                    minWidth: "75px",
-                    fontSize: "13px",
-                    textAlign: "right",
-                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    paddingTop: "10px !important",
                   }}
                 >
-                  시설기기
-                  <br />
-                  투자여부
-                </MDTypography>
-                <MDInput
-                  multiline
-                  rows={3}
+                  <MDTypography
+                    sx={{
+                      minWidth: "75px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    마감담당자명
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 1,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("closing_name", formData.closing_name),
+                      },
+                    }}
+                    value={formData.closing_name || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("closing_name", e.target.value)}
+                  />
+                  <MDTypography sx={{ fontSize: "13px", textAlign: "right", fontWeight: "bold" }}>
+                    연락처
+                  </MDTypography>
+                  <MDInput
+                    sx={{
+                      flex: 1,
+                      fontSize: "13px",
+                      "& input": {
+                        padding: "4px 4px",
+                        color: getColor("closing_tel", formData.closing_tel),
+                      },
+                    }}
+                    value={formData.closing_tel || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("closing_tel", e.target.value)}
+                  />
+                </Grid>
+
+                {/* 시설기기 */}
+                <Grid
+                  item
+                  xs={12}
                   sx={{
-                    width: "80%",
-                    "& textarea": {
-                      color: getColor("property_note", formData.property_note),
-                    },
-                  }}
-                  value={formData.property_note || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("property_note", e.target.value)}
-                />
-                <MDTypography
-                  sx={{
-                    minWidth: "75px",
-                    fontSize: "13px",
-                    textAlign: "center",
-                    fontWeight: "bold",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 2,
+                    paddingTop: "10px !important",
                   }}
                 >
-                  시설기기
-                  <br />
-                  A/S기준
-                </MDTypography>
-                <MDInput
-                  multiline
-                  rows={3}
-                  sx={{
-                    width: "80%",
-                    "& textarea": {
-                      color: getColor("property_as_note", formData.property_as_note),
-                    },
-                  }}
-                  value={formData.property_as_note || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("property_as_note", e.target.value)}
-                />
+                  <MDTypography
+                    sx={{
+                      minWidth: "75px",
+                      fontSize: "13px",
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    시설기기
+                    <br />
+                    투자여부
+                  </MDTypography>
+                  <MDInput
+                    multiline
+                    rows={3}
+                    sx={{
+                      width: "80%",
+                      "& textarea": {
+                        color: getColor("property_note", formData.property_note),
+                      },
+                    }}
+                    value={formData.property_note || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("property_note", e.target.value)}
+                  />
+                  <MDTypography
+                    sx={{
+                      minWidth: "75px",
+                      fontSize: "13px",
+                      textAlign: "center",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    시설기기
+                    <br />
+                    A/S기준
+                  </MDTypography>
+                  <MDInput
+                    multiline
+                    rows={3}
+                    sx={{
+                      width: "80%",
+                      "& textarea": {
+                        color: getColor("property_as_note", formData.property_as_note),
+                      },
+                    }}
+                    value={formData.property_as_note || ""}
+                    inputProps={{ readOnly: isDeletedAccount }}
+                    onChange={(e) => handleChange("property_as_note", e.target.value)}
+                  />
+                </Grid>
               </Grid>
             </Grid>
-          </Grid>
 
-          {/* 오른쪽 */}
-          <Grid item xs={12} md={6}>
-            {priceData.some((p) => p.account_type === 4) ? (
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
+            {/* 오른쪽 */}
+            <Grid item xs={12} md={6}>
+              {priceData.some((p) => p.account_type === 4) ? (
+                <Grid container spacing={2}>
+                  <Grid item xs={12} md={6}>
+                    <MDTypography
+                      sx={{
+                        fontSize: "13px",
+                        textAlign: "center",
+                        fontWeight: "bold",
+                        mb: 0,
+                      }}
+                    >
+                      영업내용 및 특이사항
+                    </MDTypography>
+                    <MDInput
+                      multiline
+                      rows={12}
+                      sx={{
+                        width: "100%",
+                        textAlign: "center",
+                        "& textarea": {
+                          color: getColor("business_note", formData.business_note),
+                        },
+                      }}
+                      value={formData.business_note || ""}
+                      inputProps={{ readOnly: isDeletedAccount }}
+                      onChange={(e) => handleChange("business_note", e.target.value)}
+                    />
+                  </Grid>
+
+                  <Grid item xs={12} md={6}>
+                    <MDTypography
+                      sx={{
+                        fontSize: "13px",
+                        textAlign: "center",
+                        fontWeight: "bold",
+                        mb: 0,
+                      }}
+                    >
+                      산업체 특이사항
+                    </MDTypography>
+                    <MDInput
+                      multiline
+                      rows={12}
+                      sx={{ width: "100%", textAlign: "center" }}
+                      value={formData.industry_note || ""}
+                      inputProps={{ readOnly: isDeletedAccount }}
+                      onChange={(e) => handleChange("industry_note", e.target.value)}
+                    />
+                  </Grid>
+                </Grid>
+              ) : (
+                <>
                   <MDTypography
                     sx={{
                       fontSize: "13px",
@@ -2048,76 +2150,27 @@ function AccountInfoSheet() {
                     inputProps={{ readOnly: isDeletedAccount }}
                     onChange={(e) => handleChange("business_note", e.target.value)}
                   />
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <MDTypography
-                    sx={{
-                      fontSize: "13px",
-                      textAlign: "center",
-                      fontWeight: "bold",
-                      mb: 0,
-                    }}
-                  >
-                    산업체 특이사항
-                  </MDTypography>
-                  <MDInput
-                    multiline
-                    rows={12}
-                    sx={{ width: "100%", textAlign: "center" }}
-                    value={formData.industry_note || ""}
-                    inputProps={{ readOnly: isDeletedAccount }}
-                    onChange={(e) => handleChange("industry_note", e.target.value)}
-                  />
-                </Grid>
-              </Grid>
-            ) : (
-              <>
-                <MDTypography
-                  sx={{
-                    fontSize: "13px",
-                    textAlign: "center",
-                    fontWeight: "bold",
-                    mb: 0,
-                  }}
-                >
-                  영업내용 및 특이사항
-                </MDTypography>
-                <MDInput
-                  multiline
-                  rows={12}
-                  sx={{
-                    width: "100%",
-                    textAlign: "center",
-                    "& textarea": {
-                      color: getColor("business_note", formData.business_note),
-                    },
-                  }}
-                  value={formData.business_note || ""}
-                  inputProps={{ readOnly: isDeletedAccount }}
-                  onChange={(e) => handleChange("business_note", e.target.value)}
-                />
-              </>
-            )}
+                </>
+              )}
+            </Grid>
           </Grid>
-        </Grid>
         </Card>
 
         {/* 하단 테이블 */}
         <Card sx={{ p: 1, mb: 1 }}>
-        <MDBox sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}>
-          {isExtraDietEnabled && (
-            <MDButton
-              variant="outlined"
-              color="info"
-              size="small"
-              onClick={handleOpenExtraDietModal}
-            >
-              식단가 추가
-            </MDButton>
-          )}
-        </MDBox>
-        {renderTable(priceData, setPriceData, "price", priceTableColumns)}
+          <MDBox sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}>
+            {isExtraDietEnabled && (
+              <MDButton
+                variant="outlined"
+                color="info"
+                size="small"
+                onClick={handleOpenExtraDietModal}
+              >
+                식단가 추가
+              </MDButton>
+            )}
+          </MDBox>
+          {renderTable(priceData, setPriceData, "price", priceTableColumns)}
         </Card>
 
         <Card sx={{ p: 1, mb: 1 }}>{renderTable(etcData, setEtcData, "etc", etcTableColumns)}</Card>

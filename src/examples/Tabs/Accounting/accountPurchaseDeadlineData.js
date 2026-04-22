@@ -5,6 +5,7 @@ import api from "api/api";
 // 강남(20250819193630) 삼성웰스토리 type 3/4 예외 라벨
 const GANGNAM_ACCOUNT_ID = "20250819193630";
 const GANGNAM_TYPE_LABELS = { "3": "삼성웰스토리(주) 3층", "4": "삼성웰스토리(주) 7층" };
+const EXCLUDED_ALL_TYPES = new Set(["1000", "1002", "1003", "1008"]);
 
 // 타입 옵션 정규화: 서버 응답 → [{value, label}] 변환 + 강남 예외처리 + 1002/1003 보강
 const normalizeTypeOptions = (data, accountId) => {
@@ -168,8 +169,15 @@ export default function useAccountPurchaseDeadlineData() {
         };
       });
 
-      setRows(mapped);
-      setOriginalRows(mapped.map((r) => ({ ...r })));
+      // 전체 조회에서는 타입 필터 셀렉트에 노출하지 않는 타입을 동일하게 제외
+      const selectedType = String(filters?.type ?? "0");
+      const visibleRows =
+        selectedType === "0" || selectedType === ""
+          ? mapped.filter((row) => !EXCLUDED_ALL_TYPES.has(String(row?.type ?? "")))
+          : mapped;
+
+      setRows(visibleRows);
+      setOriginalRows(visibleRows.map((r) => ({ ...r })));
     } catch (err) {
       console.error("매입 집계 조회 실패:", err);
       setRows([]);

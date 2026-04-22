@@ -52,7 +52,6 @@ import HeadofficeScheduleSheet from "layouts/headoffice/HeadofficeScheduleSheetT
 // 영업
 import BusinessSchedule from "layouts/business/BusinessScheduleSheet";
 import TeleManager from "layouts/business/telemanager";
-import ContractManager from "layouts/accountinfosheet";
 // 운영
 
 import OperateTab from "layouts/operate/operatetab";
@@ -232,8 +231,8 @@ const routes = [
         name: "ℹ️ 고객사 정보",
         key: "accountinfosheet",
         //icon: <Icon fontSize="small">*</Icon>,
-        route: "/accountinfosheet/index",
-        component: <ContractManager />,
+        route: "/account",
+        component: <Tables />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
@@ -303,7 +302,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/fieldstaff",
         component: <OperateTab_4 />,
-        allowedDepartments: [6], // 🔹 부서권한
+        allowedDepartments: [5], // 🔹 부서권한
+        allowUserIds: ["yh2"], // 이윤희 실장님 
         accessMode: "AND",
       },
       {
@@ -317,17 +317,18 @@ const routes = [
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
-      {
-        type: "collapse",
-        name: "🏢 고객사 목록",
-        key: "account",
-        //icon: <Icon fontSize="small">*</Icon>,
-        route: "/account",
-        component: <Tables />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
-        accessMode: "AND",
-      },
+      // 운영 메뉴 고객사 목록 숨김 처리
+      // {
+      //   type: "collapse",
+      //   name: "🏢 고객사 목록",
+      //   key: "account",
+      //   //icon: <Icon fontSize="small">*</Icon>,
+      //   route: "/account",
+      //   component: <Tables />,
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+      //   allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+      //   accessMode: "AND",
+      // },
       {
         type: "collapse",
         name: "📁 고객사 관리",

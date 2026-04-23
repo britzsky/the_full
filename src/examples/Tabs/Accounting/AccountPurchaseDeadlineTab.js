@@ -2873,7 +2873,7 @@ function AccountPurchaseDeadlineTab() {
                                               height: 16,
                                               px: 0.5,
                                               top: 5,
-                                              right: 3,
+                                              right: 6,
                                             },
                                           }}
                                         >

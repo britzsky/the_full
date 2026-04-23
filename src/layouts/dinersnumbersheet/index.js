@@ -717,6 +717,10 @@ function DinersNumberSheet() {
   // ✅ 근무일수 상태 (테이블과 완전 분리)
   const [workingDay, setWorkingDay] = useState("0");
   const [originalWorkingDay, setOriginalWorkingDay] = useState(0);
+  const [viewLoading, setViewLoading] = useState(true);
+  const loadingStartedRef = useRef(false);
+  const accountListCheckedRef = useRef(false);
+  const accountListEffectRanRef = useRef(false);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -733,6 +737,40 @@ function DinersNumberSheet() {
       label: acc.account_name,
     }));
   }, [accountList]);
+
+  useEffect(() => {
+    if (!accountListEffectRanRef.current) {
+      accountListEffectRanRef.current = true;
+      return;
+    }
+    accountListCheckedRef.current = true;
+  }, [accountList]);
+
+  useEffect(() => {
+    setViewLoading(true);
+    loadingStartedRef.current = false;
+  }, [selectedAccountId, year, month]);
+
+  useEffect(() => {
+    if (!viewLoading) return;
+    if (!selectedAccountId) {
+      if (accountListCheckedRef.current && (accountOptions || []).length === 0) {
+        setViewLoading(false);
+      }
+      return;
+    }
+
+    if (loading) {
+      loadingStartedRef.current = true;
+      return;
+    }
+
+    if (loadingStartedRef.current) {
+      setViewLoading(false);
+      loadingStartedRef.current = false;
+      return;
+    }
+  }, [loading, viewLoading, selectedAccountId, accountOptions]);
 
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
@@ -1272,9 +1310,7 @@ function DinersNumberSheet() {
     }
   };
 
-  if (loading && (!activeRows || activeRows.length === 0)) return <LoadingScreen />;
-
-  if (loading) return <LoadingScreen />;
+  if (loading || viewLoading) return <LoadingScreen />;
 
   // ✅ 화면에서 본문 행을 1~2줄 더 보이도록 카드 높이를 소폭 확장
   const tableCardHeight = "calc(95vh - 120px)";

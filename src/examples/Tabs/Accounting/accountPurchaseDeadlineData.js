@@ -110,6 +110,12 @@ export default function useAccountPurchaseDeadlineData() {
     }
   }, []);
 
+  // 거래처 목록 조회 API
+  const fetchAccountList = useCallback(async (params = { account_type: "0" }) => {
+    const res = await api.get("/Account/AccountListV2", { params });
+    return Array.isArray(res?.data) ? res.data : res?.data?.rows || res?.data?.data || [];
+  }, []);
+
   /**
    * 매입 집계 조회
    * @param {Object} filters - { bizType, type, fromDate, toDate, account_id, payType, ... }
@@ -162,6 +168,8 @@ export default function useAccountPurchaseDeadlineData() {
           payType: pt === "1" || pt === "2" ? pt : "1",
           receipt_type: item.receipt_type || "",
           receipt_image: item.receipt_image || "",
+          receipt_image2: item.receipt_image2 || "",
+          receipt_image3: item.receipt_image3 || "",
           note: item.note || "",
           reg_dt: item.reg_dt || "",
           type: String(item.type ?? ""),
@@ -195,6 +203,7 @@ export default function useAccountPurchaseDeadlineData() {
     setOriginalRows,
     partnerList,
     loading,
+    fetchAccountList,
     fetchPurchaseList,
     typeOptions,
     setTypeOptions,

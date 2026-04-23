@@ -672,6 +672,16 @@ function AccountCorporateCardSheet() {
   }, []);
 
   const canOpenReceiptFilePicker = useCallback((row) => {
+    const payDt = toDateInputValue(row?.saleDate);
+    if (!payDt) {
+      Swal.fire("안내", "업로드 전에 결제일자부터 입력해주세요.", "info");
+      return false;
+    }
+
+    const payTypeNum = parseNumMaybe(row?.payType) ?? 2;
+    if (payTypeNum === 1) {
+      return true;
+    }
     const cardNoDigits = onlyDigits(row?.cardNo ?? row?.card_no ?? "");
     if (!isValidCardNoDigits(cardNoDigits)) {
       Swal.fire("안내", "카드번호를 먼저 선택해주세요. (16자리)", "info");
@@ -776,22 +786,30 @@ function AccountCorporateCardSheet() {
       if (isSpecialAccount(row.account_id)) {
         return Swal.fire("안내", "해당 거래처는 영수증 이미지 첨부가 불가합니다.", "info");
       }
+
       const acctOk = !!String(row.account_id || "");
-      const cardNoDigits = onlyDigits(row.cardNo);
-      if (!acctOk || !cardNoDigits) {
-        return Swal.fire(
-          "경고",
-          "영수증 업로드 전에 거래처와 카드번호를 먼저 선택해주세요.",
-          "warning"
-        );
+      if (!acctOk) {
+        return Swal.fire("경고", "영수증 업로드 전에 거래처를 먼저 선택해주세요.", "warning");
       }
-      if (!isValidCardNoDigits(cardNoDigits)) {
-        return Swal.fire("경고", "영수증 업로드 전에 카드번호 16자리를 선택해주세요.", "warning");
+
+      const payTypeNum = parseNumMaybe(row.payType) ?? 2;
+      if (payTypeNum !== 1) {
+        const cardNoDigits = onlyDigits(row.cardNo);
+        if (!cardNoDigits) {
+          return Swal.fire("경고", "영수증 업로드 전에 카드번호를 먼저 선택해주세요.", "warning");
+        }
+        if (!isValidCardNoDigits(cardNoDigits)) {
+          return Swal.fire("경고", "영수증 업로드 전에 카드번호 16자리를 선택해주세요.", "warning");
+        }
       }
 
       const typeOk = !!String(row.receipt_type || ""); // ✅ 타입 필수
       if (!typeOk) {
-        return Swal.fire("경고", "영수증타입을 선택해주세요.", "warning");
+        return Swal.fire(
+          "경고",
+          "영수증타입을 선택해주세요.",
+          "warning"
+        );
       }
 
       try {
@@ -1924,6 +1942,7 @@ function AccountCorporateCardSheet() {
 
                     // ✅ 카드번호: 수정 가능 (digits 저장, 표시만 하이픈)
                     if (key === "cardNo") {
+                      const isCashPay = (parseNumMaybe(row.payType) ?? 2) === 1;
                       const digits = onlyDigits(row.cardNo).slice(0, 16);
                       const display = formatCardNoFull(digits); // 0000-0000-0000-0000
 
@@ -1932,6 +1951,7 @@ function AccountCorporateCardSheet() {
                           <TextField
                             size="small"
                             fullWidth
+                            disabled={isCashPay}
                             value={display}
                             placeholder="0000-0000-0000-0000"
                             onClick={(ev) => ev.stopPropagation()}
@@ -1946,6 +1966,14 @@ function AccountCorporateCardSheet() {
                                 padding: "6px 8px",
                                 color: changed ? "red" : "black",
                               },
+                              ...(isCashPay
+                                ? {
+                                    bgcolor: "#f5f5f5",
+                                    "& .MuiInputBase-input.Mui-disabled": {
+                                      WebkitTextFillColor: "#888",
+                                    },
+                                  }
+                                : {}),
                             }}
                           />
                         </td>
@@ -1954,11 +1982,13 @@ function AccountCorporateCardSheet() {
 
                     // ✅ 카드사: 수정 가능
                     if (key === "cardBrand") {
+                      const isCashPay = (parseNumMaybe(row.payType) ?? 2) === 1;
                       return (
                         <td key={key} style={fixedColStyle(c.size)}>
                           <TextField
                             size="small"
                             fullWidth
+                            disabled={isCashPay}
                             value={row.cardBrand ?? ""}
                             placeholder="카드사"
                             onClick={(ev) => ev.stopPropagation()}
@@ -1972,6 +2002,14 @@ function AccountCorporateCardSheet() {
                                 padding: "6px 8px",
                                 color: changed ? "red" : "black",
                               },
+                              ...(isCashPay
+                                ? {
+                                    bgcolor: "#f5f5f5",
+                                    "& .MuiInputBase-input.Mui-disabled": {
+                                      WebkitTextFillColor: "#888",
+                                    },
+                                  }
+                                : {}),
                             }}
                           />
                         </td>

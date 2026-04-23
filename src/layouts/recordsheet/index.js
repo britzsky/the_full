@@ -507,7 +507,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
         ))}
       </select>
 
-      {["1", "2", "3", "5", "6", "7", "8", "17", "19"].includes(val.type) && (
+      {["1", "2", "3", "5", "6", "7", "8", "10", "17", "19"].includes(val.type) && (
         <>
           <select
             disabled={isJoinLocked}
@@ -4645,14 +4645,12 @@ function RecordSheet() {
   };
 
   const isPageLoading =
-    Boolean(currentViewKey) &&
-    (
-      loading ||
-      employeeLoadedViewKey !== currentViewKey ||
-      attendanceLoadedViewKey !== currentViewKey ||
-      dispatchLoadedViewKey !== currentViewKey ||
-      mappingLoadedViewKey !== currentViewKey
-    );
+    !currentViewKey ||
+    loading ||
+    employeeLoadedViewKey !== currentViewKey ||
+    attendanceLoadedViewKey !== currentViewKey ||
+    dispatchLoadedViewKey !== currentViewKey ||
+    mappingLoadedViewKey !== currentViewKey;
 
   if (isPageLoading) return <LoadingScreen />;
 

@@ -1,5 +1,5 @@
 // src/layouts/hygiene/HygieneSheetTab.js
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -29,6 +29,9 @@ function HygieneSheetTab() {
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
   const [accountInput, setAccountInput] = useState("");
   const isAccountLocked = !!localAccountId;
+  // 조회 시작 전/후 깜빡임 방지를 위한 화면 로딩 상태
+  const [viewLoading, setViewLoading] = useState(true);
+  const loadingStartedRef = useRef(false);
 
   const { hygieneListRows, accountList, loading, fetcHygieneList } = useHygienesheetData();
 
@@ -67,6 +70,22 @@ function HygieneSheetTab() {
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
+  // 거래처 변경 시 로딩을 먼저 시작하고 조회를 트리거
+  const beginListLoading = useCallback(() => {
+    setViewLoading(true);
+    loadingStartedRef.current = false;
+  }, []);
+
+  const setSelectedAccountWithLoading = useCallback(
+    (nextAccountId) => {
+      const nextId = String(nextAccountId ?? "");
+      if (nextId === String(selectedAccountId ?? "")) return;
+      beginListLoading();
+      setSelectedAccountId(nextId);
+    },
+    [beginListLoading, selectedAccountId]
+  );
+
   const selectAccountByInput = useCallback(() => {
     if (isAccountLocked) return;
     const q = String(accountInput || "").trim();
@@ -77,10 +96,10 @@ function HygieneSheetTab() {
     const partial =
       exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
     if (partial) {
-      setSelectedAccountId(partial.value);
+      setSelectedAccountWithLoading(partial.value);
       setAccountInput(partial.label || q);
     }
-  }, [accountInput, accountOptions, isAccountLocked]);
+  }, [accountInput, accountOptions, isAccountLocked, setSelectedAccountWithLoading]);
 
   // 거래처 변경 시 데이터 조회
   useEffect(() => {
@@ -97,14 +116,14 @@ function HygieneSheetTab() {
     if (!accountList || accountList.length === 0) return;
 
     if (localAccountId) {
-      setSelectedAccountId(localAccountId);
+      setSelectedAccountWithLoading(localAccountId);
       return;
     }
 
     if (!selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountWithLoading(accountList[0].account_id);
     }
-  }, [accountList, selectedAccountId, localAccountId]);
+  }, [accountList, selectedAccountId, localAccountId, setSelectedAccountWithLoading]);
 
   // 서버 rows → 로컬 rows / originalRows 복사
   useEffect(() => {
@@ -114,7 +133,25 @@ function HygieneSheetTab() {
     }));
     setRows(deepCopy);
     setOriginalRows(deepCopy);
-  }, [hygieneListRows]);
+    // 조회 결과가 화면 상태에 반영된 뒤 로딩 종료
+    if (selectedAccountId) {
+      setViewLoading(false);
+    }
+  }, [hygieneListRows, selectedAccountId]);
+
+  useEffect(() => {
+    if (!viewLoading) return;
+
+    if (loading) {
+      loadingStartedRef.current = true;
+      return;
+    }
+
+    if (loadingStartedRef.current) {
+      setViewLoading(false);
+      loadingStartedRef.current = false;
+    }
+  }, [loading, viewLoading]);
 
   // cell 값 변경 처리
   const handleCellChange = (rowIndex, key, value) => {
@@ -453,7 +490,7 @@ function HygieneSheetTab() {
     }
   };
 
-  if (loading) return <LoadingScreen />;
+  if (loading || viewLoading) return <LoadingScreen />;
 
   return (
     <>
@@ -484,7 +521,7 @@ function HygieneSheetTab() {
               if (isAccountLocked) return;
               // 입력 비움 시 거래처 선택 유지
               if (!opt) return;
-              setSelectedAccountId(opt.value);
+              setSelectedAccountWithLoading(opt.value);
             }}
             inputValue={accountInput}
             onInputChange={(_, newValue) => {

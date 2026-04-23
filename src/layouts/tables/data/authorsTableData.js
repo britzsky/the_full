@@ -38,7 +38,7 @@ function NavLink({ to, color, text }) {
   );
 }
 
-export default function useTableData(accountType, refreshKey = 0, delYn = "N") {
+export default function useTableData(accountType, refreshKey = 0) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -51,7 +51,8 @@ export default function useTableData(accountType, refreshKey = 0, delYn = "N") {
         const res = await api.get("/Account/AccountListV2", {
           params: {
             account_type: accountType || "0",
-            del_yn: String(delYn || "N").toUpperCase(),
+            // 삭제여부 필터는 테이블 화면에서 처리하므로 목록은 항상 전체로 조회
+            del_yn: "ALL",
           },
         });
 
@@ -166,7 +167,7 @@ export default function useTableData(accountType, refreshKey = 0, delYn = "N") {
       active = false;
     };
     // 조회조건 변경 기반 재조회 트리거
-  }, [accountType, refreshKey, delYn]);
+  }, [accountType, refreshKey]);
 
   const columns = [
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },

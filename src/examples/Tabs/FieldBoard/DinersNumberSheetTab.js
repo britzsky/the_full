@@ -693,6 +693,10 @@ function DinersNumberSheet() {
   // ✅ 근무일수 상태 (테이블과 완전 분리)
   const [workingDay, setWorkingDay] = useState("0");
   const [originalWorkingDay, setOriginalWorkingDay] = useState(0);
+  const [viewLoading, setViewLoading] = useState(true);
+  const loadingStartedRef = useRef(false);
+  const accountListCheckedRef = useRef(false);
+  const accountListEffectRanRef = useRef(false);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -715,6 +719,40 @@ function DinersNumberSheet() {
       label: acc.account_name,
     }));
   }, [filteredAccountList]);
+
+  useEffect(() => {
+    if (!accountListEffectRanRef.current) {
+      accountListEffectRanRef.current = true;
+      return;
+    }
+    accountListCheckedRef.current = true;
+  }, [accountList]);
+
+  useEffect(() => {
+    setViewLoading(true);
+    loadingStartedRef.current = false;
+  }, [selectedAccountId, year, month]);
+
+  useEffect(() => {
+    if (!viewLoading) return;
+    if (!selectedAccountId) {
+      if (accountListCheckedRef.current && (accountOptions || []).length === 0) {
+        setViewLoading(false);
+      }
+      return;
+    }
+
+    if (loading) {
+      loadingStartedRef.current = true;
+      return;
+    }
+
+    if (loadingStartedRef.current) {
+      setViewLoading(false);
+      loadingStartedRef.current = false;
+      return;
+    }
+  }, [loading, viewLoading, selectedAccountId, accountOptions]);
 
   const selectAccountByInput = useCallback(() => {
     if (isAccountLocked) return;
@@ -1189,11 +1227,7 @@ function DinersNumberSheet() {
     }
   };
 
-  if (loading && (!activeRows || activeRows.length === 0)) {
-    return <LoadingScreen />;
-  }
-
-  if (loading) return <LoadingScreen />;
+  if (loading || viewLoading) return <LoadingScreen />;
 
   return (
     <>

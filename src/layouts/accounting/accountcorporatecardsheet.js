@@ -307,6 +307,8 @@ function AccountCorporateCardSheet() {
   const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
   const [pendingDetailMap, setPendingDetailMap] = useState(new Map());
   const isSavingRef = useRef(false);
+  const masterRowsRef = useRef([]);
+  const handleMasterRowClickRef = useRef(null);
   const masterFetchStateRef = useRef({ key: "", promise: null });
   const lastCardFetchAccountRef = useRef("");
 
@@ -397,15 +399,26 @@ function AccountCorporateCardSheet() {
   const restoreMasterSelectionAfterSave = useCallback(
     async (saleId) => {
       const sid = String(saleId ?? "").trim();
-      if (!sid) return;
+      if (!sid) return false;
       for (let retry = 0; retry < 6; retry += 1) {
         await waitForNextPaint();
+        // 상단 DOM 검색이 아닌 상태값 기준으로 행을 찾는다.
+        const rows = masterRowsRef.current || [];
+        const rowIndex = rows.findIndex((r) => String(r?.sale_id ?? "").trim() === sid);
+        if (rowIndex >= 0 && handleMasterRowClickRef.current) {
+          handleMasterRowClickRef.current(rows[rowIndex], rowIndex);
+          await waitForNextPaint();
+          scrollMasterRowIntoViewBySaleId(sid);
+          return true;
+        }
+
         const clicked = triggerMasterRowClickBySaleId(sid);
         if (!clicked) continue;
         await waitForNextPaint();
         scrollMasterRowIntoViewBySaleId(sid);
-        return;
+        return true;
       }
+      return false;
     },
     [
       waitForNextPaint,
@@ -981,11 +994,6 @@ function AccountCorporateCardSheet() {
         await handleFetchMaster();
 
         if (nextSaleId) {
-          await fetchAccountCorporateCardPaymentDetailList({
-            sale_id: nextSaleId,
-            account_id: nextAccountId,
-            payment_dt: nextPaymentDt,
-          });
           setSelectedMaster({
             sale_id: nextSaleId,
             account_id: nextAccountId,
@@ -993,13 +1001,36 @@ function AccountCorporateCardSheet() {
           });
         }
 
-        Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
+        await Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
+
+        if (nextSaleId) {
+          const restored = await restoreMasterSelectionAfterSave(nextSaleId);
+          // 상단 행 클릭 복원이 실패해도 하단 상세는 반드시 다시 조회한다.
+          if (!restored) {
+            await fetchAccountCorporateCardPaymentDetailList({
+              sale_id: nextSaleId,
+              account_id: nextAccountId,
+              payment_dt: nextPaymentDt,
+            });
+            setSelectedMaster({
+              sale_id: nextSaleId,
+              account_id: nextAccountId,
+              payment_dt: nextPaymentDt,
+            });
+          }
+        }
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [masterRows, handleFetchMaster, fetchAccountCorporateCardPaymentDetailList, cardsByAccount]
+    [
+      masterRows,
+      handleFetchMaster,
+      cardsByAccount,
+      restoreMasterSelectionAfterSave,
+      fetchAccountCorporateCardPaymentDetailList,
+    ]
   );
 
   // ========================= 마스터 행 클릭 (pendingDetailMap 보존/복원) =========================
@@ -1561,6 +1592,14 @@ function AccountCorporateCardSheet() {
   useEffect(() => {
     selectedMasterRef.current = selectedMaster;
   }, [selectedMaster]);
+
+  useEffect(() => {
+    masterRowsRef.current = masterRows || [];
+  }, [masterRows]);
+
+  useEffect(() => {
+    handleMasterRowClickRef.current = handleMasterRowClick;
+  }, [handleMasterRowClick]);
 
   // ========================= ✅ 하단 수정 → 상단 자동 반영 =========================
   useEffect(() => {

@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -43,8 +43,12 @@ export default function Tables() {
   const [selectedDelYn, setSelectedDelYn] = useState("ALL");
   // 고객사 목록 정렬 기준 상태
   const [accountSortKey, setAccountSortKey] = useState("account_name");
-  // 정렬 변경 로딩 상태
+  // 조회 필터 변경 시 로딩 화면 유지 상태
   const [sortLoading, setSortLoading] = useState(false);
+  // 실제 조회 시작 여부 추적(로딩 조기 종료 방지)
+  const searchStartedRef = useRef(false);
+  // 로딩 원인 추적(SEARCH: 서버조회, LOCAL: 화면 정렬/필터)
+  const sortLoadingReasonRef = useRef("");
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 22 });
 
   const [open, setOpen] = useState(false);
@@ -64,7 +68,7 @@ export default function Tables() {
   });
 
   // 고객사 목록 조회 훅
-  const { columns, rows, loading } = useTableData(selectedType, refreshKey, selectedDelYn);
+  const { columns, rows, loading } = useTableData(selectedType, refreshKey);
   const rowsByDelYn = rows;
 
   // 목록 값 문자열 정리 유틸
@@ -171,19 +175,26 @@ export default function Tables() {
     setEditedMap({});
   }, [selectedType]);
 
-  const onSearchList = (e) => setSelectedType(e.target.value);
+  const onSearchList = (e) => {
+    const nextType = String(e.target.value || "0");
+    if (nextType === selectedType) return;
+
+    sortLoadingReasonRef.current = "SEARCH";
+    setSortLoading(true);
+    searchStartedRef.current = false;
+    setSelectedType(nextType);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
+  };
 
   // 삭제여부 필터 변경 핸들러
   const handledelynChange = (e) => {
     const nextDelYn = String(e.target.value || "ALL").trim().toUpperCase();
     if (nextDelYn === selectedDelYn) return;
 
+    sortLoadingReasonRef.current = "LOCAL";
     setSortLoading(true);
-    setTimeout(() => {
-      setSelectedDelYn(nextDelYn);
-      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-      setTimeout(() => setSortLoading(false), 0);
-    }, 0);
+    setSelectedDelYn(nextDelYn);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
 
   // 정렬 기준 변경 핸들러
@@ -191,13 +202,37 @@ export default function Tables() {
     const nextKey = String(e.target.value);
     if (nextKey === accountSortKey) return;
 
+    sortLoadingReasonRef.current = "LOCAL";
     setSortLoading(true);
-    setTimeout(() => {
-      setAccountSortKey(nextKey);
-      setPagination((prev) => ({ ...prev, pageIndex: 0 }));
-      setTimeout(() => setSortLoading(false), 0);
-    }, 0);
+    setAccountSortKey(nextKey);
+    setPagination((prev) => ({ ...prev, pageIndex: 0 }));
   };
+
+  useEffect(() => {
+    if (!sortLoading) return;
+
+    const reason = sortLoadingReasonRef.current;
+    if (reason === "LOCAL") {
+      const rafId = window.requestAnimationFrame(() => {
+        setSortLoading(false);
+        sortLoadingReasonRef.current = "";
+      });
+      return () => window.cancelAnimationFrame(rafId);
+    }
+
+    // 조회가 시작되면 시작 플래그를 기록
+    if (loading) {
+      searchStartedRef.current = true;
+      return;
+    }
+
+    // 조회가 시작된 이후 loading=false가 된 시점에만 로딩 종료
+    if (searchStartedRef.current) {
+      setSortLoading(false);
+      searchStartedRef.current = false;
+      sortLoadingReasonRef.current = "";
+    }
+  }, [loading, sortLoading, selectedDelYn, accountSortKey]);
 
   // 화면 표시 전용 정렬 목록
   const sortedLocalRows = useMemo(() => {
@@ -686,9 +721,9 @@ export default function Tables() {
                 value={selectedDelYn}
                 onChange={handledelynChange}
                 sx={{
-                  minWidth: 150,
-                  flex: "1 1 180px",
-                  maxWidth: 220,
+                  minWidth: 90,
+                  flex: "1 1 130px",
+                  maxWidth: 150,
                 }}
                 SelectProps={{ native: true }}
               >
@@ -703,9 +738,9 @@ export default function Tables() {
                 size="small"
                 onChange={onSearchList}
                 sx={{
-                  minWidth: 150,
-                  flex: "1 1 180px",
-                  maxWidth: 220,
+                  minWidth: 90,
+                  flex: "1 1 130px",
+                  maxWidth: 150,
                 }}
                 SelectProps={{ native: true }}
                 value={selectedType}
@@ -722,9 +757,9 @@ export default function Tables() {
                 value={accountSortKey}
                 onChange={handleSortChange}
                 sx={{
-                  minWidth: 150,
-                  flex: "1 1 180px",
-                  maxWidth: 220,
+                  minWidth: 90,
+                  flex: "1 1 130px",
+                  maxWidth: 150,
                 }}
                 SelectProps={{ native: true }}
               >

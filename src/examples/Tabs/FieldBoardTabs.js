@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState, useTransition } from "react";
 import { Tabs, Tab, Box, Card, IconButton, Tooltip } from "@mui/material";
 import Icon from "@mui/material/Icon";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import { useNavigate } from "react-router-dom";
+import LoadingScreen from "layouts/loading/loadingscreen";
 
 // 탭용 서브 컴포넌트 import
 import RecordSheetTab from "./FieldBoard/RecordSheetTab";
@@ -18,9 +19,39 @@ import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 
 function FieldBoardTabs() {
   const [tabIndex, setTabIndex] = useState(0);
+  const [contentTabIndex, setContentTabIndex] = useState(0);
+  const [tabSwitchLoading, setTabSwitchLoading] = useState(false);
+  const [, startTransition] = useTransition();
+  const switchTimerRef = useRef(null);
+  const TAB_SWITCH_DELAY_MS = 320;
   const navigate = useNavigate();
 
-  const handleTabChange = (_, newValue) => setTabIndex(newValue);
+  const handleTabChange = (_, newValue) => {
+    if (newValue === tabIndex) return;
+
+    setTabIndex(newValue);
+    setTabSwitchLoading(true);
+
+    if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+    switchTimerRef.current = setTimeout(() => {
+      startTransition(() => {
+        setContentTabIndex(newValue);
+      });
+    }, TAB_SWITCH_DELAY_MS);
+  };
+
+  useEffect(
+    () => () => {
+      if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (contentTabIndex === tabIndex && tabSwitchLoading) {
+      setTabSwitchLoading(false);
+    }
+  }, [contentTabIndex, tabIndex, tabSwitchLoading]);
 
   // ✅ 로그아웃 처리
   const handleLogout = () => {
@@ -60,6 +91,7 @@ function FieldBoardTabs() {
     <HygieneSheetTab key="hygiene" />,
     <PropertySheetTab key="property" />, // TODO: 나중에 교육 탭 따로 빼도 됨
   ];
+  const activeTabComponent = tabComponents[contentTabIndex] ?? tabComponents[tabIndex];
 
   return (
     <Card
@@ -125,7 +157,23 @@ function FieldBoardTabs() {
       </MDBox>
 
       {/* 🔹 내용영역 → 이 부분만 스크롤됨 */}
-      <MDBox p={2}>{tabComponents[tabIndex]}</MDBox>
+      <MDBox p={2} sx={{ position: "relative" }}>
+        {activeTabComponent}
+        {tabSwitchLoading && (
+          <MDBox
+            sx={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 20,
+              "& .loading-container": {
+                height: "100%",
+              },
+            }}
+          >
+            <LoadingScreen />
+          </MDBox>
+        )}
+      </MDBox>
     </Card>
   );
 }

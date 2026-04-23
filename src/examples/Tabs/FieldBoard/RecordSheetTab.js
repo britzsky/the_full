@@ -437,7 +437,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
         ))}
       </select>
 
-      {["1", "2", "3", "5", "6", "7", "8", "17", "19"].includes(val.type) && (
+      {["1", "2", "3", "5", "6", "7", "8", "10", "17", "19"].includes(val.type) && (
         <>
           <select
             disabled={isJoinLocked}
@@ -3033,14 +3033,12 @@ function RecordSheet() {
   // ✅ 보강 분기: localStorage account_id 누락 복구 중 화면 비노출 유지
   if (shouldSuspendByMissingLockedAccount || recoveringLockedAccount) return null;
   const isPageLoading =
-    Boolean(currentViewKey) &&
-    (
-      loading ||
-      employeeLoadedViewKey !== currentViewKey ||
-      attendanceLoadedViewKey !== currentViewKey ||
-      dispatchLoadedViewKey !== currentViewKey ||
-      mappingLoadedViewKey !== currentViewKey
-    );
+    !currentViewKey ||
+    loading ||
+    employeeLoadedViewKey !== currentViewKey ||
+    attendanceLoadedViewKey !== currentViewKey ||
+    dispatchLoadedViewKey !== currentViewKey ||
+    mappingLoadedViewKey !== currentViewKey;
 
   if (isPageLoading) return <LoadingScreen />;
 

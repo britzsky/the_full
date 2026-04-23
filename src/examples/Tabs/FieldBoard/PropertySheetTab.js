@@ -64,6 +64,8 @@ function PropertySheetTab() {
   const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
+  // 조회 결과를 화면 행 상태로 반영 중인지 표시하는 로딩 상태
+  const [rowsHydrating, setRowsHydrating] = useState(true);
   const [viewImageSrc, setViewImageSrc] = useState(null);
   const [excelDownloading, setExcelDownloading] = useState(false);
   const rowsRef = useRef([]);
@@ -92,6 +94,17 @@ function PropertySheetTab() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  // 거래처 변경 시 로딩을 먼저 시작하고 조회를 트리거
+  const setSelectedAccountWithLoading = useCallback(
+    (nextAccountId) => {
+      const nextId = String(nextAccountId ?? "");
+      if (nextId === String(selectedAccountId ?? "")) return;
+      setRowsHydrating(true);
+      setSelectedAccountId(nextId);
+    },
+    [selectedAccountId]
+  );
 
   const cleanupLocalImageValue = useCallback((value) => {
     if (isLocalUploadImage(value)) {
@@ -201,19 +214,24 @@ function PropertySheetTab() {
     const partial =
       exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
     if (partial) {
-      setSelectedAccountId(partial.value);
+      setSelectedAccountWithLoading(partial.value);
       setAccountInput(partial.label || q);
     }
-  }, [accountInput, accountOptions, isAccountLocked]);
+  }, [accountInput, accountOptions, isAccountLocked, setSelectedAccountWithLoading]);
 
   useEffect(() => {
     if (selectedAccountId) {
+      // API 조회 시작 전에 화면 로딩을 먼저 고정
+      setRowsHydrating(true);
       fetcPropertyList(selectedAccountId);
     } else {
       setRows([]);
       setOriginalRows([]);
+      if ((accountList || []).length > 0) {
+        setRowsHydrating(false);
+      }
     }
-  }, [selectedAccountId]);
+  }, [selectedAccountId, accountList]);
 
   useEffect(() => {
     // ✅ type은 select 비교/표시 위해 문자열로 통일
@@ -244,6 +262,8 @@ function PropertySheetTab() {
     rowsRef.current.forEach((row) => cleanupRowLocalImageValues(row));
     setRows(updated);
     setOriginalRows(deepCopy);
+    // 조회 결과 반영이 완료되면 화면 로딩 종료
+    setRowsHydrating(false);
   }, [activeRows, cleanupRowLocalImageValues]);
 
   useEffect(() => {
@@ -251,15 +271,15 @@ function PropertySheetTab() {
 
     // 1) localStorage에 account_id 있으면 그걸로 고정
     if (lockedAccountId) {
-      setSelectedAccountId(String(lockedAccountId));
+      setSelectedAccountWithLoading(String(lockedAccountId));
       return;
     }
 
     // 2) 없으면 기존 로직(첫 거래처 자동 선택)
     if (!selectedAccountId) {
-      setSelectedAccountId(String(accountList[0].account_id));
+      setSelectedAccountWithLoading(String(accountList[0].account_id));
     }
-  }, [accountList, selectedAccountId, lockedAccountId]);
+  }, [accountList, selectedAccountId, lockedAccountId, setSelectedAccountWithLoading]);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -272,7 +292,7 @@ function PropertySheetTab() {
     [cleanupRowLocalImageValues]
   );
 
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
+  const onSearchList = (e) => setSelectedAccountWithLoading(e.target.value);
 
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prevRows) =>
@@ -924,7 +944,7 @@ function PropertySheetTab() {
     color: isChanged ? "#d32f2f" : "#1e88e5",
   });
 
-  if (loading) return <LoadingScreen />;
+  if (loading || rowsHydrating) return <LoadingScreen />;
 
   return (
     <>
@@ -957,17 +977,14 @@ function PropertySheetTab() {
               if (isAccountLocked) return; // ✅ 혹시 몰라 방어
               // 입력 비움 시 거래처 선택 유지
               if (!opt) return;
-              setSelectedAccountId(opt.value);
+              setSelectedAccountWithLoading(opt.value);
             }}
             inputValue={accountInput}
             onInputChange={(_, newValue) => setAccountInput(newValue)}
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt.value === val.value}
-            filterOptions={(options, state) => {
-              const q = (state.inputValue ?? "").trim().toLowerCase();
-              if (!q) return options;
-              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
-            }}
+            // 입력값과 무관하게 드롭다운에는 전체 업장을 노출
+            filterOptions={(options) => options}
             renderInput={(params) => (
               <TextField
                 {...params}

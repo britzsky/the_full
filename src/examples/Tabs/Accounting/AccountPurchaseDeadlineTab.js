@@ -7,6 +7,7 @@ import {
   Box,
   Select,
   IconButton,
+  Badge,
   Menu,
   MenuItem,
   Tooltip,
@@ -97,6 +98,17 @@ const DETAIL_ITEM_TYPES = [
 
 // 영수증 업로드 버튼 너비 (px)
 const RECEIPT_UPLOAD_BTN_WIDTH = 78;
+// 상단 영수증은 최대 3장까지 저장한다.
+const RECEIPT_IMAGE_KEYS = ["receipt_image", "receipt_image2", "receipt_image3"];
+const RECEIPT_IMAGE_SOURCE_KEYS = [
+  "receipt_image",
+  "receipt_image2",
+  "receipt_image3",
+  "receipt_image_2",
+  "receipt_image_3",
+  "receiptImage2",
+  "receiptImage3",
+];
 
 
 // 숫자 입력 전용: onInput에서 비숫자 즉시 제거 (한글 모음·자음 포함)
@@ -264,7 +276,7 @@ function AccountPurchaseDeadlineTab() {
 
   // ✅ (상단) 데이터 훅 사용
   const {
-    rows, setRows, originalRows, setOriginalRows, loading, fetchPurchaseList,
+    rows, setRows, originalRows, setOriginalRows, loading, fetchAccountList, fetchPurchaseList,
     typeOptions, setTypeOptions, typeLoading, fetchTypeOptions,
   } = useAccountPurchaseDeadlineData();
 
@@ -330,8 +342,8 @@ function AccountPurchaseDeadlineTab() {
 
     (async () => {
       try {
-        const res = await api.get("/Account/AccountList", { params: { account_type: "0" } });
-        const list = (res.data || []).map((item) => ({
+        const rawList = await fetchAccountList({ account_type: "0" });
+        const list = (rawList || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
           account_type: item.account_type,
@@ -818,20 +830,33 @@ function AccountPurchaseDeadlineTab() {
 
   const isPdfFile = (p) => getExt(p) === "pdf";
 
-  // 미리보기 가능한 파일 목록 (영수증 이미지/PDF 경로 포함 행만 추출)
-  const fileItems = useMemo(() => {
-    return (rows || [])
-      .filter((r) => !!r?.receipt_image)
-      .map((r) => {
-        const path = r.receipt_image;
-        return {
-          path,
-          url: buildFilePreviewUrl(path),
-          name: `${r.name || ""} ${r.saleDate || ""}`.trim(),
-          kind: isPdfFile(path) ? "pdf" : "image",
-        };
+  // 한 행의 영수증 경로를 정규화해 최대 3장까지만 사용한다.
+  const getReceiptImagePaths = useCallback(
+    (row) => {
+      const unique = [];
+      RECEIPT_IMAGE_SOURCE_KEYS.forEach((k) => {
+        const v = String(row?.[k] ?? "").trim();
+        if (!v) return;
+        if (!unique.includes(v)) unique.push(v);
       });
-  }, [rows, buildFilePreviewUrl]);
+      return unique.slice(0, RECEIPT_IMAGE_KEYS.length);
+    },
+    []
+  );
+
+  // 미리보기 파일 목록은 선택한 행 기준으로 구성한다.
+  const buildViewerFilesByRow = useCallback(
+    (row) => {
+      const paths = getReceiptImagePaths(row);
+      return paths.map((path, idx) => ({
+        path,
+        url: buildFilePreviewUrl(path),
+        name: `${row?.use_name || row?.name || ""} ${row?.saleDate || ""} (${idx + 1})`.trim(),
+        kind: isPdfFile(path) ? "pdf" : "image",
+      }));
+    },
+    [buildFilePreviewUrl, getReceiptImagePaths]
+  );
 
   // 영수증 없음 알림
   const handleNoImageAlert = () => {
@@ -866,12 +891,23 @@ function AccountPurchaseDeadlineTab() {
   // ✅ 영수증 이미지 업로드
   // =========================
   const handleImageUpload = useCallback(
-    async (file, rowIndex) => {
-      if (!file) return;
+    async (files, rowIndex) => {
+      const selectedFiles = (Array.isArray(files) ? files : [files])
+        .filter(Boolean)
+        .sort((a, b) =>
+          String(a?.name || "").localeCompare(String(b?.name || ""), "ko", {
+            numeric: true,
+            sensitivity: "base",
+          })
+        );
+      if (!selectedFiles.length) return;
+
       const row = masterRowsRef.current?.[rowIndex] || {};
       const rowType = String(row.type || filters.type || "");
       const accountId = String(row.account_id || "");
       const receiptType = normalizeReceiptTypeVal(row.receipt_type || "", rowType);
+      const existingPaths = getReceiptImagePaths(row);
+      const isReupload = existingPaths.length > 0;
 
       if (!accountId) {
         return Swal.fire("경고", "영수증 업로드 전에 거래처를 먼저 선택해주세요.", "warning");
@@ -882,25 +918,84 @@ function AccountPurchaseDeadlineTab() {
       // - 1002/1003(온라인몰): /receipt-scan + saveType="account" (HeadOfficeReceiptParserFactory 라우팅)
       // - 기타: /receipt-scan + saveType="account"
       const endpoint = "/receipt-scan";
+      const filesToUpload = selectedFiles.slice(0, RECEIPT_IMAGE_KEYS.length);
+      const skippedCount = Math.max(0, selectedFiles.length - filesToUpload.length);
 
       try {
         Swal.fire({
-          title: "영수증 확인 중 입니다.",
-          text: "잠시만 기다려 주세요...",
+          title: isReupload ? "영수증 재업로드 중 입니다." : "영수증 확인 중 입니다.",
+          text: `0/${filesToUpload.length} 처리 중...`,
           allowOutsideClick: false,
           allowEscapeKey: false,
-          didOpen: () => Swal.showLoading(),
+          showConfirmButton: true,
+          confirmButtonText: "",
+          didOpen: () => {
+            Swal.showLoading();
+          },
         });
 
+        let workingRow = isReupload
+          ? { ...row, receipt_image: "", receipt_image2: "", receipt_image3: "" }
+          : { ...row };
+        const failMessages = [];
+        let successCount = 0;
+
+        // 재업로드 시 기존 1~3 슬롯을 먼저 비워서(물리 삭제 트리거) 새 파일이 1번부터 다시 채워지게 한다.
+        if (isReupload && String(row.sale_id || "").trim()) {
+          const toSaveNum = (v) => {
+            const raw = stripComma(v);
+            return raw === "" ? 0 : raw;
+          };
+          const pt = String(row.payType ?? "").trim();
+          const clearPayload = {
+            ...row,
+            sale_id: String(row.sale_id).trim(),
+            account_id: accountId,
+            type: rowType,
+            user_id: row.user_id || localStorage.getItem("user_id") || "",
+            receipt_type: receiptType,
+            receipt_image: "",
+            receipt_image2: "",
+            receipt_image3: "",
+            vat: toSaveNum(row.vat),
+            taxFree: toSaveNum(row.taxFree),
+            tax: toSaveNum(row.tax),
+            total: toSaveNum(row.total),
+            totalCash: toSaveNum(row.totalCash),
+            totalCard: toSaveNum(row.totalCard),
+            payType: pt === "2" ? "2" : "1",
+            savetype: 1,
+          };
+
+          const clearRes = await api.post("/Account/AccountPurchaseSave", [clearPayload], {
+            validateStatus: () => true,
+          });
+          if (clearRes.status !== 200 || clearRes.data?.code !== 200) {
+            const message = clearRes?.data?.message || "기존 영수증 초기화에 실패했습니다.";
+            throw new Error(message);
+          }
+        }
+
+        if (Swal.isVisible()) {
+          Swal.update({
+            title: "영수증 확인 중 입니다.",
+            text: "1/1 처리 중...",
+            showConfirmButton: true,
+            confirmButtonText: "",
+          });
+          Swal.showLoading();
+        }
+
         const formData = new FormData();
-        formData.append("file", file);
+        filesToUpload.forEach((f) => {
+          formData.append("files", f);
+        });
         formData.append("user_id", localStorage.getItem("user_id") || "");
         formData.append("receipt_type", receiptType);
         formData.append("type", rowType);
         formData.append("account_id", accountId);
-        formData.append("saleDate", row.saleDate || "");
+        formData.append("saleDate", workingRow.saleDate || row.saleDate || "");
         formData.append("saveType", rowType === "1000" ? "cor" : "account");
-        console.log("[업로드] 전송 sale_id:", row.sale_id, "rowIndex:", rowIndex);
         formData.append("sale_id", String(row.sale_id || ""));
 
         const res = await api.post(endpoint, formData, {
@@ -908,36 +1003,61 @@ function AccountPurchaseDeadlineTab() {
           validateStatus: () => true,
         });
 
-        Swal.close();
-
         if (res.status !== 200) {
-          return Swal.fire("실패", res.data?.message || "영수증 인식에 실패했습니다.", "error");
+          failMessages.push(res?.data?.message || "영수증 업로드 실패");
+        } else {
+          const data = res.data || {};
+          const main = data.main || data || {};
+          const patch = {
+            // sale_id는 기존 행 유지 — 응답값으로 덮으면 저장 시 새 행으로 INSERT됨
+            ...(main.account_id != null && main.account_id !== "" ? { account_id: main.account_id } : {}),
+            ...(main.saleDate != null ? { saleDate: main.saleDate } : {}),
+            ...(main.use_name != null ? { use_name: main.use_name } : {}),
+            ...(main.bizNo != null ? { bizNo: main.bizNo } : {}),
+            ...(main.total != null ? { total: main.total } : {}),
+            ...(main.vat != null ? { vat: main.vat } : {}),
+            ...(main.tax != null ? { tax: main.tax } : {}),
+            ...(main.taxFree != null ? { taxFree: main.taxFree } : {}),
+            ...(main.receipt_type != null
+              ? { receipt_type: normalizeReceiptTypeVal(main.receipt_type, rowType) }
+              : {}),
+            ...(main.receipt_image != null ? { receipt_image: main.receipt_image } : {}),
+            ...(main.receipt_image2 != null ? { receipt_image2: main.receipt_image2 } : {}),
+            ...(main.receipt_image3 != null ? { receipt_image3: main.receipt_image3 } : {}),
+            ...(main.receipt_image_2 != null ? { receipt_image2: main.receipt_image_2 } : {}),
+            ...(main.receipt_image_3 != null ? { receipt_image3: main.receipt_image_3 } : {}),
+            ...(main.receiptImage2 != null ? { receipt_image2: main.receiptImage2 } : {}),
+            ...(main.receiptImage3 != null ? { receipt_image3: main.receiptImage3 } : {}),
+          };
+          workingRow = { ...workingRow, ...patch };
+          const normalizedPaths = getReceiptImagePaths(workingRow);
+          workingRow = {
+            ...workingRow,
+            receipt_image: normalizedPaths[0] || "",
+            receipt_image2: normalizedPaths[1] || "",
+            receipt_image3: normalizedPaths[2] || "",
+          };
+          successCount = getReceiptImagePaths(workingRow).length;
+          if (successCount <= 0) {
+            failMessages.push("영수증 경로를 확인할 수 없습니다.");
+          }
         }
 
-        const data = res.data || {};
-        const main = data.main || data || {};
-        console.log("[업로드] 응답 sale_id:", main.sale_id, "기존 row.sale_id:", row.sale_id);
+        Swal.close();
 
-        const patch = {
-          // sale_id는 기존 행 유지 — 응답값으로 덮으면 저장 시 새 행으로 INSERT됨
-          ...(main.account_id != null && main.account_id !== "" ? { account_id: main.account_id } : {}),
-          ...(main.saleDate != null ? { saleDate: main.saleDate } : {}),
-          ...(main.use_name != null ? { use_name: main.use_name } : {}),
-          ...(main.bizNo != null ? { bizNo: main.bizNo } : {}),
-          ...(main.total != null ? { total: main.total } : {}),
-          ...(main.vat != null ? { vat: main.vat } : {}),
-          ...(main.tax != null ? { tax: main.tax } : {}),
-          ...(main.taxFree != null ? { taxFree: main.taxFree } : {}),
-          // receipt_image: 항상 덮어쓰기 (재업로드 시 새 경로 반영)
-          receipt_image: main.receipt_image ?? row.receipt_image ?? "",
-          ...(main.receipt_type != null
-            ? { receipt_type: normalizeReceiptTypeVal(main.receipt_type, rowType) }
-            : {}),
-        };
+        if (successCount <= 0) {
+          if (isReupload) {
+            setRows((prev) =>
+              prev.map((r, i) => (i === rowIndex ? { ...r, ...workingRow, __dirty: true } : r))
+            );
+          }
+          const failMessage = failMessages[0] || "영수증 인식에 실패했습니다.";
+          return Swal.fire("실패", failMessage, "error");
+        }
 
         // rows 갱신 (dirty 유지 — 빨간색 표시 및 변경감지용)
         setRows((prev) =>
-          prev.map((r, i) => (i === rowIndex ? { ...r, ...patch, __dirty: true } : r))
+          prev.map((r, i) => (i === rowIndex ? { ...r, ...workingRow, __dirty: true } : r))
         );
 
         // 업로드한 행 선택 유지 (sale_id는 기존 행 것 사용)
@@ -947,13 +1067,29 @@ function AccountPurchaseDeadlineTab() {
           setSelectedMasterIndex(rowIndex);
         }
 
-        Swal.fire("완료", "영수증이 업로드되었습니다.", "success");
+        if (failMessages.length > 0 || skippedCount > 0) {
+          const extraInfo = skippedCount > 0 ? `\n(최대 3장 제한으로 ${skippedCount}장은 제외됨)` : "";
+          Swal.fire(
+            "일부 완료",
+            `${successCount}장 업로드 완료, ${failMessages.length + skippedCount}장 미처리${extraInfo}`,
+            "warning"
+          );
+          return;
+        }
+
+        Swal.fire("완료", `${successCount}장 업로드되었습니다.`, "success");
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "업로드 중 오류가 발생했습니다.", "error");
       }
     },
-    [filters.type, setRows, setSelectedSaleId, setSelectedMasterIndex]
+    [
+      filters.type,
+      getReceiptImagePaths,
+      setRows,
+      setSelectedSaleId,
+      setSelectedMasterIndex,
+    ]
   );
 
   // =========================
@@ -965,27 +1101,30 @@ function AccountPurchaseDeadlineTab() {
   // 파일 뷰어 열림 상태 및 현재 인덱스
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerFiles, setViewerFiles] = useState([]);
   const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
 
-  // 영수증 미리보기 열기 (해당 파일의 인덱스로 이동)
+  // 영수증 미리보기 열기 (선택한 행의 파일 목록 기준)
   const handleViewImage = useCallback(
-    (path) => {
-      if (!path) return;
-      const idx = fileItems.findIndex((x) => x.path === path);
+    (row, path) => {
+      const nextFiles = buildViewerFilesByRow(row);
+      if (!nextFiles.length) return;
+      const idx = path ? nextFiles.findIndex((x) => x.path === path) : 0;
+      setViewerFiles(nextFiles);
       setViewerIndex(idx >= 0 ? idx : 0);
       setViewerOpen(true);
     },
-    [fileItems]
+    [buildViewerFilesByRow]
   );
 
   useEffect(() => {
     if (!viewerOpen) return;
-    if (!fileItems.length) {
+    if (!viewerFiles.length) {
       setViewerIndex(0);
       return;
     }
-    if (viewerIndex > fileItems.length - 1) setViewerIndex(fileItems.length - 1);
-  }, [viewerOpen, fileItems.length, viewerIndex]);
+    if (viewerIndex > viewerFiles.length - 1) setViewerIndex(viewerFiles.length - 1);
+  }, [viewerOpen, viewerFiles.length, viewerIndex]);
 
   // =========================
   // ✅ 저장 관련 (상단)
@@ -1003,6 +1142,8 @@ function AccountPurchaseDeadlineTab() {
       "total",
       "receipt_type",
       "receipt_image",
+      "receipt_image2",
+      "receipt_image3",
       "note",
     ],
     []
@@ -1450,7 +1591,11 @@ function AccountPurchaseDeadlineTab() {
         text: "잠시만 기다려 주세요.",
         allowOutsideClick: false,
         allowEscapeKey: false,
-        didOpen: () => Swal.showLoading(),
+        showConfirmButton: true,
+        confirmButtonText: "",
+        didOpen: () => {
+          Swal.showLoading();
+        },
       });
 
       // 모든 sale_id의 detail 변경분을 한 번에 저장
@@ -1806,7 +1951,11 @@ function AccountPurchaseDeadlineTab() {
       title: "엑셀 생성 중...",
       text: "상세 데이터를 조회하고 있습니다.",
       allowOutsideClick: false,
-      didOpen: () => Swal.showLoading(),
+      showConfirmButton: true,
+      confirmButtonText: "",
+      didOpen: () => {
+        Swal.showLoading();
+      },
     });
 
     try {
@@ -2653,10 +2802,13 @@ function AccountPurchaseDeadlineTab() {
                           }
 
                           if (key === "receipt_image") {
-                            const has = !!value;
+                            const receiptPaths = getReceiptImagePaths(row);
+                            const receiptCount = new Set(receiptPaths).size;
+                            const previewPath = receiptPaths[0] || "";
+                            const has = receiptPaths.length > 0;
                             const stableKey = String(row.sale_id ?? rowIndex);
                             const inputId = `receipt-${stableKey}`;
-                            const rowCellStyle = cellStyle(key, value);
+                            const rowCellStyle = cellStyle(key, previewPath);
                             const iconColor = rowCellStyle?.color === "red" ? "red" : has ? "#1976d2" : "#d32f2f";
 
                             return (
@@ -2674,6 +2826,7 @@ function AccountPurchaseDeadlineTab() {
                                   <input
                                     type="file"
                                     accept="image/*"
+                                    multiple
                                     id={inputId}
                                     style={{ display: "none" }}
                                     ref={(el) => { if (el) fileInputRefs.current[inputId] = el; }}
@@ -2683,10 +2836,10 @@ function AccountPurchaseDeadlineTab() {
                                     }}
                                     onChange={(e) => {
                                       e.stopPropagation();
-                                      const f = e.target.files?.[0];
+                                      const files = Array.from(e.target.files || []);
                                       e.currentTarget.value = "";
-                                      if (!f) return;
-                                      handleImageUpload(f, rowIndex);
+                                      if (!files.length) return;
+                                      handleImageUpload(files, rowIndex);
                                     }}
                                   />
 
@@ -2699,7 +2852,7 @@ function AccountPurchaseDeadlineTab() {
                                             sx={{ color: iconColor }}
                                             onClick={(ev) => {
                                               ev.stopPropagation();
-                                              handleDownload(value);
+                                              handleDownload(previewPath);
                                             }}
                                           >
                                             <DownloadIcon fontSize="small" />
@@ -2708,16 +2861,33 @@ function AccountPurchaseDeadlineTab() {
                                       </Tooltip>
 
                                       <Tooltip title="미리보기(창)">
-                                        <IconButton
-                                          size="small"
-                                          sx={{ color: iconColor }}
-                                          onClick={(ev) => {
-                                            ev.stopPropagation();
-                                            handleViewImage(value);
+                                        <Badge
+                                          color="error"
+                                          badgeContent={receiptCount}
+                                          invisible={receiptCount <= 1}
+                                          anchorOrigin={{ vertical: "top", horizontal: "right" }}
+                                          sx={{
+                                            "& .MuiBadge-badge": {
+                                              fontSize: 10,
+                                              minWidth: 16,
+                                              height: 16,
+                                              px: 0.5,
+                                              top: 5,
+                                              right: 3,
+                                            },
                                           }}
                                         >
-                                          <ImageSearchIcon fontSize="small" />
-                                        </IconButton>
+                                          <IconButton
+                                            size="small"
+                                            sx={{ color: iconColor }}
+                                            onClick={(ev) => {
+                                              ev.stopPropagation();
+                                              handleViewImage(row, previewPath);
+                                            }}
+                                          >
+                                            <ImageSearchIcon fontSize="small" />
+                                          </IconButton>
+                                        </Badge>
                                       </Tooltip>
 
                                       <MDButton
@@ -3195,7 +3365,7 @@ function AccountPurchaseDeadlineTab() {
         {/* 저장된 증빙자료를 공용 오버레이로 미리보는 영역 */}
         <PreviewOverlay
           open={viewerOpen}
-          files={fileItems}
+          files={viewerFiles}
           currentIndex={viewerIndex}
           onChangeIndex={setViewerIndex}
           onClose={handleCloseViewer}

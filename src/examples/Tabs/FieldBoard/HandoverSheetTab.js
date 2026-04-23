@@ -1,5 +1,5 @@
 // src/layouts/handover/HandoverSheetTab.js
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -18,6 +18,9 @@ export default function HandoverSheetTab() {
   const [form, setForm] = useState({});
   const [originalForm, setOriginalForm] = useState({});
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
+  // 조회 시작 전/후 깜빡임 방지를 위한 화면 로딩 상태
+  const [viewLoading, setViewLoading] = useState(true);
+  const loadingStartedRef = useRef(false);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -31,7 +34,20 @@ export default function HandoverSheetTab() {
     return (accountList || []).filter((row) => String(row.account_id) === String(localAccountId));
   }, [accountList, localAccountId]);
 
-  const onSearchList = (e) => setSelectedAccountId(e.target.value);
+  // 거래처 변경 시 로딩을 먼저 시작하고 조회를 트리거
+  const beginAccountLoading = () => {
+    setViewLoading(true);
+    loadingStartedRef.current = false;
+  };
+
+  const setSelectedAccountWithLoading = (nextAccountId) => {
+    const nextId = String(nextAccountId ?? "");
+    if (nextId === String(selectedAccountId ?? "")) return;
+    beginAccountLoading();
+    setSelectedAccountId(nextId);
+  };
+
+  const onSearchList = (e) => setSelectedAccountWithLoading(e.target.value);
 
   // ✅ accountList 로딩 후 selectedAccountId 결정
   // - localStorage account_id가 있으면 무조건 그걸로 고정
@@ -40,17 +56,19 @@ export default function HandoverSheetTab() {
     if (!accountList || accountList.length === 0) return;
 
     if (localAccountId) {
-      setSelectedAccountId(localAccountId);
+      setSelectedAccountWithLoading(localAccountId);
       return;
     }
 
     if (!selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountWithLoading(accountList[0].account_id);
     }
   }, [accountList, selectedAccountId, localAccountId]);
 
   useEffect(() => {
-    if (selectedAccountId) fetcHandOverList(selectedAccountId);
+    if (selectedAccountId) {
+      fetcHandOverList(selectedAccountId);
+    }
   }, [selectedAccountId]);
 
   useEffect(() => {
@@ -65,7 +83,25 @@ export default function HandoverSheetTab() {
       setForm({});
       setOriginalForm({});
     }
-  }, [handOverListRows]);
+    // 조회 결과가 화면 상태에 반영된 뒤 로딩 종료
+    if (selectedAccountId) {
+      setViewLoading(false);
+    }
+  }, [handOverListRows, selectedAccountId]);
+
+  useEffect(() => {
+    if (!viewLoading) return;
+
+    if (loading) {
+      loadingStartedRef.current = true;
+      return;
+    }
+
+    if (loadingStartedRef.current) {
+      setViewLoading(false);
+      loadingStartedRef.current = false;
+    }
+  }, [loading, viewLoading]);
 
   const handleChange = (key) => (e) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -88,6 +124,7 @@ export default function HandoverSheetTab() {
           confirmButtonColor: "#d33",
           confirmButtonText: "확인",
         });
+        beginAccountLoading();
         await fetcHandOverList(selectedAccountId);
       }
     } catch (err) {
@@ -101,7 +138,7 @@ export default function HandoverSheetTab() {
     }
   };
 
-  if (loading) return <LoadingScreen />;
+  if (loading || viewLoading) return <LoadingScreen />;
 
   const normalize = (v) => (v === null || v === undefined ? "" : String(v).trim());
   const isChanged = (key) => normalize(form[key]) !== normalize(originalForm[key]);

@@ -1,5 +1,5 @@
 // src/layouts/handover/HandoverSheetTab.js
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import MDBox from "components/MDBox";
@@ -16,6 +16,9 @@ export default function HandoverSheetTab() {
   const [originalForm, setOriginalForm] = useState({});
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
+  // 조회 시작 전/후 깜빡임 방지를 위한 화면 로딩 상태
+  const [viewLoading, setViewLoading] = useState(true);
+  const loadingStartedRef = useRef(false);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -38,6 +41,22 @@ export default function HandoverSheetTab() {
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
+  // 거래처 변경 시 로딩을 먼저 시작하고 조회를 트리거
+  const beginAccountLoading = useCallback(() => {
+    setViewLoading(true);
+    loadingStartedRef.current = false;
+  }, []);
+
+  const setSelectedAccountWithLoading = useCallback(
+    (nextAccountId) => {
+      const nextId = String(nextAccountId ?? "");
+      if (nextId === String(selectedAccountId ?? "")) return;
+      beginAccountLoading();
+      setSelectedAccountId(nextId);
+    },
+    [beginAccountLoading, selectedAccountId]
+  );
+
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
     if (!q) return;
@@ -47,22 +66,24 @@ export default function HandoverSheetTab() {
     const partial =
       exact || list.find((o) => String(o?.label || "").toLowerCase().includes(qLower));
     if (partial) {
-      setSelectedAccountId(partial.value);
+      setSelectedAccountWithLoading(partial.value);
       setAccountInput(partial.label || q);
     }
-  }, [accountInput, accountOptions]);
+  }, [accountInput, accountOptions, setSelectedAccountWithLoading]);
 
   // (기존 select 핸들러는 Autocomplete로 교체)
   // const onSearchList = (e) => setSelectedAccountId(e.target.value);
 
   useEffect(() => {
     if ((accountList || []).length > 0 && !selectedAccountId) {
-      setSelectedAccountId(String(accountList[0].account_id));
+      setSelectedAccountWithLoading(String(accountList[0].account_id));
     }
-  }, [accountList, selectedAccountId]);
+  }, [accountList, selectedAccountId, setSelectedAccountWithLoading]);
 
   useEffect(() => {
-    if (selectedAccountId) fetcHandOverList(selectedAccountId);
+    if (selectedAccountId) {
+      fetcHandOverList(selectedAccountId);
+    }
   }, [selectedAccountId]);
 
   useEffect(() => {
@@ -77,7 +98,25 @@ export default function HandoverSheetTab() {
       setForm({});
       setOriginalForm({});
     }
-  }, [handOverListRows]);
+    // 조회 결과가 화면 상태에 반영된 뒤 로딩 종료
+    if (selectedAccountId) {
+      setViewLoading(false);
+    }
+  }, [handOverListRows, selectedAccountId]);
+
+  useEffect(() => {
+    if (!viewLoading) return;
+
+    if (loading) {
+      loadingStartedRef.current = true;
+      return;
+    }
+
+    if (loadingStartedRef.current) {
+      setViewLoading(false);
+      loadingStartedRef.current = false;
+    }
+  }, [loading, viewLoading]);
 
   const handleChange = (key) => (e) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -100,6 +139,7 @@ export default function HandoverSheetTab() {
           confirmButtonColor: "#d33",
           confirmButtonText: "확인",
         });
+        beginAccountLoading();
         await fetcHandOverList(selectedAccountId);
       }
     } catch (err) {
@@ -113,7 +153,7 @@ export default function HandoverSheetTab() {
     }
   };
 
-  if (loading) return <LoadingScreen />;
+  if (loading || viewLoading) return <LoadingScreen />;
 
   const normalize = (v) => (v === null || v === undefined ? "" : String(v).trim());
   const isChanged = (key) => normalize(form[key]) !== normalize(originalForm[key]);
@@ -408,7 +448,7 @@ export default function HandoverSheetTab() {
           onChange={(_, opt) => {
             // 입력 비움 시 거래처 선택 유지
             if (!opt) return;
-            setSelectedAccountId(opt.value);
+            setSelectedAccountWithLoading(opt.value);
           }}
           inputValue={accountInput}
           onInputChange={(_, newValue) => setAccountInput(newValue)}

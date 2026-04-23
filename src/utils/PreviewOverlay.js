@@ -220,6 +220,23 @@ function PreviewOverlay({
     };
   }, [open]);
 
+  // 오버레이가 열린 동안 Esc 키로 닫기 동작을 지원한다.
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (typeof onClose === "function") onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose]);
+
   const handleDragStart = useCallback(
     (e) => {
       if (!open) return;

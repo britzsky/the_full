@@ -1,5 +1,5 @@
 // src/layouts/property/PropertySheetTab.js
-import React, { useMemo, useState, useEffect, useCallback, useRef, useDeferredValue } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import PropTypes from "prop-types";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -62,7 +62,6 @@ const AccountSearchAutocomplete = React.memo(function AccountSearchAutocomplete(
   onSelectAccount,
 }) {
   const [inputValue, setInputValue] = useState("");
-  const deferredInputValue = useDeferredValue(inputValue);
 
   useEffect(() => {
     const nextLabel = String(selectedAccountOption?.label || "");
@@ -70,12 +69,9 @@ const AccountSearchAutocomplete = React.memo(function AccountSearchAutocomplete(
   }, [selectedAccountOption]);
 
   const filteredAccountOptions = useMemo(() => {
-    const q = String(deferredInputValue || "")
-      .trim()
-      .toLowerCase();
-    if (!q) return accountOptions;
-    return accountOptions.filter((option) => String(option?.label || "").toLowerCase().includes(q));
-  }, [accountOptions, deferredInputValue]);
+    // 입력값과 무관하게 드롭다운에는 전체 업장을 노출
+    return accountOptions;
+  }, [accountOptions]);
 
   const autocompleteOptions = useMemo(() => {
     if (!selectedAccountOption) return filteredAccountOptions;
@@ -164,6 +160,8 @@ function PropertySheetTab() {
   const { activeRows, accountList, loading, fetcPropertyList } = usePropertiessheetData();
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
+  // 조회 결과를 화면 행 상태로 반영 중인지 표시하는 로딩 상태
+  const [rowsHydrating, setRowsHydrating] = useState(true);
   const [viewImageSrc, setViewImageSrc] = useState(null);
   const [excelDownloading, setExcelDownloading] = useState(false);
   const rowsRef = useRef([]);
@@ -192,6 +190,17 @@ function PropertySheetTab() {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
+
+  // 거래처 변경 시 로딩을 먼저 시작하고 조회를 트리거
+  const setSelectedAccountWithLoading = useCallback(
+    (nextAccountId) => {
+      const nextId = String(nextAccountId ?? "");
+      if (nextId === String(selectedAccountId ?? "")) return;
+      setRowsHydrating(true);
+      setSelectedAccountId(nextId);
+    },
+    [selectedAccountId]
+  );
 
   const cleanupLocalImageValue = useCallback((value) => {
     if (isLocalUploadImage(value)) {
@@ -285,12 +294,17 @@ function PropertySheetTab() {
 
   useEffect(() => {
     if (selectedAccountId) {
+      // API 조회 시작 전에 화면 로딩을 먼저 고정
+      setRowsHydrating(true);
       fetcPropertyList(selectedAccountId);
     } else {
       setRows([]);
       setOriginalRows([]);
+      if ((accountList || []).length > 0) {
+        setRowsHydrating(false);
+      }
     }
-  }, [selectedAccountId]);
+  }, [selectedAccountId, accountList]);
 
   useEffect(() => {
     // ✅ type은 select 비교/표시 위해 문자열로 통일
@@ -321,6 +335,8 @@ function PropertySheetTab() {
     rowsRef.current.forEach((row) => cleanupRowLocalImageValues(row));
     setRows(updated);
     setOriginalRows(deepCopy);
+    // 조회 결과 반영이 완료되면 화면 로딩 종료
+    setRowsHydrating(false);
   }, [activeRows, cleanupRowLocalImageValues]);
 
   useEffect(() => {
@@ -332,10 +348,10 @@ function PropertySheetTab() {
   useEffect(() => {
     if (didSetDefaultAccountRef.current) return;
     if (accountList.length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountWithLoading(accountList[0].account_id);
       didSetDefaultAccountRef.current = true;
     }
-  }, [accountList, selectedAccountId]);
+  }, [accountList, selectedAccountId, setSelectedAccountWithLoading]);
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -995,7 +1011,7 @@ function PropertySheetTab() {
     color: isChanged ? "#d32f2f" : "#1e88e5",
   });
 
-  if (loading) return <LoadingScreen />;
+  if (loading || rowsHydrating) return <LoadingScreen />;
 
   return (
     <>
@@ -1021,7 +1037,7 @@ function PropertySheetTab() {
           <AccountSearchAutocomplete
             accountOptions={accountOptions}
             selectedAccountOption={selectedAccountOption}
-            onSelectAccount={setSelectedAccountId}
+            onSelectAccount={setSelectedAccountWithLoading}
           />
         )}
 

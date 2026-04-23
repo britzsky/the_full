@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useTransition } from "react";
 import { Tabs, Tab, Box, Card } from "@mui/material";
 import MDBox from "components/MDBox";
+import LoadingScreen from "layouts/loading/loadingscreen";
 
 // 탭용 서브 컴포넌트 import
 import AccountMemberCardSheetTab from "./Operate/AccountMemberCardSheetTab";
@@ -46,9 +47,26 @@ const hasAccess = (tab, deptCode, posCode) => {
 
 function OperateTabs_2() {
   const [tabIndex, setTabIndex] = useState(0);
+  const [contentTabIndex, setContentTabIndex] = useState(0);
+  const [tabSwitchLoading, setTabSwitchLoading] = useState(false);
+  const [, startTransition] = useTransition();
+  const switchTimerRef = useRef(null);
+  const TAB_SWITCH_DELAY_MS = 320;
   const { deptCode, posCode } = getUserCodes();
 
-  const handleTabChange = (_, newValue) => setTabIndex(newValue);
+  const handleTabChange = (_, newValue) => {
+    if (newValue === tabIndex) return;
+
+    setTabIndex(newValue);
+    setTabSwitchLoading(true);
+
+    if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+    switchTimerRef.current = setTimeout(() => {
+      startTransition(() => {
+        setContentTabIndex(newValue);
+      });
+    }, TAB_SWITCH_DELAY_MS);
+  };
 
   // ✅ 숫자 이모지 아이콘
   const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
@@ -122,7 +140,23 @@ function OperateTabs_2() {
     if (tabIndex >= visibleTabs.length) {
       setTabIndex(0);
     }
-  }, [visibleTabs, tabIndex]);
+    if (contentTabIndex >= visibleTabs.length) {
+      setContentTabIndex(0);
+    }
+  }, [visibleTabs.length, tabIndex, contentTabIndex]);
+
+  useEffect(
+    () => () => {
+      if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (contentTabIndex === tabIndex && tabSwitchLoading) {
+      setTabSwitchLoading(false);
+    }
+  }, [contentTabIndex, tabIndex, tabSwitchLoading]);
 
   // 🔹 권한 있는 탭이 하나도 없을 때
   if (visibleTabs.length === 0) {
@@ -132,6 +166,7 @@ function OperateTabs_2() {
       </Card>
     );
   }
+  const activeTabComponent = visibleTabs[contentTabIndex]?.component ?? visibleTabs[tabIndex]?.component;
 
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
@@ -189,7 +224,23 @@ function OperateTabs_2() {
         </Tabs>
       </MDBox>
       {/* 탭 내용 */}
-      <MDBox p={2}>{visibleTabs[tabIndex].component}</MDBox>
+      <MDBox p={2} sx={{ position: "relative" }}>
+        {activeTabComponent}
+        {tabSwitchLoading && (
+          <MDBox
+            sx={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 20,
+              "& .loading-container": {
+                height: "100%",
+              },
+            }}
+          >
+            <LoadingScreen />
+          </MDBox>
+        )}
+      </MDBox>
     </Card>
   );
 }

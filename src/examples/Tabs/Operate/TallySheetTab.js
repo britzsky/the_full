@@ -440,6 +440,9 @@ function TallySheet() {
   const isAccountLocked = useMemo(() => !!localAccountId, [localAccountId]);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || "");
   const [accountInput, setAccountInput] = useState("");
+  // 조회 시작 전/후 깜빡임 방지를 위한 화면 로딩 상태
+  const [viewLoading, setViewLoading] = useState(true);
+  const loadingStartedRef = useRef(false);
 
   const [originalRows, setOriginalRows] = useState([]);
   const [original2Rows, setOriginal2Rows] = useState([]);
@@ -454,6 +457,21 @@ function TallySheet() {
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
   const [tabValue, setTabValue] = useState(0);
+
+  const beginListLoading = useCallback(() => {
+    setViewLoading(true);
+    loadingStartedRef.current = false;
+  }, []);
+
+  const setSelectedAccountWithLoading = useCallback(
+    (nextAccountId) => {
+      const nextId = String(nextAccountId ?? "");
+      if (nextId === String(selectedAccountId ?? "")) return;
+      beginListLoading();
+      setSelectedAccountId(nextId);
+    },
+    [beginListLoading, selectedAccountId]
+  );
 
   const hook = useTallysheetData(selectedAccountId, year, month);
 
@@ -499,8 +517,10 @@ function TallySheet() {
 
   useEffect(() => {
     if (!localAccountId) return;
-    if (String(selectedAccountId) !== String(localAccountId)) setSelectedAccountId(localAccountId);
-  }, [localAccountId, selectedAccountId]);
+    if (String(selectedAccountId) !== String(localAccountId)) {
+      setSelectedAccountWithLoading(localAccountId);
+    }
+  }, [localAccountId, selectedAccountId, setSelectedAccountWithLoading]);
 
   const filteredAccountList = useMemo(() => {
     if (!localAccountId) return accountList || [];
@@ -537,7 +557,7 @@ function TallySheet() {
           .includes(qLower)
       );
     if (partial) {
-      setSelectedAccountId(partial.account_id);
+      setSelectedAccountWithLoading(partial.account_id);
       setAccountInput(partial.account_name || q);
     }
   };
@@ -567,13 +587,32 @@ function TallySheet() {
 
   useEffect(() => {
     if (localAccountId) {
-      setSelectedAccountId(localAccountId);
+      setSelectedAccountWithLoading(localAccountId);
       return;
     }
     if ((accountList || []).length > 0 && !selectedAccountId) {
-      setSelectedAccountId(accountList[0].account_id);
+      setSelectedAccountWithLoading(accountList[0].account_id);
     }
-  }, [accountList, selectedAccountId, localAccountId]);
+  }, [accountList, selectedAccountId, localAccountId, setSelectedAccountWithLoading]);
+
+  useEffect(() => {
+    if (!viewLoading) return;
+
+    if (loading) {
+      loadingStartedRef.current = true;
+      return;
+    }
+
+    if (loadingStartedRef.current) {
+      setViewLoading(false);
+      loadingStartedRef.current = false;
+      return;
+    }
+
+    if (!selectedAccountId && (filteredAccountList || []).length > 0) {
+      setViewLoading(false);
+    }
+  }, [loading, viewLoading, selectedAccountId, filteredAccountList]);
 
   // ======================== ✅ Floating Preview 상태 ========================
   const [floatingPreview, setFloatingPreview] = useState({
@@ -1504,6 +1543,7 @@ function TallySheet() {
     use_name: "",
     total: "",
     receipt_image: null,
+    receipt_files: [],
     receipt_type: "UNKNOWN",
     sale_id: "",
     account_id: "",
@@ -1513,11 +1553,20 @@ function TallySheet() {
   const [otherReceiptPreview, setOtherReceiptPreview] = useState(null);
 
   const handleOtherReceiptFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || [])
+      .filter(Boolean)
+      .sort((a, b) =>
+        String(a?.name || "").localeCompare(String(b?.name || ""), "ko", {
+          numeric: true,
+          sensitivity: "base",
+        })
+      )
+      .slice(0, 3);
+    if (!files.length) return;
+    e.currentTarget.value = "";
 
-    setOtherForm((p) => ({ ...p, receipt_image: file }));
-    const url = URL.createObjectURL(file);
+    setOtherForm((p) => ({ ...p, receipt_image: files[0], receipt_files: files }));
+    const url = URL.createObjectURL(files[0]);
     setOtherReceiptPreview(url);
   };
 
@@ -1571,7 +1620,21 @@ function TallySheet() {
     fd.append("use_name", otherForm.use_name || "");
     fd.append("total", parseNumber(otherForm.total));
 
-    if (otherForm.receipt_image) fd.append("file", otherForm.receipt_image);
+    const selectedReceiptFiles = Array.isArray(otherForm.receipt_files)
+      ? otherForm.receipt_files.filter((f) => f instanceof File).slice(0, 3)
+      : [];
+    const uploadFiles =
+      selectedReceiptFiles.length > 0
+        ? selectedReceiptFiles
+        : otherForm.receipt_image instanceof File
+        ? [otherForm.receipt_image]
+        : [];
+    uploadFiles.forEach((f) => fd.append("files", f));
+
+    if (mode !== "edit" && uploadFiles.length === 0) {
+      Swal.fire("안내", "영수증 1장을 등록해주세요.", "warning");
+      return false;
+    }
 
     if (mode === "edit") {
       if (otherForm.id != null) fd.append("id", otherForm.id);
@@ -1608,7 +1671,7 @@ function TallySheet() {
         setOriginal2Rows([]);
 
         if (otherFileRef.current) otherFileRef.current.value = "";
-        setOtherForm((p) => ({ ...p, receipt_image: null }));
+        setOtherForm((p) => ({ ...p, receipt_image: null, receipt_files: [] }));
         setOtherReceiptPreview(null);
         return true;
       }
@@ -1686,6 +1749,7 @@ function TallySheet() {
       use_name: "",
       total: "",
       receipt_image: null,
+      receipt_files: [],
       receipt_type: "UNKNOWN",
       sale_id: "",
       account_id: String(selectedAccountId || ""),
@@ -1702,6 +1766,7 @@ function TallySheet() {
       use_name: "",
       total: "",
       receipt_image: null,
+      receipt_files: [],
       receipt_type: "UNKNOWN",
       sale_id: "",
       account_id: String(selectedAccountId || ""),
@@ -1753,6 +1818,7 @@ function TallySheet() {
       use_name: rowObj.use_name || "",
       total: String(rowObj.total ?? ""),
       receipt_image: null,
+      receipt_files: [],
       receipt_type: rowObj.receipt_type || "UNKNOWN",
       sale_id: String(rowObj.sale_id ?? ""),
       account_id: String(rowObj.account_id ?? selectedAccountId ?? ""),
@@ -2652,7 +2718,7 @@ function TallySheet() {
     [useMenu.target, selectedAccountId, closeUseMenu, fetchUseList]
   );
 
-  if (loading) return <LoadingScreen />;
+  if (loading || viewLoading) return <LoadingScreen />;
 
   const renderTable = (
     tableInstance,
@@ -2883,7 +2949,7 @@ function TallySheet() {
               onChange={(_, newValue) => {
                 if (isAccountLocked) return;
                 if (!newValue) return;
-                setSelectedAccountId(newValue.account_id);
+                setSelectedAccountWithLoading(newValue.account_id);
                 setAccountInput(newValue?.account_name || "");
               }}
               inputValue={accountInput}
@@ -2921,7 +2987,10 @@ function TallySheet() {
             select
             size="small"
             value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+            onChange={(e) => {
+              beginListLoading();
+              setYear(Number(e.target.value));
+            }}
             sx={{ minWidth: isMobile ? 140 : 150 }}
             SelectProps={{ native: true }}
           >
@@ -2936,7 +3005,10 @@ function TallySheet() {
             select
             size="small"
             value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
+            onChange={(e) => {
+              beginListLoading();
+              setMonth(Number(e.target.value));
+            }}
             sx={{ minWidth: isMobile ? 140 : 150 }}
             SelectProps={{ native: true }}
           >
@@ -5136,6 +5208,7 @@ function TallySheet() {
                     type="file"
                     hidden
                     accept="image/*"
+                    multiple
                     onChange={handleOtherReceiptFileChange}
                   />
                 </MDButton>
@@ -5152,6 +5225,9 @@ function TallySheet() {
                     미리보기
                   </MDButton>
                 )}
+                {Array.isArray(otherForm.receipt_files) && otherForm.receipt_files.length > 0
+                  ? ` / 선택 ${otherForm.receipt_files.length}장`
+                  : ""}
               </Box>
             </Grid>
           </Grid>

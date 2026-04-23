@@ -94,16 +94,16 @@ const getTypeColor = (type, deptType) => {
   // 영업팀 — 하늘색 계열
   if (deptType === "business") {
     switch (t) {
-      case "1": return "#0288D1";
-      case "2": return "#0277BD";
-      case "3": return "#0288D1";
-      case "4": return "#3431df";
-      case "5": return "#4478e9";
-      case "6": return "#2253da";
-      case "7": return "#006064";
-      case "8": return "#1A0841";
-      case "9": return "#1A0841";
-      case "10": return "#1A0841";
+      case "1": return "#0288D1";   // 행사
+      case "2": return "#0277BD";   // 미팅
+      case "3": return "#0288D1";   // 오픈
+      case "4": return "#3431df";   // 오픈준비
+      case "5": return "#4478e9";   // 외근
+      case "6": return "#2253da";   // 출장
+      case "7": return "#6390d3";   // 체크
+      case "8": return "#1A0841";   // 연차
+      case "9": return "#1A0841";   // 오전반차
+      case "10": return "#1A0841";  // 오후반차
       default: return "#0288D1";
     }
   }
@@ -111,19 +111,19 @@ const getTypeColor = (type, deptType) => {
   // 운영팀 — 초록 계열
   if (deptType === "operate") {
     switch (t) {
-      case "1": return "#20af27";
-      case "2": return "#32ac38";
-      case "3": return "#207c24";
-      case "4": return "#2E7D32";
-      case "5": return "#207c30";
-      case "6": return "#038820";
-      case "7": return "#4CAF50";
-      case "8": return "#39b13f";
-      case "9": return "#4a9e0e";
-      case "10": return "#689F38";
-      case "11": return "#1A0841";
-      case "12": return "#1A0841";
-      case "13": return "#1A0841";
+      case "1": return "#20af27";   // 행사
+      case "2": return "#32ac38";   // 위생
+      case "3": return "#207c24";   // 관리
+      case "4": return "#2E7D32";   // 이슈
+      case "5": return "#207c30";   // 미팅
+      case "6": return "#038820";   // 오픈
+      case "7": return "#4CAF50";   // 오픈준비
+      case "8": return "#39b13f";   // 외근
+      case "9": return "#4a9e0e";   // 출장
+      case "10": return "#689F38";  // 체크
+      case "11": return "#1A0841";  // 연차
+      case "12": return "#1A0841";  // 오전반차
+      case "13": return "#1A0841";  // 오후반차
       default: return "#388E3C";
     }
   }
@@ -180,7 +180,7 @@ const resolveAccountName = (item, accounts) => {
 };
 
 // 직책 코드 → 라벨
-const POSITION_LABEL = { 0: "대표", 1: "팀장", 2: "파트장", 3: "매니저", 8: "영양사" };
+const POSITION_LABEL = { 0: "대표", 1: "팀장", 2: "파트장", 3: "매니저" };
 const getPositionLabel = (pos) => POSITION_LABEL[Number(pos)] ?? "직급없음";
 
 // 날짜 값을 YYYY-MM-DD 문자열로 정규화

@@ -17,7 +17,7 @@ const formatNumber = (value) => {
 
 // 상세 행 수치값을 과세구분 기준으로 정규화한다.
 // - qty/unitPrice가 있으면 amount를 즉시 재계산
-// - taxType=1(과세): vat=floor(amount/11), tax=amount-vat
+// - taxType=1(과세): 저장된 tax/vat가 있으면 그대로 사용, 없을 때만 자동계산
 // - taxType=2(면세): vat=0, tax=0
 const normalizeDetailAmounts = (item) => {
   const qtyNum = parseNumber(item?.qty);
@@ -29,6 +29,19 @@ const normalizeDetailAmounts = (item) => {
     qtyNum > 0 && unitPriceNum > 0 ? qtyNum * unitPriceNum : amountFromRow;
 
   if (taxType === "1") {
+    const rawTax = String(item?.tax ?? "").replace(/,/g, "").trim();
+    const rawVat = String(item?.vat ?? "").replace(/,/g, "").trim();
+    const hasSavedTaxVat = rawTax !== "" || rawVat !== "";
+
+    // 수기 저장된 과세/부가세가 있으면 조회 시 자동계산으로 덮지 않는다.
+    if (hasSavedTaxVat) {
+      return {
+        amount: computedAmount,
+        tax: parseNumber(item?.tax),
+        vat: parseNumber(item?.vat),
+      };
+    }
+
     const vat = Math.floor(computedAmount / 11);
     const tax = computedAmount - vat;
     return { amount: computedAmount, tax, vat };

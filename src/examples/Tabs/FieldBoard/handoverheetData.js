@@ -10,7 +10,10 @@ export default function useHandOversheetData() {
 
   // ✅ 핸드오버 리스트 조회
   const fetcHandOverList = useCallback(async (account_id) => {
-    if (!account_id) return;
+    if (!account_id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const res = await api.get("/Operate/HandOverSearch", {

@@ -589,7 +589,10 @@ function AccountMemberSheet() {
   }, [accountList, selectedAccountId]);
 
   useEffect(() => {
-    if (!selectedAccountId && !memberSearchName) return;
+    if (!selectedAccountId && !memberSearchName) {
+      setLoading(false);
+      return;
+    }
 
     setIsColumnWidthLocked(false);
     setLoading(true);

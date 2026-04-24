@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -45,6 +45,8 @@ export default function Tables() {
   const [accountSortKey, setAccountSortKey] = useState("account_name");
   // 조회 필터 변경 시 로딩 화면 유지 상태
   const [sortLoading, setSortLoading] = useState(false);
+  // 서버 조회 결과를 화면 목록 상태로 반영하는 동안 유지하는 로딩 상태
+  const [viewLoading, setViewLoading] = useState(true);
   // 실제 조회 시작 여부 추적(로딩 조기 종료 방지)
   const searchStartedRef = useRef(false);
   // 로딩 원인 추적(SEARCH: 서버조회, LOCAL: 화면 정렬/필터)
@@ -134,7 +136,7 @@ export default function Tables() {
   // 변경 비교 기준 원본값 상태
   const [originalMap, setOriginalMap] = useState({});
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const base = Array.isArray(rowsByDelYn) ? rowsByDelYn : [];
     const next = base.map((r, idx) => {
       const accountId = r?.account_id;
@@ -166,6 +168,7 @@ export default function Tables() {
 
     // 조회결과 변경 시 첫 페이지 이동
     setPagination((p) => ({ ...p, pageIndex: 0 }));
+    setViewLoading(false);
   }, [rowsByDelYn, toPlainText, toNumberString]);
 
   // 수정값 누적 상태
@@ -693,7 +696,7 @@ export default function Tables() {
     autoResetPageIndex: false,
   });
 
-  if (loading || sortLoading)
+  if (loading || sortLoading || viewLoading)
     return <LoadingScreen />;
 
   return (

@@ -378,6 +378,8 @@ function CorporateCardSheet() {
 
   const {
     loading,
+    setLoading,
+    withLoading,
     activeRows,
     accountList,
     fetchHeadOfficeCorporateCardList,
@@ -393,7 +395,7 @@ function CorporateCardSheet() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const [masterRows, setMasterRows] = useState([]);
+  const [masterRows, setMasterRows] = useState(null);
   const [origMasterRows, setOrigMasterRows] = useState([]);
 
   const [detailRows, setDetailRows] = useState([]);
@@ -576,6 +578,7 @@ function CorporateCardSheet() {
     if (didSetDefaultAccountRef.current) return;
 
     if ((accountList || []).length > 0 && !selectedAccountId) {
+      setLoading(true);
       setSelectedAccountId(String(accountList[0].account_id));
       didSetDefaultAccountRef.current = true;
     }
@@ -667,7 +670,7 @@ function CorporateCardSheet() {
       return;
     }
 
-    const requestPromise = (async () => {
+    const requestPromise = withLoading(async () => {
       const fetchedRows =
         (await fetchHeadOfficeCorporateCardPaymentList({
           year,
@@ -680,7 +683,7 @@ function CorporateCardSheet() {
       const filteredRows = await filterMasterRowsByItemType(fetchedRows);
       if (masterFetchStateRef.current.key !== key) return;
       setPaymentRows(filteredRows);
-    })();
+    });
     masterFetchStateRef.current = { key, promise: requestPromise };
 
     try {
@@ -693,11 +696,12 @@ function CorporateCardSheet() {
     }
   }, [
     fetchHeadOfficeCorporateCardPaymentList,
-      year,
-      month,
-      selectedAccountId,
-      itemTypeFilter,
-      filterMasterRowsByItemType,
+    withLoading,
+    year,
+    month,
+    selectedAccountId,
+    itemTypeFilter,
+    filterMasterRowsByItemType,
     setPaymentRows,
   ]);
 
@@ -2049,7 +2053,7 @@ function CorporateCardSheet() {
     });
   }, [detailRows]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading || !selectedAccountId || masterRows === null) return <LoadingScreen />;
 
   return (
     <DashboardLayout>

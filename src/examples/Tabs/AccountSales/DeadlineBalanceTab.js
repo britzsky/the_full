@@ -669,14 +669,14 @@ export default function DeadlineBalanceTab() {
   const getLongTermMonthDisplayAmounts = (monthInfo) => {
     const totalPaid = Math.max(0, parseNumber(monthInfo?.totalPaid));
     const totalOutstanding = Math.max(0, parseNumber(monthInfo?.totalOutstanding));
-    const balancePaid = Math.max(0, parseNumber(monthInfo?.balancePaid));
+    const appliedBalancePaid = Math.max(0, parseNumber(monthInfo?.appliedBalancePaid));
 
     const paidBreakdownText = buildTypeBreakdownText([
       ...(monthInfo?.typeRows || []).map((item) => ({
         label: item.typeLabel,
         amount: item.paid,
       })),
-      ...(balancePaid > 0 ? [{ label: "미수잔액", amount: balancePaid }] : []),
+      ...(appliedBalancePaid > 0 ? [{ label: "미수잔액", amount: appliedBalancePaid }] : []),
     ]);
     const outstandingBreakdownText = buildTypeBreakdownText(
       [
@@ -684,7 +684,7 @@ export default function DeadlineBalanceTab() {
           label: item.typeLabel,
           amount: item.outstanding,
         })) || []),
-        ...(balancePaid > 0 ? [{ label: "미수잔액차감", amount: -balancePaid }] : []),
+        ...(appliedBalancePaid > 0 ? [{ label: "미수잔액차감", amount: -appliedBalancePaid }] : []),
       ]
     );
 
@@ -967,29 +967,41 @@ export default function DeadlineBalanceTab() {
           });
 
           const totalExpected = typeRows.reduce((acc, item) => acc + item.expected, 0);
-          const balancePaid = Math.max(0, parseNumber(monthInfo.balancePaid));
-          const totalPaid = typeRows.reduce((acc, item) => acc + item.paid, 0) + balancePaid;
-          const totalOutstanding = Math.max(0, totalExpected - totalPaid);
+          const typeOnlyPaid = typeRows.reduce((acc, item) => acc + item.paid, 0);
+          const totalOutstandingBeforeBalance = Math.max(0, totalExpected - typeOnlyPaid);
           const monthDate = dayjs(`${monthInfo.ymKey}-01`);
-          const isLongTerm =
-            totalOutstanding > 0
-            && (monthDate.isBefore(thresholdMonth, "month")
-              || monthDate.isSame(thresholdMonth, "month"));
 
           return {
             ...monthInfo,
             typeRows,
             totalExpected,
-            totalPaid,
-            totalOutstanding,
-            balancePaid,
+            typeOnlyPaid,
+            totalOutstandingBeforeBalance,
+            balancePaid: Math.max(0, parseNumber(monthInfo.balancePaid)),
             balancePrice: Math.max(0, parseNumber(monthInfo.balancePrice)),
-            isLongTerm,
           };
         })
-        .filter((item) => item.totalExpected > 0 || item.totalPaid > 0 || item.totalOutstanding > 0);
+        .filter((item) => item.totalExpected > 0 || item.typeOnlyPaid > 0 || item.totalOutstandingBeforeBalance > 0);
 
       monthDetails.sort((a, b) => (a.year !== b.year ? a.year - b.year : a.month - b.month));
+
+      // 미수잔액(type=4) 입금 총합을 오래된 월부터 FIFO로 차감
+      const totalBalancePaid = monthDetails.reduce((acc, item) => acc + item.balancePaid, 0);
+      let remainingBalance = totalBalancePaid;
+      monthDetails.forEach((item) => {
+        const deducted = Math.min(remainingBalance, item.totalOutstandingBeforeBalance);
+        item.appliedBalancePaid = deducted;
+        remainingBalance -= deducted;
+        const totalPaid = item.typeOnlyPaid + deducted;
+        const totalOutstanding = Math.max(0, item.totalExpected - totalPaid);
+        const isLongTerm =
+          totalOutstanding > 0
+          && (dayjs(`${item.ymKey}-01`).isBefore(thresholdMonth, "month")
+            || dayjs(`${item.ymKey}-01`).isSame(thresholdMonth, "month"));
+        item.totalPaid = totalPaid;
+        item.totalOutstanding = totalOutstanding;
+        item.isLongTerm = isLongTerm;
+      });
 
       // ✅ 조회 연월과 무관하게 실제 미수기준일에 미납이 남아 있는 월만 표시
       const unpaidMonthsAll = monthDetails.filter((item) => item.totalOutstanding > 0);

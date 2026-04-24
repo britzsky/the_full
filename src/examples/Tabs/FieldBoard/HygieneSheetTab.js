@@ -1,5 +1,5 @@
 // src/layouts/hygiene/HygieneSheetTab.js
-import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -126,7 +126,7 @@ function HygieneSheetTab() {
   }, [accountList, selectedAccountId, localAccountId, setSelectedAccountWithLoading]);
 
   // 서버 rows → 로컬 rows / originalRows 복사
-  useEffect(() => {
+  useLayoutEffect(() => {
     const deepCopy = (hygieneListRows || []).map((row) => ({
       ...row,
       del_yn: row.del_yn ?? "N", // ✅ 없으면 기본 N
@@ -742,92 +742,105 @@ function HygieneSheetTab() {
             left: 0,
             width: "100vw",
             height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.7)",
+            backgroundColor: "rgba(0,0,0,0.85)",
             display: "flex",
+            flexDirection: "column",
             justifyContent: "center",
             alignItems: "center",
             zIndex: 9999,
           }}
           onClick={handleCloseViewer}
         >
+          {/* 컨트롤 버튼 - 오버레이 최상단, TransformWrapper 완전 밖 */}
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              position: "relative",
-              maxWidth: isMobile ? "95%" : "80%",
-              maxHeight: isMobile ? "90%" : "80%",
-              padding: isMobile ? 8 : 16,
+              display: "flex",
+              flexDirection: "row",
+              gap: 12,
+              marginBottom: 10,
+              zIndex: 10001,
             }}
           >
-            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-              {({ zoomIn, zoomOut, resetTransform }) => (
-                <>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      zIndex: 1000,
-                    }}
-                  >
-                    <button
-                      onClick={zoomIn}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={zoomOut}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      -
-                    </button>
-                    <button
-                      onClick={resetTransform}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ⟳
-                    </button>
-                    <button
-                      onClick={handleCloseViewer}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      X
-                    </button>
-                  </div>
+            {[
+              { label: "+", action: null, id: "zi" },
+              { label: "-", action: null, id: "zo" },
+              { label: "⟳", action: null, id: "rt" },
+              { label: "✕", action: handleCloseViewer, id: "cl" },
+            ].map(({ label, action, id }) => (
+              <button
+                key={id}
+                id={`viewer-btn-${id}`}
+                onClick={action ? (e) => { e.stopPropagation(); action(); } : undefined}
+                style={{
+                  border: "none",
+                  borderRadius: 8,
+                  background: "rgba(255,255,255,0.92)",
+                  color: "#222",
+                  fontWeight: "bold",
+                  fontSize: isMobile ? 13 : 15,
+                  width: isMobile ? 32 : 36,
+                  height: isMobile ? 32 : 36,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  touchAction: "manipulation",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-                  <TransformComponent>
-                    <img
-                      src={encodeURI(viewImageSrc)}
-                      alt="미리보기"
-                      style={{
-                        maxWidth: "95vw",
-                        maxHeight: "90vh",
-                        borderRadius: 8,
-                      }}
-                    />
-                  </TransformComponent>
-                </>
-              )}
+          {/* 이미지 영역 */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: isMobile ? "100vw" : "90vw",
+              height: isMobile ? "calc(100vh - 80px)" : "calc(100vh - 90px)",
+              overflow: "hidden",
+            }}
+          >
+            <TransformWrapper
+              initialScale={1}
+              minScale={0.3}
+              maxScale={8}
+              centerOnInit
+              onInit={({ zoomIn, zoomOut, resetTransform }) => {
+                const zi = document.getElementById("viewer-btn-zi");
+                const zo = document.getElementById("viewer-btn-zo");
+                const rt = document.getElementById("viewer-btn-rt");
+                if (zi) zi.onclick = (e) => { e.stopPropagation(); zoomIn(); };
+                if (zo) zo.onclick = (e) => { e.stopPropagation(); zoomOut(); };
+                if (rt) rt.onclick = (e) => { e.stopPropagation(); resetTransform(); };
+              }}
+            >
+              <TransformComponent
+                wrapperStyle={{
+                  width: "100%",
+                  height: "100%",
+                }}
+                contentStyle={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <img
+                  src={encodeURI(viewImageSrc)}
+                  alt="미리보기"
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    objectFit: "contain",
+                    borderRadius: 8,
+                    userSelect: "none",
+                  }}
+                />
+              </TransformComponent>
             </TransformWrapper>
           </div>
         </div>

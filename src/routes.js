@@ -302,7 +302,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/fieldstaff",
         component: <OperateTab_4 />,
-        allowedDepartments: [5], // 🔹 부서권한
+        allowedDepartments: [3, 5, 6], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 실장님 
         accessMode: "AND",
       },
@@ -444,7 +444,11 @@ const routes = [
         allowedDepartments: [0, 3, 6, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
-        allowUserIds: ["yh2"], // 이윤희 실장님
+        allowUserIds: [
+          "yh2", // 이윤희 실장님
+          "db1", // 송다빈 매니저
+          "si1", // 김세인 매니저
+        ],
       },
       // {
       //   type: "collapse",

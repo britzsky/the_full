@@ -279,6 +279,7 @@ function AccountCorporateCardSheet() {
 
   const {
     loading,
+    setLoading,
     activeRows,
     accountList,
     fetchAccountCorporateCardList,
@@ -293,7 +294,7 @@ function AccountCorporateCardSheet() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
-  const [masterRows, setMasterRows] = useState([]);
+  const [masterRows, setMasterRows] = useState(null);
   const [origMasterRows, setOrigMasterRows] = useState([]);
 
   const [detailRows, setDetailRows] = useState([]);
@@ -469,6 +470,7 @@ function AccountCorporateCardSheet() {
     if (didSetDefaultAccountRef.current) return;
 
     if ((accountList || []).length > 0 && !selectedAccountId) {
+      setLoading(true);
       setSelectedAccountId(String(accountList[0].account_id));
       didSetDefaultAccountRef.current = true;
     }
@@ -1676,7 +1678,7 @@ function AccountCorporateCardSheet() {
     });
   }, [detailRows, sumDetailAmount]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading || !selectedAccountId || masterRows === null) return <LoadingScreen />;
 
   return (
     <DashboardLayout>

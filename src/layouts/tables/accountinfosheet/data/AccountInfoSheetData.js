@@ -21,7 +21,10 @@ export default function useAccountInfosheetData(initialAccountId) {
 
   // ✅ 전체 데이터 조회
   const fetchAllData = async (id) => {
-    if (!id) return;
+    if (!id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [
@@ -61,51 +64,20 @@ export default function useAccountInfosheetData(initialAccountId) {
       return [];
     };
 
-    Promise.allSettled([
-      api.get("/Account/AccountList", { params: { account_type: "0" } }),
-      api.get("/Account/AccountList", { params: { account_type: "0", del_yn: "Y" } }),
-    ])
-      .then(([activeRes, deletedRes]) => {
-        const activeRows =
-          activeRes.status === "fulfilled" ? toList(activeRes.value?.data) : [];
-        const deletedRows =
-          deletedRes.status === "fulfilled" ? toList(deletedRes.value?.data) : [];
-
-        if (activeRes.status === "rejected") {
-          console.error("데이터 조회 실패 (AccountList active):", activeRes.reason);
-        }
-        if (deletedRes.status === "rejected") {
-          console.warn("데이터 조회 실패 (AccountList del_yn=Y):", deletedRes.reason);
-        }
-
-        const mergedMap = new Map();
-
-        const mergeRows = (rows, fallbackDelYn = "N") => {
-          rows.forEach((item) => {
-            const accountId = String(item?.account_id ?? "");
-            if (!accountId) return;
-
-            const nextRow = {
-              account_id: item.account_id,
-              account_name: item.account_name,
-              del_yn: normalizeDelYn(item?.del_yn ?? fallbackDelYn),
-            };
-
-            const prev = mergedMap.get(accountId);
-            if (!prev || prev.del_yn === "Y") {
-              mergedMap.set(accountId, nextRow);
-            }
-          });
-        };
-
-        mergeRows(activeRows, "N");
-        mergeRows(deletedRows, "Y");
-
-        const rows = sortAccountRows(Array.from(mergedMap.values()), {
-          sortKey: "account_name",
-          keepAllOnTop: true,
-        });
-        setAccountList(rows);
+    api
+      .get("/Account/AccountList", { params: { account_type: "0", del_yn: "ALL" } })
+      .then((res) => {
+        const rows = (toList(res?.data) || []).map((item) => ({
+          account_id: item.account_id,
+          account_name: item.account_name,
+          del_yn: normalizeDelYn(item?.del_yn),
+        }));
+        setAccountList(
+          sortAccountRows(rows, {
+            sortKey: "account_name",
+            keepAllOnTop: true,
+          })
+        );
       })
       .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
   }, []);

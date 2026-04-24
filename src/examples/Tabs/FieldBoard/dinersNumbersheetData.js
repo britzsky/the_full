@@ -21,7 +21,10 @@ export default function useDinersNumbersheetData(accountId, year, month) {
 
   // ✅ 식수 데이터 조회
   const fetchAllData = useCallback(async () => {
-    if (!accountId) return; // 선택된 거래처가 없으면 중단
+    if (!accountId) {
+      setLoading(false);
+      return; // 선택된 거래처가 없으면 중단
+    }
 
     setLoading(true);
     const startTime = Date.now();
@@ -93,7 +96,10 @@ export default function useDinersNumbersheetData(accountId, year, month) {
 
   // ✅ 🔹 추가 식단가 이름/가격(컬럼 정보) 조회
   useEffect(() => {
-    if (!accountId) return;
+    if (!accountId) {
+      setExtraDietCols([]);
+      return;
+    }
 
     const fetchExtraDiet = async () => {
       try {

@@ -406,7 +406,9 @@ export default function useAccountPurchaseTallyData() {
 
   // 거래처 목록 조회 API
   const fetchAccountList = async (params = { account_type: "0" }) => {
-    const res = await api.get("/Account/AccountListV2", { params });
+    const res = await api.get("/Account/AccountListV2", {
+      params: { del_yn: "ALL", ...params },
+    });
     return Array.isArray(res?.data) ? res.data : res?.data?.rows || res?.data?.data || [];
   };
 

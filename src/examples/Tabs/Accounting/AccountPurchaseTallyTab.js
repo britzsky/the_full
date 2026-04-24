@@ -97,10 +97,16 @@ function AccountPurchaseTallyTab() {
     toMonth: "",
     account_id: "",
   });
+  const latestFiltersRef = useRef(filters);
+
+  useEffect(() => {
+    latestFiltersRef.current = filters;
+  }, [filters]);
 
   // 🔹 상단 거래처(거래처) select용 리스트
   const [accountList, setAccountList] = useState([]);
   const [accountInput, setAccountInput] = useState("");
+  const [selectedAccountDelYn, setSelectedAccountDelYn] = useState("N");
 
   // ✅ 타입 옵션: 거래처 선택 시 서버에서 조회 (거래처에 등록된 타입만 표시)
   const [typeOptions, setTypeOptions] = useState([]);
@@ -499,6 +505,7 @@ function AccountPurchaseTallyTab() {
         const list = (rawList || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
+          del_yn: item.del_yn,
         }));
         setAccountList(list);
         // ✅ 기본값은 "전체"가 아니라 조회된 첫 번째 거래처를 자동 선택
@@ -507,6 +514,7 @@ function AccountPurchaseTallyTab() {
           const firstId = String(first.account_id ?? "");
           const firstName = String(first.account_name ?? "");
           setAccountInput(firstName);
+          setSelectedAccountDelYn(String(first.del_yn ?? "N").toUpperCase());
 
           // 거래처 기준 구매처 매핑/타입 옵션 조회만 선반영 (조회는 사용자 액션 시점에만 실행)
           fetchMappingList({ account_id: firstId });
@@ -514,6 +522,7 @@ function AccountPurchaseTallyTab() {
           const nextType = resolveNextType(opts, "0");
           const nextFilters = { ...filters, account_id: firstId, type: nextType };
 
+          latestFiltersRef.current = nextFilters;
           setFilters(nextFilters);
         } else {
           // 거래처 목록이 비어 있으면 필터만 기본값으로 유지
@@ -529,6 +538,7 @@ function AccountPurchaseTallyTab() {
 
   // ✅ 조회 실행 공통 함수 (버튼/엔터 동일 경로 사용)
   const runSearchWithFilters = useCallback(async (nextFilters) => {
+    latestFiltersRef.current = nextFilters;
     setAppliedToMonth(nextFilters.toMonth);
     await fetchPurchaseList(buildSearchParams(nextFilters));
   }, [fetchPurchaseList, buildSearchParams]);
@@ -536,7 +546,7 @@ function AccountPurchaseTallyTab() {
   // ✅ 조회(버튼)
   const handleSearch = async () => {
     try {
-      await runSearchWithFilters(filters);
+      await runSearchWithFilters(latestFiltersRef.current);
     } catch (e) {
       Swal.fire("오류", e.message, "error");
     }
@@ -1539,6 +1549,7 @@ function AccountPurchaseTallyTab() {
       (accountList || []).map((a) => ({
         value: String(a.account_id),
         label: a.account_name,
+        del_yn: String(a.del_yn ?? "N").toUpperCase(),
       })),
     [accountList]
   );
@@ -1547,8 +1558,15 @@ function AccountPurchaseTallyTab() {
     const v = String(filters.account_id ?? "");
     if (!v) return { value: "", label: "전체" };
     const found = (accountList || []).find((a) => String(a.account_id) === v);
-    return found ? { value: String(found.account_id), label: found.account_name } : null;
+    return found
+      ? {
+        value: String(found.account_id),
+        label: found.account_name,
+        del_yn: String(found.del_yn ?? "N").toUpperCase(),
+      }
+      : null;
   }, [filters.account_id, accountList]);
+  const isDeletedAccountSelected = String(selectedAccountDelYn ?? "N").toUpperCase() === "Y";
 
   const handleAccountChange = useCallback(
     async (_, opt, reason) => {
@@ -1560,17 +1578,26 @@ function AccountPurchaseTallyTab() {
 
       const nextId = opt ? String(opt.value ?? "") : "";
       const nextLabel = String(opt?.label ?? "");
+      const nextDelYn = String(opt?.del_yn ?? "N").toUpperCase();
 
       // "전체" 옵션 선택 시: 필터만 변경
       if (nextId === "") {
+        const nextFilters = { ...latestFiltersRef.current, account_id: "", type: "0" };
         setTypeOptions([]);
         setAccountInput(nextLabel || "전체");
-        setFilters((prev) => ({ ...prev, account_id: "", type: "0" }));
+        setSelectedAccountDelYn("N");
+        latestFiltersRef.current = nextFilters;
+        setFilters(nextFilters);
         fetchMappingList({});
+        await runSearchWithFilters(nextFilters);
         return;
       }
 
       setAccountInput(nextLabel);
+      setSelectedAccountDelYn(nextDelYn);
+      const pendingNext = { ...latestFiltersRef.current, account_id: nextId };
+      latestFiltersRef.current = pendingNext;
+      setFilters(pendingNext);
 
       // ✅ 1) 구매처 목록(매핑) 조회
       fetchMappingList({ account_id: nextId });
@@ -1579,12 +1606,14 @@ function AccountPurchaseTallyTab() {
       const opts = await fetchTypeOptions(nextId);
 
       // ✅ 3) 기존 type이 새 옵션에 없으면 첫 번째 타입으로 보정 (조회는 하지 않음)
-      setFilters((prev) => {
-        const nextType = resolveNextType(opts, prev.type);
-        return { ...prev, account_id: nextId, type: nextType };
-      });
+      const currentFilters = latestFiltersRef.current;
+      const nextType = resolveNextType(opts, currentFilters.type);
+      const nextFilters = { ...currentFilters, account_id: nextId, type: nextType };
+      latestFiltersRef.current = nextFilters;
+      setFilters(nextFilters);
+      await runSearchWithFilters(nextFilters);
     },
-    [filters, fetchMappingList, fetchTypeOptions, resolveNextType]
+    [fetchMappingList, fetchTypeOptions, resolveNextType, runSearchWithFilters]
   );
 
   const selectAccountByInput = useCallback(async () => {
@@ -1592,9 +1621,10 @@ function AccountPurchaseTallyTab() {
     if (!q) return;
 
     if (q === "전체") {
-      const nextFilters = { ...filters, account_id: "", type: "0" };
+      const nextFilters = { ...latestFiltersRef.current, account_id: "", type: "0" };
       setTypeOptions([]);
       setAccountInput("전체");
+      setSelectedAccountDelYn("N");
       setFilters(nextFilters);
       fetchMappingList({});
       await runSearchWithFilters(nextFilters);
@@ -1615,17 +1645,18 @@ function AccountPurchaseTallyTab() {
       const nextId = String(partial.value ?? "");
       const nextLabel = String(partial.label ?? q);
       setAccountInput(nextLabel);
+      setSelectedAccountDelYn(String(partial.del_yn ?? "N").toUpperCase());
       fetchMappingList({ account_id: nextId });
       const opts = await fetchTypeOptions(nextId);
-      const nextType = resolveNextType(opts, filters.type);
-      const nextFilters = { ...filters, account_id: nextId, type: nextType };
+      const currentFilters = latestFiltersRef.current;
+      const nextType = resolveNextType(opts, currentFilters.type);
+      const nextFilters = { ...currentFilters, account_id: nextId, type: nextType };
       setFilters(nextFilters);
       await runSearchWithFilters(nextFilters);
     }
   }, [
     accountInput,
     accountOptions,
-    filters,
     fetchMappingList,
     fetchTypeOptions,
     resolveNextType,
@@ -1765,7 +1796,11 @@ function AccountPurchaseTallyTab() {
             label="타입"
             size="small"
             name="type"
-            onChange={(e) => setFilters((prev) => ({ ...prev, type: e.target.value }))}
+            onChange={(e) => {
+              const next = { ...latestFiltersRef.current, type: e.target.value };
+              latestFiltersRef.current = next;
+              setFilters(next);
+            }}
             sx={{ minWidth: isMobile ? 100 : 120 }}
             SelectProps={{ native: true }}
             value={filters.type}
@@ -1786,7 +1821,11 @@ function AccountPurchaseTallyTab() {
             select
             label="연도"
             size="small"
-            onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value }))}
+            onChange={(e) => {
+              const next = { ...latestFiltersRef.current, year: e.target.value };
+              latestFiltersRef.current = next;
+              setFilters(next);
+            }}
             sx={{ minWidth: isMobile ? 100 : 120 }}
             SelectProps={{ native: true }}
             value={filters.year}
@@ -1802,7 +1841,11 @@ function AccountPurchaseTallyTab() {
             select
             label="조회 시작월"
             size="small"
-            onChange={(e) => setFilters((prev) => ({ ...prev, fromMonth: e.target.value }))}
+            onChange={(e) => {
+              const next = { ...latestFiltersRef.current, fromMonth: e.target.value };
+              latestFiltersRef.current = next;
+              setFilters(next);
+            }}
             sx={{ minWidth: isMobile ? 100 : 110 }}
             SelectProps={{ native: true }}
             value={filters.fromMonth}
@@ -1817,7 +1860,11 @@ function AccountPurchaseTallyTab() {
             select
             label="조회 종료월"
             size="small"
-            onChange={(e) => setFilters((prev) => ({ ...prev, toMonth: e.target.value }))}
+            onChange={(e) => {
+              const next = { ...latestFiltersRef.current, toMonth: e.target.value };
+              latestFiltersRef.current = next;
+              setFilters(next);
+            }}
             sx={{ minWidth: isMobile ? 100 : 110 }}
             SelectProps={{ native: true, displayEmpty: true }}
             InputLabelProps={{ shrink: true }}
@@ -1851,6 +1898,23 @@ function AccountPurchaseTallyTab() {
               if (!q) return options;
               return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
             }}
+            renderOption={(optionProps, option) => (
+              <li
+                {...optionProps}
+                key={option?.value}
+                style={{
+                  ...(optionProps.style || {}),
+                }}
+              >
+                <span
+                  style={{
+                    color: String(option?.del_yn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
+                  }}
+                >
+                  {option?.label ?? ""}
+                </span>
+              </li>
+            )}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -1864,7 +1928,10 @@ function AccountPurchaseTallyTab() {
                 }}
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                  "& input": { padding: "0 8px" },
+                  "& input": {
+                    padding: "0 8px",
+                    color: isDeletedAccountSelected ? "#d32f2f" : "inherit",
+                  },
                 }}
               />
             )}

@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import { Select, MenuItem, TextField, useMediaQuery, useTheme } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
@@ -933,7 +933,7 @@ function DinersNumberSheet() {
   }, [accountList, account_id]);
 
   // ✅ 기준(originalRows) + 화면용(activeRows) 세팅 + 근무일수 초기값 세팅
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (loading || !selectedAccountId) return;
 
     const daysInMonth = dayjs(`${year}-${month}-01`).daysInMonth();

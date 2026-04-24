@@ -76,7 +76,7 @@ const formatNumber = (value) => {
 
 export default function useAccountPurchaseDeadlineData() {
   // 🔹 매입 집계 테이블 데이터
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(null);
   const [originalRows, setOriginalRows] = useState([]);
 
   // 🔹 조회 조건에서 쓸 거래처 리스트 (필요시 사용)
@@ -112,7 +112,10 @@ export default function useAccountPurchaseDeadlineData() {
 
   // 거래처 목록 조회 API
   const fetchAccountList = useCallback(async (params = { account_type: "0" }) => {
-    const res = await api.get("/Account/AccountListV2", { params });
+    setLoading(true);
+    const res = await api.get("/Account/AccountListV2", {
+      params: { del_yn: "ALL", ...params },
+    });
     return Array.isArray(res?.data) ? res.data : res?.data?.rows || res?.data?.data || [];
   }, []);
 
@@ -203,6 +206,7 @@ export default function useAccountPurchaseDeadlineData() {
     setOriginalRows,
     partnerList,
     loading,
+    setLoading,
     fetchAccountList,
     fetchPurchaseList,
     typeOptions,

@@ -1,5 +1,5 @@
 // src/layouts/handover/HandoverSheetTab.js
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -75,7 +75,7 @@ export default function HandoverSheetTab() {
     if (selectedAccountId) setForm((prev) => ({ ...prev, account_id: selectedAccountId }));
   }, [selectedAccountId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (handOverListRows && handOverListRows.length > 0) {
       setForm(handOverListRows[0] || {});
       setOriginalForm(handOverListRows[0] || {});

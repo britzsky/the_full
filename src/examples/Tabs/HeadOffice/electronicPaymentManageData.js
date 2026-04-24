@@ -1,4 +1,4 @@
-﻿/* eslint-disable react/function-component-definition */
+/* eslint-disable react/function-component-definition */
 import { useCallback, useEffect, useState } from "react";
 import api from "api/api";
 

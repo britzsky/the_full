@@ -3972,7 +3972,7 @@ function TallySheet() {
       )}
 
       {/* ================= 거래처 연결 모달(open) ================= */}
-      <Modal open={open} onClose={() => setOpen(false)}>
+      <Modal open={open} disableEscapeKeyDown={floatingPreview.open} onClose={() => setOpen(false)}>
         <MDBox
           sx={{
             position: "absolute",
@@ -4048,7 +4048,7 @@ function TallySheet() {
       </Modal>
 
       {/* ================= 거래처 등록 모달(open2) ================= */}
-      <Modal open={open2} onClose={handleModalClose2}>
+      <Modal open={open2} disableEscapeKeyDown={floatingPreview.open} onClose={handleModalClose2}>
         <Box
           sx={{
             position: "absolute",
@@ -4409,7 +4409,11 @@ function TallySheet() {
       </Modal>
 
       {/* ======================== ✅ (1000) 법인카드 모달 3종 (Choice/Create/List) ======================== */}
-      <Modal open={cardChoiceOpen} onClose={() => setCardChoiceOpen(false)}>
+      <Modal
+        open={cardChoiceOpen}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => setCardChoiceOpen(false)}
+      >
         <Box
           sx={{
             position: "absolute",
@@ -4455,6 +4459,7 @@ function TallySheet() {
       {/* ======================== ✅ (1000) 목록 모달: "선택" → "저장", 테이블에서 직접 수정 ======================== */}
       <Modal
         open={cardListOpen}
+        disableEscapeKeyDown={floatingPreview.open}
         onClose={() => {
           // blob revoke
           Object.values(cardRowFiles || {}).forEach((v) => {
@@ -4932,6 +4937,7 @@ function TallySheet() {
       {/* ======================== ✅ (1008) 현금/카드 목록 모달: 테이블에서 직접 수정 + 저장 ======================== */}
       <Modal
         open={cashListOpen}
+        disableEscapeKeyDown={floatingPreview.open}
         onClose={() => {
           Object.values(cashRowFiles || {}).forEach((v) => {
             if (v?.previewUrl && String(v.previewUrl).startsWith("blob:"))
@@ -5329,6 +5335,7 @@ function TallySheet() {
       {/* ======================== ✅ (기타 type) 목록 모달: 테이블에서 직접 수정 + 저장 ======================== */}
       <Modal
         open={otherListOpen}
+        disableEscapeKeyDown={floatingPreview.open}
         onClose={() => {
           Object.values(otherRowFiles || {}).forEach((v) => {
             if (v?.previewUrl && String(v.previewUrl).startsWith("blob:"))
@@ -5691,7 +5698,11 @@ function TallySheet() {
       </Modal>
 
       {/* ======================== ✅ (1000) 법인카드 등록 모달 ======================== */}
-      <Modal open={cardCreateOpen} onClose={() => setCardCreateOpen(false)}>
+      <Modal
+        open={cardCreateOpen}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => setCardCreateOpen(false)}
+      >
         <Box
           sx={{
             position: "absolute",
@@ -5836,7 +5847,11 @@ function TallySheet() {
       </Modal>
 
       {/* ======================== ✅ (1008) 선택 모달 (0원 아니면 뜨는 모달) ======================== */}
-      <Modal open={cashChoiceOpen} onClose={() => setCashChoiceOpen(false)}>
+      <Modal
+        open={cashChoiceOpen}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => setCashChoiceOpen(false)}
+      >
         <Box
           sx={{
             position: "absolute",
@@ -5880,7 +5895,11 @@ function TallySheet() {
       </Modal>
 
       {/* ======================== ✅ (1008) 등록 모달 ======================== */}
-      <Modal open={cashCreateOpen} onClose={() => setCashCreateOpen(false)}>
+      <Modal
+        open={cashCreateOpen}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => setCashCreateOpen(false)}
+      >
         <Box
           sx={{
             position: "absolute",
@@ -6035,7 +6054,11 @@ function TallySheet() {
       </Modal>
 
       {/* ======================== ✅ (기타 type) 선택 모달 ======================== */}
-      <Modal open={otherChoiceOpen} onClose={() => setOtherChoiceOpen(false)}>
+      <Modal
+        open={otherChoiceOpen}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => setOtherChoiceOpen(false)}
+      >
         <Box
           sx={{
             position: "absolute",
@@ -6079,7 +6102,11 @@ function TallySheet() {
       </Modal>
 
       {/* ======================== ✅ (기타 type) 등록 모달 ======================== */}
-      <Modal open={otherCreateOpen} onClose={() => setOtherCreateOpen(false)}>
+      <Modal
+        open={otherCreateOpen}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => setOtherCreateOpen(false)}
+      >
         <Box
           sx={{
             position: "absolute",

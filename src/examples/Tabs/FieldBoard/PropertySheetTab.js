@@ -1,5 +1,5 @@
 // src/layouts/property/PropertySheetTab.js
-import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import {
@@ -233,7 +233,7 @@ function PropertySheetTab() {
     }
   }, [selectedAccountId, accountList]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // ✅ type은 select 비교/표시 위해 문자열로 통일
     const deepCopy = (activeRows || []).map((r) => ({
       ...applyReceiptImageValues(r, getReceiptImageValues(r)),

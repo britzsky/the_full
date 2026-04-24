@@ -110,6 +110,8 @@ const RECEIPT_IMAGE_SOURCE_KEYS = [
   "receiptImage3",
 ];
 
+const EXCLUDED_TYPE_FILTER_VALUES = new Set(["1000", "1002", "1003", "1008"]);
+
 
 // 숫자 입력 전용: onInput에서 비숫자 즉시 제거 (한글 모음·자음 포함)
 const onNumInput = (e) => {
@@ -204,9 +206,16 @@ function AccountPurchaseDeadlineTab() {
     account_id: "", // 거래처 (account_id)
     payType: "0", // 조회구분
   });
+  const latestFiltersRef = useRef(filters);
+
+  useEffect(() => {
+    latestFiltersRef.current = filters;
+  }, [filters]);
 
   // 🔹 상단 거래처(사업장) select용 리스트
   const [accountList, setAccountList] = useState([]);
+  const [selectedAccountDelYn, setSelectedAccountDelYn] = useState("N");
+  const isDeletedAccount = String(selectedAccountDelYn ?? "N").toUpperCase() === "Y";
   const accountInputRef = useRef("");
   const masterWrapRef = useRef(null);
   const detailWrapRef = useRef(null);
@@ -268,15 +277,24 @@ function AccountPurchaseDeadlineTab() {
   const resolveNextType = useCallback((opts, currentType, accountTypeCode = "") => {
     const cur = String(currentType ?? "");
     const accountType = String(accountTypeCode ?? "");
-    if (opts?.some((o) => o.value === cur)) return cur;
-    if (accountType && opts?.some((o) => o.value === accountType)) return accountType;
-    if (opts?.length) return String(opts[0].value);
-    return accountType || cur || "";
+    if (cur === "0" || cur === "") return cur || "0";
+    if (EXCLUDED_TYPE_FILTER_VALUES.has(cur)) return "0";
+    if (opts?.some((o) => o.value === cur && !EXCLUDED_TYPE_FILTER_VALUES.has(String(o.value)))) return cur;
+    if (
+      accountType &&
+      !EXCLUDED_TYPE_FILTER_VALUES.has(accountType) &&
+      opts?.some((o) => o.value === accountType)
+    ) {
+      return accountType;
+    }
+    const firstVisible = (opts || []).find((o) => !EXCLUDED_TYPE_FILTER_VALUES.has(String(o?.value ?? "")));
+    if (firstVisible) return String(firstVisible.value);
+    return "0";
   }, []);
 
   // ✅ (상단) 데이터 훅 사용
   const {
-    rows, setRows, originalRows, setOriginalRows, loading, fetchAccountList, fetchPurchaseList,
+    rows, setRows, originalRows, setOriginalRows, loading, setLoading, fetchAccountList, fetchPurchaseList,
     typeOptions, setTypeOptions, typeLoading, fetchTypeOptions,
   } = useAccountPurchaseDeadlineData();
 
@@ -299,6 +317,11 @@ function AccountPurchaseDeadlineTab() {
   // 테이블 강제 리렌더링용 키 (defaultValue 기반 input 초기화 시 사용)
   const [masterTableKey, setMasterTableKey] = useState(0);
   const [detailTableKey, setDetailTableKey] = useState(0);
+
+  const showDeletedAccountReadonlyAlert = useCallback(() => {
+    if (Swal.isVisible()) return;
+    Swal.fire("안내", "삭제업장은 수정할 수 없습니다.", "info");
+  }, []);
 
   // 미저장 하단 변경 누적 보관소: sale_id → detailRows 배열
   // 다른 상단 행으로 이동해도 수정값을 유지하기 위한 임시 저장소
@@ -346,6 +369,7 @@ function AccountPurchaseDeadlineTab() {
         const list = (rawList || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
+          del_yn: item.del_yn,
           account_type: item.account_type,
           account_type_code: resolveAccountTypeCode(item.account_type),
         }));
@@ -354,6 +378,7 @@ function AccountPurchaseDeadlineTab() {
         if (list.length > 0) {
           const firstId = String(list[0].account_id);
           const firstTypeCode = String(list[0].account_type_code ?? "");
+          setSelectedAccountDelYn(String(list[0].del_yn ?? "N").toUpperCase());
 
           // ✅ 1) 거래처 먼저 세팅
           const base = { ...filters, account_id: firstId, type: "0" };
@@ -365,6 +390,7 @@ function AccountPurchaseDeadlineTab() {
           const nextType = resolveNextType(opts, base.type, firstTypeCode);
 
           const next = { ...base, type: nextType };
+          latestFiltersRef.current = next;
           setFilters(next);
 
           // ✅ 4) 조회
@@ -372,6 +398,7 @@ function AccountPurchaseDeadlineTab() {
         }
       } catch (err) {
         console.error("데이터 조회 실패 (AccountList):", err);
+        setLoading(false);
       }
     })();
   }, []); // ✅ 의도적으로 1회만
@@ -395,17 +422,16 @@ function AccountPurchaseDeadlineTab() {
         await handleSaveRef.current?.();
       }
     }
-    setFilters((prev) => {
-      const next = { ...prev, [name]: value };
-      if (name === "account_id" || name === "type" || name === "payType") {
-        setSelectedSaleId("");
-        setSelectedMasterIndex(-1);
-        setDetailRows([]);
-        setOriginalDetailRows([]);
-        fetchPurchaseList(next);
-      }
-      return next;
-    });
+    const next = { ...latestFiltersRef.current, [name]: value };
+    latestFiltersRef.current = next;
+    setFilters(next);
+    if (name === "account_id" || name === "type" || name === "payType") {
+      setSelectedSaleId("");
+      setSelectedMasterIndex(-1);
+      setDetailRows([]);
+      setOriginalDetailRows([]);
+      fetchPurchaseList(next);
+    }
   };
 
   // ✅ (상단) 합계 계산
@@ -457,6 +483,7 @@ function AccountPurchaseDeadlineTab() {
     async (_, opt) => {
       const nextId = opt ? String(opt.value) : "";
       const nextAccountTypeCode = opt ? String(opt.account_type_code ?? "") : "";
+      const nextDelYn = String(opt?.del_yn ?? "N").toUpperCase();
 
       // 미저장 변경 있으면 확인
       if (hasDirtyRowsEarly()) {
@@ -483,23 +510,32 @@ function AccountPurchaseDeadlineTab() {
 
       if (!nextId) {
         setTypeOptions([]);
-        setFilters((prev) => ({ ...prev, account_id: "" }));
+        setSelectedAccountDelYn("N");
+        const next = { ...latestFiltersRef.current, account_id: "" };
+        latestFiltersRef.current = next;
+        setFilters(next);
         return;
       }
+      setSelectedAccountDelYn(nextDelYn);
+
+      const pendingNext = { ...latestFiltersRef.current, account_id: nextId };
+      latestFiltersRef.current = pendingNext;
+      setFilters(pendingNext);
 
       // ✅ 1) 타입 옵션 먼저 조회
       const opts = await fetchTypeOptions(nextId);
 
       // ✅ 2) filters 기반으로 next 구성
-      const nextType = resolveNextType(opts, filters.type, nextAccountTypeCode);
-      const next = { ...filters, account_id: nextId, type: nextType };
+      const currentFilters = latestFiltersRef.current;
+      const nextType = resolveNextType(opts, currentFilters.type, nextAccountTypeCode);
+      const next = { ...currentFilters, account_id: nextId, type: nextType };
 
       // ✅ 3) 상태 반영 + 조회
+      latestFiltersRef.current = next;
       setFilters(next);
       fetchPurchaseList(next);
     },
     [
-      filters,
       fetchPurchaseList,
       fetchTypeOptions,
       resolveNextType,
@@ -522,7 +558,7 @@ function AccountPurchaseDeadlineTab() {
     setSelectedMasterIndex(-1);
     setDetailRows([]);
     setOriginalDetailRows([]);
-    await fetchPurchaseList(targetFilters ?? filters);
+    await fetchPurchaseList(targetFilters ?? latestFiltersRef.current);
   };
 
   // 조회 버튼 클릭: 미저장 변경 있으면 [저장 후 이동] / [취소] 확인
@@ -543,7 +579,7 @@ function AccountPurchaseDeadlineTab() {
         await handleSaveRef.current?.();
         return;
       }
-      await doSearch();
+      await doSearch(latestFiltersRef.current);
     } catch (e) {
       Swal.fire("오류", e.message, "error");
     }
@@ -586,6 +622,11 @@ function AccountPurchaseDeadlineTab() {
 
   // 상단 셀 값 변경 핸들러 (total=0 시 하단 금액 전체 초기화 포함)
   const handleCellChange = useCallback((rowIndex, key, value) => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value, __dirty: true } : r)));
 
     // ✅ 상단 합계(total)가 0으로 바뀌면 하단 detail 모든 행의 숫자 컬럼을 0으로 초기화
@@ -607,7 +648,13 @@ function AccountPurchaseDeadlineTab() {
         setDetailTableKey((k) => k + 1);
       }
     }
-  }, [setRows, setDetailRows, setDetailTableKey]);
+  }, [
+    isDeletedAccount,
+    showDeletedAccountReadonlyAlert,
+    setRows,
+    setDetailRows,
+    setDetailTableKey,
+  ]);
 
   // 사업자번호 포맷 변환 (숫자 10자리 → XXX-XX-XXXXX)
   const formatBizNo = useCallback((v) => {
@@ -892,6 +939,11 @@ function AccountPurchaseDeadlineTab() {
   // =========================
   const handleImageUpload = useCallback(
     async (files, rowIndex) => {
+      if (isDeletedAccount) {
+        showDeletedAccountReadonlyAlert();
+        return;
+      }
+
       const selectedFiles = (Array.isArray(files) ? files : [files])
         .filter(Boolean)
         .sort((a, b) =>
@@ -1084,6 +1136,8 @@ function AccountPurchaseDeadlineTab() {
       }
     },
     [
+      isDeletedAccount,
+      showDeletedAccountReadonlyAlert,
       filters.type,
       getReceiptImagePaths,
       setRows,
@@ -1378,6 +1432,11 @@ function AccountPurchaseDeadlineTab() {
 
   // ✅ 하단 행추가 버튼
   const handleDetailAddRow = useCallback(() => {
+    if (isDeletedAccount) {
+      showDeletedAccountReadonlyAlert();
+      return;
+    }
+
     if (!selectedSaleId) {
       Swal.fire("안내", "상단에서 먼저 행을 선택해 주세요. (sale_id 필요)", "info");
       return;
@@ -1420,6 +1479,8 @@ function AccountPurchaseDeadlineTab() {
     setDetailRows((prev) => [newRow, ...prev]);
     setOriginalDetailRows((prev) => [newRow, ...prev]);
   }, [
+    isDeletedAccount,
+    showDeletedAccountReadonlyAlert,
     selectedSaleId,
     rows,
     selectedMasterIndex,
@@ -1456,6 +1517,11 @@ function AccountPurchaseDeadlineTab() {
   // 저장 처리: 상단 + 현재 하단 + 누적 보관소의 모든 변경분 일괄 저장
   const handleSave = useCallback(async () => {
     try {
+      if (isDeletedAccount) {
+        showDeletedAccountReadonlyAlert();
+        return;
+      }
+
       // 포커스된 셀 blur 강제 실행 (onBlur 우선 처리)
       const active = document.activeElement;
       if (active && (active.isContentEditable || active.tagName === "INPUT")) {
@@ -1648,6 +1714,8 @@ function AccountPurchaseDeadlineTab() {
       Swal.fire("오류", e?.message || "저장 중 오류가 발생했습니다.", "error");
     }
   }, [
+    isDeletedAccount,
+    showDeletedAccountReadonlyAlert,
     rows,
     originalMasterMap,
     isRowChanged,
@@ -2169,6 +2237,11 @@ function AccountPurchaseDeadlineTab() {
   // 하단 셀 값 변경 핸들러: qty/unitPrice → amount 자동계산, amount/taxType → vat/tax 자동계산
   const setDetailCell = useCallback(
     (rowIndex, key, value) => {
+      if (isDeletedAccount) {
+        showDeletedAccountReadonlyAlert();
+        return;
+      }
+
       setDetailRows((prev) =>
         prev.map((x, idx) => {
           if (idx !== rowIndex) return x;
@@ -2190,12 +2263,12 @@ function AccountPurchaseDeadlineTab() {
             return updated;
           }
 
-          // qty 또는 unitPrice 변경 시: blur 확정(autoCalc=true)이면 amount/과세/부가세 자동계산
+          // qty 또는 unitPrice 변경 시: blur 확정(autoCalc=true)이면 amount 자동계산
+          // tax/vat를 수기 입력한 행은 이후 자동계산으로 덮어쓰지 않는다.
           if (key === "qty" || key === "unitPrice") {
             if (value?.__autoCalc) {
               const finalVal = value.value;
               updated[key] = finalVal;
-              updated.__taxManual = false;
               // ref에서 읽어온 상대방 값 우선, 없으면 state 값 사용
               const qtyVal = key === "qty" ? finalVal : (value._qtyValue ?? x.qty);
               const upVal = key === "unitPrice" ? finalVal : (value._upValue ?? x.unitPrice);
@@ -2204,32 +2277,43 @@ function AccountPurchaseDeadlineTab() {
               if (qNum && pNum) {
                 const autoAmt = qNum * pNum;
                 updated.amount = autoAmt.toLocaleString("ko-KR");
-                const tType = String(x.taxType ?? "");
-                const autoVat = tType === "1" ? Math.floor(autoAmt / 11) : 0;
-                const autoTax = tType === "1" ? autoAmt - autoVat : 0;
-                updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
-                updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+                if (!x.__taxManual) {
+                  const tType = String(x.taxType ?? "");
+                  const autoVat = tType === "1" ? Math.floor(autoAmt / 11) : 0;
+                  const autoTax = tType === "1" ? autoAmt - autoVat : 0;
+                  updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
+                  updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+                }
               }
             }
             return updated;
           }
 
-          // amount 또는 taxType 변경 시: __taxManual 리셋 후 자동계산
+          // amount 또는 taxType 변경 시: 수기 입력 행이 아니면 자동계산
           if (key === "amount" || key === "taxType") {
-            updated.__taxManual = false;
-            const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
-            const tType = String(key === "taxType" ? value : x.taxType);
-            const autoVat = tType === "1" ? Math.floor(amt / 11) : 0;
-            const autoTax = tType === "1" ? amt - autoVat : 0;
-            updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
-            updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+            if (!x.__taxManual) {
+              const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
+              const tType = String(key === "taxType" ? value : x.taxType);
+              const autoVat = tType === "1" ? Math.floor(amt / 11) : 0;
+              const autoTax = tType === "1" ? amt - autoVat : 0;
+              updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
+              updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+            }
           }
 
           return updated;
         })
       );
     },
-    [setDetailRows, originalDetailMap, DETAIL_MONEY_KEYS, stripComma, normalizeStr]
+    [
+      isDeletedAccount,
+      showDeletedAccountReadonlyAlert,
+      setDetailRows,
+      originalDetailMap,
+      DETAIL_MONEY_KEYS,
+      stripComma,
+      normalizeStr,
+    ]
   );
 
   // 콤마 포함 문자열 → 숫자 변환 (연산용)
@@ -2324,6 +2408,7 @@ function AccountPurchaseDeadlineTab() {
   // 하단 상세 변경 시 해당 상단 행의 과세/부가세/면세/합계 자동 동기화
   useEffect(() => {
     if (!selectedSaleId) return;
+    if (isDeletedAccount) return;
     if (detailLoading) return;
     if (!Array.isArray(detailRows) || detailRows.length === 0) return;
 
@@ -2362,6 +2447,7 @@ function AccountPurchaseDeadlineTab() {
     });
   }, [
     selectedSaleId,
+    isDeletedAccount,
     detailLoading,
     detailRows,
     calcMasterTotalsFromDetail,
@@ -2376,6 +2462,7 @@ function AccountPurchaseDeadlineTab() {
       (accountList || []).map((a) => ({
         value: String(a.account_id),
         label: a.account_name,
+        del_yn: String(a.del_yn ?? "N").toUpperCase(),
         account_type_code: String(a.account_type_code ?? ""),
       })),
     [accountList]
@@ -2385,7 +2472,13 @@ function AccountPurchaseDeadlineTab() {
   const selectedAccountOption = useMemo(() => {
     const v = String(filters.account_id ?? "");
     const found = (accountList || []).find((a) => String(a.account_id) === v);
-    return found ? { value: String(found.account_id), label: found.account_name } : null;
+    return found
+      ? {
+        value: String(found.account_id),
+        label: found.account_name,
+        del_yn: String(found.del_yn ?? "N").toUpperCase(),
+      }
+      : null;
   }, [filters.account_id, accountList]);
 
   // 텍스트 입력으로 거래처 검색 후 자동 선택 (완전 일치 우선, 부분 일치 폴백)
@@ -2407,7 +2500,7 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [accountOptions, handleAccountChange]);
 
-  if (loading) return <LoadingScreen />;
+  if (loading || !filters.account_id || rows === null) return <LoadingScreen />;
 
   return (
     <LocalizationProvider
@@ -2456,7 +2549,7 @@ function AccountPurchaseDeadlineTab() {
           >
             <option value="0">전체</option>
             {typeOptions
-              .filter((o) => !["0", "1000", "1002", "1003", "1008"].includes(String(o?.value ?? "")))
+              .filter((o) => !EXCLUDED_TYPE_FILTER_VALUES.has(String(o?.value ?? "")))
               .map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -2484,7 +2577,11 @@ function AccountPurchaseDeadlineTab() {
           <Select
             size="small"
             value={filters.year}
-            onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value }))}
+            onChange={(e) => {
+              const next = { ...latestFiltersRef.current, year: e.target.value };
+              latestFiltersRef.current = next;
+              setFilters(next);
+            }}
             sx={{ minWidth: 110, height: 40 }}
           >
             {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
@@ -2497,7 +2594,11 @@ function AccountPurchaseDeadlineTab() {
           <Select
             size="small"
             value={filters.month}
-            onChange={(e) => setFilters((prev) => ({ ...prev, month: e.target.value }))}
+            onChange={(e) => {
+              const next = { ...latestFiltersRef.current, month: e.target.value };
+              latestFiltersRef.current = next;
+              setFilters(next);
+            }}
             sx={{ minWidth: 90, height: 40 }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -2524,6 +2625,18 @@ function AccountPurchaseDeadlineTab() {
               if (!q) return options;
               return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
             }}
+            renderOption={(optionProps, option) => (
+              <li
+                {...optionProps}
+                key={option?.value}
+                style={{
+                  ...(optionProps.style || {}),
+                  color: String(option?.del_yn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
+                }}
+              >
+                {option?.label ?? ""}
+              </li>
+            )}
             renderInput={(params) => (
               <TextField
                 {...params}
@@ -2537,7 +2650,10 @@ function AccountPurchaseDeadlineTab() {
                 }}
                 sx={{
                   "& .MuiInputBase-root": { height: 45, fontSize: 12 },
-                  "& input": { padding: "0 8px" },
+                  "& input": {
+                    padding: "0 8px",
+                    color: String(selectedAccountDelYn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
+                  },
                 }}
               />
             )}
@@ -2555,8 +2671,17 @@ function AccountPurchaseDeadlineTab() {
           <MDButton
             variant="gradient"
             color="info"
+            disabled={isDeletedAccount}
             onClick={handleSave}
-            sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
+            sx={{
+              minWidth: isMobile ? 90 : 100,
+              fontSize: isMobile ? "11px" : "13px",
+              cursor: isDeletedAccount ? "not-allowed" : "pointer",
+              "&.Mui-disabled": {
+                cursor: "not-allowed",
+                pointerEvents: "auto",
+              },
+            }}
           >
             저장
           </MDButton>
@@ -2640,7 +2765,7 @@ function AccountPurchaseDeadlineTab() {
                         data-sale-id={rowSaleId}
                         onClick={() => handleMasterRowClick(row, rowIndex)}
                         style={{
-                          cursor: "pointer",
+                          cursor: isDeletedAccount ? "not-allowed" : "pointer",
                           backgroundColor:
                             rowIndex === selectedMasterIndex
                               ? "rgba(25,118,210,0.10)"
@@ -2662,11 +2787,13 @@ function AccountPurchaseDeadlineTab() {
                                 style={fixedColStyle(col.size, {
                                   ...cellStyle(key, value),
                                   padding: "4px",
+                                  cursor: isDeletedAccount ? "not-allowed" : "default",
                                 })}
                                 onClick={(e) => e.stopPropagation()} // ✅ 행 클릭(상세조회) 방지
                               >
                                 <DatePicker
                                   value={d}
+                                  disabled={isDeletedAccount}
                                   onChange={(newVal) => {
                                     // ✅ 달력 선택/직접입력 모두 여기로 들어옴
                                     const next =
@@ -2745,6 +2872,7 @@ function AccountPurchaseDeadlineTab() {
                                 <Select
                                   size="small"
                                   fullWidth
+                                  disabled={isDeletedAccount}
                                   value={safeVal}
                                   onChange={(e) =>
                                     handleCellChange(
@@ -2756,7 +2884,14 @@ function AccountPurchaseDeadlineTab() {
                                   sx={{
                                     fontSize: 12,
                                     height: 25,
-                                    "& .MuiSelect-select": { color },
+                                    cursor: isDeletedAccount ? "not-allowed" : "default",
+                                    "& .MuiInputBase-root": {
+                                      cursor: isDeletedAccount ? "not-allowed" : "default",
+                                    },
+                                    "& .MuiSelect-select": {
+                                      cursor: isDeletedAccount ? "not-allowed" : "default",
+                                      color,
+                                    },
                                     "& .MuiSvgIcon-root": { color },
                                   }}
                                 >
@@ -2785,6 +2920,7 @@ function AccountPurchaseDeadlineTab() {
                               >
                                 <select
                                   value={selectValue}
+                                  disabled={isDeletedAccount}
                                   onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                                   style={{
                                     fontSize: "12px",
@@ -2792,6 +2928,7 @@ function AccountPurchaseDeadlineTab() {
                                     background: "transparent",
                                     textAlign: "center",
                                     width: "100%",
+                                    cursor: isDeletedAccount ? "not-allowed" : "default",
                                   }}
                                 >
                                   <option value="1">현금</option>
@@ -2827,6 +2964,7 @@ function AccountPurchaseDeadlineTab() {
                                     type="file"
                                     accept="image/*"
                                     multiple
+                                    disabled={isDeletedAccount}
                                     id={inputId}
                                     style={{ display: "none" }}
                                     ref={(el) => { if (el) fileInputRefs.current[inputId] = el; }}
@@ -2894,11 +3032,17 @@ function AccountPurchaseDeadlineTab() {
                                         type="button"
                                         size="small"
                                         color="info"
+                                        disabled={isDeletedAccount}
                                         sx={{
                                           minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
                                           width: RECEIPT_UPLOAD_BTN_WIDTH,
                                           px: 0.5,
                                           whiteSpace: "nowrap",
+                                          cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                                          "&.Mui-disabled": {
+                                            cursor: "not-allowed",
+                                            pointerEvents: "auto",
+                                          },
                                         }}
                                         onClick={(ev) => {
                                           ev.preventDefault();
@@ -2915,11 +3059,17 @@ function AccountPurchaseDeadlineTab() {
                                       type="button"
                                       size="small"
                                       color="info"
+                                      disabled={isDeletedAccount}
                                       sx={{
                                         minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
                                         width: RECEIPT_UPLOAD_BTN_WIDTH,
                                         px: 0.5,
                                         whiteSpace: "nowrap",
+                                        cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                                        "&.Mui-disabled": {
+                                          cursor: "not-allowed",
+                                          pointerEvents: "auto",
+                                        },
                                       }}
                                       onClick={(ev) => {
                                         ev.preventDefault();
@@ -2955,7 +3105,7 @@ function AccountPurchaseDeadlineTab() {
                           return (
                             <td
                               key={key}
-                              contentEditable
+                              contentEditable={!isDeletedAccount}
                               suppressContentEditableWarning
                               onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
                               onKeyDown={(e) => e.stopPropagation()}
@@ -2983,6 +3133,7 @@ function AccountPurchaseDeadlineTab() {
                               }}
                               style={fixedColStyle(col.size, {
                                 ...cellStyle(key, value),
+                                cursor: isDeletedAccount ? "not-allowed" : "text",
                               })}
                             >
                               {value}
@@ -3042,8 +3193,17 @@ function AccountPurchaseDeadlineTab() {
               <MDButton
                 variant="gradient"
                 color="success"
+                disabled={isDeletedAccount}
                 onClick={handleDetailAddRow}
-                sx={{ minWidth: isMobile ? 110 : 130, fontSize: isMobile ? "11px" : "13px" }}
+                sx={{
+                  minWidth: isMobile ? 110 : 130,
+                  fontSize: isMobile ? "11px" : "13px",
+                  cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                  "&.Mui-disabled": {
+                    cursor: "not-allowed",
+                    pointerEvents: "auto",
+                  },
+                }}
               >
                 상세 행추가
               </MDButton>
@@ -3091,7 +3251,7 @@ function AccountPurchaseDeadlineTab() {
                           }}
                         >
                           <td
-                            contentEditable
+                            contentEditable={!isDeletedAccount}
                             suppressContentEditableWarning
                             onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
                             onKeyDown={(e) => e.stopPropagation()}
@@ -3102,6 +3262,7 @@ function AccountPurchaseDeadlineTab() {
                               ...fixedColStyle(220),
                               textAlign: "left",
                               ...getDetailCellStyle(r, "name", r.name),
+                              cursor: isDeletedAccount ? "not-allowed" : "text",
                             }}
                           >
                             {r.name ?? ""}
@@ -3118,6 +3279,7 @@ function AccountPurchaseDeadlineTab() {
                               key={`qty-${i}-${detailTableKey}`}
                               type="text"
                               inputMode="numeric"
+                              disabled={isDeletedAccount}
                               defaultValue={r.qty ?? ""}
                               ref={(el) => { if (el) qtyRefs.current[i] = el; }}
                               onInput={onNumInput}
@@ -3135,6 +3297,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: getDetailCellStyle(r, "qty", r.qty)?.color || "inherit",
+                                cursor: isDeletedAccount ? "not-allowed" : "text",
                               }}
                             />
                           </td>
@@ -3150,6 +3313,7 @@ function AccountPurchaseDeadlineTab() {
                               key={`up-${i}-${detailTableKey}`}
                               type="text"
                               inputMode="numeric"
+                              disabled={isDeletedAccount}
                               defaultValue={r.unitPrice ?? ""}
                               ref={(el) => { if (el) unitPriceRefs.current[i] = el; }}
                               onInput={onNumInput}
@@ -3167,6 +3331,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: getDetailCellStyle(r, "unitPrice", r.unitPrice)?.color || "inherit",
+                                cursor: isDeletedAccount ? "not-allowed" : "text",
                               }}
                             />
                           </td>
@@ -3181,6 +3346,7 @@ function AccountPurchaseDeadlineTab() {
                             <input
                               type="text"
                               inputMode="numeric"
+                              disabled={isDeletedAccount}
                               value={r.tax ?? ""}
                               onInput={onNumInput}
                               onChange={(e) => setDetailCell(i, "tax", e.target.value.replace(/[^\d\-,]/g, ""))}
@@ -3196,6 +3362,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: getDetailCellStyle(r, "tax", r.tax)?.color || "inherit",
+                                cursor: isDeletedAccount ? "not-allowed" : "text",
                               }}
                             />
                           </td>
@@ -3210,6 +3377,7 @@ function AccountPurchaseDeadlineTab() {
                             <input
                               type="text"
                               inputMode="numeric"
+                              disabled={isDeletedAccount}
                               value={r.vat ?? ""}
                               onInput={onNumInput}
                               onChange={(e) => setDetailCell(i, "vat", e.target.value.replace(/[^\d\-,]/g, ""))}
@@ -3225,6 +3393,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: getDetailCellStyle(r, "vat", r.vat)?.color || "inherit",
+                                cursor: isDeletedAccount ? "not-allowed" : "text",
                               }}
                             />
                           </td>
@@ -3239,6 +3408,7 @@ function AccountPurchaseDeadlineTab() {
                             <input
                               type="text"
                               inputMode="numeric"
+                              disabled={isDeletedAccount}
                               defaultValue={r.amount ?? ""}
                               onInput={onNumInput}
                               onBlur={(e) => {
@@ -3254,6 +3424,7 @@ function AccountPurchaseDeadlineTab() {
                                 outline: "none",
                                 background: "transparent",
                                 color: getDetailCellStyle(r, "amount", r.amount)?.color || "inherit",
+                                cursor: isDeletedAccount ? "not-allowed" : "text",
                               }}
                             />
                           </td>
@@ -3267,6 +3438,7 @@ function AccountPurchaseDeadlineTab() {
                               size="small"
                               fullWidth
                               displayEmpty
+                              disabled={isDeletedAccount}
                               value={String(r.taxType ?? "")}
                               onChange={(e) => setDetailCell(i, "taxType", e.target.value)}
                               renderValue={(v) => {
@@ -3277,7 +3449,9 @@ function AccountPurchaseDeadlineTab() {
                               sx={{
                                 fontSize: 12,
                                 height: 25,
+                                cursor: isDeletedAccount ? "not-allowed" : "default",
                                 "& .MuiSelect-select": {
+                                  cursor: isDeletedAccount ? "not-allowed" : "default",
                                   color: getDetailCellStyle(r, "taxType", r.taxType)?.color || "black",
                                 },
                                 "& .MuiSvgIcon-root": {
@@ -3305,6 +3479,7 @@ function AccountPurchaseDeadlineTab() {
                               size="small"
                               fullWidth
                               displayEmpty
+                              disabled={isDeletedAccount}
                               value={String(r.itemType ?? "")}
                               onChange={(e) => setDetailCell(i, "itemType", e.target.value)}
                               renderValue={(v) => {
@@ -3315,7 +3490,9 @@ function AccountPurchaseDeadlineTab() {
                               sx={{
                                 fontSize: 12,
                                 height: 25,
+                                cursor: isDeletedAccount ? "not-allowed" : "default",
                                 "& .MuiSelect-select": {
+                                  cursor: isDeletedAccount ? "not-allowed" : "default",
                                   color: getDetailCellStyle(r, "itemType", r.itemType)?.color || "black",
                                 },
                                 "& .MuiSvgIcon-root": {

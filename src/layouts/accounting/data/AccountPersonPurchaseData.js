@@ -158,6 +158,8 @@ export default function useAccountCorporateCardData() {
   return {
     // state
     loading,
+    setLoading,
+    withLoading,
 
     activeRows,
     setActiveRows,

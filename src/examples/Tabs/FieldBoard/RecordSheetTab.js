@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { startTransition, useMemo, useEffect, useState, useCallback, useRef } from "react";
+import React, { startTransition, useMemo, useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { useLocation, useParams } from "react-router-dom";
 import Grid from "@mui/material/Grid";
@@ -856,7 +856,7 @@ function RecordSheet() {
   // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
   const [employeeRowsView, setEmployeeRowsView] = useState([]);
   const [employeeLoadedViewKey, setEmployeeLoadedViewKey] = useState("");
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!currentViewKey) {
       setEmployeeRowsView([]);
       setEmployeeLoadedViewKey("");
@@ -2246,7 +2246,7 @@ function RecordSheet() {
   }, [selectedAccountId]);
 
   // ✅ 화면도 buildAttendanceRowsFromSheet 로 통일
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!currentViewKey) {
       setAttendanceRows([]);
       setAttendanceSummaryRows([]);

@@ -2811,7 +2811,11 @@ function CorporateCardSheet() {
                                 } catch (e) {
                                   // ignore
                                 }
-                                el.innerText = String(parseNumber(el.innerText) || "");
+                                // amount 컬럼은 음수(-) 유지
+                                const raw = String(parseNumber(el.innerText) || "");
+                                el.innerText = isAmountCol
+                                  ? raw === "0" ? "" : raw
+                                  : raw;
                                 selectAllContent(el);
                               });
                             }}
@@ -2822,7 +2826,11 @@ function CorporateCardSheet() {
                                 return;
                               }
 
-                              el.innerText = String(parseNumber(el.innerText) || "");
+                              // amount 컬럼은 음수(-) 유지
+                              const raw = String(parseNumber(el.innerText) || "");
+                              el.innerText = isAmountCol
+                                ? raw === "0" ? "" : raw
+                                : raw;
                               requestAnimationFrame(() => {
                                 if (!el || !el.isConnected) return;
                                 selectAllContent(el);

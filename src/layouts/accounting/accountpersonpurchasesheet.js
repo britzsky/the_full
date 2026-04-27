@@ -1572,7 +1572,11 @@ function AccountCorporateCardSheet() {
               sx={{ minWidth: 200 }}
               options={accountOptions}
               value={selectedAccountOption}
-              onChange={(_, newValue) => setSelectedAccountId(newValue?.account_id || "")}
+              onChange={(_, newValue) => {
+                // 거래처 선택값 유지 처리
+                if (!newValue?.account_id) return;
+                setSelectedAccountId(newValue.account_id);
+              }}
               onInputChange={(_, newValue) => {
                 accountInputRef.current = newValue || "";
               }}

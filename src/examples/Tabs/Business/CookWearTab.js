@@ -128,8 +128,8 @@ function CookWearTabStyled() {
 
   const tableSx = {
     flex: 1,
-    minHeight: isMobile ? "40vh" : "77vh",
-    maxHeight: isMobile ? "40vh" : "77vh",
+    height: isMobile ? "40vh" : "calc(100vh - 305px)",
+    maxHeight: isMobile ? "40vh" : "620px",
     overflowX: "auto",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
@@ -352,9 +352,9 @@ function CookWearTabStyled() {
   const columns2 = useMemo(
     () => [
       { header: "사이즈", accessorKey: "type", type: "selectItem", size: 110 },
-      { header: "출고일자", accessorKey: "out_dt", type: "date", size: 120 },
-      { header: "분출갯수", accessorKey: "out_qty", type: "text", size: 80 },
-      { header: "거래처", accessorKey: "account_id", type: "selectAccount", size: 110 },
+      { header: "출고일자", accessorKey: "out_dt", type: "date", size: 100 },
+      { header: "분출갯수", accessorKey: "out_qty", type: "text", size: 70 },
+      { header: "거래처", accessorKey: "account_id", type: "selectAccount", size: 140 },
     ],
     []
   );
@@ -387,7 +387,13 @@ function CookWearTabStyled() {
     setColWidths1((prev) => ({ ...buildInitWidths(columns1, 80), ...prev }));
   }, [columns1]);
   useEffect(() => {
-    setColWidths2((prev) => ({ ...buildInitWidths(columns2, 80), ...prev }));
+    setColWidths2((prev) => ({
+      ...buildInitWidths(columns2, 80),
+      ...prev,
+      out_dt: 100,
+      out_qty: 70,
+      account_id: 140,
+    }));
   }, [columns2]);
   useEffect(() => {
     setColWidths3((prev) => ({ ...buildInitWidths(columns3, 80), ...prev }));
@@ -602,6 +608,12 @@ function CookWearTabStyled() {
                                 style={{
                                   ...styleFn(rowIndex, col.accessorKey, value),
                                   width: "100%",
+                                  maxWidth: "100%",
+                                  boxSizing: "border-box",
+                                  paddingRight: isMobile ? "4px" : "4px",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
                                 }}
                                 onChange={(e) =>
                                   handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)

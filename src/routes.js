@@ -187,7 +187,7 @@ const routes = [
         // icon: <Icon fontSize="small">*</Icon>,
         route: "/headoffice/user-management",
         component: <UserManagement />,
-        allowedDepartments: [6], // 🔹 부서권한 (개발팀)
+        allowedDepartments: [0, 6], // 🔹 부서권한 (대표님 / 개발팀)
         allowedPositions: [0, 1], // 🔹 직책권한 (대표님 / 팀장님)
         accessMode: "OR",
       },
@@ -302,7 +302,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/fieldstaff",
         component: <OperateTab_4 />,
-        allowedDepartments: [3, 5, 6], // 🔹 부서권한
+        allowedDepartments: [0, 3, 5, 6], // 🔹 부서권한
         allowUserIds: ["yh2"], // 이윤희 실장님 
         accessMode: "AND",
       },

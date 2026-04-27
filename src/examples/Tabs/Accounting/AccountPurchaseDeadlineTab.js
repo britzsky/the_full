@@ -1553,7 +1553,8 @@ function AccountPurchaseDeadlineTab() {
       const active = document.activeElement;
       if (active && (active.isContentEditable || active.tagName === "INPUT")) {
         active.blur();
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        // 입력칸 blur로 발생한 값 보정과 상태 반영이 끝난 뒤 저장 데이터를 만든다.
+        await waitForNextPaint();
       }
 
       // 금액 합계 계산 헬퍼 (detail 기반 master 자동계산용)
@@ -1576,12 +1577,13 @@ function AccountPurchaseDeadlineTab() {
             (String(r?.tax ?? "").trim() !== "" || String(r?.vat ?? "").trim() !== "") &&
             (inputTax !== autoTax || inputVat !== autoVat);
           total += amt;
-          if (hasManualFlag || hasManualValue) {
+          // 저장 직전 상단 합계는 면세 행을 우선 분리하고, 과세 행만 자동/수기 금액을 반영한다.
+          if (taxType === "2") {
+            taxFree += amt;
+          } else if (hasManualFlag || hasManualValue) {
             tax += inputTax; vat += inputVat;
           } else if (taxType === "1") {
             tax += autoTax; vat += autoVat;
-          } else if (taxType === "2") {
-            taxFree += amt;
           }
         });
         return { total, tax, vat, taxFree };
@@ -1595,8 +1597,13 @@ function AccountPurchaseDeadlineTab() {
         const o = Array.isArray(v) ? [] : (v?.originalRows ?? []);
         fullDetailMap.set(k, { rows: r, originalRows: o });
       }
-      if (selectedSaleId && detailRows.length > 0) {
-        fullDetailMap.set(String(selectedSaleId), { rows: detailRows, originalRows: originalDetailRows });
+      const currentDetailRows = detailRowsRef.current || [];
+      const currentOriginalDetailRows = originalDetailRowsRef.current || [];
+      if (selectedSaleId && currentDetailRows.length > 0) {
+        fullDetailMap.set(String(selectedSaleId), {
+          rows: currentDetailRows,
+          originalRows: currentOriginalDetailRows,
+        });
       }
 
       // 누적 보관소 전체 sale_id의 하단 변경분 취합
@@ -1759,6 +1766,7 @@ function AccountPurchaseDeadlineTab() {
     setDetailTableKey,
     pendingDetailMap,
     restoreMasterSelectionAfterSave,
+    waitForNextPaint,
   ]);
 
   // handleSave ref 동기화 (handleAccountChange에서 forward 참조용)
@@ -2281,11 +2289,16 @@ function AccountPurchaseDeadlineTab() {
             : DETAIL_MONEY_KEYS.includes(key)
               ? stripComma(origVal) !== stripComma(rawValue)
               : normalizeStr(String(origVal ?? "")) !== normalizeStr(String(rawValue ?? ""));
+          const currentValueChanged = DETAIL_MONEY_KEYS.includes(key)
+            ? stripComma(x?.[key]) !== stripComma(rawValue)
+            : normalizeStr(String(x?.[key] ?? "")) !== normalizeStr(String(rawValue ?? ""));
           const updated = { ...x, [key]: value, __dirty: x.__dirty || actuallyChanged };
 
-          // tax/vat 직접 수기 입력 시 자동계산 비활성화 플래그
+          // 과세/부가세 값을 실제로 바꾼 행만 수기 입력으로 판단한다.
           if (key === "tax" || key === "vat") {
-            updated.__taxManual = true;
+            if (currentValueChanged) {
+              updated.__taxManual = true;
+            }
             return updated;
           }
 
@@ -2317,9 +2330,12 @@ function AccountPurchaseDeadlineTab() {
 
           // amount 또는 taxType 변경 시: 수기 입력 행이 아니면 자동계산
           if (key === "amount" || key === "taxType") {
-            if (!x.__taxManual) {
-              const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
-              const tType = String(key === "taxType" ? value : x.taxType);
+            const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
+            const tType = String(key === "taxType" ? value : x.taxType);
+            if (tType === "2" || tType === "") {
+              updated.vat = "";
+              updated.tax = "";
+            } else if (!x.__taxManual) {
               const autoVat = tType === "1" ? Math.floor(amt / 11) : 0;
               const autoTax = tType === "1" ? amt - autoVat : 0;
               updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
@@ -2415,16 +2431,15 @@ function AccountPurchaseDeadlineTab() {
 
         total += amt;
 
-        if (hasManualFlag || hasManualValue) {
+        if (taxType === "2") {
+          taxFree += amt;
+        } else if (hasManualFlag || hasManualValue) {
           // 수기 입력된 행은 해당 값 그대로 사용
           tax += inputTax;
           vat += inputVat;
-          if (taxType === "2") taxFree += amt;
         } else if (taxType === "1") {
           tax += autoTax;
           vat += autoVat;
-        } else if (taxType === "2") {
-          taxFree += amt;
         }
       });
 

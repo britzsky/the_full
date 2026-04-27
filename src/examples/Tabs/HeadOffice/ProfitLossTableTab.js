@@ -189,7 +189,6 @@ export default function ProfitLossTableTab() {
       "주간직원",
       "보전",
       "반환금",
-      "판장금",
       "매출소계",
     ];
 
@@ -205,7 +204,6 @@ export default function ProfitLossTableTab() {
         "주간직원",
         "보전",
         "반환금",
-        "판장금",
         "매출소계",
       ]
       : salesColsBase;
@@ -229,6 +227,7 @@ export default function ProfitLossTableTab() {
       },
       { group: "인건", cols: ["인건비정보", "파출비", "인건소계"] },
       { group: "간접", cols: ["수도광열비", "비고", "세금정보", "기타간접비", "간접소계"] },
+      { group: "", cols: ["영업이익", "판장금", "총 영업이익"] },
     ];
   }, [isSpecialSales2]);
 
@@ -266,7 +265,30 @@ export default function ProfitLossTableTab() {
     세금정보: { value: "duty_secure", ratio: "duty_secure_ratio" },
     기타간접비: { value: "etc_indirect_cost", ratio: "etc_indirect_ratio" },
     간접소계: { value: "indirect_total", ratio: "indirect_total_ratio" },
-    영업이익: { value: "business_profit", ratio: "business_profit_ratio" },
+    영업이익: { value: "business_profit_without_payback", ratio: "business_profit_without_payback_ratio" },
+    "총 영업이익": { value: "business_profit", ratio: "business_profit_ratio" },
+  };
+
+  // 판장금 이동 후 화면에 표시할 이익 값을 계산하는 함수
+  const getDisplayValue = (row, field) => {
+    if (field === "business_profit_without_payback") {
+      return Number(row?.business_profit ?? 0) - Number(row?.payback_price ?? 0);
+    }
+
+    return row?.[field];
+  };
+
+  // 판장금을 제외한 영업이익 비율을 매출소계 기준으로 계산하는 함수
+  const getDisplayRatio = (row, ratioField) => {
+    if (ratioField === "business_profit_without_payback_ratio") {
+      const salesTotal = Number(row?.sales_total ?? 0);
+      if (!salesTotal) return 0;
+      const profitWithoutPayback =
+        Number(row?.business_profit ?? 0) - Number(row?.payback_price ?? 0);
+      return Math.round((profitWithoutPayback / salesTotal) * 1000) / 10;
+    }
+
+    return row?.[ratioField];
   };
 
   const filteredHeaders = headers
@@ -425,15 +447,13 @@ export default function ProfitLossTableTab() {
   const toPercentCell = (v) => {
     if (v === null || v === undefined || v === "") return "";
     const n = Number(v);
-    if (Number.isNaN(n)) return "";
-    if (n >= 0 && n <= 1) return n;
-    if (n > 1 && n <= 100) return n / 100;
-    return n;
+    if (!Number.isFinite(n)) return "";
+    return n / 100;
   };
 
   const buildTwoRowHeader = (sheet, firstTitle, firstKey) => {
     const subCols = filteredHeaders.flatMap((h) => h.cols);
-    const allHeaders = [firstTitle, ...subCols, "영업이익"];
+    const secondRowHeaders = [firstTitle, ...subCols];
 
     sheet.columns = [
       { key: firstKey, width: firstTitle === "거래처" ? 22 : 10 },
@@ -441,29 +461,39 @@ export default function ProfitLossTableTab() {
         key: fieldMap[col]?.value || col,
         width: col === "비고" ? 30 : 14,
       })),
-      { key: fieldMap["영업이익"].value, width: 14 },
     ];
 
-    const topRowValues = new Array(allHeaders.length).fill(null);
+    const topRowValues = new Array(secondRowHeaders.length).fill(null);
     topRowValues[0] = firstTitle;
-    topRowValues[allHeaders.length - 1] = "영업이익";
 
     let colIdx = 2;
     filteredHeaders.forEach((h) => {
-      topRowValues[colIdx - 1] = h.group;
+      if (!h.group) {
+        h.cols.forEach((col, idx) => {
+          topRowValues[colIdx - 1 + idx] = col;
+          secondRowHeaders[colIdx - 1 + idx] = null;
+        });
+      } else {
+        topRowValues[colIdx - 1] = h.group;
+      }
       colIdx += h.cols.length;
     });
 
     sheet.addRow(topRowValues);
-    sheet.addRow(allHeaders);
+    sheet.addRow(secondRowHeaders);
 
     sheet.mergeCells(1, 1, 2, 1);
-    sheet.mergeCells(1, allHeaders.length, 2, allHeaders.length);
 
     let start = 2;
     filteredHeaders.forEach((h) => {
       const end = start + h.cols.length - 1;
-      sheet.mergeCells(1, start, 1, end);
+      if (!h.group) {
+        for (let colNo = start; colNo <= end; colNo += 1) {
+          sheet.mergeCells(1, colNo, 2, colNo);
+        }
+      } else {
+        sheet.mergeCells(1, start, 1, end);
+      }
       start = end + 1;
     });
 
@@ -510,7 +540,6 @@ export default function ProfitLossTableTab() {
     },
     { group: "매출", label: "보전", valueKey: "integrity_cost", ratioKey: "integrity_ratio" },
     { group: "매출", label: "반환금", valueKey: "return_cost", ratioKey: "return_ratio" },
-    { group: "매출", label: "판장금", valueKey: "payback_price", ratioKey: "payback_ratio" },
     { __blank: true },
     { group: "매출", label: "소계(매출)", valueKey: "sales_total", ratioKey: "sales_total_ratio" },
     { group: "매입", label: "식자재", valueKey: "food_cost", ratioKey: "food_ratio" },
@@ -553,8 +582,15 @@ export default function ProfitLossTableTab() {
       ratioKey: "indirect_total_ratio",
     },
     {
-      group: "이익",
+      group: "",
       label: "영업이익",
+      valueKey: "business_profit_without_payback",
+      ratioKey: "business_profit_without_payback_ratio",
+    },
+    { group: "", label: "판장금", valueKey: "payback_price", ratioKey: "payback_ratio" },
+    {
+      group: "",
+      label: "총 영업이익",
       valueKey: "business_profit",
       ratioKey: "business_profit_ratio",
     },
@@ -712,14 +748,14 @@ export default function ProfitLossTableTab() {
         };
 
         const curRec = monthMap.get(currentMonth);
-        const curVal = curRec ? curRec?.[def.valueKey] : null;
-        const curRatio = def.ratioKey && curRec ? toPercentCell(curRec?.[def.ratioKey]) : null;
+        const curVal = curRec ? getDisplayValue(curRec, def.valueKey) : null;
+        const curRatio = def.ratioKey && curRec ? toPercentCell(getDisplayRatio(curRec, def.ratioKey)) : null;
         setValueRatioAt(5, curVal, curRatio);
 
         for (let m = 1; m <= 12; m++) {
           const rec = monthMap.get(m);
-          const val = rec ? rec?.[def.valueKey] : null;
-          const ratio = def.ratioKey && rec ? toPercentCell(rec?.[def.ratioKey]) : null;
+          const val = rec ? getDisplayValue(rec, def.valueKey) : null;
+          const ratio = def.ratioKey && rec ? toPercentCell(getDisplayRatio(rec, def.ratioKey)) : null;
           const base = 7 + (m - 1) * 2;
           setValueRatioAt(base, val, ratio);
         }
@@ -729,7 +765,7 @@ export default function ProfitLossTableTab() {
           let hasAny = false;
           for (let m = 1; m <= 12; m++) {
             const rec = monthMap.get(m);
-            const v = rec?.[def.valueKey];
+            const v = rec ? getDisplayValue(rec, def.valueKey) : null;
             const n = Number(v);
             if (Number.isFinite(n)) {
               sum += n;
@@ -827,11 +863,10 @@ export default function ProfitLossTableTab() {
       filteredHeaders.forEach((h) => {
         h.cols.forEach((col) => {
           const key = fieldMap[col]?.value || col;
-          valueObj[key] = r?.[key] ?? "";
+          valueObj[key] = getDisplayValue(r, key) ?? "";
         });
       });
 
-      valueObj[fieldMap["영업이익"].value] = r?.[fieldMap["영업이익"].value] ?? 0;
       sheet.addRow(valueObj);
 
       const valueRowNo = sheet.lastRow.number;
@@ -842,11 +877,10 @@ export default function ProfitLossTableTab() {
         h.cols.forEach((col) => {
           const ratioKey = fieldMap[col]?.ratio;
           const valueKey = fieldMap[col]?.value || col;
-          ratioObj[valueKey] = ratioKey ? toPercentCell(r?.[ratioKey]) : "";
+          ratioObj[valueKey] = ratioKey ? toPercentCell(getDisplayRatio(r, ratioKey)) : "";
         });
       });
 
-      ratioObj[fieldMap["영업이익"].value] = toPercentCell(r?.[fieldMap["영업이익"].ratio]);
       sheet.addRow(ratioObj);
 
       const ratioRowNo = sheet.lastRow.number;
@@ -1408,24 +1442,33 @@ export default function ProfitLossTableTab() {
                   <th className="sticky-col sticky-header" rowSpan={2}>
                     월
                   </th>
-                  {filteredHeaders.map((h) => (
-                    <th key={h.group} colSpan={h.cols.length}>
-                      {h.group}
-                    </th>
-                  ))}
-                  <th rowSpan={2}>영업이익</th>
+                  {filteredHeaders.flatMap((h) =>
+                    h.group
+                      ? [
+                          <th key={h.group} colSpan={h.cols.length}>
+                            {h.group}
+                          </th>,
+                        ]
+                      : h.cols.map((c) => (
+                          <th key={c} rowSpan={2} data-field={fieldMap[c]?.value ?? ""}>
+                            {c}
+                          </th>
+                        ))
+                  )}
                 </tr>
                 <tr>
-                  {filteredHeaders.flatMap((h) =>
-                    h.cols.map((c) => (
-                      <th
-                        key={c}
-                        data-field={fieldMap[c]?.value ?? ""}
-                      >
-                        {c}
-                      </th>
-                    ))
-                  )}
+                  {filteredHeaders
+                    .filter((h) => h.group)
+                    .flatMap((h) =>
+                      h.cols.map((c) => (
+                        <th
+                          key={c}
+                          data-field={fieldMap[c]?.value ?? ""}
+                        >
+                          {c}
+                        </th>
+                      ))
+                    )}
                 </tr>
               </thead>
 
@@ -1533,7 +1576,7 @@ export default function ProfitLossTableTab() {
                               ) : (
                                 <input
                                   type="text"
-                                  value={formatNumber(r[field] ?? 0)}
+                                  value={formatNumber(getDisplayValue(r, field) ?? 0)}
                                   disabled
                                   style={{
                                     width: "80px",
@@ -1552,17 +1595,13 @@ export default function ProfitLossTableTab() {
                           );
                         })
                       )}
-
-                      <td style={{ fontWeight: "bold", color: "#d32f2f" }}>
-                        {formatNumber(r[fieldMap["영업이익"].value] ?? 0)}
-                      </td>
                     </tr>
 
                     <tr>
                       {filteredHeaders.flatMap((h) =>
                         h.cols.map((col) => {
                           const ratioField = fieldMap[col]?.ratio;
-                          const value = r[ratioField];
+                          const value = getDisplayRatio(r, ratioField);
                           const isNote = fieldMap[col]?.value === noteField;
                           return (
                             <td
@@ -1578,11 +1617,6 @@ export default function ProfitLossTableTab() {
                           );
                         })
                       )}
-                      <td style={{ fontSize: "11px", color: "gray" }}>
-                        {r[fieldMap["영업이익"].ratio]
-                          ? `${formatNumber(r[fieldMap["영업이익"].ratio])}%`
-                          : "-"}
-                      </td>
                     </tr>
                   </React.Fragment>
                 ))}

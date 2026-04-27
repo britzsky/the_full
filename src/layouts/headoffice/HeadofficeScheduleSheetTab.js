@@ -22,6 +22,7 @@ import {
 
 import useHeadofficeSchedulesheetData, { deptTypeToTeamCode } from "./HeadofficeScheduleSheetData";
 import LoadingScreen from "../loading/loadingscreen";
+import "./headoffice-schedule-sheet.css";
 
 const CTRL_HEIGHT = 38;
 

@@ -326,6 +326,21 @@ function AccountPurchaseDeadlineTab() {
   // 미저장 하단 변경 누적 보관소: sale_id → detailRows 배열
   // 다른 상단 행으로 이동해도 수정값을 유지하기 위한 임시 저장소
   const [pendingDetailMap, setPendingDetailMap] = useState(new Map());
+  const selectedSaleIdRef = useRef("");
+  const detailRowsRef = useRef([]);
+  const originalDetailRowsRef = useRef([]);
+
+  useEffect(() => {
+    selectedSaleIdRef.current = selectedSaleId;
+  }, [selectedSaleId]);
+
+  useEffect(() => {
+    detailRowsRef.current = detailRows;
+  }, [detailRows]);
+
+  useEffect(() => {
+    originalDetailRowsRef.current = originalDetailRows;
+  }, [originalDetailRows]);
 
   // =========================================
   // ✅ 금액 키들: 화면에는 콤마, 저장은 콤마 제거
@@ -395,6 +410,10 @@ function AccountPurchaseDeadlineTab() {
 
           // ✅ 4) 조회
           fetchPurchaseList(next);
+        } else {
+          setRows([]);
+          setOriginalRows([]);
+          setLoading(false);
         }
       } catch (err) {
         console.error("데이터 조회 실패 (AccountList):", err);
@@ -478,14 +497,19 @@ function AccountPurchaseDeadlineTab() {
   // 저장 중 selectedSaleId useEffect의 자동 상세 재조회 방지용 플래그
   const isSavingRef = useRef(false);
 
-  // 거래처 변경 핸들러: 미저장 확인 → 타입 옵션 재조회 → 데이터 조회
+  // 거래처 검색 선택값을 조회 조건에 반영한다.
   const handleAccountChange = useCallback(
-    async (_, opt) => {
+    async (_, opt, reason) => {
+      if (reason === "clear") return;
+
       const nextId = opt ? String(opt.value) : "";
       const nextAccountTypeCode = opt ? String(opt.account_type_code ?? "") : "";
       const nextDelYn = String(opt?.del_yn ?? "N").toUpperCase();
 
-      // 미저장 변경 있으면 확인
+      if (!nextId) {
+        return;
+      }
+
       if (hasDirtyRowsEarly()) {
         const result = await Swal.fire({
           title: "미저장 변경사항이 있습니다.",
@@ -501,43 +525,30 @@ function AccountPurchaseDeadlineTab() {
         await handleSaveRef.current?.();
       }
 
-      // 공통 초기화 (거래처 변경 시 누적 보관소도 초기화)
+      setSelectedAccountDelYn(nextDelYn);
       setSelectedSaleId("");
       setSelectedMasterIndex(-1);
       setDetailRows([]);
       setOriginalDetailRows([]);
       setPendingDetailMap(new Map());
 
-      if (!nextId) {
-        setTypeOptions([]);
-        setSelectedAccountDelYn("N");
-        const next = { ...latestFiltersRef.current, account_id: "" };
-        latestFiltersRef.current = next;
-        setFilters(next);
-        return;
-      }
-      setSelectedAccountDelYn(nextDelYn);
-
+      // 거래처 선택 또는 엔터 검색이 확정되면 타입 조건을 보정한 뒤 목록을 조회한다.
       const pendingNext = { ...latestFiltersRef.current, account_id: nextId };
       latestFiltersRef.current = pendingNext;
       setFilters(pendingNext);
 
-      // ✅ 1) 타입 옵션 먼저 조회
       const opts = await fetchTypeOptions(nextId);
-
-      // ✅ 2) filters 기반으로 next 구성
       const currentFilters = latestFiltersRef.current;
       const nextType = resolveNextType(opts, currentFilters.type, nextAccountTypeCode);
       const next = { ...currentFilters, account_id: nextId, type: nextType };
-
-      // ✅ 3) 상태 반영 + 조회
       latestFiltersRef.current = next;
       setFilters(next);
-      fetchPurchaseList(next);
+      await fetchPurchaseList(next);
     },
     [
       fetchPurchaseList,
       fetchTypeOptions,
+      hasDirtyRowsEarly,
       resolveNextType,
       setDetailRows,
       setOriginalDetailRows,
@@ -549,6 +560,20 @@ function AccountPurchaseDeadlineTab() {
 
   // 실제 조회 실행 (dirty 확인 없이 바로 조회)
   const doSearch = async (targetFilters) => {
+    const baseFilters = targetFilters ?? latestFiltersRef.current;
+    const selectedAccount = (accountList || []).find(
+      (a) => String(a.account_id) === String(baseFilters?.account_id)
+    );
+    const opts = baseFilters?.account_id ? await fetchTypeOptions(baseFilters.account_id) : [];
+    const nextType = resolveNextType(
+      opts,
+      baseFilters?.type,
+      selectedAccount?.account_type_code
+    );
+    const nextFilters = { ...baseFilters, type: nextType };
+
+    latestFiltersRef.current = nextFilters;
+    setFilters(nextFilters);
     setRows((originalRows || []).map((r) => ({ ...r })));
     setDetailRows((originalDetailRows || []).map((r) => ({ ...r })));
     setMasterTableKey((k) => k + 1);
@@ -558,7 +583,7 @@ function AccountPurchaseDeadlineTab() {
     setSelectedMasterIndex(-1);
     setDetailRows([]);
     setOriginalDetailRows([]);
-    await fetchPurchaseList(targetFilters ?? latestFiltersRef.current);
+    await fetchPurchaseList(nextFilters);
   };
 
   // 조회 버튼 클릭: 미저장 변경 있으면 [저장 후 이동] / [취소] 확인
@@ -1370,12 +1395,15 @@ function AccountPurchaseDeadlineTab() {
       const saleId = row?.sale_id;
       if (!saleId) return;
 
+      const currentDetailRows = detailRowsRef.current || [];
+      const currentOriginalDetailRows = originalDetailRowsRef.current || [];
+
       // 현재 하단에 미저장 수정값이 있을 때만 보관소에 보존 (원본도 함께)
-      const hasDirtyDetail = detailRows.some((r) => r.__dirty || r.__isNew);
+      const hasDirtyDetail = currentDetailRows.some((r) => r.__dirty || r.__isNew);
       if (selectedSaleId && hasDirtyDetail && String(selectedSaleId) !== String(saleId)) {
         setPendingDetailMap((prev) => {
           const next = new Map(prev);
-          next.set(String(selectedSaleId), { rows: detailRows, originalRows: originalDetailRows });
+          next.set(String(selectedSaleId), { rows: currentDetailRows, originalRows: currentOriginalDetailRows });
           return next;
         });
       }
@@ -1392,11 +1420,11 @@ function AccountPurchaseDeadlineTab() {
         if (hasDirtyDetail) {
           setPendingDetailMap((prev) => {
             const next = new Map(prev);
-            next.set(String(saleId), { rows: detailRows, originalRows: originalDetailRows });
+            next.set(String(saleId), { rows: currentDetailRows, originalRows: currentOriginalDetailRows });
             return next;
           });
-          setDetailRows(detailRows);
-          setOriginalDetailRows(originalDetailRows);
+          setDetailRows(currentDetailRows);
+          setOriginalDetailRows(currentOriginalDetailRows);
           setDetailLoading(false);
           setDetailTableKey((k) => k + 1);
         } else {
@@ -1425,7 +1453,6 @@ function AccountPurchaseDeadlineTab() {
       fetchPurchaseDetailList,
       setDetailRows,
       setOriginalDetailRows,
-      detailRows,
       pendingDetailMap,
     ]
   );
@@ -2242,8 +2269,7 @@ function AccountPurchaseDeadlineTab() {
         return;
       }
 
-      setDetailRows((prev) =>
-        prev.map((x, idx) => {
+      const nextRows = (detailRowsRef.current || []).map((x, idx) => {
           if (idx !== rowIndex) return x;
 
           const rawValue = value?.__autoCalc ? value.value : value;
@@ -2302,8 +2328,10 @@ function AccountPurchaseDeadlineTab() {
           }
 
           return updated;
-        })
-      );
+        });
+
+      detailRowsRef.current = nextRows;
+      setDetailRows(nextRows);
     },
     [
       isDeletedAccount,
@@ -2500,7 +2528,7 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [accountOptions, handleAccountChange]);
 
-  if (loading || !filters.account_id || rows === null) return <LoadingScreen />;
+  if (loading || rows === null) return <LoadingScreen />;
 
   return (
     <LocalizationProvider
@@ -2615,7 +2643,10 @@ function AccountPurchaseDeadlineTab() {
             options={accountOptions}
             value={selectedAccountOption}
             onChange={handleAccountChange}
-            onInputChange={(_, newValue) => {
+            onInputChange={(_, newValue, reason) => {
+              if (reason === "clear") {
+                return;
+              }
               accountInputRef.current = newValue || "";
             }}
             getOptionLabel={(opt) => opt?.label ?? ""}
@@ -3409,11 +3440,11 @@ function AccountPurchaseDeadlineTab() {
                               type="text"
                               inputMode="numeric"
                               disabled={isDeletedAccount}
-                              defaultValue={r.amount ?? ""}
+                              value={r.amount ?? ""}
                               onInput={onNumInput}
+                              onChange={(e) => setDetailCell(i, "amount", e.target.value.replace(/[^\d\-,]/g, ""))}
                               onBlur={(e) => {
                                 const formatted = formatComma(e.target.value);
-                                e.target.value = formatted;
                                 setDetailCell(i, "amount", formatted);
                               }}
                               style={{

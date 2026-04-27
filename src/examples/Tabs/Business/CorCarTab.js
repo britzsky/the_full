@@ -513,14 +513,14 @@ function CorCarTabStyled() {
       </MDBox>
       {/* 상단 차량 선택 + 버튼 영역 - 모바일에서 줄바꿈 */}
       <MDBox
-        pt={1}
-        pb={1}
         gap={1}
         sx={{
           display: "flex",
           justifyContent: isMobile ? "space-between" : "flex-end",
           alignItems: "center",
           flexWrap: isMobile ? "wrap" : "nowrap",
+          pt: 0.25,
+          pb: 2.5,
           // 모바일에서는 상단 툴바를 본문 스크롤에 포함
           position: isMobile ? "static" : "sticky",
           zIndex: isMobile ? "auto" : 10,
@@ -583,7 +583,7 @@ function CorCarTabStyled() {
             </MDButton>
           </Box>
       </MDBox>
-      <MDBox pt={1} pb={3} sx={tableSx}>
+      <MDBox pb={5} sx={{ ...tableSx, mt: 2 }}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <table>

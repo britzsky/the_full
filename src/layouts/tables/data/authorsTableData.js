@@ -18,8 +18,23 @@ const normalizeYmd = (value) => {
 const formatContractPeriod = (start, end) => {
   const startText = normalizeYmd(start);
   const endText = normalizeYmd(end);
-  if (!startText || !endText) return "";
-  return `${startText} ~ ${endText}`;
+  if (!startText || !endText) return "-";
+  return `${startText}~${endText}`;
+};
+
+// 빈값 화면 표시 문자열 변환
+const formatEmpty = (value) => {
+  if (value == null) return "-";
+  const text = String(value).trim();
+  return text ? value : "-";
+};
+
+// 금액 천단위 표시 문자열 변환
+const formatPrice = (value) => {
+  if (formatEmpty(value) === "-") return "-";
+  const numeric = Number(String(value).replace(/,/g, ""));
+  if (Number.isNaN(numeric)) return value;
+  return numeric.toLocaleString("ko-KR");
 };
 
 // 행 이동 링크 컴포넌트
@@ -69,7 +84,23 @@ export default function useTableData(accountType, refreshKey = 0) {
           ),
           account_address: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_address || "-"}
+              {formatEmpty(item.account_address)}
+            </MDTypography>
+          ),
+          // 고객사 정보 확장 컬럼 표시값
+          full_room: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {formatEmpty(item.full_room)}
+            </MDTypography>
+          ),
+          diet_price: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {formatPrice(item.diet_price)}
+            </MDTypography>
+          ),
+          normal: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {formatEmpty(item.normal)}
             </MDTypography>
           ),
           contract_period: (
@@ -172,7 +203,10 @@ export default function useTableData(accountType, refreshKey = 0) {
   const columns = [
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },
     { Header: "주소", accessor: "account_address", size: "10%", align: "left" },
-    { Header: "계약기간", accessor: "contract_period", size: "8%", align: "left" },
+    { Header: "만실인원", accessor: "full_room", size: "3%", align: "center" },
+    { Header: "현 식단가", accessor: "diet_price", size: "3%", align: "center" },
+    { Header: "현 식수", accessor: "normal", size: "3%", align: "center" },
+    { Header: "계약기간", accessor: "contract_period", size: "6%", align: "left" },
     { Header: "구분", accessor: "account_type", size: "3%", align: "left" },
     { Header: "필요조리인력", accessor: "account_rqd_member", size: "3%", align: "center" },
     { Header: "현재인력", accessor: "account_headcount", size: "3%", align: "center" },

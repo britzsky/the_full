@@ -35,8 +35,8 @@ const TYPE_OPTIONS = [
   { value: "13", label: "오후반차" },
 ];
 
-// 통계 화면에서 집계할 대상 유형(위생/관리/이슈)
-const STAT_TYPE_OPTIONS = TYPE_OPTIONS.filter((t) => ["2", "3", "4"].includes(t.value));
+// 통계 화면에서 집계할 대상 유형(행사/위생/관리/이슈)
+const STAT_TYPE_OPTIONS = TYPE_OPTIONS.filter((t) => ["1", "2", "3", "4"].includes(t.value));
 const TOP_FILTER_CONTROL_HEIGHT = 38;
 const ACCOUNT_COL_WIDTHS = ["35%", "17%", "12%", "12%", "12%", "12%"];
 const MEMBER_PIE_COLORS = [
@@ -51,9 +51,11 @@ const MEMBER_PIE_COLORS = [
   "#8d6e63",
 ];
 
-// type 숫자값을 집계 컬럼명(라벨)로 변환
+// type 숫자값을 집계 컬럼명(라벨)로 변환 — 행사(1)는 관리로 합산
 const getTypeLabel = (typeValue) => {
-  const found = STAT_TYPE_OPTIONS.find((t) => t.value === String(typeValue));
+  const v = String(typeValue);
+  if (v === "1") return "관리";
+  const found = STAT_TYPE_OPTIONS.find((t) => t.value === v);
   return found ? found.label : null;
 };
 
@@ -68,6 +70,9 @@ const compactPieRows = (rows, maxItems = 8) => {
 
 // 우측 카드형 원그래프(좌측 목록 + 우측 파이)
 function PieSummaryCard({ title, rows }) {
+  const theme = useTheme();
+  const isMd = useMediaQuery(theme.breakpoints.up("md"));
+  const cardHeight = isMd ? 260 : 160;
   const totalCount = useMemo(
     () => rows.reduce((sum, row) => sum + Number(row.count || 0), 0),
     [rows]
@@ -118,7 +123,7 @@ function PieSummaryCard({ title, rows }) {
       {rows.length === 0 ? (
         <Box
           sx={{
-            height: 260,
+            height: cardHeight,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -130,7 +135,7 @@ function PieSummaryCard({ title, rows }) {
           데이터가 없습니다.
         </Box>
       ) : (
-        <Box sx={{ display: "flex", gap: 1.25, height: 260 }}>
+        <Box sx={{ display: "flex", gap: 1.25, height: cardHeight }}>
           <Box
             sx={{
               width: "48%",
@@ -290,37 +295,62 @@ function OperateScheduleStatTab() {
       .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "ko"));
   }, [statRows]);
 
-  // 거래처별 집계: 거래처+담당자 조합 단위 집계 후 담당자 -> 거래처 순 정렬
+  // 거래처별 집계: 전체 거래처 기준으로 깔고 집계값 채움
   const statByAccount = useMemo(() => {
+    // 집계 map 초기화 — 전체 거래처 목록으로 먼저 채움
     const map = {};
-    statRows.forEach((item) => {
-      const accountId = String(item.account_id || "").trim();
-      const accountName =
-        String(item.account_name || "").trim() || accountNameById.get(accountId) || "미지정";
-      const memberName = String(item.user_name || "").trim() || "미지정";
-      const key = `${accountId || accountName}__${memberName}`;
-      if (!map[key]) {
-        map[key] = {
-          account_key: key,
-          account_name: accountName,
-          user_name: memberName,
-          위생: 0,
-          관리: 0,
-          이슈: 0,
-          total: 0,
-        };
-      }
-      const label = getTypeLabel(item.type);
-      if (!label) return;
-      map[key][label] += 1;
-      map[key].total = map[key].위생 + map[key].관리 + map[key].이슈;
+    (accountList || []).forEach((acc) => {
+      const id = String(acc.account_id || "").trim();
+      const name = String(acc.account_name || "").trim();
+      if (!id && !name) return;
+      const key = id || name;
+      map[key] = {
+        account_key: key,
+        account_name: name || "미지정",
+        members: new Set(),
+        위생: 0,
+        관리: 0,
+        이슈: 0,
+        total: 0,
+      };
     });
 
-    return Object.values(map).sort((a, b) => (
-      a.user_name.localeCompare(b.user_name, "ko")
-      || a.account_name.localeCompare(b.account_name, "ko")
-    ));
-  }, [statRows, accountNameById]);
+    // 일정 데이터로 집계값 채움 (취소 제외, 행사/위생/관리/이슈만)
+    eventListRows
+      .filter((item) => item.del_yn !== "Y" && STAT_TYPE_OPTIONS.some((t) => t.value === String(item.type)))
+      .forEach((item) => {
+        const accountId = String(item.account_id || "").trim();
+        const accountName =
+          String(item.account_name || "").trim() || accountNameById.get(accountId) || "미지정";
+        const memberName = String(item.user_name || "").trim() || "미지정";
+        const key = accountId || accountName;
+        if (!map[key]) {
+          map[key] = {
+            account_key: key,
+            account_name: accountName,
+            members: new Set(),
+            위생: 0,
+            관리: 0,
+            이슈: 0,
+            total: 0,
+          };
+        }
+        map[key].members.add(memberName);
+        const label = getTypeLabel(item.type);
+        if (!label) return;
+        map[key][label] += 1;
+        map[key].total += 1;
+      });
+
+    return Object.values(map)
+      .map((row) => ({ ...row, user_names: [...row.members].join(", ") }))
+      .sort((a, b) => {
+        const aUnknown = a.account_name === "미지정" ? 1 : 0;
+        const bUnknown = b.account_name === "미지정" ? 1 : 0;
+        if (aUnknown !== bUnknown) return aUnknown - bUnknown;
+        return a.account_name.localeCompare(b.account_name, "ko");
+      });
+  }, [eventListRows, accountList, accountNameById]);
 
   // 유형별 총 건수
   const statByType = useMemo(() => {
@@ -336,7 +366,7 @@ function OperateScheduleStatTab() {
   const typePieRows = useMemo(
     () =>
       STAT_TYPE_OPTIONS.map((t) => ({
-        label: t.label,
+        label: t.label === "관리" ? "관리(+행사)" : t.label,
         count: Number(statByType[t.label] || 0),
         color: t.color,
       })).filter((row) => row.count > 0),
@@ -371,7 +401,7 @@ function OperateScheduleStatTab() {
   const summaryTableSx = {
     border: "1px solid #ddd",
     borderRadius: 1,
-    maxHeight: isMd ? rightPanelHeight - 33 : "60vh",
+    maxHeight: rightPanelHeight ? `${rightPanelHeight}px` : "calc(100vh - 227px)",
     overflow: "auto",
     "& table": {
       borderCollapse: "separate",
@@ -474,46 +504,22 @@ function OperateScheduleStatTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {statByAccount.map((row, idx) => {
-                    const prevUserName = idx > 0 ? statByAccount[idx - 1]?.user_name : "";
-                    const isNewMemberGroup = idx === 0 || prevUserName !== row.user_name;
-                    return (
-                      <React.Fragment key={row.account_key}>
-                        {isNewMemberGroup && (
-                          <tr>
-                            <td
-                              colSpan={6}
-                              style={{
-                                ...getFixedCellStyle("100%"),
-                                fontWeight: 700,
-                                textAlign: "left",
-                                padding: "6px 10px",
-                                backgroundColor: "#f7f9fc",
-                                borderTop: "2px solid #8a8f98",
-                                color: "#344767",
-                              }}
-                            >
-                              담당자: {row.user_name}
-                            </td>
-                          </tr>
-                        )}
-                        <tr>
-                          <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[0], { fontWeight: "bold", color: "#344767" })}>{row.account_name}</td>
-                          <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[1], { color: "#344767" })}>{row.user_name}</td>
-                          <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[2], { fontWeight: "bold" })}>{row.total}</td>
-                          <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[3], { color: "#F2921D", fontWeight: row.위생 ? "bold" : "normal" })}>
-                            {row.위생 || "-"}
-                          </td>
-                          <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[4], { color: "#0046FF", fontWeight: row.관리 ? "bold" : "normal" })}>
-                            {row.관리 || "-"}
-                          </td>
-                          <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[5], { color: "#527853", fontWeight: row.이슈 ? "bold" : "normal" })}>
-                            {row.이슈 || "-"}
-                          </td>
-                        </tr>
-                      </React.Fragment>
-                    );
-                  })}
+                  {statByAccount.map((row) => (
+                    <tr key={row.account_key}>
+                      <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[0], { fontWeight: "bold", color: "#344767" })}>{row.account_name}</td>
+                      <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[1], { color: "#344767" })}>{row.user_names || "-"}</td>
+                      <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[2], { fontWeight: "bold" })}>{row.total || "-"}</td>
+                      <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[3], { color: "#F2921D", fontWeight: row.위생 ? "bold" : "normal" })}>
+                        {row.위생 || "-"}
+                      </td>
+                      <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[4], { color: "#0046FF", fontWeight: row.관리 ? "bold" : "normal" })}>
+                        {row.관리 || "-"}
+                      </td>
+                      <td style={getFixedCellStyle(ACCOUNT_COL_WIDTHS[5], { color: "#527853", fontWeight: row.이슈 ? "bold" : "normal" })}>
+                        {row.이슈 || "-"}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </TableContainer>

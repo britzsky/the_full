@@ -17,7 +17,8 @@
 
 /* 오늘 날짜 강조 */
 .fc .fc-day-today {
-  border: 2px solid #F2921D !important;
+  outline: 2px solid #F2921D !important;
+  outline-offset: -2px !important;
   background-color: #fffbe8 !important;
 }
 
@@ -42,7 +43,8 @@
 /* 오늘 날짜 강조 */
 .fc .fc-day-today {
   background-color: #fffce8 !important;
-  border: 2px solid #F2921D !important;
+  outline: 2px solid #F2921D !important;
+  outline-offset: -2px !important;
 }
 
 .fc-daygrid-day-top {

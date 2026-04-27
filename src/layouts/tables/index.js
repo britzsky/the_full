@@ -38,6 +38,7 @@ import "./tables.css";
 export default function Tables() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const isCompactTable = useMediaQuery("(max-width:1536px)");
   const [selectedType, setSelectedType] = useState("0");
   // 삭제여부 조회값 상태
   const [selectedDelYn, setSelectedDelYn] = useState("ALL");
@@ -51,7 +52,7 @@ export default function Tables() {
   const searchStartedRef = useRef(false);
   // 로딩 원인 추적(SEARCH: 서버조회, LOCAL: 화면 정렬/필터)
   const sortLoadingReasonRef = useRef("");
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 22 });
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 21 });
 
   const [open, setOpen] = useState(false);
   const [addrOpen, setAddrOpen] = useState(false);
@@ -642,6 +643,19 @@ export default function Tables() {
   // =========================
   // ✅ 테이블 컬럼 구성
   // =========================
+  const paddedMobileColumnSet = useMemo(
+    () =>
+      new Set([
+        "account_address",
+        "full_room",
+        "diet_price",
+        "normal",
+        "contract_period",
+        "account_type",
+      ]),
+    []
+  );
+
   const tableColumns = useMemo(() => {
     // ✅ 집계표(tally) 컬럼은 index.js 화면에서 제외
     return (columns || [])
@@ -701,6 +715,19 @@ export default function Tables() {
 
   return (
     <DashboardLayout>
+      {/* 상단 네비 여백 가림 영역 */}
+      <MDBox
+        sx={(theme2) => ({
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: "12px",
+          backgroundColor: theme2.palette.background.default,
+          zIndex: 1099,
+          pointerEvents: "none",
+        })}
+      />
       <DashboardNavbar title="🏢 고객사 목록" />
 
       <Grid container spacing={6}>
@@ -823,7 +850,15 @@ export default function Tables() {
                   {table.getHeaderGroups().map((hg) => (
                     <tr key={hg.id}>
                       {hg.headers.map((header) => (
-                        <th key={header.id}>
+                        <th
+                          key={header.id}
+                          style={{
+                            padding:
+                              isCompactTable && paddedMobileColumnSet.has(header.column.id)
+                                ? "2px 6px"
+                                : undefined,
+                          }}
+                        >
                           {flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
                       ))}
@@ -835,7 +870,15 @@ export default function Tables() {
                   {table.getRowModel().rows.map((row) => (
                     <tr key={row.id}>
                       {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id}>
+                        <td
+                          key={cell.id}
+                          style={{
+                            padding:
+                              isCompactTable && paddedMobileColumnSet.has(cell.column.id)
+                                ? "2px 6px"
+                                : undefined,
+                          }}
+                        >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}

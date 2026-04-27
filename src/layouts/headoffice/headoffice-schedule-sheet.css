@@ -1,0 +1,6 @@
+/* 오늘 날짜 강조 */
+.fc .fc-day-today {
+  outline: 2px solid #F2921D !important;
+  outline-offset: -2px !important;
+  background-color: #fffce8 !important;
+}

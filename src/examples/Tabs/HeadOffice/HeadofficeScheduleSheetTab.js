@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from "react";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -21,8 +19,8 @@ import {
 } from "@mui/material";
 
 import useHeadofficeSchedulesheetData, { deptTypeToTeamCode } from "./HeadofficeScheduleSheetData";
-import LoadingScreen from "../loading/loadingscreen";
-import "./headoffice-schedule-sheet.css";
+import LoadingScreen from "layouts/loading/loadingscreen";
+import "layouts/headoffice/headoffice-schedule-sheet.css";
 
 const CTRL_HEIGHT = 38;
 
@@ -448,9 +446,7 @@ function HeadofficeScheduleSheetTab() {
   };
 
   return (
-    <DashboardLayout>
-      <DashboardNavbar title="📅 급식사업부 일정관리" />
-
+    <>
       {/* 월 이동 버튼 */}
       <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mt: 2, mb: 1 }}>
         <Button
@@ -664,7 +660,7 @@ function HeadofficeScheduleSheetTab() {
           </Box>
         </Box>
       </Modal>
-    </DashboardLayout>
+    </>
   );
 }
 

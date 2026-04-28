@@ -422,7 +422,7 @@ function OperateScheduleSheetTab() {
         select={handleSelectRange}
         eventColor="#F2921D"
         eventTextColor="#fff"
-        height="75vh"
+        height="80vh"
         dayMaxEventRows={5}
         fixedWeeks={false}
         datesSet={() => {

@@ -1,18 +1,12 @@
-import React from "react";
-import { Card } from "@mui/material";
-import MDBox from "components/MDBox";
-
-import OperateScheduleSheetTab from "./Operate/OperateScheduleSheetTab";
-import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-
-/*
 import React, { useState, useEffect, useRef, useTransition } from "react";
 import { Tabs, Tab, Box, Card } from "@mui/material";
+import MDBox from "components/MDBox";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import OperateScheduleStatTab from "./Operate/OperateScheduleStatTab";
-*/
 
-/*
+import HeadofficeScheduleSheetTab from "./HeadOffice/HeadofficeScheduleSheetTab";
+import HeadofficeScheduleStatTab from "./HeadOffice/headofficeScheduleStatTab";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+
 // 로그인 사용자 부서/직책 권한 코드
 const getUserCodes = () => {
   const dept = localStorage.getItem("department");
@@ -42,10 +36,8 @@ const hasAccess = (tab, deptCode, posCode) => {
     return finalDeptOk && finalPosOk;
   }
 };
-*/
 
-function OperateTabs_5() {
-  /*
+function HeadOfficeTab_3() {
   // 상단 탭 선택 상태
   const [tabIndex, setTabIndex] = useState(0);
   // 실제 화면에 표시되는 탭 내용 상태
@@ -73,17 +65,17 @@ function OperateTabs_5() {
     }, TAB_SWITCH_DELAY_MS);
   };
 
-  // 운영 일정관리 탭 구성
+  // 본사 일정관리 탭 구성
   const tabConfig = [
     {
       key: "scheduleSheet",
-      label: "📅 일정표 관리",
-      component: <OperateScheduleSheetTab />,
+      label: "📅 급식사업부 일정관리",
+      component: <HeadofficeScheduleSheetTab />,
     },
     {
       key: "scheduleStat",
       label: "📊 일정 통계",
-      component: <OperateScheduleStatTab />,
+      component: <HeadofficeScheduleStatTab />,
     },
   ];
 
@@ -125,10 +117,10 @@ function OperateTabs_5() {
   }
   // 현재 선택 탭 내용 컴포넌트
   const activeTabComponent = visibleTabs[contentTabIndex]?.component ?? visibleTabs[tabIndex]?.component;
-  */
 
   return (
     <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
+      {/* 상단 내비게이션 및 탭 영역 */}
       <MDBox
         sx={{
           position: "sticky",
@@ -138,8 +130,7 @@ function OperateTabs_5() {
           borderBottom: "1px solid #eee",
         }}
       >
-        <DashboardNavbar title="📅 일정표 관리" />
-        {/*
+        <DashboardNavbar title="📅 급식사업부 일정관리" />
         <Tabs
           value={tabIndex}
           onChange={handleTabChange}
@@ -178,13 +169,12 @@ function OperateTabs_5() {
             />
           ))}
         </Tabs>
-        */}
       </MDBox>
+      {/* 선택 탭 내용 영역 */}
       <MDBox p={0.5} sx={{ position: "relative" }}>
-        <OperateScheduleSheetTab />
-        {/*
         {activeTabComponent}
         {tabSwitchLoading && (
+          /* 탭 전환 로딩 오버레이 */
           <MDBox
             sx={{
               position: "absolute",
@@ -198,10 +188,9 @@ function OperateTabs_5() {
             <LoadingScreen />
           </MDBox>
         )}
-        */}
       </MDBox>
     </Card>
   );
 }
 
-export default OperateTabs_5;
+export default HeadOfficeTab_3;

@@ -17,8 +17,8 @@ function getViewerFrameRatio(isMobile, fileKind) {
   return isMobile ? { widthRatio: 0.68, heightRatio: 0.92 } : { widthRatio: 0.34, heightRatio: 0.88 };
 }
 
-// 화면 정중앙 기준 기본 좌표를 계산한다.
-function getCenteredViewerPos(isMobile, fileKind) {
+// anchorX: 모달 가운데를 놓을 화면 수평 비율 (기본 0.5 = 정중앙, 1/3 = 왼쪽 1/3 지점)
+function getCenteredViewerPos(isMobile, fileKind, anchorX = 0.5) {
   if (typeof window === "undefined") return { x: 0, y: 0 };
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -26,7 +26,7 @@ function getCenteredViewerPos(isMobile, fileKind) {
   const modalW = w * widthRatio;
   const modalH = h * heightRatio;
   return {
-    x: Math.max(0, (w - modalW) / 2),
+    x: Math.min(Math.max(0, w * anchorX - modalW / 2), Math.max(0, w - modalW)),
     y: Math.max(0, (h - modalH) / 2),
   };
 }
@@ -144,6 +144,7 @@ function PreviewOverlay({
   currentIndex,
   onChangeIndex,
   onClose,
+  anchorX,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -152,7 +153,7 @@ function PreviewOverlay({
   // 이미지는 회전값을 별도 상태로 관리해 확대/축소와 함께 사용한다.
   const [imageRotation, setImageRotation] = useState(0);
   // 오버레이 창 드래그 위치(좌상단 기준 px)
-  const [viewerPos, setViewerPos] = useState(() => getCenteredViewerPos(isMobile));
+  const [viewerPos, setViewerPos] = useState(() => getCenteredViewerPos(isMobile, undefined, anchorX));
   // 드래그 상태/오프셋을 분리해 마우스 이동마다 불필요한 계산을 줄인다.
   const [dragging, setDragging] = useState(false);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
@@ -201,8 +202,8 @@ function PreviewOverlay({
   // 오버레이를 열 때 화면 중앙 위치로 기본 배치
   useLayoutEffect(() => {
     if (!open) return;
-    setViewerPos(getCenteredViewerPos(isMobile, currentFile?.kind));
-  }, [open, isMobile, safeIndex, currentFile?.kind]);
+    setViewerPos(getCenteredViewerPos(isMobile, currentFile?.kind, anchorX));
+  }, [open, isMobile, safeIndex, currentFile?.kind, anchorX]);
 
   // 오버레이가 열린 동안은 바깥 페이지 스크롤을 잠가
   // PDF 주변에 브라우저 기본 스크롤이 노출되지 않게 한다.
@@ -874,6 +875,7 @@ PreviewOverlay.propTypes = {
   currentIndex: PropTypes.number,
   onChangeIndex: PropTypes.func,
   onClose: PropTypes.func,
+  anchorX: PropTypes.number,
 };
 
 PreviewOverlay.defaultProps = {
@@ -882,6 +884,7 @@ PreviewOverlay.defaultProps = {
   currentIndex: 0,
   onChangeIndex: null,
   onClose: null,
+  anchorX: 0.5,
 };
 
 export default React.memo(PreviewOverlay);

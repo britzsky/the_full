@@ -47,7 +47,7 @@ import WeekMenuManager from "layouts/weekmenusheet";
 import EventManager from "layouts/eventsheet";
 import CarManager from "examples/Tabs/Business/CorCarTab";
 import ElectronicPaymentManager from "layouts/headoffice/headofficetab_2";
-import HeadofficeScheduleSheet from "layouts/headoffice/HeadofficeScheduleSheetTab";
+import HeadofficeScheduleSheet from "layouts/headoffice/headofficetab_3";
 
 // 영업
 import BusinessSchedule from "layouts/business/BusinessScheduleSheet";
@@ -384,7 +384,10 @@ const routes = [
         route: "/purchase/headofficecorporatecard",
         component: <HeadOfficeCorporateCardManager />,
         allowedDepartments: [0, 2, 5, 6, 9], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 실장님
+        allowUserIds: [
+          "yh2", // 이윤희 실장님
+          "sy9"  // 전수연 매니저
+        ],
         accessMode: "OR",
       },
       {

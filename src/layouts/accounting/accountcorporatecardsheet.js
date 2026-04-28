@@ -2748,7 +2748,6 @@ function AccountCorporateCardSheet() {
                 isOptionEqualToValue={(opt, val) =>
                   String(opt.account_id) === String(val.account_id)
                 }
-                disablePortal
                 autoHighlight
                 openOnFocus
                 renderInput={(params) => (
@@ -2830,7 +2829,6 @@ function AccountCorporateCardSheet() {
                           isOptionEqualToValue={(opt, val) =>
                             String(opt.account_id) === String(val.account_id)
                           }
-                          disablePortal
                           autoHighlight
                           openOnFocus
                           renderInput={(params) => (

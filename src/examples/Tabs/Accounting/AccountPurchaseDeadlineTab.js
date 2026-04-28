@@ -3159,10 +3159,11 @@ function AccountPurchaseDeadlineTab() {
                               onInput={(e) => keepEditableTailVisible(e.currentTarget)}
                               onBlur={(e) => {
                                 const text = e.target.innerText;
+                                const originalValue = String(row[key] ?? "");
 
-                                // ✅ bizNo 자동 포맷
                                 if (key === "bizNo") {
                                   const formatted = formatBizNo(text);
+                                  if (formatted === formatBizNo(originalValue)) return;
                                   handleCellChange(rowIndex, key, formatted);
                                   e.target.innerText = formatted;
                                   return;
@@ -3170,11 +3171,13 @@ function AccountPurchaseDeadlineTab() {
 
                                 if (MONEY_KEYS.includes(key)) {
                                   const formatted = formatComma(text);
+                                  if (formatted === String(originalValue)) return;
                                   handleCellChange(rowIndex, key, formatted);
                                   e.target.innerText = formatted;
                                   return;
                                 }
 
+                                if (text === originalValue) return;
                                 handleCellChange(rowIndex, key, text);
                               }}
                               style={fixedColStyle(col.size, {

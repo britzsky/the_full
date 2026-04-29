@@ -820,6 +820,7 @@ function PaymentDocDetailModalContent({
         currentIndex={currentIndex}
         onChangeIndex={setCurrentIndex}
         onClose={() => setPreviewOpen(false)}
+        anchorX={1 / 3}
       />
     </MDBox>
   );

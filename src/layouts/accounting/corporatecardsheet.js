@@ -20,20 +20,9 @@ import {
 
 import Autocomplete from "@mui/material/Autocomplete";
 
-import Paper from "@mui/material/Paper";
-import Draggable from "react-draggable";
-
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
-import CloseIcon from "@mui/icons-material/Close";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
-
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+import PreviewOverlay from "utils/PreviewOverlay";
 
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
@@ -41,8 +30,9 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useCorporateCardData from "./data/CorporateCardData";
 
-// 회계 -> 본사 법인카드
+// 회계 - 본사 법인카드 시트
 // ========================= 상수/유틸 =========================
+// 기본 카드사 상수
 const DEFAULT_CARD_BRAND = "IBK기업은행";
 
 const CARD_BRANDS = [
@@ -59,7 +49,7 @@ const CARD_BRANDS = [
   "기타",
 ];
 
-// ✅ 영수증 타입(상단 테이블용)
+// 영수증 타입 목록(상단 테이블용)
 const RECEIPT_TYPES = [
   { value: "coupang", label: "쿠팡" },
   { value: "gmarket", label: "G마켓" },
@@ -72,7 +62,7 @@ const RECEIPT_TYPES = [
   { value: "CONVENIENCE", label: "편의점" },
 ];
 
-// ✅ 영수증 타입 값 정규화(버튼 업로드 시 API로 안정적으로 전달)
+// 영수증 타입 값 정규화(버튼 업로드 시 API 안정 전달)
 const RECEIPT_TYPE_SET = new Set(RECEIPT_TYPES.map((it) => String(it.value)));
 const normalizeReceiptTypeVal = (v) => {
   const raw = String(v ?? "")
@@ -96,7 +86,7 @@ const normalizeReceiptTypeVal = (v) => {
   return "coupang";
 };
 
-// ✅ 하단 셀렉트 옵션
+// 하단 셀렉트 옵션 목록
 const TAX_TYPES = [
   { value: 1, label: "과세" },
   { value: 2, label: "면세" },
@@ -147,7 +137,7 @@ const isChangedValue = (orig, cur) => {
 
 const makeTempId = () => `tmp_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-// ✅ 저장 전 정리(상단)
+// 저장 전 상단 행 정리(내부 플래그 제거)
 const cleanMasterRow = (r) => {
   const {
     isNew,
@@ -158,28 +148,30 @@ const cleanMasterRow = (r) => {
     __pendingFile,
     __pendingPreviewUrl,
     __pendingAt,
+    __manualMasterAmount,
     ...rest
   } = r;
+  if (__manualMasterAmount) rest.manualMasterAmount = true;
   return rest;
 };
 const cleanCardRow = (r) => {
   const { isNew, ...rest } = r;
   return rest;
 };
-// ✅ (추가) 상세 row 정리
+// 저장 전 상세 행 정리(내부 플래그 제거)
 const cleanDetailRow = (r) => {
   const { isNew, isForcedRed, ...rest } = r;
   return rest;
 };
 
-// ✅ yyyy-mm-dd
+// 두 자리 패딩 유틸(yyyy-mm-dd 형식용)
 const pad2 = (n) => String(n).padStart(2, "0");
 const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
-// ✅ year/month로 "해당 월의 오늘(없으면 1일)" 기본값 만들기
+// 연/월 기준 결제일 기본값 생성(당월이면 오늘, 아니면 1일)
 const defaultPaymentDtForYM = (year, month) => {
   const t = new Date();
   const y = Number(year);
@@ -188,16 +180,23 @@ const defaultPaymentDtForYM = (year, month) => {
   return `${y}-${pad2(m)}-01`;
 };
 
-// ✅ 숫자 컬럼(콤마 표시/저장시 제거)
+// 상단 숫자 컬럼 목록(콤마 표시/저장 시 제거)
 const MASTER_NUMBER_KEYS = ["total", "vat", "taxFree", "totalCard", "tax"];
+const MASTER_AUTO_CALC_KEYS = ["total", "vat", "taxFree", "tax"];
 
-// ✅ 상세(하단)에서 숫자로 취급할 컬럼들
+// 하단 숫자 컬럼 목록
 const DETAIL_NUMBER_KEYS = ["qty", "amount", "unitPrice"];
 
-// ✅ 상세 Select 컬럼(숫자 enum)
+// 하단 Select 컬럼 목록(숫자 enum)
 const DETAIL_SELECT_KEYS = ["taxType", "itemType"];
 
-// ✅ (추가) URL 캐시무력화 유틸
+const getFileKind = (pathOrUrl) => {
+  const ext = String(pathOrUrl || "").split("?")[0].split(".").pop().toLowerCase();
+  if (ext === "pdf") return "pdf";
+  return "image";
+};
+
+// URL 캐시 무력화 유틸(쿼리 파라미터 추가)
 const appendQuery = (url, q) => `${url}${url.includes("?") ? "&" : "?"}${q}`;
 const buildReceiptUrl = (path, v) => {
   if (!path) return "";
@@ -216,7 +215,7 @@ const parseNumMaybe = (v) => {
   return Number.isNaN(n) ? null : n;
 };
 
-// ✅ taxType / itemType 은 "숫자"로 비교
+// 상세 필드 변경 여부 비교(taxType/itemType은 숫자 비교)
 const isDetailFieldChanged = (key, origVal, curVal) => {
   if (DETAIL_NUMBER_KEYS.includes(key) || DETAIL_SELECT_KEYS.includes(key)) {
     return parseNumMaybe(origVal) !== parseNumMaybe(curVal);
@@ -243,7 +242,10 @@ const parseNumber = (v) => {
   return Number.isNaN(n) ? 0 : n;
 };
 
-// ✅ input[type=date] 안정적으로 쓰기 위한 보정
+// 과세 금액의 부가세를 계산할 때 취소 금액도 승인 금액과 정확히 상쇄되도록 절사
+const truncateVatAmount = (amount) => Math.trunc(amount / 11);
+
+// input[type=date] 안정 입력을 위한 날짜 문자열 보정
 const toDateInputValue = (v) => {
   if (!v) return "";
   const s = String(v).trim();
@@ -254,7 +256,7 @@ const toDateInputValue = (v) => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
-// ✅ (추가) contentEditable 숫자셀 클릭 시 전체선택(덮어쓰기 입력)
+// contentEditable 숫자 셀 전체 선택(클릭 시 덮어쓰기 입력)
 const selectAllContent = (el) => {
   if (!el) return;
   const range = document.createRange();
@@ -307,13 +309,13 @@ const keepEditableTailVisible = (el) => {
   });
 };
 
-// ✅ (추가) pending 판단 유틸(여기서 통일)
+// pending 행 판단 유틸(파일/프리뷰/타임스탬프 존재 여부)
 const isPendingRow = (r) => !!r?.__pendingFile || !!r?.__pendingPreviewUrl || !!r?.__pendingAt;
 
-// ✅ 기존 저장행에서 영수증만 다시 올린 상태인지 구분
+// 기존 저장 행에서 영수증만 재업로드된 상태 구분
 const isReceiptImageOnlyDirtyRow = (row) => !row?.isNew && !!row?.__receiptImageDirty;
 
-// ✅ 영수증 재업로드 전 이미 다른 컬럼 수정이 있었는지 확인
+// 영수증 재업로드 전 다른 컬럼 수정 여부 확인
 const hasMasterNonReceiptChange = (row, origRow) => {
   if (!row || row?.__receiptImageDirty) return false;
   if (!origRow) return false;
@@ -345,7 +347,7 @@ const hasMasterNonReceiptChange = (row, origRow) => {
   return false;
 };
 
-// ✅ 신규 업로드는 전체 빨강, 기존 재업로드는 영수증 칼럼만 빨강 처리
+// 상단 셀 변경 여부 판단(신규 전체 빨강, 재업로드 영수증 칼럼만 빨강)
 const isMasterCellChanged = (row, origRow, key) => {
   if (row?.isNew) return true;
   if (isReceiptImageOnlyDirtyRow(row)) return key === "receipt_image";
@@ -372,7 +374,7 @@ function CorporateCardSheet() {
   const isMobileTabletLandscape = useMediaQuery(
     "(max-width:1279.95px) and (orientation: landscape)"
   );
-  // 모바일/태블릿에서 상단(기본)/하단(Detail) 테이블 최소 노출 높이
+  // 모바일/태블릿 상하단 테이블 최소 노출 높이
   const splitPanelMinHeight = isMobileTabletLandscape ? 260 : isMobileTablet ? 320 : 0;
   const splitContainerMinHeight = isMobileTablet ? splitPanelMinHeight * 2 + 24 : undefined;
 
@@ -395,45 +397,67 @@ function CorporateCardSheet() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
 
+  // 상단 결제내역 행 상태 /상단 원본 행(변경 비교 기준)
   const [masterRows, setMasterRows] = useState(null);
   const [origMasterRows, setOrigMasterRows] = useState([]);
 
+  // 하단 테이블 상태
   const [detailRows, setDetailRows] = useState([]);
   const [origDetailRows, setOrigDetailRows] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [selectedMaster, setSelectedMaster] = useState(null);
-  const selectedMasterRef = useRef(null);
+  // 하단 수정 여부 ref
   const detailEditedRef = useRef(false);
+  // 상단 조회 중복 방지 ref
   const masterFetchStateRef = useRef({ key: "", promise: null });
-
-  const [selectedSaleId, setSelectedSaleId] = useState("");
-  const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
-  const [pendingDetailMap, setPendingDetailMap] = useState(new Map());
+  // 저장 중복 방지 ref
   const isSavingRef = useRef(false);
+  // 마지막 카드 조회 거래처 ref
   const lastCardFetchAccountRef = useRef("");
-
+  // 파일 input DOM ref 맵
   const fileInputRefs = useRef({});
 
+  // 선택된 상단 행
+  const [selectedMaster, setSelectedMaster] = useState(null);
+  const selectedMasterRef = useRef(null);
+  // 저장 후 선택 복원 시 상단 행 클릭 로직을 직접 호출하기 위한 ref
+  const handleMasterRowClickRef = useRef(null);
+  // 상단 재조회 렌더 완료 후 선택 복원을 수행할 sale_id
+  const pendingMasterRestoreSaleIdRef = useRef("");
+  // 선택된 sale_id 상태
+  const [selectedSaleId, setSelectedSaleId] = useState("");
+  // 선택된 상단 행 인덱스
+  const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
+
+  // 이동 시 하단 수정 보관 맵
+  const [pendingDetailMap, setPendingDetailMap] = useState(new Map());
+
+  // masterRows 최신값 ref(비동기 콜백 내 stale 방지)
   const masterRowsRef = useRef([]);
   useEffect(() => {
     masterRowsRef.current = masterRows;
   }, [masterRows]);
 
-  // ✅ 거래처 검색조건
+  // 거래처 검색 조건 상태
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  // 상품구분 필터 상태
   const [itemTypeFilter, setItemTypeFilter] = useState("0");
+  // 상품구분 필터 조회 로딩 상태
   const [masterFilterLoading, setMasterFilterLoading] = useState(false);
+  // 거래처 입력 텍스트 ref
   const accountInputRef = useRef("");
+  // 상세 itemType 필터 캐시 ref
   const detailItemTypeCacheRef = useRef(new Map());
 
-  // ✅ 스캔된 상세 item 은 무조건 빨간 글씨
+  // 스캔된 상세 행 강제 빨간 글씨 여부 판단
   const isForcedRedRow = (row) => !!row?.isForcedRed;
 
-  // ✅ 스크롤 ref
+  // 상단 테이블 스크롤 래퍼 ref
   const masterWrapRef = useRef(null);
+  // 스크롤 위치 보존 ref
   const masterScrollPosRef = useRef(0);
   const detailScrollPosRef = useRef(0);
+
   const scrollMasterToBottom = useCallback((smooth = true) => {
     const el = masterWrapRef.current;
     if (!el) return;
@@ -443,7 +467,7 @@ function CorporateCardSheet() {
     });
   }, []);
 
-  // ✅ (추가) 상세 스크롤 ref
+  // 하단 테이블 스크롤 래퍼 ref
   const detailWrapRef = useRef(null);
   const scrollDetailToBottom = useCallback((smooth = true) => {
     const el = detailWrapRef.current;
@@ -464,7 +488,7 @@ function CorporateCardSheet() {
     if (el) detailScrollPosRef.current = el.scrollTop;
   }, []);
 
-  // 저장 성공 후 상단 선택 복원/스크롤에 사용하는 렌더 대기 함수
+  // 저장 성공 후 상단 선택 복원/스크롤 대기용 렌더 완료 대기 함수
   const waitForNextPaint = useCallback(
     () =>
       new Promise((resolve) => {
@@ -473,7 +497,7 @@ function CorporateCardSheet() {
     []
   );
 
-  // sale_id로 상단 행 DOM을 찾는다.
+  // sale_id로 상단 행 DOM 요소 검색
   const findMasterRowElementBySaleId = useCallback((saleId) => {
     const sid = String(saleId ?? "").trim();
     if (!sid || !masterWrapRef.current) return null;
@@ -484,9 +508,17 @@ function CorporateCardSheet() {
     return null;
   }, []);
 
-  // 상단 행을 실제 클릭한 것처럼 선택하고 하단을 조회한다.
+  // sale_id로 상단 행 클릭 트리거(하단 조회 연동)
   const triggerMasterRowClickBySaleId = useCallback(
     (saleId) => {
+      const sid = String(saleId ?? "").trim();
+      const rows = masterRowsRef.current || [];
+      const rowIndex = rows.findIndex((r) => String(r?.sale_id ?? "").trim() === sid);
+      if (rowIndex >= 0 && handleMasterRowClickRef.current) {
+        handleMasterRowClickRef.current(rows[rowIndex], rowIndex);
+        return true;
+      }
+
       const targetRow = findMasterRowElementBySaleId(saleId);
       if (!targetRow) return false;
       targetRow.click();
@@ -495,23 +527,27 @@ function CorporateCardSheet() {
     [findMasterRowElementBySaleId]
   );
 
-  // 선택된 상단 행이 화면 밖이면 보이도록 스크롤한다.
+  // 선택 상단 행이 화면 밖이면 보이도록 스크롤
   const scrollMasterRowIntoViewBySaleId = useCallback(
     (saleId) => {
       const targetRow = findMasterRowElementBySaleId(saleId);
       if (!targetRow) return false;
-      targetRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      const wrap = masterWrapRef.current;
+      if (!wrap) return false;
+      const nextTop = targetRow.offsetTop - wrap.clientHeight / 2 + targetRow.offsetHeight / 2;
+      wrap.scrollTo({ top: Math.max(0, nextTop), behavior: "auto" });
+      masterScrollPosRef.current = wrap.scrollTop;
       return true;
     },
     [findMasterRowElementBySaleId]
   );
 
-  // 저장 완료 후 성공 팝업 확인 시점에 상단 선택 복원 + 하단 재조회 + 스크롤을 수행한다.
+  // 저장 완료 후 상단 선택 복원 + 하단 재조회 + 스크롤 수행
   const restoreMasterSelectionAfterSave = useCallback(
     async (saleId) => {
       const sid = String(saleId ?? "").trim();
       if (!sid) return;
-      for (let retry = 0; retry < 6; retry += 1) {
+      for (let retry = 0; retry < 10; retry += 1) {
         await waitForNextPaint();
         const clicked = triggerMasterRowClickBySaleId(sid);
         if (!clicked) continue;
@@ -527,11 +563,11 @@ function CorporateCardSheet() {
     ]
   );
 
-  // 아이콘 기본색(정상)
+  // 영수증 아이콘 기본 색상(정상 상태)
   const normalIconColor = "#1e88e5";
   const [cardNoEditingIndex, setCardNoEditingIndex] = useState(null);
 
-  // ✅ 다운로드 (server path or blob url)
+  // 서버 경로 또는 Blob URL 다운로드 처리
   const downloadBySrc = useCallback((src, filename = "download") => {
     if (!src) return;
     const a = document.createElement("a");
@@ -555,25 +591,31 @@ function CorporateCardSheet() {
   );
 
   // ============================================================
-  // ✅ 잔상(행추가) 제거 + contentEditable DOM 잔상 제거
+  // 행 잔상 및 contentEditable DOM 잔상 제거 관련 ref/state
   // ============================================================
+  // 신규 행 병합 건너뜀 플래그 ref
   const skipPendingNewMergeRef = useRef(false);
+  // 서버 강제 동기화 플래그 ref
   const forceServerSyncRef = useRef(false);
+  // 상단 테이블 강제 리렌더 키
   const [masterRenderKey, setMasterRenderKey] = useState(0);
+  // 하단 테이블 강제 리렌더 키
   const [detailRenderKey, setDetailRenderKey] = useState(0);
 
   // ========================= 초기 로드: 거래처 목록 =========================
+  // 초기 거래처 목록 조회 완료 여부 ref
   const didInitRef = useRef(false);
+  // 초기 1회 거래처 목록 조회
   useEffect(() => {
     if (didInitRef.current) return;
     didInitRef.current = true;
     fetchAccountList();
   }, [fetchAccountList]);
 
-  // ✅ 추가: 기본 거래처 자동세팅은 딱 1번만
+  // 기본 거래처 자동 세팅 완료 여부 ref(1회만 실행)
   const didSetDefaultAccountRef = useRef(false);
 
-  // accountList 로딩 후 기본 선택값 (초기 1회만)
+  // 거래처 목록 로딩 후 기본 선택값 초기화(초기 1회)
   useEffect(() => {
     if (didSetDefaultAccountRef.current) return;
 
@@ -585,6 +627,7 @@ function CorporateCardSheet() {
   }, [accountList, selectedAccountId]);
 
   // ========================= 조회 =========================
+  // 상품구분 필터 기준 상단 행 필터링
   const filterMasterRowsByItemType = useCallback(
     async (rows) => {
       const targetItemType = Number(itemTypeFilter || 0);
@@ -658,6 +701,7 @@ function CorporateCardSheet() {
     [itemTypeFilter, selectedAccountId]
   );
 
+  // 상단 결제내역 조회(중복 방지 포함)
   const handleFetchMaster = useCallback(async (opts = {}) => {
     const force = !!opts.force;
     const accountId = String(opts.account_id ?? selectedAccountId ?? "").trim();
@@ -705,6 +749,7 @@ function CorporateCardSheet() {
     setPaymentRows,
   ]);
 
+  // 조회 버튼 클릭 시 상단 초기화 후 재조회
   const handleSearchMaster = useCallback(async () => {
     if (!selectedAccountId) return;
     setSelectedMaster(null);
@@ -719,7 +764,7 @@ function CorporateCardSheet() {
     await handleFetchMaster();
   }, [selectedAccountId, handleFetchMaster]);
 
-  // ✅ 거래처 변경 시 카드목록만 조회 (연/월 변경에는 재호출하지 않음)
+  // 거래처 변경 시 카드 목록만 조회(연/월 변경 시 미재호출)
   useEffect(() => {
     if (!selectedAccountId) {
       lastCardFetchAccountRef.current = "";
@@ -731,7 +776,7 @@ function CorporateCardSheet() {
     fetchHeadOfficeCorporateCardList(selectedAccountId);
   }, [selectedAccountId, fetchHeadOfficeCorporateCardList]);
 
-  // ✅ 거래처/연/월 변경 시 자동 조회
+  // 거래처/연/월/상품구분 변경 시 상단 자동 조회
   useEffect(() => {
     if (!selectedAccountId) return;
 
@@ -749,7 +794,7 @@ function CorporateCardSheet() {
     handleFetchMaster();
   }, [selectedAccountId, year, month, itemTypeFilter, handleFetchMaster]);
 
-  // ✅ 거래처(account_id) 무관: 전체 카드 목록
+  // 거래처 무관 전체 카드 목록(중복 제거)
   const cardsAll = useMemo(() => {
     const list = (activeRows || []).filter((r) => String(r.del_yn || "N") !== "Y");
 
@@ -769,13 +814,14 @@ function CorporateCardSheet() {
     });
   }, [activeRows]);
 
+  // account_id → 거래처명 맵
   const accountNameById = useMemo(() => {
     const m = new Map();
     (accountList || []).forEach((a) => m.set(String(a.account_id), a.account_name));
     return m;
   }, [accountList]);
 
-  // ✅ (추가) Autocomplete 옵션/값
+  // 거래처 Autocomplete 옵션 목록
   const accountOptions = useMemo(
     () =>
       (accountList || []).map((a) => ({
@@ -785,11 +831,13 @@ function CorporateCardSheet() {
     [accountList]
   );
 
+  // 현재 선택된 거래처 Autocomplete 옵션 값
   const selectedAccountOption = useMemo(() => {
     const v = String(selectedAccountId ?? "");
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
+  // 입력 텍스트로 거래처 선택(Enter 키 처리)
   const selectAccountByInput = useCallback((inputText) => {
     const q = String(inputText ?? accountInputRef.current ?? "").trim();
     if (!q) return;
@@ -808,7 +856,7 @@ function CorporateCardSheet() {
     }
   }, [accountOptions]);
 
-  // ✅ 서버 paymentRows 갱신 시
+  // 서버 paymentRows 갱신 시 masterRows 병합 처리
   useEffect(() => {
     saveMasterScroll();
     const serverRows = (paymentRows || [])
@@ -829,7 +877,7 @@ function CorporateCardSheet() {
       const pendingNew = keepNew ? (prev || []).filter((r) => r?.isNew) : [];
       skipPendingNewMergeRef.current = false;
 
-      // ✅ dirty OR pending(재업로드 대기) 행은 무조건 유지
+      // dirty 또는 pending(재업로드 대기) 행 로컬 보존
       const prevLocalMap = new Map();
       if (!forceSync) {
         (prev || []).forEach((r) => {
@@ -841,7 +889,7 @@ function CorporateCardSheet() {
         });
       }
 
-      // ✅ 서버 rows를 기본으로 하되 local(=dirty/pending)이 있으면 로컬 우선
+      // 서버 rows 기본, 로컬(dirty/pending) 존재 시 로컬 우선 병합
       const merged = forceSync
         ? serverRows
         : serverRows.map((sr) => {
@@ -855,7 +903,7 @@ function CorporateCardSheet() {
       return [...merged, ...pendingNew];
     });
 
-    // ✅ orig는 서버 기준(비교 기준)으로 유지
+    // orig는 서버 기준으로 유지(변경 비교 기준)
     setOrigMasterRows(serverRows);
 
     setSelectedMaster(null);
@@ -868,7 +916,7 @@ function CorporateCardSheet() {
     setMasterRenderKey((k) => k + 1);
   }, [paymentRows, saveMasterScroll]);
 
-  // ✅ 상세 rows 갱신 시
+  // 서버 paymentDetailRows 갱신 시 하단 행 초기화
   useEffect(() => {
     saveDetailScroll();
     const copy = (paymentDetailRows || []).map((r) => ({
@@ -883,16 +931,19 @@ function CorporateCardSheet() {
     setDetailRenderKey((k) => k + 1);
   }, [paymentDetailRows, saveDetailScroll]);
 
+  // 상단 테이블 리렌더 후 스크롤 위치 복원
   useLayoutEffect(() => {
     const el = masterWrapRef.current;
     if (el) el.scrollTop = masterScrollPosRef.current;
   }, [masterRenderKey]);
 
+  // 하단 테이블 리렌더 후 스크롤 위치 복원
   useLayoutEffect(() => {
     const el = detailWrapRef.current;
     if (el) el.scrollTop = detailScrollPosRef.current;
   }, [detailRenderKey, selectedMaster?.sale_id]);
 
+  // 로딩 완료 후 상하단 스크롤 위치 복원
   useLayoutEffect(() => {
     if (loading) return;
     const masterEl = masterWrapRef.current;
@@ -901,14 +952,18 @@ function CorporateCardSheet() {
     if (detailEl) detailEl.scrollTop = detailScrollPosRef.current;
   }, [loading]);
 
+  // 행에서 카드번호 숫자 추출
   const getRowCardNoDigits = (row) => onlyDigits(row?.cardNo ?? row?.card_no ?? row?.cardno ?? "");
 
+  // 행에서 카드사명 추출
   const getRowCardBrand = (row) =>
     row?.cardBrand ?? row?.card_brand ?? row?.cardbrand ?? DEFAULT_CARD_BRAND;
 
+  // 행에서 영수증 타입 추출 및 정규화
   const getRowReceiptType = (row) =>
     normalizeReceiptTypeVal(row?.receipt_type ?? row?.receiptType ?? row?.type);
 
+  // 영수증 파일 선택 가능 여부 검증(카드번호 16자리 필요)
   const canOpenReceiptFilePicker = useCallback((row) => {
     const cardNoDigits = onlyDigits(row?.cardNo ?? row?.card_no ?? row?.cardno ?? "");
     if (!isValidCardNoDigits(cardNoDigits)) {
@@ -919,14 +974,23 @@ function CorporateCardSheet() {
   }, []);
 
   // ========================= 변경 핸들러 =========================
+  // 상단 셀 값 변경 처리
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
     setMasterRows((prev) =>
       prev.map((r, i) =>
-        i === rowIndex ? { ...r, [key]: value, __receiptImageDirty: false } : r
+        i === rowIndex
+          ? {
+            ...r,
+            [key]: value,
+            __receiptImageDirty: false,
+            ...(MASTER_AUTO_CALC_KEYS.includes(key) ? { __manualMasterAmount: true } : {}),
+          }
+          : r
       )
     );
   }, []);
 
+  // 하단 셀 값 변경 처리
   const handleDetailCellChange = useCallback(
     (rowIndex, key, value) => {
       const nextRaw = typeof value === "string" ? value.replace(/\u00A0/g, " ").trim() : value;
@@ -949,7 +1013,7 @@ function CorporateCardSheet() {
     []
   );
 
-  // ✅ 카드 선택
+  // 상단 행 카드번호 선택 처리
   const handleCardSelect = useCallback(
     (rowIndex, cardNoDigits) => {
       const digits = onlyDigits(cardNoDigits);
@@ -971,7 +1035,7 @@ function CorporateCardSheet() {
     [cardsAll]
   );
 
-  // ✅ 행추가(상단)
+  // 상단 신규 행 추가
   const addMasterRow = useCallback(() => {
     if (!selectedAccountId) {
       return Swal.fire("안내", "거래처를 먼저 선택해주세요.", "info");
@@ -1005,7 +1069,7 @@ function CorporateCardSheet() {
       reg_dt: "",
       user_id: localStorage.getItem("user_id") || "",
 
-      // ✅ 재업로드 대기값(초기엔 없음)
+      // 재업로드 대기값(초기 없음)
       __pendingFile: null,
       __pendingPreviewUrl: "",
       __pendingAt: 0,
@@ -1018,7 +1082,7 @@ function CorporateCardSheet() {
     requestAnimationFrame(() => scrollMasterToBottom(true));
   }, [year, month, scrollMasterToBottom, selectedAccountId, cardsAll]);
 
-  // ✅ (추가) 행추가(하단)
+  // 하단 신규 행 추가
   const addDetailRow = useCallback(() => {
     if (!selectedMaster) {
       return Swal.fire("안내", "상단 결제내역에서 행을 먼저 선택해주세요.", "info");
@@ -1052,14 +1116,15 @@ function CorporateCardSheet() {
     requestAnimationFrame(() => scrollDetailToBottom(true));
   }, [selectedMaster, scrollDetailToBottom]);
 
+  // 영수증 이미지 업로드 및 스캔 처리
   const handleImageUpload = useCallback(
     async (file, rowIndex) => {
       if (!file) return;
 
-      // ✅ 업로드 순간의 "진짜 최신 row" (stale 방지)
+      // 업로드 순간 최신 row 참조(stale 방지)
       const row = masterRowsRef.current?.[rowIndex] || {};
 
-      // ✅ 최신값으로 안전하게 추출
+      // 최신값 안전 추출
       const accountId = String(row.account_id || "");
       const cardNoDigits = getRowCardNoDigits(row);
       const cardBrand = getRowCardBrand(row);
@@ -1070,7 +1135,7 @@ function CorporateCardSheet() {
         : null;
       const highlightReceiptOnly =
         !!row.__receiptImageDirty || (!row.isNew && !hasMasterNonReceiptChange(row, origRow));
-      // ✅ 본사 법인카드는 기존과 동일하게 모든 타입을 /Corporate/receipt-scan 으로 처리한다.
+      // 본사 법인카드 영수증 스캔 엔드포인트(모든 타입 동일 처리)
       const parseEndpoint = "/Corporate/receipt-scan";
 
       console.log("SCAN payload", {
@@ -1095,7 +1160,7 @@ function CorporateCardSheet() {
         return Swal.fire("경고", "영수증타입을 선택해주세요.", "warning");
       }
 
-      // ✅ 업로드 시작 표시(dirty/pending 초기화)
+      // 업로드 시작 표시(dirty/pending 플래그 초기화)
       setMasterRows((prev) =>
         prev.map((r, i) =>
           i === rowIndex
@@ -1126,7 +1191,7 @@ function CorporateCardSheet() {
         formData.append("file", file);
         formData.append("user_id", localStorage.getItem("user_id") || "");
 
-        // ✅ 여기부터가 핵심: 무조건 /Corporate/receipt-scan에 필요한 값으로 태움
+        // 스캔 API 필수 파라미터 추가
         formData.append("type", receiptType);
         formData.append("receiptType", receiptType);
         formData.append("objectValue", accountId);
@@ -1135,7 +1200,7 @@ function CorporateCardSheet() {
         formData.append("cardBrand", cardBrand);
         formData.append("saveType", "headoffice");
 
-        // ✅ sale_id 있으면 같이 (재업로드/재스캔 구분용)
+        // 기존 sale_id 포함(재업로드/재스캔 구분)
         formData.append("sale_id", row.sale_id || "");
 
         const res = await api.post(parseEndpoint, formData, {
@@ -1176,7 +1241,7 @@ function CorporateCardSheet() {
           ...(main.receipt_type != null ? { receipt_type: main.receipt_type } : {}),
         };
 
-        // ✅ 상단 반영
+        // 스캔 결과를 상단 행에 반영
         setMasterRows((prev) =>
           prev.map((r, i) => {
             if (i !== rowIndex) return r;
@@ -1191,7 +1256,7 @@ function CorporateCardSheet() {
           })
         );
 
-        // ✅ 하단 반영
+        // 스캔 결과를 하단 행에 반영
         if (Array.isArray(items)) {
           const saleIdForDetail = main.sale_id || row.sale_id || "";
           const normalized = items.map((it) => ({
@@ -1221,40 +1286,22 @@ function CorporateCardSheet() {
         }
 
         const nextSaleId = String(main.sale_id || row.sale_id || "").trim();
-        const nextAccountId = String(
-          patch.account_id !== undefined ? patch.account_id : row.account_id || ""
-        );
-        const nextPaymentDt = String(
-          patch.payment_dt !== undefined ? patch.payment_dt : row.payment_dt || ""
-        );
+
+        await Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
 
         forceServerSyncRef.current = true;
         skipPendingNewMergeRef.current = true;
-        await handleFetchMaster();
-
-        if (nextSaleId) {
-          await fetchHeadOfficeCorporateCardPaymentDetailList({
-            sale_id: nextSaleId,
-            account_id: nextAccountId,
-            payment_dt: nextPaymentDt,
-          });
-          setSelectedMaster({
-            sale_id: nextSaleId,
-            account_id: nextAccountId,
-            payment_dt: nextPaymentDt,
-          });
-        }
-
-        Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
+        if (nextSaleId) pendingMasterRestoreSaleIdRef.current = nextSaleId;
+        await handleFetchMaster({ force: true });
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [handleFetchMaster, fetchHeadOfficeCorporateCardPaymentDetailList, origMasterRows]
+    [handleFetchMaster, origMasterRows]
   );
 
-  // 하단 dirty가 있는 sale_id 집합 (상단 행 글씨색/배경색 표시용)
+  // 하단 수정 있는 sale_id 집합(상단 행 색상 표시용)
   const dirtyDetailSaleIds = useMemo(() => {
     const ids = new Set();
     if (selectedSaleId && detailRows.some((r) => r.__dirty || r.isNew || r.isForcedRed)) {
@@ -1267,6 +1314,7 @@ function CorporateCardSheet() {
   }, [detailRows, selectedSaleId, pendingDetailMap]);
 
   // ========================= 저장: main + item + (재업로드 pending files) =========================
+  // 원본 상단 행 sale_id → 행 맵(변경 비교 기준)
   const origMasterBySaleId = useMemo(() => {
     const m = new Map();
     for (const r of origMasterRows || []) {
@@ -1301,7 +1349,7 @@ function CorporateCardSheet() {
       total += amt;
 
       if (tt === 1) {
-        const rowVat = Math.floor(amt / 11);
+        const rowVat = truncateVatAmount(amt);
         const rowTax = amt - rowVat;
         tax += rowTax;
         vat += rowVat;
@@ -1381,6 +1429,19 @@ function CorporateCardSheet() {
     ]
   );
 
+  useEffect(() => {
+    handleMasterRowClickRef.current = handleMasterRowClick;
+  }, [handleMasterRowClick]);
+
+  // 상단 재조회 결과가 렌더된 뒤 저장했던 행을 다시 선택하고 하단 상세를 조회한다.
+  useEffect(() => {
+    const sid = String(pendingMasterRestoreSaleIdRef.current ?? "").trim();
+    if (!sid) return;
+
+    pendingMasterRestoreSaleIdRef.current = "";
+    restoreMasterSelectionAfterSave(sid);
+  }, [masterRenderKey, restoreMasterSelectionAfterSave]);
+
   const saveAll = useCallback(async () => {
     if (isSavingRef.current) return;
     isSavingRef.current = true;
@@ -1433,7 +1494,7 @@ function CorporateCardSheet() {
 
         allModifiedDetail = allModifiedDetail.concat(detailForSave);
 
-        if (detailForSave.length > 0) {
+        if (detailForSave.length > 0 && !masterForSaleId?.__manualMasterAmount) {
           const { total, tax, vat, taxFree } = calcMasterTotalsFromDetail(savedDetailRows);
           currentMasterRows = currentMasterRows.map((r) => {
             if (String(r?.sale_id ?? "") !== String(saleId)) return r;
@@ -1478,8 +1539,8 @@ function CorporateCardSheet() {
           missingTax && missingItem
             ? "과세구분과 상품구분이"
             : missingTax
-            ? "과세구분이"
-            : "상품구분이";
+              ? "과세구분이"
+              : "상품구분이";
         return Swal.fire("저장 불가", `하단 상세 ${invalidRows.length}행에 ${missingMsg} 선택되지 않았습니다.\n선택 후 저장해주세요.`, "warning");
       }
 
@@ -1564,8 +1625,11 @@ function CorporateCardSheet() {
       Swal.close();
       await Swal.fire("성공", "저장되었습니다.", "success");
 
-      // 성공 팝업 확인 후 저장 직전 선택한 상단행을 다시 클릭해서 하단을 조회한다.
-      await restoreMasterSelectionAfterSave(savedSaleId);
+      // 저장 후 서버 정렬 기준으로 다시 조회한 뒤 저장 직전 선택한 상단행을 다시 선택한다.
+      forceServerSyncRef.current = true;
+      skipPendingNewMergeRef.current = true;
+      if (savedSaleId) pendingMasterRestoreSaleIdRef.current = savedSaleId;
+      await handleFetchMaster({ force: true });
     } catch (e) {
       Swal.close();
       Swal.fire("오류", e.message || "저장 중 오류", "error");
@@ -1582,36 +1646,14 @@ function CorporateCardSheet() {
     origMasterBySaleId,
     normalizeMasterForSave,
     calcMasterTotalsFromDetail,
+    handleFetchMaster,
     restoreMasterSelectionAfterSave,
   ]);
 
   // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
   const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerId, setViewerId] = useState(null); // ✅ 인덱스 대신 id
-  const viewerNodeRef = useRef(null);
+  const [viewerId, setViewerId] = useState(null);
 
-  // ✅ blob 미리보기 (서버이미지용)
-  const [viewerBlobUrl, setViewerBlobUrl] = useState("");
-  const viewerFetchSeqRef = useRef(0);
-
-  // ✅ pending preview URL은 다른 곳에서도 쓰므로 revoke하면 안됨 → set으로 보관
-  const pendingPreviewUrlSet = useMemo(() => {
-    return new Set((masterRows || []).map((r) => r?.__pendingPreviewUrl).filter(Boolean));
-  }, [masterRows]);
-
-  // ✅ viewerBlobUrl 정리 (fetch로 만든 blob만 revoke)
-  const revokeViewerBlob = useCallback(() => {
-    setViewerBlobUrl((prev) => {
-      try {
-        if (prev && prev.startsWith("blob:") && !pendingPreviewUrlSet.has(prev)) {
-          URL.revokeObjectURL(prev);
-        }
-      } catch (e) {
-        // ignore
-      }
-      return "";
-    });
-  }, [pendingPreviewUrlSet]);
 
   // ✅ imageItems: pending(로컬) 우선, 없으면 서버 receipt_image
   const imageItems = useMemo(() => {
@@ -1621,12 +1663,16 @@ function CorporateCardSheet() {
 
         // ✅ 재업로드 대기중이면 로컬 미리보기 우선
         if (r.__pendingPreviewUrl) {
+          const localKind = getFileKind(r.__pendingFile?.name || r.__pendingPreviewUrl);
           return {
             id,
             rowIndex: idx,
             sale_id: r.sale_id || "",
             path: r.receipt_image || "",
             src: r.__pendingPreviewUrl,
+            url: r.__pendingPreviewUrl,
+            kind: localKind,
+            name: r.__pendingFile?.name || `영수증_${idx + 1}`,
             isLocal: true,
             title: `${r.use_name || ""} ${toDateInputValue(r.payment_dt) || ""}`.trim(),
             v: r.__pendingAt || 0,
@@ -1636,12 +1682,16 @@ function CorporateCardSheet() {
         // ✅ 서버 이미지
         if (!r?.receipt_image) return null;
         const v = r.__imgTouchedAt || 0;
+        const serverSrc = buildReceiptUrl(r.receipt_image, v);
         return {
           id,
           rowIndex: idx,
           sale_id: r.sale_id || "",
           path: r.receipt_image,
-          src: buildReceiptUrl(r.receipt_image, v),
+          src: serverSrc,
+          url: serverSrc,
+          kind: getFileKind(r.receipt_image),
+          name: r.receipt_image.split("/").pop() || `영수증_${idx + 1}`,
           isLocal: false,
           title: `${r.use_name || ""} ${toDateInputValue(r.payment_dt) || ""}`.trim(),
           v,
@@ -1658,125 +1708,18 @@ function CorporateCardSheet() {
     return i >= 0 ? i : 0;
   }, [viewerId, imageItems]);
 
-  const currentImg = imageItems[viewerIndex];
-
-  // ✅ 서버 이미지를 blob로 fetch해서 캐시 완전 무력화
-  const fetchViewerBlob = useCallback(
-    async (url) => {
-      if (!url) {
-        revokeViewerBlob();
-        return;
-      }
-
-      const mySeq = ++viewerFetchSeqRef.current;
-
-      try {
-        revokeViewerBlob();
-        const res = await fetch(url, { cache: "no-store" });
-        const blob = await res.blob();
-
-        if (viewerFetchSeqRef.current !== mySeq) return;
-
-        const objUrl = URL.createObjectURL(blob);
-        setViewerBlobUrl(objUrl);
-      } catch (e) {
-        revokeViewerBlob();
-      }
-    },
-    [revokeViewerBlob]
-  );
-
-  // ✅ rowIndex 기반으로 열기(로컬/서버 분기)
   const handleViewImage = useCallback(
-    async (row, rowIndex) => {
+    (row, rowIndex) => {
       const id = String(row.sale_id || row.client_id || rowIndex);
-
       setViewerId(id);
       setViewerOpen(true);
-
-      const item = imageItems.find((x) => x.id === id) || imageItems[0];
-      if (!item?.src) {
-        revokeViewerBlob();
-        return;
-      }
-
-      if (item.isLocal) {
-        // 로컬은 objectURL 그대로 사용 (revoke 금지)
-        revokeViewerBlob();
-        setViewerBlobUrl(item.src);
-      } else {
-        await fetchViewerBlob(item.src);
-      }
     },
-    [imageItems, fetchViewerBlob, revokeViewerBlob]
+    []
   );
 
   const handleCloseViewer = useCallback(() => {
     setViewerOpen(false);
-    revokeViewerBlob();
-  }, [revokeViewerBlob]);
-
-  const goPrev = useCallback(() => {
-    if (!imageItems.length) return;
-    const next = (viewerIndex - 1 + imageItems.length) % imageItems.length;
-    setViewerId(imageItems[next].id);
-  }, [imageItems, viewerIndex]);
-
-  const goNext = useCallback(() => {
-    if (!imageItems.length) return;
-    const next = (viewerIndex + 1) % imageItems.length;
-    setViewerId(imageItems[next].id);
-  }, [imageItems, viewerIndex]);
-
-  // ✅ viewerOpen 시 viewerId 보정
-  useEffect(() => {
-    if (!viewerOpen) return;
-
-    if (!imageItems.length) {
-      setViewerId(null);
-      revokeViewerBlob();
-      return;
-    }
-
-    const exists = viewerId && imageItems.some((x) => x.id === viewerId);
-    if (!exists) setViewerId(imageItems[0].id);
-  }, [viewerOpen, imageItems, viewerId, revokeViewerBlob]);
-
-  // ✅ viewerId 바뀌면 이미지 로드
-  useEffect(() => {
-    if (!viewerOpen) return;
-
-    const item = currentImg;
-    if (!item?.src) {
-      revokeViewerBlob();
-      return;
-    }
-
-    if (item.isLocal) {
-      revokeViewerBlob();
-      setViewerBlobUrl(item.src);
-    } else {
-      fetchViewerBlob(item.src);
-    }
-  }, [viewerOpen, currentImg?.src, currentImg?.isLocal, fetchViewerBlob, revokeViewerBlob]);
-
-  // ✅ 키보드 네비
-  useEffect(() => {
-    if (!viewerOpen) return;
-
-    const onKeyDown = (e) => {
-      const tag = (e.target?.tagName || "").toLowerCase();
-      const isTyping = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
-      if (isTyping) return;
-
-      if (e.key === "Escape") handleCloseViewer();
-      if (e.key === "ArrowLeft") goPrev();
-      if (e.key === "ArrowRight") goNext();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
+  }, []);
 
   // ✅ 컴포넌트 unmount 시 pending preview revoke(메모리 누수 방지)
   useEffect(() => {
@@ -1978,7 +1921,7 @@ function CorporateCardSheet() {
     const nextTotal = (detailRows || []).reduce((acc, r) => acc + parseNumber(r?.amount), 0);
 
     // 2) taxType 기준으로 과세/면세 자동 분리
-    //    - 과세(1): 부가세 = amount/11 버림, 과세 = amount - 부가세
+    //    - 과세(1): 부가세 = amount/11 절사, 과세 = amount - 부가세
     //    - 면세(2): taxFree에 누적
     let nextTax = 0;
     let nextVat = 0;
@@ -1989,7 +1932,7 @@ function CorporateCardSheet() {
       const tt = parseNumMaybe(r?.taxType); // 1/2/3 or null
 
       if (tt === 1) {
-        const rowVat = Math.floor(amt / 11);
+        const rowVat = truncateVatAmount(amt);
         const rowTax = amt - rowVat;
         nextTax += rowTax;
         nextVat += rowVat;
@@ -2011,6 +1954,7 @@ function CorporateCardSheet() {
       if (idx < 0) return prev;
 
       const row = prev[idx];
+      if (row?.__manualMasterAmount) return prev;
 
       // 기존 값과 동일하면 업데이트 안 함 (무한렌더/깜빡임 방지)
       const same =
@@ -2037,6 +1981,7 @@ function CorporateCardSheet() {
     // 선택된 행 state도 같이 최신화(하이라이트/화면 동기화)
     setSelectedMaster((prevSel) => {
       if (!prevSel) return prevSel;
+      if (prevSel?.__manualMasterAmount) return prevSel;
       const sameSelected =
         parseNumber(prevSel.total) === nextTotal &&
         parseNumber(prevSel.tax) === nextTax &&
@@ -2086,121 +2031,121 @@ function CorporateCardSheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-          <Box
-            sx={{
-              flexWrap: isMobile ? "wrap" : "nowrap",
-              justifyContent: isMobile ? "flex-start" : "flex-end",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "right",
-              gap: 1,
-            }}
+        <Box
+          sx={{
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            justifyContent: isMobile ? "flex-start" : "flex-end",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "right",
+            gap: 1,
+          }}
+        >
+          <Select
+            size="small"
+            value={itemTypeFilter}
+            onChange={(e) => setItemTypeFilter(String(e.target.value))}
+            sx={{ minWidth: 140 }}
           >
-            <Select
-              size="small"
-              value={itemTypeFilter}
-              onChange={(e) => setItemTypeFilter(String(e.target.value))}
-              sx={{ minWidth: 140 }}
-            >
-              {ITEM_TYPE_FILTER_OPTIONS.map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
-            </Select>
+            {ITEM_TYPE_FILTER_OPTIONS.map((opt) => (
+              <MenuItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </MenuItem>
+            ))}
+          </Select>
 
-            {/* ✅ 거래처 검색 가능한 Autocomplete */}
-            <Autocomplete
-              size="small"
-              sx={{ minWidth: 200 }}
-              options={accountOptions}
-              value={selectedAccountOption}
-              onChange={(_, opt) => {
-                // 입력 비움 시 거래처 선택 유지
-                if (!opt) return;
-                setSelectedAccountId(opt.value);
-              }}
-              onInputChange={(_, newValue) => {
-                accountInputRef.current = newValue || "";
-              }}
-              getOptionLabel={(opt) => opt?.label ?? ""}
-              isOptionEqualToValue={(opt, val) => opt.value === val.value}
-              filterOptions={(options, state) => {
-                const q = (state.inputValue ?? "").trim().toLowerCase();
-                if (!q) return options;
-                return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
-              }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="거래처 검색"
-                  placeholder="거래처명을 입력"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      selectAccountByInput(e.currentTarget.value);
-                    }
-                  }}
-                  sx={{
-                    "& .MuiInputBase-root": { height: 45, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
-                  }}
-                />
-              )}
-            />
+          {/* ✅ 거래처 검색 가능한 Autocomplete */}
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={selectedAccountOption}
+            onChange={(_, opt) => {
+              // 입력 비움 시 거래처 선택 유지
+              if (!opt) return;
+              setSelectedAccountId(opt.value);
+            }}
+            onInputChange={(_, newValue) => {
+              accountInputRef.current = newValue || "";
+            }}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+            filterOptions={(options, state) => {
+              const q = (state.inputValue ?? "").trim().toLowerCase();
+              if (!q) return options;
+              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput(e.currentTarget.value);
+                  }
+                }}
+                sx={{
+                  "& .MuiInputBase-root": { height: 45, fontSize: 12 },
+                  "& input": { padding: "0 8px" },
+                }}
+              />
+            )}
+          />
 
-            <Select
-              size="small"
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              sx={{ minWidth: 110 }}
-            >
-              {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
-                <MenuItem key={y} value={y}>
-                  {y}년
-                </MenuItem>
-              ))}
-            </Select>
+          <Select
+            size="small"
+            value={year}
+            onChange={(e) => setYear(e.target.value)}
+            sx={{ minWidth: 110 }}
+          >
+            {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
+              <MenuItem key={y} value={y}>
+                {y}년
+              </MenuItem>
+            ))}
+          </Select>
 
-            <Select
-              size="small"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              sx={{ minWidth: 90 }}
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <MenuItem key={m} value={m}>
-                  {m}월
-                </MenuItem>
-              ))}
-            </Select>
+          <Select
+            size="small"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            sx={{ minWidth: 90 }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <MenuItem key={m} value={m}>
+                {m}월
+              </MenuItem>
+            ))}
+          </Select>
 
-            <MDButton
-              color="info"
-              onClick={handleSearchMaster}
-              disabled={masterFilterLoading}
-              sx={{ minWidth: 80 }}
-            >
-              {masterFilterLoading ? "조회중..." : "조회"}
-            </MDButton>
+          <MDButton
+            color="info"
+            onClick={handleSearchMaster}
+            disabled={masterFilterLoading}
+            sx={{ minWidth: 80 }}
+          >
+            {masterFilterLoading ? "조회중..." : "조회"}
+          </MDButton>
 
-            <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
-              행추가
-            </MDButton>
+          <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
+            행추가
+          </MDButton>
 
-            <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
-              저장
-            </MDButton>
+          <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
+            저장
+          </MDButton>
 
-            <MDButton
-              variant="gradient"
-              color="info"
-              onClick={openCardModal}
-              sx={{ minWidth: 120 }}
-            >
-              법인카드관리
-            </MDButton>
-          </Box>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={openCardModal}
+            sx={{ minWidth: 120 }}
+          >
+            법인카드관리
+          </MDButton>
+        </Box>
       </MDBox>
 
       {/* ====== 상단/하단 50:50 영역 ====== */}
@@ -2735,164 +2680,165 @@ function CorporateCardSheet() {
                       ? true
                       : Object.keys(row).some((k) => isDetailFieldChanged(k, origRow[k], row[k]));
                   return (
-                  <tr
-                    key={rowIndex}
-                    style={{
-                      backgroundColor: isDetailRowChanged ? "rgba(211,47,47,0.10)" : "transparent",
-                    }}
-                  >
-                    {detailColumns.map((c) => {
-                      const key = c.key;
-                      const rawVal = row[key] ?? "";
-                      const orig = origDetailRows[rowIndex]?.[key];
+                    <tr
+                      key={rowIndex}
+                      style={{
+                        backgroundColor: isDetailRowChanged ? "rgba(211,47,47,0.10)" : "transparent",
+                      }}
+                    >
+                      {detailColumns.map((c) => {
+                        const key = c.key;
+                        const rawVal = row[key] ?? "";
+                        const orig = origDetailRows[rowIndex]?.[key];
 
-                      const changed = row?.isNew
-                        ? true
-                        : isForcedRedRow(row)
+                        const changed = row?.isNew
                           ? true
-                          : isDetailFieldChanged(key, orig, rawVal);
+                          : isForcedRedRow(row)
+                            ? true
+                            : isDetailFieldChanged(key, orig, rawVal);
 
-                      const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
-                      const isAmountCol = key === "amount";
-                      const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
+                        const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
+                        const isAmountCol = key === "amount";
+                        const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
 
-                      if (c.type === "select") {
-                        const curNum = parseNumMaybe(rawVal);
-                        const curStr = curNum == null ? "" : String(curNum);
+                        if (c.type === "select") {
+                          const curNum = parseNumMaybe(rawVal);
+                          const curStr = curNum == null ? "" : String(curNum);
 
-                        return (
-                          <td key={key} style={fixedColStyle(c.size)}>
-                            <Select
-                              size="small"
-                              fullWidth
-                              value={curStr}
-                              onChange={(e) =>
-                                handleDetailCellChange(rowIndex, key, e.target.value)
-                              }
-                              onClick={(ev) => ev.stopPropagation()}
-                              displayEmpty
-                              sx={{
-                                fontSize: 12,
-                                height: 25,
-                                "& .MuiSelect-select": { color: changed ? "red" : "black" },
-                                "& .MuiSvgIcon-root": { color: changed ? "red" : "black" },
-                              }}
-                            >
-                              <MenuItem value="">
-                                <em>선택</em>
-                              </MenuItem>
-                              {c.options.map((opt) => (
-                                <MenuItem key={opt.value} value={String(opt.value)}>
-                                  {opt.value}:{opt.label}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </td>
-                        );
-                      }
-
-                      if (c.editable) {
-                        return (
-                          <td
-                            key={key}
-                            contentEditable
-                            suppressContentEditableWarning
-                            style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
-                            onMouseDown={(ev) => {
-                              if (!isNumCol) return;
-
-                              const el = ev.currentTarget;
-                              ev.preventDefault();
-
-                              requestAnimationFrame(() => {
-                                if (!el || !el.isConnected) return;
-                                try {
-                                  el.focus();
-                                } catch (e) {
-                                  // ignore
+                          return (
+                            <td key={key} style={fixedColStyle(c.size)}>
+                              <Select
+                                size="small"
+                                fullWidth
+                                value={curStr}
+                                onChange={(e) =>
+                                  handleDetailCellChange(rowIndex, key, e.target.value)
                                 }
+                                onClick={(ev) => ev.stopPropagation()}
+                                displayEmpty
+                                sx={{
+                                  fontSize: 12,
+                                  height: 25,
+                                  "& .MuiSelect-select": { color: changed ? "red" : "black" },
+                                  "& .MuiSvgIcon-root": { color: changed ? "red" : "black" },
+                                }}
+                              >
+                                <MenuItem value="">
+                                  <em>선택</em>
+                                </MenuItem>
+                                {c.options.map((opt) => (
+                                  <MenuItem key={opt.value} value={String(opt.value)}>
+                                    {opt.value}:{opt.label}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </td>
+                          );
+                        }
+
+                        if (c.editable) {
+                          return (
+                            <td
+                              key={key}
+                              contentEditable
+                              suppressContentEditableWarning
+                              style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
+                              onMouseDown={(ev) => {
+                                if (!isNumCol) return;
+
+                                const el = ev.currentTarget;
+                                ev.preventDefault();
+
+                                requestAnimationFrame(() => {
+                                  if (!el || !el.isConnected) return;
+                                  try {
+                                    el.focus();
+                                  } catch (e) {
+                                    // ignore
+                                  }
+                                  // amount 컬럼은 음수(-) 유지
+                                  const raw = String(parseNumber(el.innerText) || "");
+                                  el.innerText = isAmountCol
+                                    ? raw === "0" ? "" : raw
+                                    : raw;
+                                  selectAllContent(el);
+                                });
+                              }}
+                              onFocus={(ev) => {
+                                const el = ev.currentTarget;
+                                if (!isNumCol) {
+                                  keepEditableTailVisible(el);
+                                  return;
+                                }
+
                                 // amount 컬럼은 음수(-) 유지
                                 const raw = String(parseNumber(el.innerText) || "");
                                 el.innerText = isAmountCol
                                   ? raw === "0" ? "" : raw
                                   : raw;
-                                selectAllContent(el);
-                              });
-                            }}
-                            onFocus={(ev) => {
-                              const el = ev.currentTarget;
-                              if (!isNumCol) {
-                                keepEditableTailVisible(el);
-                                return;
-                              }
+                                requestAnimationFrame(() => {
+                                  if (!el || !el.isConnected) return;
+                                  selectAllContent(el);
+                                });
+                              }}
+                              onInput={(ev) => {
+                                if (isAmountCol) {
+                                  enforceAmountEditable(ev.currentTarget);
+                                  return;
+                                }
+                                if (isNumCol) {
+                                  enforceDigitsOnlyEditable(ev.currentTarget);
+                                  return;
+                                }
+                                keepEditableTailVisible(ev.currentTarget);
+                              }}
+                              onKeyDown={(ev) => {
+                                if (!isNumCol) return;
+                                if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+                                const allowKeys = [
+                                  "Backspace",
+                                  "Delete",
+                                  "ArrowLeft",
+                                  "ArrowRight",
+                                  "ArrowUp",
+                                  "ArrowDown",
+                                  "Tab",
+                                  "Home",
+                                  "End",
+                                ];
+                                if (allowKeys.includes(ev.key)) return;
+                                if (isAmountCol && ev.key === "-") return;
+                                if (!/^\d$/.test(ev.key)) {
+                                  ev.preventDefault();
+                                }
+                              }}
+                              onClick={(ev) => ev.stopPropagation()}
+                              onBlur={(e) => {
+                                const text = e.currentTarget.innerText.trim();
 
-                              // amount 컬럼은 음수(-) 유지
-                              const raw = String(parseNumber(el.innerText) || "");
-                              el.innerText = isAmountCol
-                                ? raw === "0" ? "" : raw
-                                : raw;
-                              requestAnimationFrame(() => {
-                                if (!el || !el.isConnected) return;
-                                selectAllContent(el);
-                              });
-                            }}
-                            onInput={(ev) => {
-                              if (isAmountCol) {
-                                enforceAmountEditable(ev.currentTarget);
-                                return;
-                              }
-                              if (isNumCol) {
-                                enforceDigitsOnlyEditable(ev.currentTarget);
-                                return;
-                              }
-                              keepEditableTailVisible(ev.currentTarget);
-                            }}
-                            onKeyDown={(ev) => {
-                              if (!isNumCol) return;
-                              if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-                              const allowKeys = [
-                                "Backspace",
-                                "Delete",
-                                "ArrowLeft",
-                                "ArrowRight",
-                                "ArrowUp",
-                                "ArrowDown",
-                                "Tab",
-                                "Home",
-                                "End",
-                              ];
-                              if (allowKeys.includes(ev.key)) return;
-                              if (isAmountCol && ev.key === "-") return;
-                              if (!/^\d$/.test(ev.key)) {
-                                ev.preventDefault();
-                              }
-                            }}
-                            onClick={(ev) => ev.stopPropagation()}
-                            onBlur={(e) => {
-                              const text = e.currentTarget.innerText.trim();
+                                if (isNumCol) {
+                                  const n = parseNumber(text);
+                                  e.currentTarget.innerText = formatNumber(n);
+                                  handleDetailCellChange(rowIndex, key, n);
+                                  return;
+                                }
+                                handleDetailCellChange(rowIndex, key, text);
+                              }}
+                            >
+                              {displayVal}
+                            </td>
+                          );
+                        }
 
-                              if (isNumCol) {
-                                const n = parseNumber(text);
-                                e.currentTarget.innerText = formatNumber(n);
-                                handleDetailCellChange(rowIndex, key, n);
-                                return;
-                              }
-                              handleDetailCellChange(rowIndex, key, text);
-                            }}
-                          >
+                        return (
+                          <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
                             {displayVal}
                           </td>
                         );
-                      }
-
-                      return (
-                        <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
-                          {displayVal}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ); })}
+                      })}
+                    </tr>
+                  );
+                })}
               </tbody>
               {/* 하단 합계 — 데이터 있을 때만 표시 */}
               {detailRows.length > 0 && (
@@ -2913,244 +2859,19 @@ function CorporateCardSheet() {
         </MDBox>
       </MDBox>
 
-      {/* ========================= ✅ 떠있는 창 미리보기: 뒤 테이블 입력 가능 ========================= */}
-      {viewerOpen && (
-        <Box
-          sx={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 2000,
-            pointerEvents: "none",
-            _toggle: "noop",
-          }}
-        >
-          <Draggable
-            nodeRef={viewerNodeRef}
-            handle="#receipt-viewer-titlebar"
-            bounds="parent"
-            cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
-          >
-            <Paper
-              ref={viewerNodeRef}
-              sx={{
-                position: "absolute",
-                top: 120,
-                left: 120,
-                m: 0,
-                width: "450px",
-                height: "650px",
-                maxWidth: "95vw",
-                maxHeight: "90vh",
-                borderRadius: 1.2,
-                border: "1px solid rgba(0,0,0,0.25)",
-                boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                overflow: "hidden",
-                resize: "both",
-                pointerEvents: "auto",
-                backgroundColor: "#000",
-              }}
-            >
-              <Box
-                id="receipt-viewer-titlebar"
-                sx={{
-                  height: 42,
-                  bgcolor: "#1b1b1b",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  px: 1,
-                  cursor: "move",
-                  userSelect: "none",
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    flex: 1,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    pr: 1,
-                  }}
-                >
-                  {currentImg?.title || "영수증 미리보기"}
-                  {imageItems.length ? `  (${viewerIndex + 1}/${imageItems.length})` : ""}
-                  {currentImg?.isLocal ? "  [대기파일]" : ""}
-                </Typography>
-
-                <Tooltip title="이전(←)">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goPrev();
-                      }}
-                      disabled={imageItems.length <= 1}
-                    >
-                      <ChevronLeftIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="다음(→)">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goNext();
-                      }}
-                      disabled={imageItems.length <= 1}
-                    >
-                      <ChevronRightIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="새 탭으로 열기">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const src = viewerBlobUrl || currentImg?.src;
-                        if (src) window.open(src, "_blank", "noopener,noreferrer");
-                      }}
-                      disabled={!(viewerBlobUrl || currentImg?.src)}
-                    >
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="다운로드">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const src = viewerBlobUrl || currentImg?.src;
-                        if (!src) return;
-
-                        if (src.startsWith("blob:")) {
-                          downloadBySrc(src, `receipt_${currentImg?.rowIndex ?? 0}.jpg`);
-                        } else if (currentImg?.path) {
-                          handleDownloadServerPath(currentImg.path, currentImg?.v);
-                        } else {
-                          downloadBySrc(src, "receipt.jpg");
-                        }
-                      }}
-                      disabled={!(viewerBlobUrl || currentImg?.src)}
-                    >
-                      <DownloadIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="닫기(ESC)">
-                  <IconButton
-                    size="small"
-                    sx={{ color: "#fff" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseViewer();
-                    }}
-                  >
-                    <CloseIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-
-              <Box sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}>
-                {currentImg?.src ? (
-                  <TransformWrapper
-                    initialScale={1}
-                    minScale={0.5}
-                    maxScale={6}
-                    centerOnInit
-                    wheel={{ step: 0.12 }}
-                    doubleClick={{ mode: "zoomIn" }}
-                  >
-                    {({ zoomIn, zoomOut, resetTransform }) => (
-                      <>
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            right: 10,
-                            top: 10,
-                            zIndex: 3,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 1,
-                          }}
-                        >
-                          <Tooltip title="확대">
-                            <IconButton
-                              size="small"
-                              onClick={zoomIn}
-                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                            >
-                              <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="축소">
-                            <IconButton
-                              size="small"
-                              onClick={zoomOut}
-                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                            >
-                              <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="리셋">
-                            <IconButton
-                              size="small"
-                              onClick={resetTransform}
-                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                            >
-                              <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-
-                        <TransformComponent
-                          wrapperStyle={{ width: "100%", height: "100%" }}
-                          contentStyle={{ width: "100%", height: "100%" }}
-                        >
-                          <Box
-                            sx={{
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <img
-                              key={viewerBlobUrl || currentImg.src}
-                              src={viewerBlobUrl || currentImg.src}
-                              alt="미리보기"
-                              style={{ maxWidth: "95%", maxHeight: "95%", userSelect: "none" }}
-                            />
-                          </Box>
-                        </TransformComponent>
-                      </>
-                    )}
-                  </TransformWrapper>
-                ) : (
-                  <Typography sx={{ color: "#fff", p: 2 }}>이미지가 없습니다.</Typography>
-                )}
-              </Box>
-            </Paper>
-          </Draggable>
-        </Box>
-      )}
+      {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
+      <PreviewOverlay
+        open={viewerOpen}
+        files={imageItems}
+        currentIndex={viewerIndex}
+        onChangeIndex={(updater) => {
+          const next = typeof updater === "function" ? updater(viewerIndex) : updater;
+          const safeNext = Math.min(Math.max(0, next), imageItems.length - 1);
+          setViewerId(imageItems[safeNext]?.id ?? null);
+        }}
+        onClose={handleCloseViewer}
+        anchorX={1 / 3}
+      />
 
       {/* ========================= 법인카드관리 모달 ========================= */}
       <Modal open={cardModalOpen} onClose={closeCardModal}>

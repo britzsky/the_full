@@ -1073,7 +1073,7 @@ function RetailBusinessTab() {
           sx={{
             position: "absolute",
             top: "50%",
-            left: "50%",
+            left: "33.3333%",
             transform: "translate(-50%, -50%)",
             bgcolor: "background.paper",
             borderRadius: 2,

@@ -3595,6 +3595,7 @@ function AccountPurchaseDeadlineTab() {
           currentIndex={viewerIndex}
           onChangeIndex={setViewerIndex}
           onClose={handleCloseViewer}
+          anchorX={1 / 3}
         />
       </DashboardLayout>
     </LocalizationProvider>

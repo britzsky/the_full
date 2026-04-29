@@ -465,7 +465,7 @@ function AccountMemberSheet() {
     const modalW = isMobile ? w * 0.92 : w * 0.48;
     const modalH = isMobile ? h * 0.92 : h * 0.88;
     setViewerPos({
-      x: Math.max(0, (w - modalW) / 2),
+      x: Math.min(Math.max(0, w / 3 - modalW / 2), Math.max(0, w - modalW)),
       y: Math.max(0, (h - modalH) / 2),
     });
   }, [viewFile?.src, isMobile]);

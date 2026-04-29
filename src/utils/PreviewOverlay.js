@@ -17,8 +17,8 @@ function getViewerFrameRatio(isMobile, fileKind) {
   return isMobile ? { widthRatio: 0.68, heightRatio: 0.92 } : { widthRatio: 0.34, heightRatio: 0.88 };
 }
 
-// anchorX: 모달 가운데를 놓을 화면 수평 비율 (기본 0.5 = 정중앙, 1/3 = 왼쪽 1/3 지점)
-function getCenteredViewerPos(isMobile, fileKind, anchorX = 0.5) {
+// anchorX: 모달 가운데를 놓을 화면 수평 비율 (기본 1/3 = 왼쪽 1/3 지점)
+function getCenteredViewerPos(isMobile, fileKind, anchorX = 1 / 3) {
   if (typeof window === "undefined") return { x: 0, y: 0 };
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -144,7 +144,7 @@ function PreviewOverlay({
   currentIndex,
   onChangeIndex,
   onClose,
-  anchorX,
+  anchorX = 1 / 3,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -463,7 +463,7 @@ function PreviewOverlay({
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.15)",
+      backgroundColor: "rgba(60,60,60,0.9)",
       color: "#fff",
       cursor: "pointer",
     }),
@@ -884,7 +884,7 @@ PreviewOverlay.defaultProps = {
   currentIndex: 0,
   onChangeIndex: null,
   onClose: null,
-  anchorX: 0.5,
+  anchorX: 1 / 3,
 };
 
 export default React.memo(PreviewOverlay);

@@ -1598,6 +1598,7 @@ function PaymentDocWriteDocumentForm({
         currentIndex={previewIndex}
         onChangeIndex={setPreviewIndex}
         onClose={() => setPreviewOpen(false)}
+        anchorX={1 / 3}
       />
     </MDBox>
   );

@@ -899,7 +899,20 @@ export default function AccountEventTab() {
       </Grid>
 
       {/* 미리보기 */}
-      <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="md">
+      <Dialog
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            position: "fixed",
+            top: "50%",
+            left: "33.3333%",
+            transform: "translate(-50%, -50%)",
+            m: 0,
+          },
+        }}
+      >
         <DialogContent
           sx={{
             display: "flex",

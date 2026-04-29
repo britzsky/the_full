@@ -954,7 +954,21 @@ function CorCarTabStyled() {
       </MDBox>
 
       {/* 이미지 미리보기 Dialog */}
-      <Dialog open={previewOpen} onClose={handleClosePreview} maxWidth="md" fullWidth>
+      <Dialog
+        open={previewOpen}
+        onClose={handleClosePreview}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            position: "fixed",
+            top: "50%",
+            left: "33.3333%",
+            transform: "translate(-50%, -50%)",
+            m: 0,
+          },
+        }}
+      >
         <DialogContent
           sx={{
             display: "flex",

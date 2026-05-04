@@ -160,7 +160,7 @@ const cleanCardRow = (r) => {
 };
 // 저장 전 상세 행 정리(내부 플래그 제거)
 const cleanDetailRow = (r) => {
-  const { isNew, isForcedRed, ...rest } = r;
+  const { isNew, isForcedRed, __deleteChecked, ...rest } = r;
   return rest;
 };
 
@@ -240,6 +240,13 @@ const parseNumber = (v) => {
       .replace(/[^\d.-]/g, "")
   );
   return Number.isNaN(n) ? 0 : n;
+};
+
+// 신규 상세행 삭제 가능 여부
+const canDeleteNewDetailRow = (row) => {
+  if (!row?.isNew) return false;
+  const amount = parseNumMaybe(row?.amount);
+  return amount === null || amount === 0;
 };
 
 // 과세 금액의 부가세를 계산할 때 취소 금액도 승인 금액과 정확히 상쇄되도록 절사
@@ -366,6 +373,17 @@ const fixedColStyle = (size, extra = {}) => ({
   maxWidth: size,
   ...extra,
 });
+
+// 체크박스 기본 스타일
+const nativeCheckboxCenterStyle = {
+  display: "block",
+  margin: "0 auto",
+  verticalAlign: "middle",
+  width: 18,
+  height: 18,
+  accentColor: "#1f4e79",
+  cursor: "pointer",
+};
 
 function CorporateCardSheet() {
   const theme = useTheme();
@@ -604,6 +622,13 @@ function CorporateCardSheet() {
   const [masterRenderKey, setMasterRenderKey] = useState(0);
   // 하단 테이블 강제 리렌더 키
   const [detailRenderKey, setDetailRenderKey] = useState(0);
+  // 신규 상세행 우클릭 메뉴 상태
+  const [detailCtxMenu, setDetailCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
 
   // ========================= 초기 로드: 거래처 목록 =========================
   // 초기 거래처 목록 조회 완료 여부 ref
@@ -1013,11 +1038,74 @@ function CorporateCardSheet() {
             ? parseNumMaybe(nextRaw) ?? 0
             : nextRaw;
         detailEditedRef.current = true;
-        return prev.map((r, i) => (i === rowIndex ? { ...r, [key]: nextVal } : r));
+        return prev.map((r, i) => {
+          if (i !== rowIndex) return r;
+          const shouldClearCheck = key === "amount" && parseNumMaybe(nextVal) !== 0;
+          return { ...r, [key]: nextVal, ...(shouldClearCheck ? { __deleteChecked: false } : {}) };
+        });
       });
     },
     []
   );
+
+  // 신규 상세행 우클릭 메뉴 닫기
+  const closeDetailCtxMenu = useCallback(() => {
+    setDetailCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  // 신규 상세행 우클릭 메뉴 열기
+  const handleDetailRowContextMenu = useCallback((e, row, rowIndex) => {
+    if (!canDeleteNewDetailRow(row)) return;
+    e.preventDefault();
+    setDetailCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  }, []);
+
+  // 신규 상세행 선택 삭제 처리
+  const handleDeleteNewDetailRow = useCallback((rowIndex) => {
+    if (rowIndex == null) return;
+    setDetailRows((prev) => {
+      const checkedIndexes = prev
+        .map((row, index) => (canDeleteNewDetailRow(row) && row.__deleteChecked ? index : -1))
+        .filter((index) => index >= 0);
+      const deleteIndexes =
+        checkedIndexes.length > 0
+          ? new Set(checkedIndexes)
+          : canDeleteNewDetailRow(prev?.[rowIndex])
+          ? new Set([rowIndex])
+          : new Set();
+      if (deleteIndexes.size === 0) return prev;
+      detailEditedRef.current = true;
+      return prev.filter((_, i) => !deleteIndexes.has(i));
+    });
+    setOrigDetailRows((prev) => {
+      const checkedIndexes = detailRows
+        .map((row, index) => (canDeleteNewDetailRow(row) && row.__deleteChecked ? index : -1))
+        .filter((index) => index >= 0);
+      const deleteIndexes =
+        checkedIndexes.length > 0
+          ? new Set(checkedIndexes)
+          : canDeleteNewDetailRow(detailRows?.[rowIndex])
+          ? new Set([rowIndex])
+          : new Set();
+      return deleteIndexes.size === 0 ? prev : prev.filter((_, i) => !deleteIndexes.has(i));
+    });
+    setDetailRenderKey((k) => k + 1);
+    closeDetailCtxMenu();
+  }, [closeDetailCtxMenu, detailRows]);
+
+  // 신규 상세행 삭제 체크 상태 변경
+  const handleNewDetailCheckChange = useCallback((rowIndex, checked) => {
+    setDetailRows((prev) =>
+      prev.map((r, i) =>
+        i === rowIndex && canDeleteNewDetailRow(r) ? { ...r, __deleteChecked: checked } : r
+      )
+    );
+  }, []);
 
   // 상단 행 카드번호 선택 처리
   const handleCardSelect = useCallback(
@@ -1554,16 +1642,24 @@ function CorporateCardSheet() {
       // 상단: 변경된 행만 (자동계산 반영된 currentMasterRows 기준)
       const main = currentMasterRows
         .map((r) => {
-          if (r.isNew) return { ...normalizeMasterForSave(r), user_id: userId };
-          if (r.__dirty) return { ...normalizeMasterForSave(r), user_id: userId };
           const sid = String(r.sale_id || "");
           const o = sid ? origMasterBySaleId.get(sid) : null;
-          if (!o) return { ...normalizeMasterForSave(r), user_id: userId };
+          const buildMainPayload = () => {
+            const payload = { ...normalizeMasterForSave(r), user_id: userId };
+            // 기존 결제일자 전달
+            if (o?.payment_dt && toDateInputValue(o.payment_dt) !== toDateInputValue(r.payment_dt)) {
+              payload.orgPaymentDt = toDateInputValue(o.payment_dt);
+            }
+            return payload;
+          };
+          if (r.isNew) return buildMainPayload();
+          if (r.__dirty) return buildMainPayload();
+          if (!o) return buildMainPayload();
           const changed = Object.keys(r).some((k) => {
             if (MASTER_NUMBER_KEYS.includes(k)) return parseNumber(o[k]) !== parseNumber(r[k]);
             return isChangedValue(o[k], r[k]);
           });
-          return changed ? { ...normalizeMasterForSave(r), user_id: userId } : null;
+          return changed ? buildMainPayload() : null;
         })
         .filter(Boolean);
 
@@ -1883,6 +1979,7 @@ function CorporateCardSheet() {
 
   const detailColumns = useMemo(
     () => [
+      { header: "구분", key: "__newDetailDelete", editable: false, size: 50 },
       { header: "상품명", key: "name", editable: true, size: 220 },
       { header: "수량", key: "qty", editable: true, size: 80 },
       { header: "단가", key: "unitPrice", editable: true, size: 100 },
@@ -2726,6 +2823,7 @@ function CorporateCardSheet() {
                       : Object.keys(row).some((k) => isDetailFieldChanged(k, origRow[k], row[k]));
                   return (
                     <tr
+                      onContextMenu={(ev) => handleDetailRowContextMenu(ev, row, rowIndex)}
                       key={rowIndex}
                       style={{
                         backgroundColor: isDetailRowChanged ? "rgba(211,47,47,0.10)" : "transparent",
@@ -2745,6 +2843,35 @@ function CorporateCardSheet() {
                         const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
                         const isAmountCol = key === "amount";
                         const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
+
+                        if (key === "__newDetailDelete") {
+                          const enabled = canDeleteNewDetailRow(row);
+                          return (
+                            <td key={key} style={fixedColStyle(c.size)}>
+                              {row?.isNew && (
+                                <input
+                                  type="checkbox"
+                                  checked={enabled ? !!row.__deleteChecked : false}
+                                  disabled={!enabled}
+                                  readOnly
+                                  style={{
+                                    ...nativeCheckboxCenterStyle,
+                                    cursor: enabled ? "pointer" : "not-allowed",
+                                  }}
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    handleNewDetailCheckChange(rowIndex, ev.currentTarget.checked);
+                                  }}
+                                  onChange={(ev) => {
+                                    ev.stopPropagation();
+                                    handleNewDetailCheckChange(rowIndex, ev.target.checked);
+                                  }}
+                                  onContextMenu={(ev) => handleDetailRowContextMenu(ev, row, rowIndex)}
+                                />
+                              )}
+                            </td>
+                          );
+                        }
 
                         if (c.type === "select") {
                           const curNum = parseNumMaybe(rawVal);
@@ -2889,11 +3016,11 @@ function CorporateCardSheet() {
               {detailRows.length > 0 && (
                 <tfoot>
                   <tr>
-                    <td colSpan={3} style={fixedColStyle(null)}>합계</td>
-                    <td style={fixedColStyle(detailColumns[3]?.size)}>
+                    <td colSpan={4} style={fixedColStyle(null)}>합계</td>
+                    <td style={fixedColStyle(detailColumns[4]?.size)}>
                       {formatNumber(detailAmountSum)}
                     </td>
-                    {detailColumns.slice(4).map((c) => (
+                    {detailColumns.slice(5).map((c) => (
                       <td key={c.key} style={fixedColStyle(c.size)} />
                     ))}
                   </tr>
@@ -2903,6 +3030,54 @@ function CorporateCardSheet() {
           </MDBox>
         </MDBox>
       </MDBox>
+
+      {detailCtxMenu.open && (
+        <div
+          onClick={closeDetailCtxMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeDetailCtxMenu();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 10000,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: detailCtxMenu.mouseY,
+              left: detailCtxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
+            >
+              🗑️ 행 삭제
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
       <PreviewOverlay

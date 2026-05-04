@@ -314,6 +314,13 @@ function AccountPurchaseDeadlineTab() {
   // 선택된 상단 행 식별자 및 인덱스
   const [selectedSaleId, setSelectedSaleId] = useState("");
   const [selectedMasterIndex, setSelectedMasterIndex] = useState(-1);
+  // 신규 상세행 우클릭 메뉴 상태
+  const [detailCtxMenu, setDetailCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
   // 테이블 강제 리렌더링용 키 (defaultValue 기반 input 초기화 시 사용)
   const [masterTableKey, setMasterTableKey] = useState(0);
   const [detailTableKey, setDetailTableKey] = useState(0);
@@ -372,6 +379,18 @@ function AccountPurchaseDeadlineTab() {
   // 포맷·보정은 accountPurchaseDeadlineData.js의 fetchPurchaseList에서 처리됨
 
   // ✅ 최초 로딩: 거래처 목록 조회 + 첫 번째 거래처 자동 선택 & 자동 조회
+  // 신규 상세행 삭제 가능 여부
+  const canDeleteNewDetailRow = useCallback(
+    (row) => {
+      if (!row?.__isNew) return false;
+      const amount = stripComma(row?.amount);
+      if (amount === "") return true;
+      const n = Number(amount);
+      return Number.isFinite(n) && n === 0;
+    },
+    [stripComma]
+  );
+
   const didInitRef = useRef(false);
 
   useEffect(() => {
@@ -808,6 +827,17 @@ function AccountPurchaseDeadlineTab() {
     []
   );
 
+  // 체크박스 기본 스타일
+  const nativeCheckboxCenterStyle = {
+    display: "block",
+    margin: "0 auto",
+    verticalAlign: "middle",
+    width: 18,
+    height: 18,
+    accentColor: "#1f4e79",
+    cursor: "pointer",
+  };
+
   // 타입 value → label 매핑 (전체 조회 시 타입명 표시용)
   const typeNameByValue = useMemo(() => {
     const map = new Map();
@@ -857,6 +887,7 @@ function AccountPurchaseDeadlineTab() {
   // 하단 상세 테이블 컬럼 정의
   const detailColumns = useMemo(
     () => [
+      { header: "구분", accessorKey: "__newDetailDelete", size: 50 },
       { header: "상품명", accessorKey: "name", size: 220 },
       { header: "수량", accessorKey: "qty", size: 90 },
       { header: "단가", accessorKey: "unitPrice", size: 110 },
@@ -1328,6 +1359,7 @@ function AccountPurchaseDeadlineTab() {
       delete next.__isNew;
       delete next.__dirty;
       delete next.__taxManual;
+      delete next.__deleteChecked;
 
       return next;
     },
@@ -1503,8 +1535,12 @@ function AccountPurchaseDeadlineTab() {
       __key: `new-${Date.now()}`,
     };
 
-    setDetailRows((prev) => [newRow, ...prev]);
-    setOriginalDetailRows((prev) => [newRow, ...prev]);
+    setDetailRows((prev) => [...prev, newRow]);
+    setOriginalDetailRows((prev) => [...prev, newRow]);
+    requestAnimationFrame(() => {
+      const el = detailWrapRef.current;
+      if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    });
   }, [
     isDeletedAccount,
     showDeletedAccountReadonlyAlert,
@@ -1517,6 +1553,73 @@ function AccountPurchaseDeadlineTab() {
   ]);
 
   // ✅ 원본을 sale_id로 매핑 (index 의존 제거)
+  // 신규 상세행 우클릭 메뉴 닫기
+  const closeDetailCtxMenu = useCallback(() => {
+    setDetailCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  // 신규 상세행 우클릭 메뉴 열기
+  const handleDetailRowContextMenu = useCallback(
+    (e, row, rowIndex) => {
+      if (!canDeleteNewDetailRow(row)) return;
+      e.preventDefault();
+      setDetailCtxMenu({
+        open: true,
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        rowIndex,
+      });
+    },
+    [canDeleteNewDetailRow]
+  );
+
+  // 신규 상세행 선택 삭제 처리
+  const handleDeleteNewDetailRow = useCallback(
+    (rowIndex) => {
+      if (rowIndex == null) return;
+      setDetailRows((prev) => {
+        const checkedIndexes = prev
+          .map((row, index) => (canDeleteNewDetailRow(row) && row.__deleteChecked ? index : -1))
+          .filter((index) => index >= 0);
+        const deleteIndexes =
+          checkedIndexes.length > 0
+            ? new Set(checkedIndexes)
+            : canDeleteNewDetailRow(prev?.[rowIndex])
+            ? new Set([rowIndex])
+            : new Set();
+        if (deleteIndexes.size === 0) return prev;
+        return prev.filter((_, i) => !deleteIndexes.has(i));
+      });
+      setOriginalDetailRows((prev) => {
+        const checkedIndexes = detailRows
+          .map((row, index) => (canDeleteNewDetailRow(row) && row.__deleteChecked ? index : -1))
+          .filter((index) => index >= 0);
+        const deleteIndexes =
+          checkedIndexes.length > 0
+            ? new Set(checkedIndexes)
+            : canDeleteNewDetailRow(detailRows?.[rowIndex])
+            ? new Set([rowIndex])
+            : new Set();
+        return deleteIndexes.size === 0 ? prev : prev.filter((_, i) => !deleteIndexes.has(i));
+      });
+      setDetailTableKey((k) => k + 1);
+      closeDetailCtxMenu();
+    },
+    [canDeleteNewDetailRow, closeDetailCtxMenu, detailRows, setDetailRows, setOriginalDetailRows]
+  );
+
+  // 신규 상세행 삭제 체크 상태 변경
+  const handleNewDetailCheckChange = useCallback(
+    (rowIndex, checked) => {
+      setDetailRows((prev) =>
+        prev.map((r, i) =>
+          i === rowIndex && canDeleteNewDetailRow(r) ? { ...r, __deleteChecked: checked } : r
+        )
+      );
+    },
+    [canDeleteNewDetailRow, setDetailRows]
+  );
+
   const originalMasterMap = useMemo(() => {
     const m = new Map();
     (originalRows || []).forEach((r) => {
@@ -2293,6 +2396,9 @@ function AccountPurchaseDeadlineTab() {
             ? stripComma(x?.[key]) !== stripComma(rawValue)
             : normalizeStr(String(x?.[key] ?? "")) !== normalizeStr(String(rawValue ?? ""));
           const updated = { ...x, [key]: value, __dirty: x.__dirty || actuallyChanged };
+          if (key === "amount" && stripComma(rawValue) !== "" && Number(stripComma(rawValue)) !== 0) {
+            updated.__deleteChecked = false;
+          }
 
           // 과세/부가세 값을 실제로 바꾼 행만 수기 입력으로 판단한다.
           if (key === "tax" || key === "vat") {
@@ -2316,6 +2422,7 @@ function AccountPurchaseDeadlineTab() {
               if (qNum && pNum) {
                 const autoAmt = qNum * pNum;
                 updated.amount = autoAmt.toLocaleString("ko-KR");
+                updated.__deleteChecked = false;
                 if (!x.__taxManual) {
                   const tType = String(x.taxType ?? "");
                   const autoVat = tType === "1" ? Math.floor(autoAmt / 11) : 0;
@@ -3293,12 +3400,32 @@ function AccountPurchaseDeadlineTab() {
                     detailRows.map((r, i) => {
                       return (
                         <tr
+                          onContextMenu={(e) => handleDetailRowContextMenu(e, r, i)}
                           key={r.__key ?? r.item_id ?? i}
                           style={{
                             backgroundColor:
                               r.__isNew || r.__dirty ? "rgba(211,47,47,0.10)" : "transparent",
                           }}
                         >
+                          <td style={fixedColStyle(50)}>
+                            {r.__isNew && (
+                              <input
+                                type="checkbox"
+                                checked={canDeleteNewDetailRow(r) ? !!r.__deleteChecked : false}
+                                disabled={!canDeleteNewDetailRow(r)}
+                                style={{
+                                  ...nativeCheckboxCenterStyle,
+                                  cursor: canDeleteNewDetailRow(r) ? "pointer" : "not-allowed",
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleNewDetailCheckChange(i, e.target.checked);
+                                }}
+                                onContextMenu={(e) => handleDetailRowContextMenu(e, r, i)}
+                              />
+                            )}
+                          </td>
                           <td
                             contentEditable={!isDeletedAccount}
                             suppressContentEditableWarning
@@ -3589,6 +3716,54 @@ function AccountPurchaseDeadlineTab() {
         </MDBox>
 
         {/* 저장된 증빙자료를 공용 오버레이로 미리보는 영역 */}
+        {detailCtxMenu.open && (
+          <div
+            onClick={closeDetailCtxMenu}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              closeDetailCtxMenu();
+            }}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              zIndex: 10000,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: detailCtxMenu.mouseY,
+                left: detailCtxMenu.mouseX,
+                background: "#fff",
+                border: "1px solid #ddd",
+                borderRadius: 8,
+                boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                minWidth: 140,
+                overflow: "hidden",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
+              >
+                🗑️ 행 삭제
+              </button>
+            </div>
+          </div>
+        )}
+
         <PreviewOverlay
           open={viewerOpen}
           files={viewerFiles}

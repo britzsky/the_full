@@ -37,9 +37,9 @@ const compactRows = (rows, maxItems = 8) => {
 };
 
 // 공통 파이 차트 카드(리스트 + 차트 동시 표시)
-function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
+function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey, compact }) {
   // 렌더 부하 완화를 위해 표시용 데이터는 메모이제이션
-  const compacted = useMemo(() => compactRows(rows), [rows]);
+  const compacted = useMemo(() => (compact ? compactRows(rows) : rows), [compact, rows]);
   const selectable = typeof onSelectRow === "function";
 
   // 건수/비율 계산용 전체 합계
@@ -122,7 +122,9 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
                 minWidth: 120,
                 borderRight: "1px solid #eef2f7",
                 pr: 1,
-                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
               }}
             >
               <Box
@@ -130,6 +132,7 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  flexShrink: 0,
                   pb: 0.5,
                   mb: 0.25,
                   borderBottom: "1px solid #e9edf3",
@@ -143,64 +146,66 @@ function PieStatCard({ title, rows, emptyText, onSelectRow, selectedRowKey }) {
                 </MDTypography>
               </Box>
 
-              {compacted.map((row, idx) => {
-                const ratio = totalCount > 0 ? ((row.count / totalCount) * 100).toFixed(1) : "0.0";
-                const isClickable = selectable && Boolean(row?.key);
-                const isSelected = Boolean(selectedRowKey) && row?.key === selectedRowKey;
+              <Box sx={{ overflowY: "auto", minHeight: 0, pr: 0.25 }}>
+                {compacted.map((row, idx) => {
+                  const ratio = totalCount > 0 ? ((row.count / totalCount) * 100).toFixed(1) : "0.0";
+                  const isClickable = selectable && Boolean(row?.key);
+                  const isSelected = Boolean(selectedRowKey) && row?.key === selectedRowKey;
 
-                return (
-                  <Box
-                    key={`${row.label}_${idx}`}
-                    onClick={() => {
-                      if (!isClickable) return;
-                      onSelectRow(row);
-                    }}
-                    sx={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      py: 0.5,
-                      px: 0.5,
-                      borderRadius: 0.75,
-                      borderBottom: "1px dashed #f0f2f5",
-                      backgroundColor: isSelected ? "#eef4ff" : "transparent",
-                      cursor: isClickable ? "pointer" : "default",
-                    }}
-                  >
-                    <MDBox sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
-                      <Box
-                        sx={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: "50%",
-                          bgcolor: PIE_COLORS[idx % PIE_COLORS.length],
-                          flex: "0 0 10px",
-                        }}
-                      />
+                  return (
+                    <Box
+                      key={`${row.label}_${idx}`}
+                      onClick={() => {
+                        if (!isClickable) return;
+                        onSelectRow(row);
+                      }}
+                      sx={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        py: 0.5,
+                        px: 0.5,
+                        borderRadius: 0.75,
+                        borderBottom: "1px dashed #f0f2f5",
+                        backgroundColor: isSelected ? "#eef4ff" : "transparent",
+                        cursor: isClickable ? "pointer" : "default",
+                      }}
+                    >
+                      <MDBox sx={{ display: "flex", alignItems: "center", gap: 0.75, minWidth: 0 }}>
+                        <Box
+                          sx={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: "50%",
+                            bgcolor: PIE_COLORS[idx % PIE_COLORS.length],
+                            flex: "0 0 10px",
+                          }}
+                        />
+                        <MDTypography
+                          variant="caption"
+                          sx={{
+                            fontSize: 12,
+                            color: "#344767",
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                          title={row.label}
+                        >
+                          {row.label}
+                        </MDTypography>
+                      </MDBox>
+
                       <MDTypography
                         variant="caption"
-                        sx={{
-                          fontSize: 12,
-                          color: "#344767",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                        title={row.label}
+                        sx={{ fontSize: 12, fontWeight: 700, color: "#344767", ml: 1, flexShrink: 0 }}
                       >
-                        {row.label}
+                        {row.count}건 ({ratio}%)
                       </MDTypography>
-                    </MDBox>
-
-                    <MDTypography
-                      variant="caption"
-                      sx={{ fontSize: 12, fontWeight: 700, color: "#344767", ml: 1, flexShrink: 0 }}
-                    >
-                      {row.count}건 ({ratio}%)
-                    </MDTypography>
-                  </Box>
-                );
-              })}
+                    </Box>
+                  );
+                })}
+              </Box>
             </Box>
 
             <Box sx={{ width: "52%", minWidth: 0 }}>
@@ -226,12 +231,14 @@ PieStatCard.propTypes = {
   emptyText: PropTypes.string.isRequired,
   onSelectRow: PropTypes.func,
   selectedRowKey: PropTypes.string,
+  compact: PropTypes.bool,
 };
 
 // 공통 차트 카드 기본 prop
 PieStatCard.defaultProps = {
   onSelectRow: null,
   selectedRowKey: "",
+  compact: true,
 };
 
 export default function AccountIssueSheetStatsTab() {
@@ -283,6 +290,7 @@ export default function AccountIssueSheetStatsTab() {
             emptyText="통계 데이터가 없습니다."
             onSelectRow={(row) => setSelectedAccountKey(row?.key || "")}
             selectedRowKey={selectedAccountKey}
+            compact={false}
           />
         </Grid>
 

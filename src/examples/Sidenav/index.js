@@ -164,6 +164,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             backgroundImage: "none",
             border: "none",
             overflow: "auto",
+            zIndex: 1250,
 
             // ⚠️ 너가 현재 적용해둔 숨김 방식 유지
             width: miniSidenav ? 0 : 260,

@@ -190,6 +190,10 @@ const routes = [
         allowedDepartments: [0, 6], // 🔹 부서권한 (대표님 / 개발팀)
         allowedPositions: [0, 1], // 🔹 직책권한 (대표님 / 팀장님)
         accessMode: "OR",
+        allowUserIds: [
+          "db1", // 송다빈 매니저
+          "si1", // 김세인 매니저
+        ], // 
       },
       {
         type: "collapse",

@@ -1605,17 +1605,35 @@ function AccountInfoSheet() {
         )}
 
         {/* 상단 기본 정보 */}
-        <Card sx={{ p: 2, mb: 1 }}>
+        <Card sx={{ p: { xs: 1, sm: 1.5, lg: 2 }, mb: 1 }}>
           <Grid container spacing={2}>
             {/* 왼쪽 */}
-            <Grid item xs={12} md={6}>
-              <Grid container spacing={2}>
+            <Grid item xs={12} md={12} lg={6}>
+              <Grid container spacing={{ xs: 1, sm: 1.25, lg: 2 }}>
                 {/* 업장명 + 계약기간 */}
-                <Grid item xs={12} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <Grid
+                  item
+                  xs={12}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: { xs: 0.75, sm: 1 },
+                    flexWrap: { xs: "wrap", sm: "wrap", lg: "nowrap" },
+                    "& .react-datepicker-wrapper": {
+                      flex: { xs: "1 1 calc(100% - 76px)", sm: "0 0 128px", lg: "0 0 112px" },
+                      minWidth: { xs: 0, lg: 104 },
+                      "& > div": { width: "100%" },
+                    },
+                    "& .react-datepicker-wrapper + .react-datepicker-wrapper": {
+                      flex: { xs: "1 1 calc(100% - 76px)", sm: "0 0 128px", lg: "0 0 112px" },
+                      ml: { xs: "68px", sm: 0 },
+                    },
+                  }}
+                >
                   <MDTypography
                     sx={{
-                      minWidth: "75px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "75px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1624,8 +1642,9 @@ function AccountInfoSheet() {
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 1,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(100% - 70px)", sm: "1 1 220px", lg: 1 },
+                      minWidth: { xs: 0, sm: 180, lg: 0 },
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("account_name", formData.account_name),
@@ -1637,8 +1656,8 @@ function AccountInfoSheet() {
                   />
                   <MDTypography
                     sx={{
-                      minWidth: "75px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "75px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1735,14 +1754,15 @@ function AccountInfoSheet() {
                   sx={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    gap: { xs: 0.75, sm: 1, lg: 2 },
+                    flexWrap: { xs: "wrap", sm: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
                   <MDTypography
                     sx={{
-                      minWidth: "75px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "75px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1751,8 +1771,9 @@ function AccountInfoSheet() {
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 1,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(100% - 70px)", sm: 1 },
+                      minWidth: 0,
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("account_address", formData.account_address),
@@ -1764,8 +1785,10 @@ function AccountInfoSheet() {
                   />
                   <MDInput
                     sx={{
-                      flex: 1,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(100% - 70px)", sm: 1 },
+                      ml: { xs: "62px", sm: 0 },
+                      minWidth: 0,
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("account_address_detail", formData.account_address_detail),
@@ -1784,14 +1807,15 @@ function AccountInfoSheet() {
                   sx={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 1,
+                    gap: { xs: 0.75, sm: 1 },
+                    flexWrap: { xs: "wrap", sm: "wrap", lg: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
                   <MDTypography
                     sx={{
-                      minWidth: "65px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "65px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1800,8 +1824,9 @@ function AccountInfoSheet() {
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 0.8,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(50% - 76px)", sm: "1 1 120px", lg: 0.8 },
+                      minWidth: { xs: 96, lg: 0 },
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("manager_name", formData.manager_name),
@@ -1813,18 +1838,19 @@ function AccountInfoSheet() {
                   />
                   <MDTypography
                     sx={{
-                      fontSize: "13px",
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
-                      minWidth: "50px",
+                      minWidth: { xs: "42px", sm: "50px" },
                     }}
                   >
                     연락처
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 0.8,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(50% - 54px)", sm: "1 1 120px", lg: 0.8 },
+                      minWidth: { xs: 96, lg: 0 },
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("manager_tel", formData.manager_tel),
@@ -1838,8 +1864,8 @@ function AccountInfoSheet() {
                   {/* ✅ account_type 선택 */}
                   <MDTypography
                     sx={{
-                      minWidth: "70px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "70px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1853,8 +1879,20 @@ function AccountInfoSheet() {
                     disabled={isDeletedAccount}
                     onChange={(e) => handleChange("account_type", e.target.value)}
                     sx={{
-                      width: 130,
-                      "& select": { fontSize: "13px", padding: "6px" },
+                      width: { xs: "calc(100% - 70px)", sm: 130 },
+                      minWidth: { xs: 160, sm: 130 },
+                      "& .MuiInputBase-root": {
+                        height: 29,
+                        fontSize: { xs: "12px", sm: "13px" },
+                      },
+                      "& .MuiSelect-select": {
+                        minHeight: "0 !important",
+                        height: "20px",
+                        py: "4px",
+                        px: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                      },
                     }}
                   >
                     <MenuItem value={1}>위탁급식</MenuItem>
@@ -1871,14 +1909,15 @@ function AccountInfoSheet() {
                   sx={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 1,
+                    gap: { xs: 0.75, sm: 1 },
+                    flexWrap: { xs: "wrap", sm: "wrap", lg: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
                   <MDTypography
                     sx={{
-                      minWidth: "65px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "65px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1887,8 +1926,9 @@ function AccountInfoSheet() {
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 0.8,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(50% - 76px)", sm: "1 1 120px", lg: 0.8 },
+                      minWidth: { xs: 96, lg: 0 },
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("manager_name2", formData.manager_name2),
@@ -1900,18 +1940,19 @@ function AccountInfoSheet() {
                   />
                   <MDTypography
                     sx={{
-                      fontSize: "13px",
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
-                      minWidth: "50px",
+                      minWidth: { xs: "42px", sm: "50px" },
                     }}
                   >
                     연락처
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 0.8,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(50% - 54px)", sm: "1 1 120px", lg: 0.8 },
+                      minWidth: { xs: 96, lg: 0 },
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("manager_tel2", formData.manager_tel2),
@@ -1925,8 +1966,8 @@ function AccountInfoSheet() {
                   {/* ✅ meal_type 선택 */}
                   <MDTypography
                     sx={{
-                      minWidth: "70px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "70px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1940,8 +1981,20 @@ function AccountInfoSheet() {
                     disabled={isDeletedAccount}
                     onChange={(e) => handleChange("meal_type", e.target.value)}
                     sx={{
-                      width: 130,
-                      "& select": { fontSize: "13px", padding: "6px" },
+                      width: { xs: "calc(100% - 70px)", sm: 130 },
+                      minWidth: { xs: 160, sm: 130 },
+                      "& .MuiInputBase-root": {
+                        height: 29,
+                        fontSize: { xs: "12px", sm: "13px" },
+                      },
+                      "& .MuiSelect-select": {
+                        minHeight: "0 !important",
+                        height: "20px",
+                        py: "4px",
+                        px: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                      },
                     }}
                   >
                     <MenuItem value={1}>요양주간</MenuItem>
@@ -1959,14 +2012,15 @@ function AccountInfoSheet() {
                   sx={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 2,
+                    gap: { xs: 0.75, sm: 1, lg: 2 },
+                    flexWrap: { xs: "wrap", sm: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
                   <MDTypography
                     sx={{
-                      minWidth: "75px",
-                      fontSize: "13px",
+                      minWidth: { xs: "86px", sm: "75px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
                     }}
@@ -1975,8 +2029,9 @@ function AccountInfoSheet() {
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 1,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(100% - 94px)", sm: 1 },
+                      minWidth: 0,
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("closing_name", formData.closing_name),
@@ -1986,13 +2041,21 @@ function AccountInfoSheet() {
                     inputProps={{ readOnly: isDeletedAccount }}
                     onChange={(e) => handleChange("closing_name", e.target.value)}
                   />
-                  <MDTypography sx={{ fontSize: "13px", textAlign: "right", fontWeight: "bold" }}>
+                  <MDTypography
+                    sx={{
+                      minWidth: { xs: "86px", sm: "auto" },
+                      fontSize: { xs: "12px", sm: "13px" },
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
                     연락처
                   </MDTypography>
                   <MDInput
                     sx={{
-                      flex: 1,
-                      fontSize: "13px",
+                      flex: { xs: "1 1 calc(100% - 94px)", sm: 1 },
+                      minWidth: 0,
+                      fontSize: { xs: "12px", sm: "13px" },
                       "& input": {
                         padding: "4px 4px",
                         color: getColor("closing_tel", formData.closing_tel),
@@ -2010,17 +2073,19 @@ function AccountInfoSheet() {
                   xs={12}
                   sx={{
                     display: "flex",
-                    alignItems: "center",
-                    gap: 2,
+                    alignItems: { xs: "stretch", sm: "center" },
+                    gap: { xs: 0.75, sm: 1, lg: 2 },
+                    flexWrap: { xs: "wrap", sm: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
                   <MDTypography
                     sx={{
-                      minWidth: "75px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "75px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "right",
                       fontWeight: "bold",
+                      pt: { xs: 0.75, sm: 0 },
                     }}
                   >
                     시설기기
@@ -2031,7 +2096,8 @@ function AccountInfoSheet() {
                     multiline
                     rows={3}
                     sx={{
-                      width: "80%",
+                      flex: { xs: "1 1 calc(100% - 70px)", sm: 1 },
+                      minWidth: 0,
                       "& textarea": {
                         color: getColor("property_note", formData.property_note),
                       },
@@ -2042,10 +2108,11 @@ function AccountInfoSheet() {
                   />
                   <MDTypography
                     sx={{
-                      minWidth: "75px",
-                      fontSize: "13px",
+                      minWidth: { xs: "62px", sm: "75px" },
+                      fontSize: { xs: "12px", sm: "13px" },
                       textAlign: "center",
                       fontWeight: "bold",
+                      pt: { xs: 0.75, sm: 0 },
                     }}
                   >
                     시설기기
@@ -2056,7 +2123,8 @@ function AccountInfoSheet() {
                     multiline
                     rows={3}
                     sx={{
-                      width: "80%",
+                      flex: { xs: "1 1 calc(100% - 70px)", sm: 1 },
+                      minWidth: 0,
                       "& textarea": {
                         color: getColor("property_as_note", formData.property_as_note),
                       },
@@ -2070,7 +2138,7 @@ function AccountInfoSheet() {
             </Grid>
 
             {/* 오른쪽 */}
-            <Grid item xs={12} md={6}>
+            <Grid item xs={12} md={12} lg={6}>
               {priceData.some((p) => p.account_type === 4) ? (
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
@@ -2186,6 +2254,7 @@ function AccountInfoSheet() {
         currentIndex={viewerIndex}
         onChangeIndex={setViewerIndex}
         onClose={handleCloseViewer}
+        anchorX={1 / 3}
       />
 
       {/* 🔹 추가 식단가 입력 모달 */}

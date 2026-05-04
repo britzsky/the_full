@@ -38,6 +38,31 @@ import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
 import PreviewOverlay from "utils/PreviewOverlay";
 
+const SWAL_LOADING_CUSTOM_CLASS = {
+  popup: "tally-swal-loading-popup",
+  confirmButton: "tally-swal-hidden-confirm",
+};
+
+const ensureSwalLoadingStyle = () => {
+  if (typeof document === "undefined" || document.getElementById("tally-swal-loading-style")) return;
+  const style = document.createElement("style");
+  style.id = "tally-swal-loading-style";
+  style.textContent = `
+    .tally-swal-loading-popup .tally-swal-hidden-confirm {
+      display: none !important;
+    }
+    .tally-swal-loading-popup .swal2-loader {
+      display: flex !important;
+    }
+  `;
+  document.head.appendChild(style);
+};
+
+const showSwalLoadingWithoutConfirm = () => {
+  ensureSwalLoadingStyle();
+  Swal.showLoading(Swal.getConfirmButton());
+};
+
 /**
  * ✅✅ IMPORTANT
  * - type=1000: 현재 구성(법인카드) 기능 그대로 유지
@@ -52,10 +77,16 @@ import PreviewOverlay from "utils/PreviewOverlay";
 const ENDPOINT_CASH_SAVE = "/receipt-scanV4"; // TODO: 실제 저장 endpoint로 변경
 const ENDPOINT_CASH_LIST = "/Account/AccountPurchaseTallyPaymentList"; // TODO: 실제 목록 조회 endpoint로 변경
 
-// ======================== ✅ 기타 type(1000/1008/1/1002/1003 제외) 공통 endpoint ========================
-// ✅ 요청 반영: 저장 endPoint = /receipt-scan, 결제 리스트 endPoint = /Account/AccountPurchaseList
+// ======================== ✅ 기타 type(1000/1008/1~4 제외) 공통 endpoint ========================
+// - type 1002/1003 제외 나머지: ENDPOINT_OTHER_SAVE(저장), ENDPOINT_OTHER_LIST(목록조회)
 const ENDPOINT_OTHER_SAVE = "/receipt-scan";
 const ENDPOINT_OTHER_LIST = "/Account/AccountPurchaseTallyPaymentList";
+
+// ======================== ✅ type=1002, 1003 전용 endpoint ========================
+// - 조회: tb_headoffice_corporate_card_payment_list → ENDPOINT_CORP_CARD_LIST
+// - 저장: corporatecardsheet.js와 동일하게 /Corporate/receipt-scan 사용 → ENDPOINT_CORP_CARD_SAVE
+const ENDPOINT_CORP_CARD_LIST = "/Account/HeadOfficeCorporateCardPaymentList";
+const ENDPOINT_CORP_CARD_SAVE = "/Corporate/receipt-scan";
 
 const isPdfFileLike = (value) => {
   if (!value) return false;
@@ -89,6 +120,24 @@ const normalizeStoredPreviewPath = (value) => {
   if (lower.startsWith("image/")) return `/${normalized}`;
   return normalized;
 };
+
+const extractCorpCardSaleIdFromPath = (value) => {
+  const normalized = normalizeStoredPreviewPath(value);
+  const matched = normalized.match(/\/image\/acnCorporate\/([^/]+)/i);
+  return matched?.[1] || "";
+};
+
+const getCorpCardSaleId = (row, originRow = {}) => (
+  String(
+    row?.sale_id ||
+    row?.saleId ||
+    originRow?.sale_id ||
+    originRow?.saleId ||
+    extractCorpCardSaleIdFromPath(row?.receipt_image || row?.receiptImage) ||
+    extractCorpCardSaleIdFromPath(originRow?.receipt_image || originRow?.receiptImage) ||
+    ""
+  )
+);
 
 const getPreviewFileKind = (value) => {
   if (isPdfFileLike(value)) return "pdf";
@@ -711,10 +760,10 @@ function TallySheet() {
             const previewUrl =
               typeof item === "object"
                 ? (() => {
-                    const nextBlobUrl = URL.createObjectURL(item);
-                    revokeUrls.push(nextBlobUrl);
-                    return nextBlobUrl;
-                  })()
+                  const nextBlobUrl = URL.createObjectURL(item);
+                  revokeUrls.push(nextBlobUrl);
+                  return nextBlobUrl;
+                })()
                 : toPreviewUrl(item) || String(item);
 
             return {
@@ -750,6 +799,14 @@ function TallySheet() {
     });
   }, [releasePreviewBlobUrls]);
 
+  const closeModalWithPreview = useCallback(
+    (setModalOpen) => {
+      closeFloatingPreview();
+      setModalOpen(false);
+    },
+    [closeFloatingPreview]
+  );
+
   const handleFloatingPreviewIndexChange = useCallback((nextIndex) => {
     setFloatingPreview((prev) => ({
       ...prev,
@@ -780,6 +837,14 @@ function TallySheet() {
     if (!s) return "";
     const last4 = s.slice(-4);
     return `****-****-****-${last4}`;
+  };
+
+  const maskCardNoFull = (no) => {
+    const s = String(no ?? "").replace(/[-\s]/g, "");
+    if (!s) return "";
+    const first4 = s.slice(0, 4).padEnd(4, "0");
+    const last4 = s.slice(-4).padStart(4, "0");
+    return `${first4}-****-****-${last4}`;
   };
 
   // ======================== ✅ 법인카드(1000) 모달 플로우 (기존 유지 + 목록에서 바로 수정/저장) ========================
@@ -1071,7 +1136,9 @@ function TallySheet() {
         text: `0 / ${changedIndexes.length}`,
         allowOutsideClick: false,
         allowEscapeKey: false,
-        didOpen: () => Swal.showLoading(),
+        customClass: SWAL_LOADING_CUSTOM_CLASS,
+        willOpen: ensureSwalLoadingStyle,
+        didOpen: showSwalLoadingWithoutConfirm,
       });
 
       for (let step = 0; step < changedIndexes.length; step++) {
@@ -1403,7 +1470,9 @@ function TallySheet() {
         text: "잠시만 기다려 주세요...",
         allowOutsideClick: false,
         allowEscapeKey: false,
-        didOpen: () => Swal.showLoading(),
+        customClass: SWAL_LOADING_CUSTOM_CLASS,
+        willOpen: ensureSwalLoadingStyle,
+        didOpen: showSwalLoadingWithoutConfirm,
       });
 
       // ✅ 등록 때 endpoint 그대로
@@ -1651,6 +1720,28 @@ function TallySheet() {
   const [otherListOpen, setOtherListOpen] = useState(false);
   const otherFileRef = useRef(null);
 
+  const [headOfficeCardList, setHeadOfficeCardList] = useState([]);
+  const [headOfficeCardLoading, setHeadOfficeCardLoading] = useState(false);
+
+  const fetchHeadOfficeCardList = useCallback(async () => {
+    setHeadOfficeCardLoading(true);
+    try {
+      const res = await api.get("/Account/HeadOfficeCorporateCardList", { validateStatus: () => true });
+      if (res.status !== 200) throw new Error(res.data?.message || "본사 법인카드 목록 조회 실패");
+      const raw = res.data;
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const list = Array.isArray(parsed) ? parsed : parsed?.data || [];
+      const result = Array.isArray(list) ? list : [];
+      setHeadOfficeCardList(result);
+      return result;
+    } catch (e) {
+      setHeadOfficeCardList([]);
+      return [];
+    } finally {
+      setHeadOfficeCardLoading(false);
+    }
+  }, []);
+
   const [otherContext, setOtherContext] = useState({
     isSecond: false,
     rowIndex: null,
@@ -1683,12 +1774,16 @@ function TallySheet() {
     sale_id: "",
     account_id: "",
     type: "",
+    card_idx: "",
   });
 
   const [otherReceiptPreview, setOtherReceiptPreview] = useState(null);
   const [otherReceiptPreviewList, setOtherReceiptPreviewList] = useState([]);
 
   const handleOtherReceiptFileChange = (e) => {
+    const isCorpCard =
+      String(otherForm.type ?? otherContext.type ?? "") === "1002" ||
+      String(otherForm.type ?? otherContext.type ?? "") === "1003";
     const files = Array.from(e.target.files || [])
       .filter(Boolean)
       .sort((a, b) =>
@@ -1697,7 +1792,7 @@ function TallySheet() {
           sensitivity: "base",
         })
       )
-      .slice(0, 3);
+      .slice(0, isCorpCard ? 1 : 3);
     if (!files.length) return;
     e.currentTarget.value = "";
 
@@ -1721,7 +1816,36 @@ function TallySheet() {
     };
   }, [otherReceiptPreviewList]);
 
+  // ======================== ✅ 집계표 결제 목록 조회 (type별 분기) ========================
   const fetchOtherPurchaseList = async (accountId, dateStr, typeValue) => {
+    const t = String(typeValue ?? "");
+
+    // ✅ type 1002(기타-소모품) / 1003(기타-식자재): tb_headoffice_corporate_card_payment_list 조회
+    // - SQL이 year/month 기준 조회 → dateStr(YYYY-MM-DD)에서 분리해서 전달
+    // - 해당 day 건만 프론트에서 필터링 (SQL에 day 조건 없음)
+    // - 응답이 JSON 문자열로 오므로 파싱 처리
+    if (t === "1002" || t === "1003") {
+      const [year, month, day] = String(dateStr).split("-");
+      const res = await api.get(ENDPOINT_CORP_CARD_LIST, {
+        params: { account_id: accountId, year, month, type: t },
+        validateStatus: () => true,
+      });
+      if (res.status !== 200) throw new Error(res.data?.message || "목록 조회 실패");
+      const raw = res.data;
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const list = Array.isArray(parsed) ? parsed : [];
+      // detail 합계(detail_total)가 있으면 total로 사용
+      return list
+        .filter((r) => String(r.payment_dt || "").slice(8, 10) === day)
+        .map((r) => ({
+          ...r,
+          total: r.detail_total != null && Number(r.detail_total) !== 0
+            ? Number(r.detail_total)
+            : Number(r.total ?? 0),
+        }));
+    }
+
+    // ✅ 나머지 type: tb_account_purchase_tally 조회 (saleDate + type 기준)
     const res = await api.get(ENDPOINT_OTHER_LIST, {
       params: {
         account_id: accountId,
@@ -1757,22 +1881,68 @@ function TallySheet() {
 
     const cellDay = String((otherContext.dayIndex ?? 0) + 1);
     fd.append("cell_day", cellDay);
-    fd.append("cell_date", fixedCellDate);
-    fd.append("type", otherForm.type);
-    fd.append("receipt_type", otherForm.receipt_type || "UNKNOWN");
-    fd.append("use_name", otherForm.use_name || "");
-    fd.append("total", parseNumber(otherForm.total));
 
+    const t = String(otherForm.type ?? otherContext.type ?? "");
+    const isCorpCard = t === "1002" || t === "1003";
+    const otherReceiptType = String(otherForm.receipt_type || "UNKNOWN");
+
+    if (isCorpCard) {
+      const noCard = !otherForm.card_idx;
+      const noType = otherReceiptType === "UNKNOWN";
+      if (noCard && noType) {
+        Swal.fire("안내", "영수증 타입과 카드를 선택해주세요.", "warning");
+        return false;
+      }
+      if (noCard) {
+        Swal.fire("안내", "카드를 선택해주세요.", "warning");
+        return false;
+      }
+      if (noType) {
+        Swal.fire("안내", "영수증 타입을 선택해주세요.", "warning");
+        return false;
+      }
+    } else {
+      if (otherReceiptType === "UNKNOWN") {
+        Swal.fire("안내", "영수증 타입을 선택해주세요.", "warning");
+        return false;
+      }
+    }
+
+    // ✅ type 1002/1003: 파일 1장만 / 나머지 type: 최대 3장
     const selectedReceiptFiles = Array.isArray(otherForm.receipt_files)
-      ? otherForm.receipt_files.filter((f) => f instanceof File).slice(0, 3)
+      ? otherForm.receipt_files.filter((f) => f instanceof File).slice(0, isCorpCard ? 1 : 3)
       : [];
     const uploadFiles =
       selectedReceiptFiles.length > 0
         ? selectedReceiptFiles
         : otherForm.receipt_image instanceof File
-        ? [otherForm.receipt_image]
-        : [];
-    uploadFiles.forEach((f) => fd.append("files", f));
+          ? [otherForm.receipt_image]
+          : [];
+
+    if (isCorpCard) {
+      const pickedCard = (headOfficeCardList || []).find((c) => String(c.idx) === String(otherForm.card_idx || ""));
+      if (uploadFiles[0]) fd.append("file", uploadFiles[0]);
+      fd.append("receiptType", otherReceiptType);
+      fd.append("objectValue", submitAccountId);
+      fd.append("folderValue", "acnCorporate");
+      fd.append("cardNo", pickedCard?.card_no || "");
+      fd.append("cardBrand", pickedCard?.card_brand || "");
+      fd.append("saveType", "headoffice");
+      fd.append("type", otherReceiptType);
+      fd.append("tallyType", t);
+      fd.append("receipt_type", otherReceiptType);
+      fd.append("use_name", otherForm.use_name || "");
+      fd.append("total", String(parseNumber(otherForm.total)));
+      fd.append("cell_date", fixedCellDate);
+      if (otherForm.sale_id) fd.append("sale_id", String(otherForm.sale_id));
+    } else {
+      fd.append("cell_date", fixedCellDate);
+      fd.append("type", otherForm.type);
+      fd.append("receipt_type", otherForm.receipt_type || "UNKNOWN");
+      fd.append("use_name", otherForm.use_name || "");
+      fd.append("total", parseNumber(otherForm.total));
+      uploadFiles.forEach((f) => fd.append("files", f));
+    }
 
     if (mode !== "edit" && uploadFiles.length === 0) {
       Swal.fire("안내", "영수증 1장을 등록해주세요.", "warning");
@@ -1791,11 +1961,15 @@ function TallySheet() {
         text: "잠시만 기다려 주세요...",
         allowOutsideClick: false,
         allowEscapeKey: false,
-        didOpen: () => Swal.showLoading(),
+        customClass: SWAL_LOADING_CUSTOM_CLASS,
+        willOpen: ensureSwalLoadingStyle,
+        didOpen: showSwalLoadingWithoutConfirm,
       });
 
-      // ✅ 등록 때 endpoint 그대로
-      const res = await api.post(ENDPOINT_OTHER_SAVE, fd, {
+      // ✅ type 1002/1003: corporatecardsheet.js와 동일하게 /Corporate/receipt-scan
+      // ✅ 나머지 type: /receipt-scan
+      const endpoint = isCorpCard ? ENDPOINT_CORP_CARD_SAVE : ENDPOINT_OTHER_SAVE;
+      const res = await api.post(endpoint, fd, {
         headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
         validateStatus: () => true,
       });
@@ -1803,6 +1977,28 @@ function TallySheet() {
       Swal.close();
 
       if (res.status === 200) {
+        if (isCorpCard) {
+          const raw = res.data;
+          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+          const savedSaleId = parsed?.sale_id || parsed?.main?.sale_id;
+          const savedReceiptImage = parsed?.receipt_image || parsed?.main?.receipt_image || "";
+          if (savedSaleId) {
+            const useName = otherForm.use_name || "";
+            // OCR에서 이미 detail 저장됨 → use_name만 main에 업데이트
+            await api.post("/Account/HeadOfficeCorporateCardPaymentAllSave", {
+              main: [{
+                sale_id: savedSaleId,
+                account_id: submitAccountId,
+                payment_dt: fixedCellDate,
+                use_name: useName,
+                receipt_image: savedReceiptImage,
+                user_id: localUserId,
+              }],
+              item: [],
+            });
+          }
+        }
+
         Swal.fire("완료", mode === "edit" ? "수정되었습니다." : "등록되었습니다.", "success");
 
         await fetchDataRows?.(selectedAccountId, year, month);
@@ -1894,6 +2090,7 @@ function TallySheet() {
     }
 
     // 목록이 없으면 신규 등록
+    if (t === "1002" || t === "1003") fetchHeadOfficeCardList();
     setOtherForm({
       id: null,
       use_name: "",
@@ -1906,6 +2103,7 @@ function TallySheet() {
       sale_id: "",
       account_id: String(selectedAccountId || ""),
       type: t,
+      card_idx: "",
     });
     setOtherReceiptPreview(null);
     setOtherReceiptPreviewList([]);
@@ -1913,7 +2111,9 @@ function TallySheet() {
   };
 
   const openOtherCreateFromChoice = () => {
+    const t = String(otherContext.type || "");
     setOtherChoiceOpen(false);
+    if (t === "1002" || t === "1003") fetchHeadOfficeCardList();
     setOtherForm({
       id: null,
       use_name: "",
@@ -1925,7 +2125,8 @@ function TallySheet() {
       receipt_type: "UNKNOWN",
       sale_id: "",
       account_id: String(selectedAccountId || ""),
-      type: String(otherContext.type || ""),
+      type: t,
+      card_idx: "",
     });
     setOtherReceiptPreview(null);
     setOtherReceiptPreviewList([]);
@@ -1953,7 +2154,18 @@ function TallySheet() {
       const safe = Array.isArray(list) ? list : [];
       setOtherRows(safe);
 
-      const deep = safe.map((r) => ({ ...r }));
+      const t = String(otherContext.type || "");
+      let cardList = headOfficeCardList;
+      if (t === "1002" || t === "1003") {
+        cardList = await fetchHeadOfficeCardList();
+      }
+
+      const deep = safe.map((r) => {
+        if (t !== "1002" && t !== "1003") return { ...r };
+        const cardNo = String(r.cardNo || r.card_no || "").replace(/[-\s]/g, "");
+        const matched = cardList.find((c) => String(c.card_no || "").replace(/[-\s]/g, "") === cardNo);
+        return { ...r, card_idx: matched ? String(matched.idx) : "" };
+      });
       setOtherEditRows(deep);
       setOtherOrigRowsForDiff(JSON.parse(JSON.stringify(deep)));
       setOtherRowFiles({});
@@ -2001,10 +2213,9 @@ function TallySheet() {
   // ✅ 직접 입력 허용 타입 (1~4)
   const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
 
-  // ======================== ✅ "type != 1 직접입력 불가" + "1002/1003 모달 제외" 라우팅 ========================
+  // ======================== ✅ "type != 1 직접입력 불가" 라우팅 ========================
   const shouldBlockModalByType = useCallback((typeValue) => {
-    const t = String(typeValue ?? "");
-    return t === "1002" || t === "1003";
+    return false;
   }, []);
 
   const handleSpecialCellClick = useCallback(
@@ -2208,7 +2419,10 @@ function TallySheet() {
     }
   };
 
+  const isSavingRef = useRef(false);
   const handleSave = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     const getChangedRows = (curr, orig) =>
       (curr || [])
         .map((row, idx) => {
@@ -2264,6 +2478,8 @@ function TallySheet() {
       }
     } catch (e) {
       Swal.fire("실패", e.message || "저장 중 오류 발생", "error");
+    } finally {
+      isSavingRef.current = false;
     }
   };
 
@@ -2603,7 +2819,7 @@ function TallySheet() {
 
       if (response.data?.code === 200) {
         Swal.fire({ title: "저장", text: "저장되었습니다.", icon: "success" });
-        setOpen(false);
+        closeModalWithPreview(setOpen);
 
         await fetchDataRows?.(selectedAccountId, year, month);
         await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
@@ -2639,7 +2855,7 @@ function TallySheet() {
   };
 
   const handleModalOpen2 = async () => setOpen2(true);
-  const handleModalClose2 = async () => setOpen2(false);
+  const handleModalClose2 = async () => closeModalWithPreview(setOpen2);
 
   const handleChange2 = (e) => {
     const { name, value, files } = e.target;
@@ -2800,7 +3016,7 @@ function TallySheet() {
           confirmButtonColor: "#3085d6",
           confirmButtonText: "확인",
         });
-        setOpen2(false);
+        closeModalWithPreview(setOpen2);
         setFormData(initialForm);
         setImagePreviews({ bank_image: null, biz_image: null });
       } else {
@@ -3347,6 +3563,7 @@ function TallySheet() {
         currentIndex={floatingPreview.currentIndex}
         onChangeIndex={handleFloatingPreviewIndexChange}
         onClose={closeFloatingPreview}
+        anchorX={1 / 3}
       />
 
       <MDBox
@@ -3675,7 +3892,11 @@ function TallySheet() {
       </Menu>
 
       {/* ================= 거래처 연결 모달(open) ================= */}
-      <Modal open={open} disableEscapeKeyDown={floatingPreview.open} onClose={() => setOpen(false)}>
+      <Modal
+        open={open}
+        disableEscapeKeyDown={floatingPreview.open}
+        onClose={() => closeModalWithPreview(setOpen)}
+      >
         <MDBox
           sx={{
             position: "absolute",
@@ -3740,7 +3961,11 @@ function TallySheet() {
           </Grid>
 
           <MDBox mt={2} display="flex" justifyContent="flex-end" gap={1}>
-            <MDButton variant="gradient" color="primary" onClick={() => setOpen(false)}>
+            <MDButton
+              variant="gradient"
+              color="primary"
+              onClick={() => closeModalWithPreview(setOpen)}
+            >
               취소
             </MDButton>
             <MDButton variant="gradient" color="info" onClick={handleSubmit}>
@@ -4114,7 +4339,7 @@ function TallySheet() {
       <Modal
         open={cardChoiceOpen}
         disableEscapeKeyDown={floatingPreview.open}
-        onClose={() => setCardChoiceOpen(false)}
+        onClose={() => closeModalWithPreview(setCardChoiceOpen)}
       >
         <Box
           sx={{
@@ -4151,7 +4376,7 @@ function TallySheet() {
             <MDButton variant="contained" color="primary" onClick={openListFromChoice}>
               수정
             </MDButton>
-            <MDButton variant="outlined" onClick={() => setCardChoiceOpen(false)}>
+            <MDButton variant="outlined" onClick={() => closeModalWithPreview(setCardChoiceOpen)}>
               취소
             </MDButton>
           </Box>
@@ -4169,7 +4394,7 @@ function TallySheet() {
               URL.revokeObjectURL(v.previewUrl);
           });
           setCardRowFiles({});
-          setCardListOpen(false);
+          closeModalWithPreview(setCardListOpen);
         }}
       >
         <Box
@@ -4239,11 +4464,12 @@ function TallySheet() {
                           value={r.total ?? ""}
                           onClick={stopRowClick}
                           onMouseDown={stopRowClick}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9-]/g, "");
                             setCardEditRows((prev) =>
-                              prev.map((x, i) => (i === idx ? { ...x, total: e.target.value } : x))
-                            )
-                          }
+                              prev.map((x, i) => (i === idx ? { ...x, total: v } : x))
+                            );
+                          }}
                           fullWidth
                           sx={{
                             "& input": getCellStyleByCompare(
@@ -4318,8 +4544,8 @@ function TallySheet() {
                             ),
                           }}
                         >
-                          <MenuItem value="UNKNOWN">
-                            <em>알수없음</em>
+                          <MenuItem value="UNKNOWN" disabled>
+                            <em>영수증 타입 선택</em>
                           </MenuItem>
                           <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
@@ -4455,7 +4681,9 @@ function TallySheet() {
                     text: `0 / ${changed.length}`,
                     allowOutsideClick: false,
                     allowEscapeKey: false,
-                    didOpen: () => Swal.showLoading(),
+                    customClass: SWAL_LOADING_CUSTOM_CLASS,
+                    willOpen: ensureSwalLoadingStyle,
+                    didOpen: showSwalLoadingWithoutConfirm,
                   });
 
                   for (let i = 0; i < changed.length; i++) {
@@ -4510,8 +4738,8 @@ function TallySheet() {
                       selectedFiles.length > 0
                         ? selectedFiles
                         : cardRowFiles?.[rowKey]?.file instanceof File
-                        ? [cardRowFiles[rowKey].file]
-                        : [];
+                          ? [cardRowFiles[rowKey].file]
+                          : [];
 
                     if (uploadFiles.length > 0) {
                       // ✅ 파일 변경 시: OCR 저장 endpoint 사용 (receipt_image 갱신)
@@ -4604,7 +4832,7 @@ function TallySheet() {
                       URL.revokeObjectURL(v.previewUrl);
                   });
                   setCardRowFiles({});
-                  setCardListOpen(false);
+                  closeModalWithPreview(setCardListOpen);
                 } catch (e) {
                   Swal.close();
                   Swal.fire("오류", e.message || "저장 중 오류", "error");
@@ -4623,7 +4851,7 @@ function TallySheet() {
                     URL.revokeObjectURL(v.previewUrl);
                 });
                 setCardRowFiles({});
-                setCardListOpen(false);
+                closeModalWithPreview(setCardListOpen);
               }}
             >
               닫기
@@ -4646,7 +4874,7 @@ function TallySheet() {
               URL.revokeObjectURL(v.previewUrl);
           });
           setCashRowFiles({});
-          setCashListOpen(false);
+          closeModalWithPreview(setCashListOpen);
         }}
       >
         <Box
@@ -4718,11 +4946,12 @@ function TallySheet() {
                           value={r.total ?? ""}
                           onClick={stopRowClick}
                           onMouseDown={stopRowClick}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9-]/g, "");
                             setCashEditRows((prev) =>
-                              prev.map((x, i) => (i === idx ? { ...x, total: e.target.value } : x))
-                            )
-                          }
+                              prev.map((x, i) => (i === idx ? { ...x, total: v } : x))
+                            );
+                          }}
                           fullWidth
                           sx={{
                             "& input": getCellStyleByCompare(
@@ -4817,8 +5046,8 @@ function TallySheet() {
                             ),
                           }}
                         >
-                          <MenuItem value="UNKNOWN">
-                            <em>알수없음</em>
+                          <MenuItem value="UNKNOWN" disabled>
+                            <em>영수증 타입 선택</em>
                           </MenuItem>
                           <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                           <MenuItem value="MART_ITEMIZED">마트</MenuItem>
@@ -4930,7 +5159,9 @@ function TallySheet() {
                     text: `0 / ${changed.length}`,
                     allowOutsideClick: false,
                     allowEscapeKey: false,
-                    didOpen: () => Swal.showLoading(),
+                    customClass: SWAL_LOADING_CUSTOM_CLASS,
+                    willOpen: ensureSwalLoadingStyle,
+                    didOpen: showSwalLoadingWithoutConfirm,
                   });
 
                   for (let i = 0; i < changed.length; i++) {
@@ -5001,7 +5232,7 @@ function TallySheet() {
                       URL.revokeObjectURL(v.previewUrl);
                   });
                   setCashRowFiles({});
-                  setCashListOpen(false);
+                  closeModalWithPreview(setCashListOpen);
                 } catch (e) {
                   Swal.close();
                   Swal.fire("오류", e.message || "저장 중 오류", "error");
@@ -5020,7 +5251,7 @@ function TallySheet() {
                     URL.revokeObjectURL(v.previewUrl);
                 });
                 setCashRowFiles({});
-                setCashListOpen(false);
+                closeModalWithPreview(setCashListOpen);
               }}
             >
               닫기
@@ -5044,7 +5275,7 @@ function TallySheet() {
               URL.revokeObjectURL(v.previewUrl);
           });
           setOtherRowFiles({});
-          setOtherListOpen(false);
+          closeModalWithPreview(setOtherListOpen);
         }}
       >
         <Box
@@ -5069,13 +5300,25 @@ function TallySheet() {
           </Typography>
 
           <Box sx={{ maxHeight: 360, overflow: "auto", border: "1px solid #ddd" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "27%" }} />
+                <col style={{ width: "12%" }} />
+                {(String(otherContext.type) === "1002" || String(otherContext.type) === "1003") && (
+                  <col style={{ width: "25%" }} />
+                )}
+                <col style={{ width: "17%" }} />
+                <col style={{ width: String(otherContext.type) === "1002" || String(otherContext.type) === "1003" ? "19%" : "44%" }} />
+              </colgroup>
               <thead>
                 <tr style={{ background: "#f0f0f0" }}>
                   <th style={{ border: "1px solid #ddd", padding: 6 }}>사용처</th>
-                  <th style={{ border: "1px solid #ddd", padding: 6, width: 110 }}>금액</th>
-                  <th style={{ border: "1px solid #ddd", padding: 6, width: 160 }}>분류</th>
-                  <th style={{ border: "1px solid #ddd", padding: 6, width: 220 }}>영수증</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>금액</th>
+                  {(String(otherContext.type) === "1002" || String(otherContext.type) === "1003") && (
+                    <th style={{ border: "1px solid #ddd", padding: 6 }}>카드번호</th>
+                  )}
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>영수증 타입</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6 }}>영수증</th>
                 </tr>
               </thead>
 
@@ -5084,10 +5327,21 @@ function TallySheet() {
                   const rowKey = String(r.id ?? r.sale_id ?? idx);
                   const orig = otherOrigRowsForDiff?.[idx] || {};
                   const fileInfo = otherRowFiles?.[rowKey];
+                  const isCorpCardPreviewRow =
+                    String(otherContext.type || r.type || "") === "1002" ||
+                    String(otherContext.type || r.type || "") === "1003";
+                  // 1002/1003은 영수증 이미지 1장만 사용하는 목록 미리보기
                   const rowPreviewSources =
                     fileInfo?.file
                       ? [fileInfo.file]
-                      : [
+                      : (isCorpCardPreviewRow
+                        ? [
+                          r.receipt_image,
+                          r.receiptImage,
+                          orig.receipt_image,
+                          orig.receiptImage,
+                        ]
+                        : [
                           r.receipt_image,
                           r.receiptImage,
                           r.receipt_image2,
@@ -5104,10 +5358,10 @@ function TallySheet() {
                           orig.receipt_image3,
                           orig.receiptImage3,
                           orig.receipt_image_3,
-                        ]
-                          .map((v) => String(v || "").trim())
-                          .filter(Boolean)
-                          .filter((v, i, arr) => arr.indexOf(v) === i);
+                        ])
+                        .map((v) => String(v || "").trim())
+                        .filter(Boolean)
+                        .filter((v, i, arr) => arr.indexOf(v) === i);
 
                   return (
                     <tr key={rowKey}>
@@ -5135,11 +5389,12 @@ function TallySheet() {
                           value={r.total ?? ""}
                           onClick={stopRowClick}
                           onMouseDown={stopRowClick}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const v = e.target.value.replace(/[^0-9-]/g, "");
                             setOtherEditRows((prev) =>
-                              prev.map((x, i) => (i === idx ? { ...x, total: e.target.value } : x))
-                            )
-                          }
+                              prev.map((x, i) => (i === idx ? { ...x, total: v } : x))
+                            );
+                          }}
                           fullWidth
                           sx={{
                             "& input": getCellStyleByCompare(
@@ -5149,6 +5404,36 @@ function TallySheet() {
                           }}
                         />
                       </td>
+
+                      {(String(otherContext.type) === "1002" || String(otherContext.type) === "1003") && (
+                        <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
+                          <Select
+                            size="small"
+                            value={String(r.card_idx ?? r.corp_card_idx ?? "")}
+                            onClick={stopRowClick}
+                            onMouseDown={stopRowClick}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              const picked = (headOfficeCardList || []).find((c) => String(c.idx) === v);
+                              setOtherEditRows((prev) =>
+                                prev.map((x, i) =>
+                                  i === idx ? { ...x, card_idx: v, card_no: picked?.card_no || x.card_no || "", card_brand: picked?.card_brand || x.card_brand || "" } : x
+                                )
+                              );
+                            }}
+                            fullWidth
+                            displayEmpty
+                            sx={{ height: 40 }}
+                          >
+                            <MenuItem value=""><em>카드 선택</em></MenuItem>
+                            {(headOfficeCardList || []).map((c) => (
+                              <MenuItem key={String(c.idx)} value={String(c.idx)}>
+                                {c.card_brand || "카드"} / {maskCardNoFull(c.card_no)}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </td>
+                      )}
 
                       <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
                         <Select
@@ -5165,20 +5450,29 @@ function TallySheet() {
                           }
                           fullWidth
                           sx={{
+                            height: "40px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               orig.receipt_type,
                               r.receipt_type
                             ),
                           }}
                         >
-                          <MenuItem value="UNKNOWN">
-                            <em>알수없음</em>
-                          </MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
-                          <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                          <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          {/*<MenuItem value="COUPANG_CARD">쿠팡</MenuItem>*/}
-                          <MenuItem value="COUPANG_APP">배달앱</MenuItem>
+                          {(String(otherContext.type) === "1002" || String(otherContext.type) === "1003") ? [
+                            <MenuItem key="UNKNOWN" value="UNKNOWN" disabled><em>영수증 타입 선택</em></MenuItem>,
+                            <MenuItem key="coupang" value="coupang">쿠팡</MenuItem>,
+                            <MenuItem key="gmarket" value="gmarket">G마켓</MenuItem>,
+                            <MenuItem key="11post" value="11post">11번가</MenuItem>,
+                            <MenuItem key="naver" value="naver">네이버</MenuItem>,
+                            <MenuItem key="homeplus" value="homeplus">홈플러스</MenuItem>,
+                            <MenuItem key="auction" value="auction">옥션</MenuItem>,
+                            <MenuItem key="daiso" value="daiso">다이소</MenuItem>,
+                            <MenuItem key="MART_ITEMIZED" value="MART_ITEMIZED">마트</MenuItem>,
+                            <MenuItem key="CONVENIENCE" value="CONVENIENCE">편의점</MenuItem>,
+                          ] : [
+                            <MenuItem key="UNKNOWN" value="UNKNOWN" disabled><em>영수증 타입 선택</em></MenuItem>,
+                            <MenuItem key="TRANSACTION" value="TRANSACTION">거래명세표(서)</MenuItem>,
+                            <MenuItem key="MART_ITEMIZED" value="MART_ITEMIZED">마트</MenuItem>,
+                          ]}
                         </Select>
                       </td>
 
@@ -5188,14 +5482,14 @@ function TallySheet() {
                             display: "flex",
                             gap: 1,
                             justifyContent: "center",
-                            flexWrap: "wrap",
+                            flexWrap: "nowrap",
                           }}
                         >
                           <Button
                             component="label"
                             size="small"
                             variant="contained"
-                            sx={{ color: "#fff !important" }}
+                            sx={{ color: "#fff !important", whiteSpace: "nowrap" }}
                           >
                             파일
                             <input
@@ -5281,7 +5575,9 @@ function TallySheet() {
                     text: `0 / ${changed.length}`,
                     allowOutsideClick: false,
                     allowEscapeKey: false,
-                    didOpen: () => Swal.showLoading(),
+                    customClass: SWAL_LOADING_CUSTOM_CLASS,
+                    willOpen: ensureSwalLoadingStyle,
+                    didOpen: showSwalLoadingWithoutConfirm,
                   });
 
                   for (let i = 0; i < changed.length; i++) {
@@ -5309,9 +5605,17 @@ function TallySheet() {
                     fd.append("receipt_type", r.receipt_type || "UNKNOWN");
                     fd.append("total", parseNumber(r.total));
 
+                    const rowType = String(otherContext.type || r.type || "");
+                    const isCorpCardRow = rowType === "1002" || rowType === "1003";
+                    const corpCardSaleId = isCorpCardRow ? getCorpCardSaleId(r, orig) : "";
+
                     if (r.id != null) fd.append("id", r.id);
-                    if (r.sale_id || orig.sale_id)
+                    if (isCorpCardRow && corpCardSaleId) {
+                      // 법인카드 영수증은 /image/acnCorporate/{sale_id}/... 경로를 유지
+                      fd.append("sale_id", corpCardSaleId);
+                    } else if (r.sale_id || orig.sale_id) {
                       fd.append("sale_id", String(r.sale_id || orig.sale_id));
+                    }
 
                     const file = otherRowFiles?.[rowKey]?.file;
                     if (file) fd.append("file", file);
@@ -5336,16 +5640,108 @@ function TallySheet() {
                     if (receiptImage2) fd.append("receipt_image2", receiptImage2);
                     if (receiptImage3) fd.append("receipt_image3", receiptImage3);
 
-                    const res = await api.post("/Account/AccountTallyToPurchaseSave", fd, {
-                      headers: {
-                        "Content-Type": "multipart/form-data",
-                        Accept: "application/json",
-                      },
-                      validateStatus: () => true,
-                    });
+                    if (isCorpCardRow) {
+                      const saleId = corpCardSaleId;
 
-                    if (res.status !== 200) {
-                      throw new Error(res.data?.message || `저장 실패(code: ${res.status})`);
+                      if (file) {
+                        const rowReceiptType = String(r.receipt_type || "UNKNOWN");
+                        if (rowReceiptType === "UNKNOWN") {
+                          throw new Error("영수증 타입을 선택해주세요.");
+                        }
+                        // 1002/1003 목록 수정에서 선택한 영수증 파일을 실제 저장 경로로 업로드
+                        fd.set("type", rowReceiptType);
+                        fd.set("receipt_type", rowReceiptType);
+                        fd.append("tallyType", rowType);
+                        fd.append("receiptType", rowReceiptType);
+                        fd.append("objectValue", submitAccountId);
+                        fd.append("folderValue", "acnCorporate");
+                        fd.append("cardNo", r.card_no || orig.card_no || r.cardNo || orig.cardNo || "");
+                        fd.append("cardBrand", r.card_brand || orig.card_brand || r.cardBrand || orig.cardBrand || "");
+                        fd.append("saveType", "headoffice");
+                        fd.append("cell_date", fixedCellDate);
+
+                        const uploadRes = await api.post(ENDPOINT_CORP_CARD_SAVE, fd, {
+                          headers: {
+                            "Content-Type": "multipart/form-data",
+                            Accept: "application/json",
+                          },
+                          validateStatus: () => true,
+                        });
+                        if (uploadRes.status !== 200) {
+                          throw new Error(uploadRes.data?.message || `저장 실패(code: ${uploadRes.status})`);
+                        }
+
+                        const rawUpload = uploadRes.data;
+                        const saved = typeof rawUpload === "string" ? JSON.parse(rawUpload) : rawUpload;
+                        const savedSaleId = String(saved?.sale_id || saleId || "");
+                        const savedReceiptImage = String(saved?.receipt_image || receiptImage || "");
+
+                        // OCR 저장 후에도 목록에서 수정한 날짜와 사용처를 현재 셀 기준으로 맞춤
+                        const alignRes = await api.post("/Account/HeadOfficeCorporateCardPaymentAllSave", {
+                          main: [{
+                            sale_id: savedSaleId,
+                            account_id: submitAccountId,
+                            payment_dt: fixedCellDate,
+                            use_name: r.use_name || "",
+                            total: parseNumber(r.total),
+                            receipt_image: savedReceiptImage,
+                            receipt_type: rowReceiptType,
+                            user_id: localUserId,
+                          }],
+                          item: [],
+                        }, { validateStatus: () => true });
+                        if (alignRes.status !== 200) {
+                          throw new Error(alignRes.data?.message || `저장 실패(code: ${alignRes.status})`);
+                        }
+                      } else {
+                        // 파일 변경이 없을 때는 기존 상품명은 유지하고 금액 기준으로 수량과 단가를 맞춤
+                        const detailRes = await api.get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
+                          params: { sale_id: saleId },
+                          validateStatus: () => true,
+                        });
+                        const detailList = Array.isArray(detailRes.data) ? detailRes.data : [];
+                        if (detailList.length > 1) {
+                          throw new Error("상세 내역이 2건 이상입니다. 본사에 문의해 주세요.");
+                        }
+                        const existingDetail = detailList[0] || null;
+                        const rowAmount = parseNumber(r.total);
+                        const res = await api.post("/Account/HeadOfficeCorporateCardPaymentAllSave", {
+                          main: [{
+                            sale_id: saleId,
+                            account_id: submitAccountId,
+                            payment_dt: fixedCellDate,
+                            use_name: r.use_name || "",
+                            user_id: localUserId,
+                          }],
+                          item: [{
+                            idx: existingDetail?.idx ?? null,
+                            sale_id: saleId,
+                            account_id: submitAccountId,
+                            name: existingDetail?.name ?? "",
+                            qty: 1,
+                            unitPrice: rowAmount,
+                            amount: rowAmount,
+                            taxType: existingDetail?.taxType ?? 3,
+                            itemType: rowType === "1003" ? 1 : 2,
+                            type: Number(rowType),
+                            payment_dt: fixedCellDate,
+                          }],
+                        });
+                        if (res.status !== 200) {
+                          throw new Error(res.data?.message || `저장 실패(code: ${res.status})`);
+                        }
+                      }
+                    } else {
+                      const res = await api.post("/Account/AccountTallyToPurchaseSave", fd, {
+                        headers: {
+                          "Content-Type": "multipart/form-data",
+                          Accept: "application/json",
+                        },
+                        validateStatus: () => true,
+                      });
+                      if (res.status !== 200) {
+                        throw new Error(res.data?.message || `저장 실패(code: ${res.status})`);
+                      }
                     }
 
                     Swal.update?.({ text: `${i + 1} / ${changed.length}` });
@@ -5366,7 +5762,7 @@ function TallySheet() {
                       URL.revokeObjectURL(v.previewUrl);
                   });
                   setOtherRowFiles({});
-                  setOtherListOpen(false);
+                  closeModalWithPreview(setOtherListOpen);
                 } catch (e) {
                   Swal.close();
                   Swal.fire("오류", e.message || "저장 중 오류", "error");
@@ -5385,7 +5781,7 @@ function TallySheet() {
                     URL.revokeObjectURL(v.previewUrl);
                 });
                 setOtherRowFiles({});
-                setOtherListOpen(false);
+                closeModalWithPreview(setOtherListOpen);
               }}
             >
               닫기
@@ -5393,8 +5789,7 @@ function TallySheet() {
           </Box>
 
           <Box mt={1} sx={{ fontSize: 11, color: "#777", textAlign: "center" }}>
-            ※ 목록 전체를 직접 수정하고, 변경된 행만 저장됩니다. (등록 endpoint 사용):{" "}
-            {ENDPOINT_OTHER_SAVE}
+            ※ 목록 전체를 직접 수정하고, 변경된 행만 저장됩니다.
           </Box>
         </Box>
       </Modal>
@@ -5403,7 +5798,7 @@ function TallySheet() {
       <Modal
         open={cardCreateOpen}
         disableEscapeKeyDown={floatingPreview.open}
-        onClose={() => setCardCreateOpen(false)}
+        onClose={() => closeModalWithPreview(setCardCreateOpen)}
       >
         <Box
           sx={{
@@ -5444,7 +5839,10 @@ function TallySheet() {
                 label="금액"
                 size="small"
                 value={cardForm.total || ""}
-                onChange={(e) => setCardForm((p) => ({ ...p, total: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9-]/g, "");
+                  setCardForm((p) => ({ ...p, total: v }));
+                }}
                 fullWidth
               />
             </Grid>
@@ -5465,6 +5863,7 @@ function TallySheet() {
                 }}
                 fullWidth
                 displayEmpty
+                sx={{ height: 40 }}
               >
                 <MenuItem value="">
                   <em>카드 선택</em>
@@ -5483,9 +5882,10 @@ function TallySheet() {
                 value={cardForm.receipt_type || "UNKNOWN"}
                 onChange={(e) => setCardForm((p) => ({ ...p, receipt_type: e.target.value }))}
                 fullWidth
+                sx={{ height: 40 }}
               >
-                <MenuItem value="UNKNOWN">
-                  <em>알수없음</em>
+                <MenuItem value="UNKNOWN" disabled>
+                  <em>영수증 타입 선택</em>
                 </MenuItem>
                 <MenuItem value="CARD_SLIP_GENERIC">카드전표</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
@@ -5536,12 +5936,16 @@ function TallySheet() {
               color="info"
               onClick={async () => {
                 const ok = await saveCorpCardPayment("create");
-                if (ok) setCardCreateOpen(false);
+                if (ok) closeModalWithPreview(setCardCreateOpen);
               }}
             >
               등록
             </MDButton>
-            <MDButton variant="contained" color="warning" onClick={() => setCardCreateOpen(false)}>
+            <MDButton
+              variant="contained"
+              color="warning"
+              onClick={() => closeModalWithPreview(setCardCreateOpen)}
+            >
               취소
             </MDButton>
           </Box>
@@ -5552,7 +5956,7 @@ function TallySheet() {
       <Modal
         open={cashChoiceOpen}
         disableEscapeKeyDown={floatingPreview.open}
-        onClose={() => setCashChoiceOpen(false)}
+        onClose={() => closeModalWithPreview(setCashChoiceOpen)}
       >
         <Box
           sx={{
@@ -5589,7 +5993,7 @@ function TallySheet() {
             <MDButton variant="contained" color="primary" onClick={openCashListFromChoice}>
               수정
             </MDButton>
-            <MDButton variant="outlined" onClick={() => setCashChoiceOpen(false)}>
+            <MDButton variant="outlined" onClick={() => closeModalWithPreview(setCashChoiceOpen)}>
               취소
             </MDButton>
           </Box>
@@ -5600,7 +6004,7 @@ function TallySheet() {
       <Modal
         open={cashCreateOpen}
         disableEscapeKeyDown={floatingPreview.open}
-        onClose={() => setCashCreateOpen(false)}
+        onClose={() => closeModalWithPreview(setCashCreateOpen)}
       >
         <Box
           sx={{
@@ -5641,7 +6045,10 @@ function TallySheet() {
                 label="금액"
                 size="small"
                 value={cashForm.total || ""}
-                onChange={(e) => setCashForm((p) => ({ ...p, total: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9-]/g, "");
+                  setCashForm((p) => ({ ...p, total: v }));
+                }}
                 fullWidth
               />
             </Grid>
@@ -5691,8 +6098,8 @@ function TallySheet() {
                 onChange={(e) => setCashForm((p) => ({ ...p, receipt_type: e.target.value }))}
                 fullWidth
               >
-                <MenuItem value="UNKNOWN">
-                  <em>알수없음</em>
+                <MenuItem value="UNKNOWN" disabled>
+                  <em>영수증 타입 선택</em>
                 </MenuItem>
                 <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
                 <MenuItem value="MART_ITEMIZED">마트</MenuItem>
@@ -5743,12 +6150,16 @@ function TallySheet() {
               color="info"
               onClick={async () => {
                 const ok = await saveCashPayment("create");
-                if (ok) setCashCreateOpen(false);
+                if (ok) closeModalWithPreview(setCashCreateOpen);
               }}
             >
               등록
             </MDButton>
-            <MDButton variant="contained" color="warning" onClick={() => setCashCreateOpen(false)}>
+            <MDButton
+              variant="contained"
+              color="warning"
+              onClick={() => closeModalWithPreview(setCashCreateOpen)}
+            >
               취소
             </MDButton>
           </Box>
@@ -5759,7 +6170,7 @@ function TallySheet() {
       <Modal
         open={otherChoiceOpen}
         disableEscapeKeyDown={floatingPreview.open}
-        onClose={() => setOtherChoiceOpen(false)}
+        onClose={() => closeModalWithPreview(setOtherChoiceOpen)}
       >
         <Box
           sx={{
@@ -5796,7 +6207,7 @@ function TallySheet() {
             <MDButton variant="contained" color="primary" onClick={openOtherListFromChoice}>
               수정
             </MDButton>
-            <MDButton variant="outlined" onClick={() => setOtherChoiceOpen(false)}>
+            <MDButton variant="outlined" onClick={() => closeModalWithPreview(setOtherChoiceOpen)}>
               취소
             </MDButton>
           </Box>
@@ -5807,7 +6218,7 @@ function TallySheet() {
       <Modal
         open={otherCreateOpen}
         disableEscapeKeyDown={floatingPreview.open}
-        onClose={() => setOtherCreateOpen(false)}
+        onClose={() => closeModalWithPreview(setOtherCreateOpen)}
       >
         <Box
           sx={{
@@ -5848,7 +6259,10 @@ function TallySheet() {
                 label="금액"
                 size="small"
                 value={otherForm.total || ""}
-                onChange={(e) => setOtherForm((p) => ({ ...p, total: e.target.value }))}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/[^0-9-]/g, "");
+                  setOtherForm((p) => ({ ...p, total: v }));
+                }}
                 fullWidth
               />
             </Grid>
@@ -5859,17 +6273,49 @@ function TallySheet() {
                 value={otherForm.receipt_type || "UNKNOWN"}
                 onChange={(e) => setOtherForm((p) => ({ ...p, receipt_type: e.target.value }))}
                 fullWidth
+                sx={{ height: "40px" }}
               >
-                <MenuItem value="UNKNOWN">
-                  <em>알수없음</em>
-                </MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
-                <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                {/*<MenuItem value="CONVENIENCE">편의점</MenuItem>
-                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                <MenuItem value="COUPANG_APP">배달앱</MenuItem>*/}
+                {(String(otherForm.type || otherContext.type) === "1002" || String(otherForm.type || otherContext.type) === "1003") ? [
+                  <MenuItem key="UNKNOWN" value="UNKNOWN" disabled><em>영수증 타입 선택</em></MenuItem>,
+                  <MenuItem key="coupang" value="coupang">쿠팡</MenuItem>,
+                  <MenuItem key="gmarket" value="gmarket">G마켓</MenuItem>,
+                  <MenuItem key="11post" value="11post">11번가</MenuItem>,
+                  <MenuItem key="naver" value="naver">네이버</MenuItem>,
+                  <MenuItem key="homeplus" value="homeplus">홈플러스</MenuItem>,
+                  <MenuItem key="auction" value="auction">옥션</MenuItem>,
+                  <MenuItem key="daiso" value="daiso">다이소</MenuItem>,
+                  <MenuItem key="MART_ITEMIZED" value="MART_ITEMIZED">마트</MenuItem>,
+                  <MenuItem key="CONVENIENCE" value="CONVENIENCE">편의점</MenuItem>,
+                ] : [
+                  <MenuItem key="UNKNOWN" value="UNKNOWN" disabled><em>영수증 타입 선택</em></MenuItem>,
+                  <MenuItem key="TRANSACTION" value="TRANSACTION">거래명세표(서)</MenuItem>,
+                  <MenuItem key="MART_ITEMIZED" value="MART_ITEMIZED">마트</MenuItem>,
+                ]}
               </Select>
             </Grid>
+
+            {(String(otherForm.type || otherContext.type) === "1002" || String(otherForm.type || otherContext.type) === "1003") && (
+              <Grid item xs={12}>
+                <Select
+                  size="small"
+                  value={otherForm.card_idx || ""}
+                  onChange={(e) => setOtherForm((p) => ({ ...p, card_idx: e.target.value }))}
+                  fullWidth
+                  displayEmpty
+                  sx={{ height: 40 }}
+                  disabled={headOfficeCardLoading}
+                >
+                  <MenuItem value="">
+                    <em>카드 선택</em>
+                  </MenuItem>
+                  {(headOfficeCardList || []).map((c) => (
+                    <MenuItem key={String(c.idx)} value={String(c.idx)}>
+                      {c.card_brand || "카드"} / {maskCardNoFull(c.card_no)}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </Grid>
+            )}
 
             <Grid item xs={12}>
               <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
@@ -5879,7 +6325,7 @@ function TallySheet() {
                     ref={otherFileRef}
                     type="file"
                     hidden
-                    multiple
+                    {...(String(otherForm.type || otherContext.type) === "1002" || String(otherForm.type || otherContext.type) === "1003" ? {} : { multiple: true })}
                     accept="image/*,application/pdf"
                     onClick={(e) => {
                       e.currentTarget.value = "";
@@ -5908,7 +6354,7 @@ function TallySheet() {
                 )}
               </Box>
               <Typography sx={{ mt: 0.75, fontSize: 11, color: "#666" }}>
-                최대 3장 업로드 가능
+                {(String(otherForm.type || otherContext.type) === "1002" || String(otherForm.type || otherContext.type) === "1003") ? "최대 1장 업로드 가능" : "최대 3장 업로드 가능"}
                 {Array.isArray(otherForm.receipt_files) && otherForm.receipt_files.length > 0
                   ? ` / 선택 ${otherForm.receipt_files.length}장`
                   : ""}
@@ -5922,12 +6368,16 @@ function TallySheet() {
               color="info"
               onClick={async () => {
                 const ok = await saveOtherPayment("create");
-                if (ok) setOtherCreateOpen(false);
+                if (ok) closeModalWithPreview(setOtherCreateOpen);
               }}
             >
               등록
             </MDButton>
-            <MDButton variant="contained" color="warning" onClick={() => setOtherCreateOpen(false)}>
+            <MDButton
+              variant="contained"
+              color="warning"
+              onClick={() => closeModalWithPreview(setOtherCreateOpen)}
+            >
               취소
             </MDButton>
           </Box>

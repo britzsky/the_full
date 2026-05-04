@@ -389,7 +389,6 @@ function CorporateCardSheet() {
     setPaymentRows,
     fetchHeadOfficeCorporateCardPaymentList,
     paymentDetailRows,
-    fetchHeadOfficeCorporateCardPaymentDetailList,
     fetchAccountList,
   } = useCorporateCardData();
 
@@ -408,6 +407,10 @@ function CorporateCardSheet() {
 
   // 하단 수정 여부 ref
   const detailEditedRef = useRef(false);
+  // 상단 행 클릭으로 하단 상세 조회 중에는 전체 화면 로딩을 막는다.
+  const suppressFullLoadingRef = useRef(false);
+  // 하단 상세 조회 응답 순서 보장용 ref
+  const detailFetchSeqRef = useRef(0);
   // 상단 조회 중복 방지 ref
   const masterFetchStateRef = useRef({ key: "", promise: null });
   // 저장 중복 방지 ref
@@ -704,6 +707,7 @@ function CorporateCardSheet() {
   // 상단 결제내역 조회(중복 방지 포함)
   const handleFetchMaster = useCallback(async (opts = {}) => {
     const force = !!opts.force;
+    const silent = !!opts.silent;
     const accountId = String(opts.account_id ?? selectedAccountId ?? "").trim();
     if (!accountId) return;
     const key = `${accountId}|${year}|${month}|${itemTypeFilter}`;
@@ -714,7 +718,7 @@ function CorporateCardSheet() {
       return;
     }
 
-    const requestPromise = withLoading(async () => {
+    const fetchTask = async () => {
       const fetchedRows =
         (await fetchHeadOfficeCorporateCardPaymentList({
           year,
@@ -727,7 +731,8 @@ function CorporateCardSheet() {
       const filteredRows = await filterMasterRowsByItemType(fetchedRows);
       if (masterFetchStateRef.current.key !== key) return;
       setPaymentRows(filteredRows);
-    });
+    };
+    const requestPromise = silent ? fetchTask() : withLoading(fetchTask);
     masterFetchStateRef.current = { key, promise: requestPromise };
 
     try {
@@ -928,6 +933,7 @@ function CorporateCardSheet() {
     setOrigDetailRows(copy);
     detailEditedRef.current = false;
     setDetailLoading(false);
+    suppressFullLoadingRef.current = false;
     setDetailRenderKey((k) => k + 1);
   }, [paymentDetailRows, saveDetailScroll]);
 
@@ -1256,9 +1262,11 @@ function CorporateCardSheet() {
           })
         );
 
+        const nextSaleId = String(main.sale_id || row.sale_id || "").trim();
+
         // 스캔 결과를 하단 행에 반영
         if (Array.isArray(items)) {
-          const saleIdForDetail = main.sale_id || row.sale_id || "";
+          const saleIdForDetail = nextSaleId;
           const normalized = items.map((it) => ({
             sale_id: it.sale_id || saleIdForDetail || "",
             name: it.name ?? "",
@@ -1278,21 +1286,23 @@ function CorporateCardSheet() {
             __receiptImageDirty: highlightReceiptOnly,
           };
           setSelectedMaster(patchedSelected);
+          if (nextSaleId) setSelectedSaleId(nextSaleId);
+          setSelectedMasterIndex(rowIndex);
 
           setDetailRows(normalized);
           setOrigDetailRows(normalized.map((x) => ({ ...x })));
           detailEditedRef.current = false;
           setDetailRenderKey((k) => k + 1);
         }
-
-        const nextSaleId = String(main.sale_id || row.sale_id || "").trim();
+        if (nextSaleId) setSelectedSaleId(nextSaleId);
+        setSelectedMasterIndex(rowIndex);
 
         await Swal.fire("완료", "영수증 확인이 완료되었습니다.", "success");
 
         forceServerSyncRef.current = true;
         skipPendingNewMergeRef.current = true;
         if (nextSaleId) pendingMasterRestoreSaleIdRef.current = nextSaleId;
-        await handleFetchMaster({ force: true });
+        await handleFetchMaster({ force: true, silent: true });
       } catch (err) {
         Swal.close();
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
@@ -1375,6 +1385,7 @@ function CorporateCardSheet() {
 
       // 같은 행 재클릭 + 수정 있으면 현재 rows 그대로 유지
       if (isSameRow && hasDirty) {
+        suppressFullLoadingRef.current = false;
         setSelectedMaster(row);
         if (selectedMasterIndex !== rowIndex) setSelectedMasterIndex(rowIndex);
         return;
@@ -1394,6 +1405,7 @@ function CorporateCardSheet() {
       detailEditedRef.current = false;
 
       if (!nextSaleId) {
+        suppressFullLoadingRef.current = false;
         setSelectedMaster(row);
         if (selectedMasterIndex !== rowIndex) setSelectedMasterIndex(rowIndex);
         return;
@@ -1406,17 +1418,49 @@ function CorporateCardSheet() {
       // map에 캐시가 있으면 복원, 없으면 API 조회
       const cached = pendingDetailMap.get(nextSaleId);
       if (cached) {
+        suppressFullLoadingRef.current = false;
         setDetailRows(cached.rows ?? []);
         setOrigDetailRows(cached.originalRows ?? []);
+        setDetailLoading(false);
         return;
       }
 
+      suppressFullLoadingRef.current = true;
       setDetailLoading(true);
-      fetchHeadOfficeCorporateCardPaymentDetailList({
-        sale_id: nextSaleId,
-        account_id: row.account_id,
-        payment_dt: row.payment_dt,
-      });
+      const fetchSeq = detailFetchSeqRef.current + 1;
+      detailFetchSeqRef.current = fetchSeq;
+
+      api
+        .get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
+          params: {
+            sale_id: nextSaleId,
+            account_id: row.account_id,
+            payment_dt: row.payment_dt,
+          },
+        })
+        .then((res) => {
+          if (detailFetchSeqRef.current !== fetchSeq) return;
+          const rows = (res.data || []).map((r) => ({
+            ...r,
+            isForcedRed: false,
+            isNew: false,
+          }));
+          setDetailRows(rows);
+          setOrigDetailRows(rows);
+          detailEditedRef.current = false;
+          setDetailRenderKey((k) => k + 1);
+        })
+        .catch((err) => {
+          if (detailFetchSeqRef.current !== fetchSeq) return;
+          console.error("결제상세 조회 실패:", err);
+          setDetailRows([]);
+          setOrigDetailRows([]);
+        })
+        .finally(() => {
+          if (detailFetchSeqRef.current !== fetchSeq) return;
+          setDetailLoading(false);
+          suppressFullLoadingRef.current = false;
+        });
     },
     [
       selectedSaleId,
@@ -1425,7 +1469,6 @@ function CorporateCardSheet() {
       origDetailRows,
       pendingDetailMap,
       saveMasterScroll,
-      fetchHeadOfficeCorporateCardPaymentDetailList,
     ]
   );
 
@@ -1629,7 +1672,7 @@ function CorporateCardSheet() {
       forceServerSyncRef.current = true;
       skipPendingNewMergeRef.current = true;
       if (savedSaleId) pendingMasterRestoreSaleIdRef.current = savedSaleId;
-      await handleFetchMaster({ force: true });
+      await handleFetchMaster({ force: true, silent: true });
     } catch (e) {
       Swal.close();
       Swal.fire("오류", e.message || "저장 중 오류", "error");
@@ -1998,7 +2041,9 @@ function CorporateCardSheet() {
     });
   }, [detailRows]);
 
-  if (loading || !selectedAccountId || masterRows === null) return <LoadingScreen />;
+  if ((loading && !suppressFullLoadingRef.current) || !selectedAccountId || masterRows === null) {
+    return <LoadingScreen />;
+  }
 
   return (
     <DashboardLayout>

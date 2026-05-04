@@ -2776,6 +2776,7 @@ function TallySheet() {
         currentIndex={floatingPreview.currentIndex}
         onChangeIndex={handleFloatingPreviewIndexChange}
         onClose={closeFloatingPreview}
+        anchorX={1 / 3}
       />
 
       <MDBox

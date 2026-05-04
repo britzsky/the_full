@@ -61,6 +61,15 @@ const pickLatestUseRow = (prev, curr) => {
   return curr;
 };
 
+export async function fetchHeadOfficeCardList() {
+  const res = await api.get("/Account/HeadOfficeCorporateCardList", { validateStatus: () => true });
+  if (res.status !== 200) throw new Error(res.data?.message || "본사 법인카드 목록 조회 실패");
+  const raw = res.data;
+  const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+  const list = Array.isArray(parsed) ? parsed : parsed?.data || [];
+  return Array.isArray(list) ? list : [];
+}
+
 export default function useTallysheetData(account_id, year, month) {
   const [dataRows, setDataRows] = useState([]);
   const [data2Rows, setData2Rows] = useState([]);

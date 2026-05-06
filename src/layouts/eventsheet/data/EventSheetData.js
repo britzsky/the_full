@@ -66,9 +66,6 @@ export default function useEventsheetData(currentYear, currentMonth) {
       type: selectedType,
       account_id: savedAccountId,
       user_id: localStorage.getItem("user_id"),
-      reg_dt: dayjs(selectedEvent?.extendedProps?.reg_dt).isValid()
-        ? dayjs(selectedEvent.extendedProps.reg_dt).format("YYYY-MM-DD")
-        : dayjs().format("YYYY-MM-DD"),
       del_yn: "N",
       reg_user_id: localStorage.getItem("user_id"),
     };
@@ -90,9 +87,6 @@ export default function useEventsheetData(currentYear, currentMonth) {
       type: selectedType,
       account_id: selectedType === "3" ? (selectedAccount?.account_id ?? null) : null,
       user_id: localStorage.getItem("user_id"),
-      reg_dt: dayjs(selectedEvent?.extendedProps?.reg_dt).isValid()
-        ? dayjs(selectedEvent.extendedProps.reg_dt).format("YYYY-MM-DD")
-        : dayjs().format("YYYY-MM-DD"),
       del_yn: "Y",
       reg_user_id: localStorage.getItem("user_id"),
     };

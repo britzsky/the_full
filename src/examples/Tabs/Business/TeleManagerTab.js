@@ -99,7 +99,9 @@ function TeleManagerTab() {
     }
   }, [teleAccountRows]);
 
-  const colWidths = [30, 170, 150, 160, 60, 100, 140, 80];
+  const colWidths = isMobileOrTablet
+    ? [30, 130, 110, 110, 110, 140, 140, 80]
+    : [30, 170, 110, 110, 110, 140, 140, 80];
   const desktopStickyColumnCount = 8;
   // 모바일/태블릿은 본문만 순번+업장명까지만 고정
   const bodyStickyColumnCount = isMobileOrTablet ? 2 : desktopStickyColumnCount;
@@ -557,18 +559,18 @@ function TeleManagerTab() {
                       {i === 0
                         ? "순번"
                         : i === 1
-                        ? "업장명"
-                        : i === 2
-                        ? "영업루트"
-                        : i === 3
-                        ? "담당자"
-                        : i === 4
-                        ? "지역"
-                        : i === 5
-                        ? "현 위탁사"
-                        : i === 6
-                        ? "계약종료일"
-                        : "계약상태"}
+                          ? "업장명"
+                          : i === 2
+                            ? "영업루트"
+                            : i === 3
+                              ? "담당자"
+                              : i === 4
+                                ? "지역"
+                                : i === 5
+                                  ? "현 위탁사"
+                                  : i === 6
+                                    ? "계약종료일"
+                                    : "계약상태"}
                     </th>
                   ))}
 

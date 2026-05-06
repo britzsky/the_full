@@ -58,6 +58,11 @@ const POSITION_OPTIONS = [
   { value: "8", label: "영양사" },
 ];
 
+const HQ_POSITION_OPTIONS = POSITION_OPTIONS.filter((option) =>
+  ["1", "2", "3"].includes(option.value)
+);
+const ACCOUNT_POSITION_OPTIONS = POSITION_OPTIONS.filter((option) => option.value === "8");
+
 // 통합/유틸 인력 전용 직책(position_type) 옵션
 const UTIL_MEMBER_TYPE_OPTIONS = [
   { value: "7", label: "통합" },
@@ -125,11 +130,11 @@ const TABLE_COLUMNS = [
   { key: "password", label: "비밀번호", width: 92, align: "center" },
   { key: "dept_or_account", label: "부서/거래처", width: 190, align: "center" },
   { key: "position_label", label: "직책", width: 86, align: "center" },
-  { key: "join_dt", label: "입사일자", width: 108, align: "center" },
-  { key: "birth_date", label: "생년월일", width: 108, align: "center" },
-  { key: "phone", label: "전화번호", width: 120, align: "center" },
-  { key: "address_full", label: "주소", width: 186, align: "left" },
-  { key: "del_yn", label: "퇴사여부", width: 86, align: "center" },
+  { key: "join_dt", label: "입사일자", width: 88, align: "center" },
+  { key: "birth_date", label: "생년월일", width: 88, align: "center" },
+  { key: "phone", label: "전화번호", width: 104, align: "center" },
+  { key: "address_full", label: "주소", width: 256, align: "left" },
+  { key: "del_yn", label: "퇴사여부", width: 72, align: "center" },
 ];
 
 // accountissuesheet2 본문과 동일 계열 폰트/크기
@@ -141,6 +146,16 @@ const MIN_LOADING_MODAL_MS = 420;
 const PAGE_SIZE = 20;
 // 저장 전 변경 셀 강조 색상(accountissuesheettab과 동일)
 const CHANGED_ACCENT_COLOR = "#d32f2f";
+// 신규 본사 사용자 행 식별 접두어
+const NEW_HQ_USER_ROW_PREFIX = "__new_hq_user__";
+// 신규 본사 사용자 필수 입력 항목
+const REQUIRED_NEW_HQ_USER_FIELDS = [
+  { field: "user_name", label: "성명" },
+  { field: "user_id", label: "아이디" },
+  { field: "password", label: "비밀번호" },
+  { field: "department", label: "부서" },
+  { field: "position", label: "직책" },
+];
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -177,7 +192,6 @@ const buildUserSavePayload = (row) => {
   const normalizedDepartment = userTypeCode === "4" ? 7 : toNullableNumber(row.department);
   const utilMemberType = normalizeCode(row.util_member_type);
   const payload = {
-    is_update: true,
     info: {
       user_id: asText(row.user_id).trim(),
       user_name: asText(row.user_name).trim(),
@@ -188,16 +202,21 @@ const buildUserSavePayload = (row) => {
       position: userTypeCode === "4" ? null : toNullableNumber(row.position),
       account_id: accountId || null,
       util_member_type: userTypeCode === "4" ? utilMemberType || null : null,
+      use_yn: row.is_new_hq_user ? "Y" : normalizeCode(row.use_yn) || null,
     },
     detail: {
       user_id: asText(row.user_id).trim(),
       phone: asText(row.phone).trim() || null,
-      address: asText(row.address).trim() || "",
-      address_detail: asText(row.address_detail).trim() || "",
+      address: asText(row.address).trim() || (row.is_new_hq_user ? null : ""),
+      address_detail: asText(row.address_detail).trim() || (row.is_new_hq_user ? null : ""),
       zipcode: asText(row.zipcode).trim() || null,
       birth_date: toNullableDate(row.birth_date),
     },
   };
+
+  if (!row.is_new_hq_user) {
+    payload.is_update = true;
+  }
 
   // 원래 /User/UserRgt 저장 로직을 유지하면서 통합/유틸(account_members) 생성까지 동일 경로로 태움
   if (userTypeCode === "4" && (utilMemberType === "6" || utilMemberType === "7")) {
@@ -217,6 +236,8 @@ const readSingleRow = (data) => {
 
 const collectProfileChangedRows = (targetRows, originalsById) =>
   targetRows.filter((row) => {
+    if (row.is_new_hq_user) return true;
+
     const original = originalsById[row.user_id];
     if (!original) return false;
 
@@ -273,9 +294,11 @@ function UserManagement() {
   // 입력창 값과 실제 필터 적용 값을 분리해서, Enter 입력 시에만 검색이 실행되게 함
   const [appliedSearchKeyword, setAppliedSearchKeyword] = useState("");
   const [editingAccountUserId, setEditingAccountUserId] = useState("");
+  const [invalidRequiredCells, setInvalidRequiredCells] = useState({});
   const [currentPage, setCurrentPage] = useState(1);
   const [searchInputResetKey, setSearchInputResetKey] = useState(0);
   const searchKeywordDraftRef = useRef("");
+  const pendingFocusCellRef = useRef(null);
   const rowsRef = useRef(rows);
   const originalRowsByIdRef = useRef(originalRowsById);
 
@@ -314,6 +337,7 @@ function UserManagement() {
         : POSITION_LABELS[position] ?? position ?? "-";
 
     const mappedRow = {
+      row_key: asText(item.user_id),
       ui_index: index + 1,
       user_id: asText(item.user_id),
       user_name: asText(item.user_name),
@@ -447,8 +471,74 @@ function UserManagement() {
   const handleRefreshUsers = () => {
     searchKeywordDraftRef.current = "";
     setAppliedSearchKeyword("");
+    setInvalidRequiredCells({});
     setSearchInputResetKey((prev) => prev + 1);
     fetchUsers();
+  };
+
+  // 본사 사용자 신규 행 생성
+  const handleAddHeadOfficeUser = () => {
+    const rowKey = `${NEW_HQ_USER_ROW_PREFIX}${Date.now()}`;
+    const newRow = {
+      row_key: rowKey,
+      is_new_hq_user: true,
+      ui_index: "",
+      user_id: "",
+      user_name: "",
+      password: "",
+      department: "",
+      account_id: "",
+      account_name: "",
+      position: "",
+      util_member_type: "",
+      user_type: "2",
+      position_label: "-",
+      join_dt: "",
+      birth_date: "",
+      phone: "",
+      address: "",
+      address_detail: "",
+      zipcode: "",
+      del_yn: "N",
+      orig_del_yn: "N",
+      use_yn: "Y",
+      dept_or_account: "-",
+      address_full: "-",
+    };
+
+    newRow.search_blob = buildSearchBlob(newRow);
+    pendingFocusCellRef.current = { rowKey, field: "user_name" };
+    searchKeywordDraftRef.current = "";
+    setAppliedSearchKeyword("");
+    setSearchInputResetKey((prev) => prev + 1);
+    setCurrentPage(1);
+    setRows((prev) => {
+      const nextRows = [newRow, ...prev];
+      rowsRef.current = nextRows;
+      return nextRows;
+    });
+  };
+
+  // 신규 본사 사용자 필수값 검증
+  const validateNewHeadOfficeUsers = (targetRows) => {
+    const nextInvalidCells = {};
+
+    targetRows
+      .filter((row) => row.is_new_hq_user)
+      .forEach((row) => {
+        const rowKey = getRowKey(row);
+        const invalidFields = REQUIRED_NEW_HQ_USER_FIELDS.filter(({ field }) => {
+          if (field === "department" || field === "position") return !normalizeCode(row[field]);
+          return !asText(row[field]).trim();
+        });
+
+        if (invalidFields.length > 0) {
+          nextInvalidCells[rowKey] = invalidFields.map(({ field }) => field);
+        }
+      });
+
+    setInvalidRequiredCells(nextInvalidCells);
+    return Object.keys(nextInvalidCells).length > 0;
   };
 
   // accountissuesheet2와 동일한 테이블 외곽/헤더/본문 톤
@@ -579,7 +669,11 @@ function UserManagement() {
   };
 
   // 행 변경 시 원본 대비 diff를 계산해 "화면 저장 대상"으로 적재
+  const getRowKey = (row) => asText(row.row_key || row.user_id);
+
   const syncPendingProfileByRow = (userId, nextRow) => {
+    if (nextRow.is_new_hq_user) return;
+
     const original = originalRowsById[userId];
     if (!original) return;
 
@@ -604,12 +698,12 @@ function UserManagement() {
   };
 
   // 특정 행에 patch를 적용하고 표시용 파생값(직책 라벨/주소 등)도 함께 갱신
-  const applyRowPatch = (userId, patch) => {
+  const applyRowPatch = (rowKey, patch) => {
     let updatedRow = null;
 
     setRows((prev) => {
       const nextRows = prev.map((row) => {
-        if (row.user_id !== userId) return row;
+        if (getRowKey(row) !== rowKey) return row;
 
         const next = { ...row, ...patch };
         const normalized = {
@@ -620,6 +714,7 @@ function UserManagement() {
           position: normalizeCode(next.position),
           util_member_type: normalizeCode(next.util_member_type),
           user_type: inferUserType(next),
+          user_id: asText(next.user_id),
           user_name: asText(next.user_name),
           password: asText(next.password),
           join_dt: asText(next.join_dt),
@@ -650,13 +745,40 @@ function UserManagement() {
     });
 
     if (updatedRow) {
-      syncPendingProfileByRow(userId, updatedRow);
+      syncPendingProfileByRow(rowKey, updatedRow);
     }
   };
 
   // 텍스트 셀 변경
-  const handleTextFieldChange = (userId, field, value) => {
-    applyRowPatch(userId, { [field]: value });
+  const handleTextFieldChange = (rowKey, field, value) => {
+    applyRowPatch(rowKey, { [field]: value });
+    setInvalidRequiredCells((prev) => {
+      if (!prev[rowKey]?.includes(field) || !asText(value).trim()) return prev;
+
+      const nextFields = prev[rowKey].filter((item) => item !== field);
+      const next = { ...prev };
+      if (nextFields.length > 0) {
+        next[rowKey] = nextFields;
+      } else {
+        delete next[rowKey];
+      }
+      return next;
+    });
+  };
+
+  const clearInvalidRequiredCell = (rowKey, field) => {
+    setInvalidRequiredCells((prev) => {
+      if (!prev[rowKey]?.includes(field)) return prev;
+
+      const nextFields = prev[rowKey].filter((item) => item !== field);
+      const next = { ...prev };
+      if (nextFields.length > 0) {
+        next[rowKey] = nextFields;
+      } else {
+        delete next[rowKey];
+      }
+      return next;
+    });
   };
 
   // 본사 사용자의 부서 변경
@@ -667,6 +789,7 @@ function UserManagement() {
       account_name: "",
       user_type: "2",
     });
+    clearInvalidRequiredCell(userId, "department");
   };
 
   // 거래처 사용자의 거래처 변경
@@ -683,6 +806,7 @@ function UserManagement() {
   // 직책 변경
   const handlePositionChange = (userId, nextPosition) => {
     applyRowPatch(userId, { position: normalizeCode(nextPosition) });
+    clearInvalidRequiredCell(userId, "position");
   };
 
   // 통합/유틸 직책(position_type) 변경
@@ -789,6 +913,14 @@ function UserManagement() {
 
   // 원본 대비 셀 변경 여부 계산(렌더 표시 전용)
   const isTrackFieldChanged = (row, field) => {
+    if (row.is_new_hq_user) {
+      if (field === "user_type") return false;
+      if (["department", "account_id", "position", "user_type", "util_member_type"].includes(field)) {
+        return !!normalizeCode(row[field]);
+      }
+      return !!asText(row[field]).trim();
+    }
+
     const original = originalRowsById[row.user_id];
     if (!original) return false;
 
@@ -822,6 +954,7 @@ function UserManagement() {
 
     switch (columnKey) {
       case "user_name":
+      case "user_id":
       case "password":
       case "join_dt":
       case "birth_date":
@@ -849,50 +982,67 @@ function UserManagement() {
   const syncEditableDraftColor = (element, userId, field) => {
     if (!element) return;
     const original = originalRowsById[userId];
-    const draftValue = asText(element.textContent);
+    const draftValue = asText(element.value ?? element.textContent);
     const originalValue = asText(original?.[field]);
     element.style.color = draftValue !== originalValue ? CHANGED_ACCENT_COLOR : "#111";
   };
 
   // 텍스트를 클릭하면 같은 자리에서 바로 수정되도록 contentEditable을 사용한다
   const renderEditableCell = (row, field, align = "left", isChanged = false) => {
-    const userId = row.user_id;
+    const rowKey = getRowKey(row);
     const value = asText(row[field]);
+    const isInvalid = invalidRequiredCells[rowKey]?.includes(field);
 
     return (
-      <span
-        contentEditable
-        suppressContentEditableWarning
+      <input
+        key={`${rowKey}_${field}_${value}`}
+        type="text"
+        defaultValue={value}
         spellCheck={false}
+        ref={(element) => {
+          const pending = pendingFocusCellRef.current;
+          if (!element || pending?.rowKey !== rowKey || pending?.field !== field) return;
+
+          pendingFocusCellRef.current = null;
+          setTimeout(() => {
+            element.focus();
+            element.setSelectionRange(element.value.length, element.value.length);
+          }, 0);
+        }}
         style={{
-          ...cellTextStyle,
+          fontFamily: TABLE_FONT_FAMILY,
+          fontSize: `${TABLE_FONT_SIZE}px`,
+          fontWeight: 400,
           color: isChanged ? CHANGED_ACCENT_COLOR : "#111",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: align === "center" ? "center" : "flex-start",
+          border: isInvalid ? `1px solid ${CHANGED_ACCENT_COLOR}` : "1px solid transparent",
+          borderRadius: "4px",
+          display: "block",
           textAlign: align,
           width: "100%",
           minHeight: `${CELL_INNER_HEIGHT}px`,
           height: `${CELL_INNER_HEIGHT}px`,
+          lineHeight: "normal",
           margin: 0,
-          padding: 0,
+          padding: "1px 2px 0",
+          boxSizing: "border-box",
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
           outline: "none",
           cursor: "text",
+          background: "transparent",
         }}
         onFocus={(e) => {
-          syncEditableDraftColor(e.currentTarget, userId, field);
+          syncEditableDraftColor(e.currentTarget, rowKey, field);
         }}
-        onInput={(e) => {
-          syncEditableDraftColor(e.currentTarget, userId, field);
+        onChange={(e) => {
+          syncEditableDraftColor(e.currentTarget, rowKey, field);
         }}
         onBlur={(e) => {
-          const nextValue = asText(e.currentTarget.textContent);
-          syncEditableDraftColor(e.currentTarget, userId, field);
+          const nextValue = asText(e.currentTarget.value);
+          syncEditableDraftColor(e.currentTarget, rowKey, field);
           if (nextValue !== value) {
-            handleTextFieldChange(userId, field, nextValue);
+            handleTextFieldChange(rowKey, field, nextValue);
           }
         }}
         onKeyDown={(e) => {
@@ -902,13 +1052,11 @@ function UserManagement() {
           }
           if (e.key === "Escape") {
             e.preventDefault();
-            e.currentTarget.textContent = value;
+            e.currentTarget.value = value;
             e.currentTarget.blur();
           }
         }}
-      >
-        {value}
-      </span>
+      />
     );
   };
 
@@ -923,6 +1071,12 @@ function UserManagement() {
 
     const snapshotRows = rowsRef.current;
     const snapshotOriginals = originalRowsByIdRef.current;
+    const hasInvalidNewUser = validateNewHeadOfficeUsers(snapshotRows);
+    if (hasInvalidNewUser) {
+      Swal.fire("필수값 입력 필요", "빨간 테두리 항목은 필수값입니다.", "warning");
+      return;
+    }
+
     const profileRows = collectProfileChangedRows(snapshotRows, snapshotOriginals);
     const profileUserIds = profileRows.map((row) => row.user_id);
     const delEntries = collectDelEntriesFromRows(snapshotRows, snapshotOriginals);
@@ -944,11 +1098,15 @@ function UserManagement() {
         didOpen: () => Swal.showLoading(),
       });
 
-      // 1) 사용자 기본정보 저장
-      for (const row of profileRows) {
-        const userId = row.user_id;
+      // 1) 사용자 기본정보 저장 (단건씩 backup 조회 후 배열로 일괄 전송)
+      const backups = await Promise.all(
+        profileRows.map((row) =>
+          row.is_new_hq_user ? Promise.resolve(null) : fetchUserInfoForSave(row.user_id)
+        )
+      );
 
-        const backup = await fetchUserInfoForSave(userId);
+      const payloads = profileRows.map((row, i) => {
+        const backup = backups[i];
         const mergedRow = {
           ...backup,
           ...row,
@@ -965,22 +1123,25 @@ function UserManagement() {
           zipcode: asText(row.zipcode).trim() || asText(backup?.zipcode).trim(),
         };
 
-        // 통합/유틸 사용자 저장 시 position_type(6/7)가 비어 있으면 안내 후 중단
         if (
           normalizeCode(mergedRow.user_type) === "4" &&
           !["6", "7"].includes(normalizeCode(mergedRow.util_member_type))
         ) {
-          throw new Error(`통합/유틸 구분값을 선택해주세요. (${userId})`);
+          throw new Error(`통합/유틸 구분값을 선택해주세요. (${row.user_id})`);
         }
 
         const payload = buildUserSavePayload(mergedRow);
-        const res = await api.post("/User/UserRgt", payload);
-        const code = parseApiCode(res.data);
+        if (row.is_new_hq_user) {
+          payload.info.use_yn = "Y";
+        }
+        return payload;
+      });
 
+      if (payloads.length > 0) {
+        const res = await api.post("/User/UserRgt_v2", payloads);
+        const code = parseApiCode(res.data);
         if (code && code !== "200") {
-          throw new Error(
-            `사용자 정보 저장 실패 (${userId})${res?.data?.message ? `: ${res.data.message}` : ""}`
-          );
+          throw new Error(`사용자 정보 저장 실패${res?.data?.message ? `: ${res.data.message}` : ""}`);
         }
       }
 
@@ -995,14 +1156,24 @@ function UserManagement() {
         }
       }
 
+      const savedRows = snapshotRows.map((row, index) => ({
+        ...row,
+        row_key: asText(row.user_id),
+        is_new_hq_user: false,
+        ui_index: index + 1,
+        orig_del_yn: asText(row.del_yn || "N").toUpperCase(),
+      }));
       const nextOriginals = {};
-      snapshotRows.forEach((row) => {
-        nextOriginals[row.user_id] = { ...row, orig_del_yn: asText(row.del_yn || "N").toUpperCase() };
+      savedRows.forEach((row) => {
+        nextOriginals[row.user_id] = { ...row };
       });
+      setRows(savedRows);
+      rowsRef.current = savedRows;
       setOriginalRowsById(nextOriginals);
       originalRowsByIdRef.current = nextOriginals;
       setPendingProfileChanges({});
       setPendingDelYn({});
+      setInvalidRequiredCells({});
 
       const messages = [];
       if (profileUserIds.length > 0) messages.push(`사용자 정보 ${profileUserIds.length}건`);
@@ -1034,13 +1205,17 @@ function UserManagement() {
             justifyContent: "center",
           })}
         >
-          {row.ui_index}
+          {row.is_new_hq_user ? "" : row.ui_index}
         </span>
       );
     }
 
     // 2) 아이디(클릭은 가능하지만 변경 불가 안내만 표시)
     if (columnKey === "user_id") {
+      if (row.is_new_hq_user) {
+        return renderEditableCell(row, "user_id", "center", cellChanged);
+      }
+
       return (
         <span
           role="button"
@@ -1074,6 +1249,8 @@ function UserManagement() {
     // 4) 부서/거래처 클릭 편집 셀
     if (columnKey === "dept_or_account") {
       const deptOrAccountChanged = cellChanged;
+      const rowKey = getRowKey(row);
+      const deptRequiredInvalid = invalidRequiredCells[rowKey]?.includes("department");
 
       if (normalizeCode(row.user_type) === "4") {
         return (
@@ -1122,11 +1299,11 @@ function UserManagement() {
               size="small"
               value={normalizeCode(row.department)}
               onChange={(e) => {
-                handleDepartmentChange(row.user_id, e.target.value);
+                handleDepartmentChange(getRowKey(row), e.target.value);
               }}
               sx={{
                 ...compactSelectSx,
-                ...(deptOrAccountChanged ? changedSelectSx : {}),
+                ...(deptOrAccountChanged || deptRequiredInvalid ? changedSelectSx : {}),
                 minWidth: 112,
                 width: "100%",
               }}
@@ -1299,6 +1476,9 @@ function UserManagement() {
     // 5) 직책 클릭 편집 셀
     if (columnKey === "position_label") {
       const positionChanged = cellChanged;
+      const rowKey = getRowKey(row);
+      const positionRequiredInvalid = invalidRequiredCells[rowKey]?.includes("position");
+      const positionOptions = isHeadOffice(row) ? HQ_POSITION_OPTIONS : ACCOUNT_POSITION_OPTIONS;
 
       if (normalizeCode(row.user_type) === "4") {
         return (
@@ -1352,16 +1532,16 @@ function UserManagement() {
             size="small"
             value={normalizeCode(row.position)}
             onChange={(e) => {
-              handlePositionChange(row.user_id, e.target.value);
+              handlePositionChange(getRowKey(row), e.target.value);
             }}
             sx={{
               ...compactSelectSx,
-              ...(positionChanged ? changedSelectSx : {}),
+              ...(positionChanged || positionRequiredInvalid ? changedSelectSx : {}),
               minWidth: 82,
               width: "100%",
             }}
           >
-            {POSITION_OPTIONS.map((option) => (
+            {positionOptions.map((option) => (
               <MenuItem key={option.value} value={option.value}>
                 {option.label}
               </MenuItem>
@@ -1500,7 +1680,7 @@ function UserManagement() {
                 <MDBox sx={{ width: isMobile ? "100%" : "14rem", mr: isMobile ? 0 : 1 }}>
                   <MDInput
                     key={`search-input-${searchInputResetKey}`}
-                    placeholder="필터 검색"
+                    placeholder="검색"
                     size="small"
                     fullWidth
                     onChange={({ currentTarget }) => {
@@ -1522,6 +1702,15 @@ function UserManagement() {
                   disabled={loading}
                 >
                   새로고침
+                </MDButton>
+                <MDButton
+                  size="medium"
+                  variant="contained"
+                  color="warning"
+                  onClick={handleAddHeadOfficeUser}
+                  disabled={loading || saving}
+                >
+                  본사 사용자 추가
                 </MDButton>
                 <MDButton
                   size="medium"
@@ -1563,10 +1752,10 @@ function UserManagement() {
                   </thead>
                   <tbody>
                     {pagedRows.map((row) => (
-                      <tr key={`${row.ui_index}_${row.user_id}`}>
+                      <tr key={getRowKey(row)}>
                         {TABLE_COLUMNS.map((col) => (
                           <td
-                            key={`${row.ui_index}_${col.key}`}
+                            key={`${getRowKey(row)}_${col.key}`}
                             style={{
                               minWidth: col.width,
                               width: col.width,

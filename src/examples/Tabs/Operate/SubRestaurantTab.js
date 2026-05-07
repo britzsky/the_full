@@ -17,6 +17,13 @@ function SubRestaurantTab() {
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [regionFilter, setRegionFilter] = useState(""); // ✅ 지역 필터 상태
+  // 식당별 비고 컬럼 표시 상태
+  const [noteColumnOpen, setNoteColumnOpen] = useState({
+    1: false,
+    2: false,
+    3: false,
+    4: false,
+  });
 
   // ✅ 지역 목록 (value는 SQL LIKE 패턴)
   const regionOptions = [
@@ -50,6 +57,13 @@ function SubRestaurantTab() {
     const deepCopy = activeRows.map((r) => ({ ...r }));
     setRows(deepCopy);
     setOriginalRows(deepCopy);
+    // 조회된 비고 입력 여부에 따른 식당별 비고 컬럼 초기 표시 상태 
+    setNoteColumnOpen({
+      1: deepCopy.some((row) => String(row.sub_restaurant1_note ?? "").trim() !== ""),
+      2: deepCopy.some((row) => String(row.sub_restaurant2_note ?? "").trim() !== ""),
+      3: deepCopy.some((row) => String(row.sub_restaurant3_note ?? "").trim() !== ""),
+      4: deepCopy.some((row) => String(row.sub_restaurant4_note ?? "").trim() !== ""),
+    });
   }, [activeRows]);
 
   // ✅ 문자열 비교 시 공백 정규화
@@ -68,6 +82,14 @@ function SubRestaurantTab() {
   // ✅ 셀 값 변경
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prev) => prev.map((row, i) => (i === rowIndex ? { ...row, [key]: value } : row)));
+  };
+
+  // 식당별 비고 컬럼 표시 상태 변경 함수
+  const handleNoteColumnToggle = (restaurantIndex) => {
+    setNoteColumnOpen((prev) => ({
+      ...prev,
+      [restaurantIndex]: !prev[restaurantIndex],
+    }));
   };
 
   // ✅ 저장 처리
@@ -109,26 +131,70 @@ function SubRestaurantTab() {
   };
 
   // ✅ 테이블 컬럼 정의
-  const columns = useMemo(
+  const baseColumns = useMemo(
     () => [
       { header: "업장명", accessorKey: "account_name", size: 140 },
       { header: "주소", accessorKey: "account_address", size: 320 },
       { header: "이동급식", accessorKey: "move_lunch", size: 110 },
       { header: "연락처", accessorKey: "move_lunch_tel", size: 110 },
-      { header: "식당1", accessorKey: "sub_restaurant1", size: 110 },
-      { header: "연락처1", accessorKey: "sub_restaurant1_tel", size: 110 },
-      { header: "식당2", accessorKey: "sub_restaurant2", size: 110 },
-      { header: "연락처2", accessorKey: "sub_restaurant2_tel", size: 110 },
-      { header: "식당3", accessorKey: "sub_restaurant3", size: 110 },
-      { header: "연락처3", accessorKey: "sub_restaurant3_tel", size: 110 },
-      { header: "식당4", accessorKey: "sub_restaurant4", size: 110 },
-      { header: "연락처4", accessorKey: "sub_restaurant4_tel", size: 110 },
     ],
     []
   );
 
+  // 식당별 하위 컬럼과 비고 데이터 키 목록
+  const restaurantGroups = useMemo(
+    () => [
+      {
+        index: 1,
+        header: "식당1",
+        nameKey: "sub_restaurant1",
+        telKey: "sub_restaurant1_tel",
+        noteKey: "sub_restaurant1_note",
+      },
+      {
+        index: 2,
+        header: "식당2",
+        nameKey: "sub_restaurant2",
+        telKey: "sub_restaurant2_tel",
+        noteKey: "sub_restaurant2_note",
+      },
+      {
+        index: 3,
+        header: "식당3",
+        nameKey: "sub_restaurant3",
+        telKey: "sub_restaurant3_tel",
+        noteKey: "sub_restaurant3_note",
+      },
+      {
+        index: 4,
+        header: "식당4",
+        nameKey: "sub_restaurant4",
+        telKey: "sub_restaurant4_tel",
+        noteKey: "sub_restaurant4_note",
+      },
+    ],
+    []
+  );
+
+  const columns = useMemo(
+    () => [
+      ...baseColumns,
+      ...restaurantGroups.flatMap((group) => [
+        { header: "이름", accessorKey: group.nameKey, size: 110 },
+        { header: "연락처", accessorKey: group.telKey, size: 110 },
+        ...(noteColumnOpen[group.index]
+          ? [{ header: "비고", accessorKey: group.noteKey, size: 110 }]
+          : []),
+      ]),
+    ],
+    [baseColumns, restaurantGroups, noteColumnOpen]
+  );
+
   // ✅ 테이블 스타일 (모바일 대응)
   const tableSx = {
+    position: "relative",
+    zIndex: 0,
+    isolation: "isolate",
     flex: 1,
     minHeight: 0,
     maxHeight: isMobile ? "55vh" : "75vh",
@@ -155,8 +221,50 @@ function SubRestaurantTab() {
     "& th": {
       backgroundColor: "#f0f0f0",
       position: "sticky",
-      top: 0, // ✅ 스크롤 박스 내에서 상단 고정
-      zIndex: 10,
+      zIndex: 3,
+    },
+    "& thead tr:first-of-type th": {
+      top: 0, // 스크롤 박스 안에서 첫 번째 헤더 행을 상단에 고정
+    },
+    "& thead tr:nth-of-type(2) th": {
+      top: isMobile ? 23 : 29, // 식당별 이름/연락처 헤더 행 위치
+      zIndex: 2,
+    },
+    "& .sticky-account-name": {
+      position: "sticky",
+      left: 0,
+      minWidth: baseColumns[0].size,
+      width: baseColumns[0].size,
+      backgroundColor: "#ffffff",
+      zIndex: 1,
+      boxShadow: "2px 0 0 #686D76",
+    },
+    "& thead .sticky-account-name": {
+      backgroundColor: "#f0f0f0",
+      zIndex: 4,
+    },
+    "& .restaurant-header-title": {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "2px",
+      minWidth: 0,
+      cursor: "pointer",
+      lineHeight: 1,
+      verticalAlign: "middle",
+    },
+    "& .restaurant-header-title.open": {
+      boxShadow: "0 2px 0 -1px currentColor",
+    },
+    "& .note-toggle-button": {
+      cursor: "inherit",
+      display: "inline-flex",
+      alignItems: "center",
+      lineHeight: 1,
+      fontSize: isMobile ? "8px" : "10px",
+      fontFamily: "inherit",
+      fontWeight: "inherit",
+      color: "inherit",
     },
   };
 
@@ -232,8 +340,49 @@ function SubRestaurantTab() {
         <table>
           <thead>
             <tr>
-              {columns.map((col) => (
-                <th key={col.accessorKey}>{col.header}</th>
+              <th rowSpan={2} className="sticky-account-name" style={{ width: baseColumns[0].size }}>
+                업장명
+              </th>
+              <th rowSpan={2} style={{ width: baseColumns[1].size }}>
+                주소
+              </th>
+              <th rowSpan={2} style={{ width: baseColumns[2].size }}>
+                이동급식
+              </th>
+              <th rowSpan={2} style={{ width: baseColumns[3].size }}>
+                연락처
+              </th>
+              {restaurantGroups.map((group) => (
+                <th key={group.index} colSpan={noteColumnOpen[group.index] ? 3 : 2}>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className={`restaurant-header-title${noteColumnOpen[group.index] ? " open" : ""
+                      }`}
+                    title={`${group.header} 비고 컬럼 ${noteColumnOpen[group.index] ? "닫기" : "열기"}`}
+                    onClick={() => handleNoteColumnToggle(group.index)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleNoteColumnToggle(group.index);
+                      }
+                    }}
+                  >
+                    {group.header}
+                    <span className="note-toggle-button">
+                      {noteColumnOpen[group.index] ? "▶" : "◀"}
+                    </span>
+                  </span>
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {restaurantGroups.map((group) => (
+                <React.Fragment key={group.index}>
+                  <th style={{ width: 110 }}>이름</th>
+                  <th style={{ width: 110 }}>연락처</th>
+                  {noteColumnOpen[group.index] && <th style={{ width: 110 }}>비고</th>}
+                </React.Fragment>
               ))}
             </tr>
           </thead>
@@ -249,6 +398,7 @@ function SubRestaurantTab() {
                   return (
                     <td
                       key={key}
+                      className={key === "account_name" ? "sticky-account-name" : undefined}
                       contentEditable={!nonEditable.includes(key)}
                       suppressContentEditableWarning
                       style={{ ...style, width: col.size }}

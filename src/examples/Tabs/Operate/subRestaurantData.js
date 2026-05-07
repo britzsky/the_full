@@ -30,14 +30,19 @@ export default function useSubRestaurantData() {
           account_address: item.account_address,
           move_lunch: item.move_lunch,
           move_lunch_tel: item.move_lunch_tel,
+          // 식당별 비고 컬럼 조회 값
           sub_restaurant1: item.sub_restaurant1,
           sub_restaurant1_tel: item.sub_restaurant1_tel,
+          sub_restaurant1_note: item.sub_restaurant1_note,
           sub_restaurant2: item.sub_restaurant2,
           sub_restaurant2_tel: item.sub_restaurant2_tel,
+          sub_restaurant2_note: item.sub_restaurant2_note,
           sub_restaurant3: item.sub_restaurant3,
           sub_restaurant3_tel: item.sub_restaurant3_tel,
+          sub_restaurant3_note: item.sub_restaurant3_note,
           sub_restaurant4: item.sub_restaurant4,
-          sub_restaurant4_tel: item.sub_restaurant4_tel
+          sub_restaurant4_tel: item.sub_restaurant4_tel,
+          sub_restaurant4_note: item.sub_restaurant4_note
         }));
         setActiveRows(rows.map((row) => ({ ...row })));
       } catch (err) {

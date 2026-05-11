@@ -265,29 +265,17 @@ export default function ProfitLossTableTab() {
     세금정보: { value: "duty_secure", ratio: "duty_secure_ratio" },
     기타간접비: { value: "etc_indirect_cost", ratio: "etc_indirect_ratio" },
     간접소계: { value: "indirect_total", ratio: "indirect_total_ratio" },
-    영업이익: { value: "business_profit_without_payback", ratio: "business_profit_without_payback_ratio" },
-    "총 영업이익": { value: "business_profit", ratio: "business_profit_ratio" },
+    영업이익: { value: "business_profit", ratio: "business_profit_ratio" },
+    "총 영업이익": { value: "total_business_profit", ratio: "total_business_profit_ratio" },
   };
 
-  // 판장금 이동 후 화면에 표시할 이익 값을 계산하는 함수
+  // 화면과 엑셀에 표시할 금액 값을 가져오는 함수
   const getDisplayValue = (row, field) => {
-    if (field === "business_profit_without_payback") {
-      return Number(row?.business_profit ?? 0) - Number(row?.payback_price ?? 0);
-    }
-
     return row?.[field];
   };
 
-  // 판장금을 제외한 영업이익 비율을 매출소계 기준으로 계산하는 함수
+  // 화면과 엑셀에 표시할 비율 값을 가져오는 함수
   const getDisplayRatio = (row, ratioField) => {
-    if (ratioField === "business_profit_without_payback_ratio") {
-      const salesTotal = Number(row?.sales_total ?? 0);
-      if (!salesTotal) return 0;
-      const profitWithoutPayback =
-        Number(row?.business_profit ?? 0) - Number(row?.payback_price ?? 0);
-      return Math.round((profitWithoutPayback / salesTotal) * 1000) / 10;
-    }
-
     return row?.[ratioField];
   };
 
@@ -584,15 +572,15 @@ export default function ProfitLossTableTab() {
     {
       group: "",
       label: "영업이익",
-      valueKey: "business_profit_without_payback",
-      ratioKey: "business_profit_without_payback_ratio",
+      valueKey: "business_profit",
+      ratioKey: "business_profit_ratio",
     },
     { group: "", label: "판장금", valueKey: "payback_price", ratioKey: "payback_ratio" },
     {
       group: "",
       label: "총 영업이익",
-      valueKey: "business_profit",
-      ratioKey: "business_profit_ratio",
+      valueKey: "total_business_profit",
+      ratioKey: "total_business_profit_ratio",
     },
   ];
 

@@ -1710,7 +1710,7 @@ function UserManagement() {
                   onClick={handleAddHeadOfficeUser}
                   disabled={loading || saving}
                 >
-                  본사 사용자 추가
+                  본사 사용자 등록
                 </MDButton>
                 <MDButton
                   size="medium"

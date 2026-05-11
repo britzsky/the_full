@@ -15,9 +15,9 @@ import Swal from "sweetalert2";
 const getCookWearSizeLabel = (label) => {
   const sizeLabelMap = {
     "영양사(S)": "영양사(S-55)",
-    "영양사(M)": "영양사(M-56)",
-    "영양사(L)": "영양사(L-57)",
-    "영양사(XL)": "영양사(XL-58)",
+    "영양사(M)": "영양사(M-66)",
+    "영양사(L)": "영양사(L-77)",
+    "영양사(XL)": "영양사(XL-88)",
   };
   const normalizedLabel = typeof label === "string" ? label.trim() : label;
 

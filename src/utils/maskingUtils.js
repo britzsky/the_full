@@ -5,7 +5,7 @@ const FULL_UNMASK_DEPARTMENT_SET = new Set(["0", "3", "6"]);
 // 마스킹 해제 권한 직책 코드(대표/팀장)
 const FULL_UNMASK_POSITION_SET = new Set(["0", "1"]);
 // 마스킹 해제 권한 사용자 ID
-const FULL_UNMASK_USER_ID_SET = new Set(["db1"]);
+const FULL_UNMASK_USER_ID_SET = new Set(["db1", "si1"]);
 
 // 저장소/서버 값의 공백을 제거해 코드 비교용 문자열로 통일
 const toCode = (value) => String(value ?? "").trim();
@@ -46,13 +46,13 @@ export const shouldMaskSensitiveField = (colKey, maskingEnabled = true, role = {
   // role 값이 없는 경우에만 storage 조회(대량 셀 렌더링 성능 개선)
   let department = toCode(role?.department);
   let position = toCode(role?.position);
-  // user_id 권한은 화면별 선택 적용을 위해 caller가 넘긴 값만 사용
-  const userId = toCode(role?.user_id ?? role?.userId ?? "");
+  let userId = toCode(role?.user_id ?? role?.userId ?? "");
 
-  if (!department || !position) {
+  if (!department || !position || !userId) {
     const fromStorage = getMaskingRoleFromStorage();
     if (!department) department = fromStorage.department;
     if (!position) position = fromStorage.position;
+    if (!userId) userId = fromStorage.user_id;
   }
 
   // 마스킹 해제 버튼 클릭 후:

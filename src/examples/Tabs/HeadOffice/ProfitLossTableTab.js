@@ -516,6 +516,7 @@ export default function ProfitLossTableTab() {
       valueKey: "estimate_total",
       ratioKey: "estimate_total_ratio",
     },
+    { __blank: true },
     { group: "매출", label: "생계비", valueKey: "living_cost", ratioKey: "living_ratio" },
     { group: "매출", label: "일반식대", valueKey: "basic_cost", ratioKey: "basic_ratio" },
     { group: "매출", label: "직원식대", valueKey: "employ_cost", ratioKey: "employ_ratio" },
@@ -528,8 +529,8 @@ export default function ProfitLossTableTab() {
     },
     { group: "매출", label: "보전", valueKey: "integrity_cost", ratioKey: "integrity_ratio" },
     { group: "매출", label: "반환금", valueKey: "return_cost", ratioKey: "return_ratio" },
-    { __blank: true },
     { group: "매출", label: "소계(매출)", valueKey: "sales_total", ratioKey: "sales_total_ratio" },
+    { __blank: true },
     { group: "매입", label: "식자재", valueKey: "food_cost", ratioKey: "food_ratio" },
     { group: "매입", label: "음식물처리", valueKey: "food_process", ratioKey: "food_trash_ratio" },
     { group: "매입", label: "식기세척기", valueKey: "dishwasher", ratioKey: "dishwasher_ratio" },
@@ -543,26 +544,25 @@ export default function ProfitLossTableTab() {
       valueKey: "not_budget_cost",
       ratioKey: "not_budget_ratio",
     },
-    { __blank: true },
     {
       group: "매입",
       label: "소계(매입)",
       valueKey: "purchase_total",
       ratioKey: "purchase_total_ratio",
     },
+    { __blank: true },
     { group: "인건", label: "인건비확보", valueKey: "person_cost", ratioKey: "person_ratio" },
     { group: "인건", label: "파출비", valueKey: "dispatch_cost", ratioKey: "dispatch_ratio" },
-    { __blank: true },
     {
       group: "인건",
       label: "소계(인건)",
       valueKey: "person_total",
       ratioKey: "person_total_ratio",
     },
+    { __blank: true },
     { group: "간접", label: "수도광열비", valueKey: "utility_bills", ratioKey: "utility_ratio" },
     { group: "간접", label: "비고", valueKey: "utility_bills_note", ratioKey: null },
     { group: "간접", label: "세금확보", valueKey: "duty_secure", ratioKey: "duty_secure_ratio" },
-    { __blank: true },
     {
       group: "간접",
       label: "소계(간접)",
@@ -582,6 +582,7 @@ export default function ProfitLossTableTab() {
       valueKey: "total_business_profit",
       ratioKey: "total_business_profit_ratio",
     },
+    { __blank: true },
   ];
 
   const monthExcelRowDefsSales2 = [
@@ -607,10 +608,9 @@ export default function ProfitLossTableTab() {
 
   const buildMonthAllExcelLikeTemplate = async (rows) => {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("손익표(월전체)");
+    const sheet = workbook.addWorksheet("손익표(월-전체)");
     const header = [
       "NO",
-      "",
       "C분류",
       "E분류",
       "F분류",
@@ -649,24 +649,20 @@ export default function ProfitLossTableTab() {
         idx === 0
           ? 6
           : idx === 1
-            ? 10
+            ? 18
             : idx === 2
-              ? 18
+              ? 12
               : idx === 3
-                ? 12
+                ? 18
                 : idx === 4
-                  ? 14
+                  ? 16
                   : idx === 5
-                    ? 10
-                    : idx === 6
-                      ? 22
-                      : idx >= 7
-                        ? 12
-                        : 12;
+                    ? 9
+                    : idx >= 6
+                      ? idx % 2 === 0 ? 18 : 9
+                      : 12;
       return { header: h, key: `c${idx + 1}`, width: w };
     });
-
-    sheet.addRow(header);
 
     const hr = sheet.getRow(1);
     hr.height = 18;
@@ -725,10 +721,9 @@ export default function ProfitLossTableTab() {
 
         const row = new Array(header.length).fill(null);
         row[0] = no++;
-        row[1] = accRows[0]?.account_code ?? null;
-        row[2] = accName || null;
-        row[3] = def.group || null;
-        row[4] = def.label || null;
+        row[1] = accName || null;
+        row[2] = def.group || null;
+        row[3] = def.label || null;
 
         const setValueRatioAt = (valueColIdx0, value, ratio) => {
           row[valueColIdx0] = value ?? null;
@@ -738,13 +733,13 @@ export default function ProfitLossTableTab() {
         const curRec = monthMap.get(currentMonth);
         const curVal = curRec ? getDisplayValue(curRec, def.valueKey) : null;
         const curRatio = def.ratioKey && curRec ? toPercentCell(getDisplayRatio(curRec, def.ratioKey)) : null;
-        setValueRatioAt(5, curVal, curRatio);
+        setValueRatioAt(4, curVal, curRatio);
 
         for (let m = 1; m <= 12; m++) {
           const rec = monthMap.get(m);
           const val = rec ? getDisplayValue(rec, def.valueKey) : null;
           const ratio = def.ratioKey && rec ? toPercentCell(getDisplayRatio(rec, def.ratioKey)) : null;
-          const base = 7 + (m - 1) * 2;
+          const base = 6 + (m - 1) * 2;
           setValueRatioAt(base, val, ratio);
         }
 
@@ -760,8 +755,8 @@ export default function ProfitLossTableTab() {
               hasAny = true;
             }
           }
-          row[31] = hasAny ? sum : null;
-          row[32] = null;
+          row[30] = hasAny ? sum : null;
+          row[31] = null;
         }
 
         sheet.addRow(row);
@@ -772,13 +767,13 @@ export default function ProfitLossTableTab() {
     const excelSkyFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDDEEFF" } };
     const excelRedFont = { color: { argb: "FFFF0000" } };
 
-    const valueCols = new Set([6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]);
-    const ratioCols = new Set([7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31, 33]);
+    const valueCols = new Set([5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]);
+    const ratioCols = new Set([6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32]);
 
     sheet.eachRow((r, rno) => {
       if (rno === 1) return;
 
-      const fLabel = String(r.getCell(5).value ?? "");
+      const fLabel = String(r.getCell(4).value ?? "");
       const isSoGyeRow = fLabel.includes("소계");
       const isProfitRow = fLabel.includes("영업이익") || fLabel.includes("영엽이익");
       const isSummaryRow = isSoGyeRow || fLabel.includes("합계") || isProfitRow;
@@ -787,9 +782,9 @@ export default function ProfitLossTableTab() {
         cell.border = excelBorderThin;
 
         if (isSummaryRow) cell.fill = excelGrayFill;
-        if (cno === 3) cell.fill = excelSkyFill;
+        if (cno === 2) cell.fill = excelSkyFill;
 
-        if (cno === 5 && isSoGyeRow) {
+        if (cno === 4 && isSoGyeRow) {
           cell.fill = excelSkyFill;
           cell.font = { ...(cell.font || {}), ...excelRedFont, bold: true };
         }
@@ -799,8 +794,8 @@ export default function ProfitLossTableTab() {
           cell.font = { ...(cell.font || {}), bold: true };
         }
 
-        if (cno <= 5) {
-          cell.alignment = { vertical: "middle", horizontal: cno === 5 ? "left" : "center" };
+        if (cno <= 4) {
+          cell.alignment = { vertical: "middle", horizontal: cno === 4 ? "left" : "center" };
           return;
         }
 
@@ -828,15 +823,22 @@ export default function ProfitLossTableTab() {
     return buffer;
   };
 
-  // ✅ 공통: 행 데이터로 2줄(값/비율) 엑셀 만들기
-  const buildValueRatioWorkbook = async ({
-    rows,
-    sheetName,
-    firstTitle,
-    firstKey,
-    labelGetter,
-  }) => {
-    const workbook = new ExcelJS.Workbook();
+  // ✅ 공통: 행 데이터로 2줄(값/비율) 엑셀 시트 만들기
+  const addValueRatioSheet = (
+    workbook,
+    {
+      rows,
+      sheetName,
+      firstTitle,
+      firstKey,
+      labelGetter,
+    }
+  ) => {
+    const existingSheet = workbook.getWorksheet(sheetName);
+    if (existingSheet) {
+      workbook.removeWorksheet(existingSheet.id);
+    }
+
     const sheet = workbook.addWorksheet(sheetName);
 
     buildTwoRowHeader(sheet, firstTitle, firstKey);
@@ -909,7 +911,93 @@ export default function ProfitLossTableTab() {
       });
     });
 
+    // 그룹 경계 컬럼 좌우 테두리 굵게
+    const thickSide = { style: "medium" };
+    let groupColStart = 2;
+    filteredHeaders.forEach((h) => {
+      const groupEnd = groupColStart + h.cols.length - 1;
+      if (h.group) {
+        sheet.eachRow((row) => {
+          const lCell = row.getCell(groupColStart);
+          const rCell = row.getCell(groupEnd);
+          lCell.border = { ...(lCell.border || {}), left: thickSide };
+          rCell.border = { ...(rCell.border || {}), right: thickSide };
+        });
+      } else {
+        h.cols.forEach((_, idx) => {
+          const colNo = groupColStart + idx;
+          sheet.eachRow((row) => {
+            const cell = row.getCell(colNo);
+            cell.border = { ...(cell.border || {}), left: thickSide, right: thickSide };
+          });
+        });
+      }
+      groupColStart = groupEnd + 1;
+    });
+
+    return sheet;
+  };
+
+  // ✅ 공통: 행 데이터로 2줄(값/비율) 엑셀 만들기
+  const buildValueRatioWorkbook = async ({
+    rows,
+    sheetName,
+    firstTitle,
+    firstKey,
+    labelGetter,
+  }) => {
+    const workbook = new ExcelJS.Workbook();
+    addValueRatioSheet(workbook, {
+      rows,
+      sheetName,
+      firstTitle,
+      firstKey,
+      labelGetter,
+    });
+
     return workbook.xlsx.writeBuffer();
+  };
+
+  const addMonthTotalSheet = (workbook, rows) => {
+    return addValueRatioSheet(workbook, {
+      rows,
+      sheetName: "손익표(월-전체)",
+      firstTitle: "월",
+      firstKey: "__month",
+      labelGetter: (r) => `${r.month ?? r.mm ?? r.mon ?? ""}월`,
+    });
+  };
+
+  const getMonthTotalRowsForExcel = async () => {
+    if (Array.isArray(editRows) && editRows.length > 0) return editRows;
+
+    const res = await api.get("/HeadOffice/ProfitLossTableList", {
+      params: {
+        year,
+        account_id: selectedAccountId,
+        month: "",
+      },
+    });
+
+    return Array.isArray(res.data) ? res.data : [];
+  };
+
+  const setWorksheetName = (workbook, worksheet, sheetName) => {
+    const sameNameSheet = workbook.getWorksheet(sheetName);
+    if (sameNameSheet && sameNameSheet.id !== worksheet.id) {
+      workbook.removeWorksheet(sameNameSheet.id);
+    }
+
+    worksheet.name = sheetName;
+  };
+
+  const widenMonthAllCurrentColumn = (workbook) => {
+    const sheet = workbook.getWorksheet("손익표(월-전체)") || workbook.worksheets[0];
+    if (!sheet) return;
+
+    const currentColumn = sheet.getColumn(6);
+    const currentWidth = Number(currentColumn.width ?? 0);
+    currentColumn.width = Math.max(currentWidth, 16);
   };
 
   const handleExcelDownload = async () => {
@@ -1035,15 +1123,30 @@ export default function ProfitLossTableTab() {
 
           const detected = detectExcelExtOrError(res.data);
 
-          if (detected.kind === "xlsx" || detected.kind === "xls") {
-            const ext = detected.kind === "xls" ? "xls" : "xlsx";
-            const blob = new Blob([res.data], {
-              type:
-                ext === "xls"
-                  ? "application/vnd.ms-excel"
-                  : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          if (detected.kind === "xlsx") {
+            const monthTotalRows = await getMonthTotalRowsForExcel();
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(res.data);
+
+            const accountSheet = workbook.worksheets[0];
+            if (accountSheet) {
+              setWorksheetName(workbook, accountSheet, "손익표(거래처-전체)");
+            }
+            addMonthTotalSheet(workbook, monthTotalRows);
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
-            downloadBlob(blob, `${year}(손익표).${ext}`);
+            downloadBlob(blob, `${year}(손익표).xlsx`);
+            return;
+          }
+
+          if (detected.kind === "xls") {
+            const blob = new Blob([res.data], {
+              type: "application/vnd.ms-excel",
+            });
+            downloadBlob(blob, `${year}(손익표).xls`);
             return;
           }
 
@@ -1065,9 +1168,12 @@ export default function ProfitLossTableTab() {
             return;
           }
 
-          const buffer = await buildValueRatioWorkbook({
+          const monthTotalRows = await getMonthTotalRowsForExcel();
+          const workbook = new ExcelJS.Workbook();
+
+          addValueRatioSheet(workbook, {
             rows,
-            sheetName: "손익표(전체)",
+            sheetName: "손익표(거래처-전체)",
             firstTitle: "거래처",
             firstKey: "__account_month",
             labelGetter: (r) => {
@@ -1077,6 +1183,9 @@ export default function ProfitLossTableTab() {
             },
           });
 
+          addMonthTotalSheet(workbook, monthTotalRows);
+
+          const buffer = await workbook.xlsx.writeBuffer();
           const blob = new Blob([buffer], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           });
@@ -1095,15 +1204,26 @@ export default function ProfitLossTableTab() {
 
           const detected = detectExcelExtOrError(res.data);
 
-          if (detected.kind === "xlsx" || detected.kind === "xls") {
-            const ext = detected.kind === "xls" ? "xls" : "xlsx";
+          if (detected.kind === "xlsx") {
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(res.data);
+            widenMonthAllCurrentColumn(workbook);
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            downloadBlob(
+              new Blob([buffer], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              }),
+              `${year}(손익표-월전체).xlsx`
+            );
+            return;
+          }
+
+          if (detected.kind === "xls") {
             const blob = new Blob([res.data], {
-              type:
-                ext === "xls"
-                  ? "application/vnd.ms-excel"
-                  : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              type: "application/vnd.ms-excel",
             });
-            downloadBlob(blob, `${year}(손익표-월전체).${ext}`);
+            downloadBlob(blob, `${year}(손익표-월전체).xls`);
             return;
           }
 
@@ -1433,15 +1553,15 @@ export default function ProfitLossTableTab() {
                   {filteredHeaders.flatMap((h) =>
                     h.group
                       ? [
-                          <th key={h.group} colSpan={h.cols.length}>
-                            {h.group}
-                          </th>,
-                        ]
+                        <th key={h.group} colSpan={h.cols.length}>
+                          {h.group}
+                        </th>,
+                      ]
                       : h.cols.map((c) => (
-                          <th key={c} rowSpan={2} data-field={fieldMap[c]?.value ?? ""}>
-                            {c}
-                          </th>
-                        ))
+                        <th key={c} rowSpan={2} data-field={fieldMap[c]?.value ?? ""}>
+                          {c}
+                        </th>
+                      ))
                   )}
                 </tr>
                 <tr>
@@ -1501,10 +1621,10 @@ export default function ProfitLossTableTab() {
                               style={{
                                 ...(isNote && lockedNoteColumnWidth
                                   ? {
-                                      width: `${lockedNoteColumnWidth}px`,
-                                      minWidth: `${lockedNoteColumnWidth}px`,
-                                      maxWidth: `${lockedNoteColumnWidth}px`,
-                                    }
+                                    width: `${lockedNoteColumnWidth}px`,
+                                    minWidth: `${lockedNoteColumnWidth}px`,
+                                    maxWidth: `${lockedNoteColumnWidth}px`,
+                                  }
                                   : {}),
                                 ...(isNote ? { textAlign: "left" } : {}),
                               }}

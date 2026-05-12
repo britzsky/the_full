@@ -2810,6 +2810,10 @@ function TallySheet() {
   // ======================== 거래처 연결/등록 ========================
   const [open, setOpen] = useState(false);
   const [open2, setOpen2] = useState(false);
+  // 거래처 등록 저장 진행 상태
+  const [savingAccountRegister, setSavingAccountRegister] = useState(false);
+  // 거래처 등록 저장 중복 요청 차단 값
+  const savingAccountRegisterRef = useRef(false);
   const [leftItems, setLeftItems] = useState([]);
   const [rightItems, setRightItems] = useState([]);
   const [selectedLeft, setSelectedLeft] = useState([]);
@@ -2906,12 +2910,51 @@ function TallySheet() {
 
   const [formData, setFormData] = useState(initialForm);
   const [imagePreviews, setImagePreviews] = useState({ bank_image: null, biz_image: null });
+  // 거래처 등록 입력 라벨 공통 속성
+  const accountRegisterInputLabelProps = {
+    shrink: true,
+    style: { fontSize: "0.75rem", lineHeight: 1.2 },
+  };
+  // 거래처 등록 텍스트 입력 높이 공통 스타일
+  const accountRegisterTextFieldSx = {
+    mt: 1,
+    "& .MuiOutlinedInput-root": {
+      height: 40,
+      alignItems: "center",
+    },
+    "& .MuiInputBase-input": {
+      height: "40px",
+      boxSizing: "border-box",
+      py: 0,
+    },
+    "& .MuiInputLabel-shrink": {
+      backgroundColor: "#fff",
+      px: 0.5,
+    },
+  };
+  // 거래처 등록 선택 입력 높이 공통 스타일
+  const accountRegisterSelectSx = {
+    fontSize: "0.85rem",
+    height: 40,
+    "& .MuiSelect-select": {
+      height: "40px",
+      minHeight: "0 !important",
+      boxSizing: "border-box",
+      display: "flex",
+      alignItems: "center",
+      py: 0,
+    },
+  };
   const handleImagePreviewOpen = (src, title = "파일 미리보기") => {
     openFloatingPreview(src, title);
   };
 
   const handleModalOpen2 = async () => setOpen2(true);
-  const handleModalClose2 = async () => closeModalWithPreview(setOpen2);
+  const handleModalClose2 = async () => {
+    // 저장 요청 중 거래처 등록 모달 닫힘 차단
+    if (savingAccountRegisterRef.current) return;
+    closeModalWithPreview(setOpen2);
+  };
 
   const handleChange2 = (e) => {
     const { name, value, files } = e.target;
@@ -3009,6 +3052,9 @@ function TallySheet() {
   };
 
   const handleSubmit2 = async () => {
+    // 거래처 등록 저장 중복 요청 차단
+    if (savingAccountRegisterRef.current) return;
+
     const requiredFields = [
       "name",
       "biz_no",
@@ -3031,6 +3077,9 @@ function TallySheet() {
         confirmButtonText: "확인",
       });
     }
+
+    savingAccountRegisterRef.current = true;
+    setSavingAccountRegister(true);
 
     try {
       const imageFields = ["bank_image", "biz_image"];
@@ -3084,6 +3133,9 @@ function TallySheet() {
       // eslint-disable-next-line no-console
       console.error(err);
       Swal.fire("에러", err.message || "저장 중 문제가 발생했습니다.", "error");
+    } finally {
+      savingAccountRegisterRef.current = false;
+      setSavingAccountRegister(false);
     }
   };
 
@@ -4297,12 +4349,13 @@ function TallySheet() {
             fullWidth
             required
             margin="normal"
+            size="small"
             label="거래처명"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            InputLabelProps={accountRegisterInputLabelProps}
             name="name"
             value={formData.name || ""}
             onChange={handleChange2}
-            sx={{ mt: 1 }}
+            sx={accountRegisterTextFieldSx}
           />
 
           <Grid container spacing={1} alignItems="center" sx={{ mt: 0.5 }}>
@@ -4325,13 +4378,14 @@ function TallySheet() {
                 fullWidth
                 margin="none"
                 label="약식명"
-                InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                InputLabelProps={accountRegisterInputLabelProps}
                 name="add_name"
                 value={formData.add_name || ""}
                 onChange={handleChange2}
                 disabled={(formData.add_yn || "N") !== "Y"}
                 placeholder="약식사용 체크 시 입력"
                 size="small"
+                sx={{ ...accountRegisterTextFieldSx, mt: 0 }}
               />
             </Grid>
 
@@ -4350,7 +4404,7 @@ function TallySheet() {
                     account_type: String(e.target.value),
                   }))
                 }
-                sx={{ fontSize: "0.85rem", height: "40px" }}
+                sx={accountRegisterSelectSx}
               >
                 <MenuItem value={"0"}>식재료</MenuItem>
                 <MenuItem value={"1"}>소모품</MenuItem>
@@ -4363,43 +4417,46 @@ function TallySheet() {
             fullWidth
             required
             margin="normal"
+            size="small"
             label="사업자번호"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            InputLabelProps={accountRegisterInputLabelProps}
             name="biz_no"
             value={formData.biz_no || ""}
             onChange={handleBizNoChange}
             placeholder="예: 123-45-67890"
             inputProps={{ inputMode: "numeric" }}
-            sx={{ mt: 1 }}
+            sx={accountRegisterTextFieldSx}
           />
 
           <TextField
             fullWidth
             required
             margin="normal"
+            size="small"
             label="대표자명"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            InputLabelProps={accountRegisterInputLabelProps}
             name="ceo_name"
             value={formData.ceo_name || ""}
             onChange={handleChange2}
-            sx={{ mt: 1 }}
+            sx={accountRegisterTextFieldSx}
           />
 
           <TextField
             fullWidth
             required
             margin="normal"
+            size="small"
             label="연락처"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            InputLabelProps={accountRegisterInputLabelProps}
             name="tel"
             value={formData.tel || ""}
             onChange={handleTelChange}
             placeholder="예: 010-1234-5678"
             inputProps={{ inputMode: "numeric" }}
-            sx={{ mt: 1 }}
+            sx={accountRegisterTextFieldSx}
           />
 
-          <Box mt={1}>
+          <Box mt={0}>
             <Typography sx={{ fontSize: "0.8rem", mb: 0.5 }}>은행명 (필수)</Typography>
             <Select
               fullWidth
@@ -4413,7 +4470,7 @@ function TallySheet() {
               }
               onChange={handleBankSelect}
               displayEmpty
-              sx={{ fontSize: "0.85rem", height: "40px" }}
+              sx={{ ...accountRegisterSelectSx, mb: 1 }}
             >
               <MenuItem value="">
                 <em>은행 선택</em>
@@ -4431,12 +4488,13 @@ function TallySheet() {
                   fullWidth
                   required
                   margin="normal"
+                  size="small"
                   label="은행명 직접입력"
-                  InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+                  InputLabelProps={accountRegisterInputLabelProps}
                   name="bank_name"
                   value={formData.bank_name === "기타(직접입력)" ? "" : formData.bank_name || ""}
                   onChange={handleChange2}
-                  sx={{ mt: 1 }}
+                  sx={accountRegisterTextFieldSx}
                 />
               )}
           </Box>
@@ -4445,14 +4503,15 @@ function TallySheet() {
             fullWidth
             required
             margin="normal"
+            size="small"
             label="계좌번호"
-            InputLabelProps={{ style: { fontSize: "0.7rem" } }}
+            InputLabelProps={accountRegisterInputLabelProps}
             name="bank_no"
             value={formData.bank_no || ""}
             onChange={handleBankNoChange}
             placeholder="숫자만 입력해도 자동으로 - 가 들어갑니다."
             inputProps={{ inputMode: "numeric" }}
-            sx={{ mt: 1 }}
+            sx={accountRegisterTextFieldSx}
           />
 
           <Box mt={2} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -4617,16 +4676,23 @@ function TallySheet() {
             <Button
               variant="contained"
               onClick={handleModalClose2}
+              disabled={savingAccountRegister}
               sx={{
                 bgcolor: "#e8a500",
                 color: "#ffffff",
                 "&:hover": { bgcolor: "#e8a500", color: "#ffffff" },
+                "&.Mui-disabled": { bgcolor: "#e0e0e0", color: "#888888" },
               }}
             >
               취소
             </Button>
-            <Button variant="contained" onClick={handleSubmit2} sx={{ color: "#ffffff" }}>
-              저장
+            <Button
+              variant="contained"
+              onClick={handleSubmit2}
+              disabled={savingAccountRegister}
+              sx={{ color: "#ffffff" }}
+            >
+              {savingAccountRegister ? "저장 중" : "저장"}
             </Button>
           </Box>
         </Box>

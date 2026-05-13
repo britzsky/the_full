@@ -28,6 +28,10 @@ export default function ProfitLossTableTab() {
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
   const [lockedNoteColumnWidth, setLockedNoteColumnWidth] = useState(null);
+  // ✅ 인건비 우클릭 임시 잠금해제 월 목록
+  const [unlockedPersonCostMonths, setUnlockedPersonCostMonths] = useState(new Set());
+  // ✅ 우클릭 컨텍스트 메뉴 상태
+  const [ctxMenu, setCtxMenu] = useState({ open: false, mouseX: 0, mouseY: 0, month: null });
 
   // ✅ 실제 조회에 사용할 month (전체면 빈값으로 넘김)
   const queryMonth = useMemo(() => {
@@ -69,6 +73,11 @@ export default function ProfitLossTableTab() {
       fetchProfitLossTableList(queryAccountId, queryMonth, year);
     }
   }, [year, queryMonth, queryAccountId, selectedAccountId, fetchProfitLossTableList]);
+
+  // ✅ 거래처·연도·월 변경 시 인건비 임시 잠금해제 초기화
+  useEffect(() => {
+    setUnlockedPersonCostMonths(new Set());
+  }, [selectedAccountId, year, queryMonth]);
 
   // ✅ 데이터 원본 저장
   useEffect(() => {
@@ -142,7 +151,6 @@ export default function ProfitLossTableTab() {
     "dishwasher",
     "cesco",
     "water_puri",
-    "etc_cost",
     "utility_bills",
     "duty_secure",
     "person_cost",
@@ -215,11 +223,11 @@ export default function ProfitLossTableTab() {
         group: "매입",
         cols: [
           "식자재",
+          "기타경비",
           "음식물처리",
           "식기세척기",
           "세스코방제",
           "정수기",
-          "기타경비",
           "이벤트",
           "예산미발행",
           "매입소계",
@@ -346,6 +354,49 @@ export default function ProfitLossTableTab() {
     ctx.font = "bold 12px sans-serif";
     return `${Math.max(80, Math.ceil(ctx.measureText(safe).width + 6))}px`;
   };
+
+  // ✅ 지난 달 인건비 잠금 여부 (전체 거래처 조회 시 항상 잠금, 과거 월이고 인건비가 0이 아닌 경우 잠금, 임시 해제된 월 제외)
+  const isPersonCostLocked = useCallback((row) => {
+    if (selectedAccountId === "ALL") return true;  // ✅ 전체 조회 시 항상 잠금
+    const rowMonth = Number(row.month);
+    const rowYear = Number(year);
+    const curYear = today.year();
+    const curMonth = today.month() + 1;
+    const isPastMonth = rowYear < curYear || (rowYear === curYear && rowMonth < curMonth);
+    if (!isPastMonth) return false;
+    if (unlockedPersonCostMonths.has(rowMonth)) return false;  // ✅ 임시 잠금해제
+    return Number(row.person_cost ?? 0) !== 0;
+  }, [selectedAccountId, year, today, unlockedPersonCostMonths]);
+
+  // ✅ 과거 월 인건비 여부 (전체 제외, 과거 월에서만 우클릭 메뉴 표시)
+  const isPastPersonCostRow = useCallback((row) => {
+    if (selectedAccountId === "ALL") return false;
+    const rowMonth = Number(row.month);
+    const rowYear = Number(year);
+    const curYear = today.year();
+    const curMonth = today.month() + 1;
+    return rowYear < curYear || (rowYear === curYear && rowMonth < curMonth);
+  }, [selectedAccountId, year, today]);
+
+  // ✅ 인건비 셀 우클릭 핸들러 (과거 월이면 항상 메뉴 표시)
+  // ✅ 인건비 수정 권한 여부 (user_id: bh4, iy1 또는 department: 6)
+  const hasPersonCostEditPermission = useMemo(() => {
+    const userId = localStorage.getItem("user_id") || "";
+    const department = localStorage.getItem("department") || "";
+    return ["bh4", "iy1"].includes(userId) || department === "6";
+  }, []);
+
+  const handlePersonCostContextMenu = useCallback((e, row) => {
+    if (!isPastPersonCostRow(row)) return;
+    if (!hasPersonCostEditPermission) return;
+    e.preventDefault();
+    setCtxMenu({ open: true, mouseX: e.clientX, mouseY: e.clientY, month: Number(row.month) });
+  }, [isPastPersonCostRow, hasPersonCostEditPermission]);
+
+  // ✅ 컨텍스트 메뉴 닫기
+  const closeCtxMenu = useCallback(() => {
+    setCtxMenu({ open: false, mouseX: 0, mouseY: 0, month: null });
+  }, []);
 
   const lockNoteColumn = useCallback(() => {
     if (lockedNoteColumnWidth) return;
@@ -532,11 +583,11 @@ export default function ProfitLossTableTab() {
     { group: "매출", label: "소계(매출)", valueKey: "sales_total", ratioKey: "sales_total_ratio" },
     { __blank: true },
     { group: "매입", label: "식자재", valueKey: "food_cost", ratioKey: "food_ratio" },
+    { group: "매입", label: "기타경비", valueKey: "etc_cost", ratioKey: "etc_ratio" },
     { group: "매입", label: "음식물처리", valueKey: "food_process", ratioKey: "food_trash_ratio" },
     { group: "매입", label: "식기세척기", valueKey: "dishwasher", ratioKey: "dishwasher_ratio" },
     { group: "매입", label: "세스코방제", valueKey: "cesco", ratioKey: "cesco_ratio" },
     { group: "매입", label: "정수기임대", valueKey: "water_puri", ratioKey: "water_ratio" },
-    { group: "매입", label: "기타경비", valueKey: "etc_cost", ratioKey: "etc_ratio" },
     { group: "매입", label: "이벤트", valueKey: "event_cost", ratioKey: "event_ratio" },
     {
       group: "매입",
@@ -1003,6 +1054,11 @@ export default function ProfitLossTableTab() {
   const handleExcelDownload = async () => {
     if (!selectedAccountId) return;
 
+    if (hasUnsavedChanges) {
+      Swal.fire("저장 후 다운로드하세요.", "수정된 내용이 있습니다. 저장 후 엑셀 다운로드해주세요.", "warning");
+      return;
+    }
+
     const isAllMonth = String(month) === "ALL";
     const isAllAccount = String(selectedAccountId) === "ALL";
     const accountName = selectedAccount?.account_name || "거래처";
@@ -1323,6 +1379,7 @@ export default function ProfitLossTableTab() {
             account_id: row.account_id,
             year,
             month: row.month,
+            update_id: localStorage.getItem("user_id") || "",  // ✅ 수정자 아이디
             ...changedFields,
           };
         }
@@ -1339,6 +1396,7 @@ export default function ProfitLossTableTab() {
       await api.post("/HeadOffice/ProfitLossTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
       setLockedNoteColumnWidth(null);
+      setUnlockedPersonCostMonths(new Set());  // ✅ 임시 잠금해제 초기화
       fetchProfitLossTableList(queryAccountId, queryMonth, year);
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
@@ -1596,8 +1654,9 @@ export default function ProfitLossTableTab() {
                         h.cols.map((col) => {
                           const field = fieldMap[col]?.value;
 
-                          const isText = editableTextFields.includes(field);
-                          const isNumber = editableNumberFields.includes(field);
+                          const isAllAccount = selectedAccountId === "ALL";  // ✅ 전체 조회 시 편집 불가
+                          const isText = !isAllAccount && editableTextFields.includes(field);
+                          const isNumber = !isAllAccount && editableNumberFields.includes(field) && !(field === "person_cost" && isPersonCostLocked(r));  // ✅ 지난 달 인건비 잠금
                           const isNote = field === noteField;
 
                           const isChanged = (() => {
@@ -1618,6 +1677,7 @@ export default function ProfitLossTableTab() {
                             <td
                               key={col}
                               data-field={field}
+                              onContextMenu={field === "person_cost" && isPersonCostLocked(r) ? (e) => handlePersonCostContextMenu(e, r) : undefined}
                               style={{
                                 ...(isNote && lockedNoteColumnWidth
                                   ? {
@@ -1627,6 +1687,7 @@ export default function ProfitLossTableTab() {
                                   }
                                   : {}),
                                 ...(isNote ? { textAlign: "left" } : {}),
+                                ...(field === "person_cost" && isPersonCostLocked(r) ? { cursor: "context-menu" } : {}),
                               }}
                             >
                               {isText ? (
@@ -1684,7 +1745,7 @@ export default function ProfitLossTableTab() {
                               ) : (
                                 <input
                                   type="text"
-                                  value={formatNumber(getDisplayValue(r, field) ?? 0)}
+                                  value={editableTextFields.includes(field) ? (isAllAccount ? "" : (getDisplayValue(r, field) ?? "")) : formatNumber(getDisplayValue(r, field) ?? 0)}
                                   disabled
                                   style={{
                                     width: "80px",
@@ -1733,6 +1794,39 @@ export default function ProfitLossTableTab() {
           </Box>
         </Grid>
       </Grid>
+
+      {ctxMenu.open && (
+        <div
+          onClick={closeCtxMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeCtxMenu(); }}
+          style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 10000 }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: ctxMenu.mouseY,
+              left: ctxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{ width: "100%", padding: "10px 12px", border: "none", background: "transparent", textAlign: "left", cursor: "pointer", fontSize: 13 }}
+              onClick={() => {
+                setUnlockedPersonCostMonths((prev) => new Set([...prev, ctxMenu.month]));
+                closeCtxMenu();
+              }}
+            >
+              ✏️ 인건비 수정
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -2585,11 +2585,14 @@ function TallySheet() {
   const buildTallyExcelSheet = useCallback(
     (
       workbook,
-      { sheetName, accountName, reportDateLabel, budget, used, ratioData, tableRows, daysCount }
+      // targetSheet: 기존 시트에 이어 붙일 때 전달 (없으면 새 시트 생성)
+      // rowOffset: 기존 시트에 이어 쓸 때 시작 행 오프셋 (0 = 첫 행부터)
+      { sheetName, accountName, reportDateLabel, budget, used, ratioData, tableRows, daysCount,
+        targetSheet = null, rowOffset = 0 }
     ) => {
-      const ws = workbook.addWorksheet(sheetName);
+      // targetSheet가 있으면 재사용, 없으면 새 시트 생성
+      const ws = targetSheet || workbook.addWorksheet(sheetName);
       const totalCols = daysCount + 2; // 구분 + 일자들 + 합계
-      const endCol = toExcelColName(totalCols);
 
       const borderThin = {
         top: { style: "thin", color: { argb: "FF686D76" } },
@@ -2603,193 +2606,381 @@ function TallySheet() {
       const ratioNum = budgetNum > 0 ? (usedNum / budgetNum) * 100 : 0;
       const ratioText = `${ratioNum.toFixed(2)}%`;
 
-      // ✅ 제목: ■ {업장명} / {조회날짜}
-      ws.getCell("A1").value = `■ ${accountName} / ${reportDateLabel}`;
-      ws.mergeCells(`A1:${endCol}1`);
-      ws.getCell("A1").font = { bold: true, size: 12 };
-      ws.getCell("A1").alignment = { vertical: "middle", horizontal: "left" };
-      ws.getRow(1).height = 24;
+      // 행 번호: rowOffset 기준 상대 위치
+      const titleRowNo    = rowOffset + 1;
+      const summaryRowNo  = rowOffset + 2;
+      // rowOffset + 3 은 공백행
+      const ratioRowNo    = rowOffset + 4;
+      const headerRowNo   = rowOffset + 5;
+      const dataStartRowNo = rowOffset + 6;
 
-      // ✅ 요약(가로): A2~F2 고정 배치
-      const summaryRow = [
-        "식자재 월 예산",
-        budgetNum,
-        "사용 금액",
-        usedNum,
-        "예산대비 퍼센트",
-        ratioText,
-      ];
-      ws.getRow(2).values = summaryRow;
+      // 제목: ■ {업장명} / {조회날짜}
+      ws.getCell(`A${titleRowNo}`).value = `■ ${accountName} / ${reportDateLabel}`;
+      ws.mergeCells(titleRowNo, 1, titleRowNo, totalCols);
+      ws.getCell(`A${titleRowNo}`).font = { bold: true, size: 12 };
+      ws.getCell(`A${titleRowNo}`).alignment = { vertical: "middle", horizontal: "left" };
+      ws.getRow(titleRowNo).height = 24;
+
+      // 요약행: 식자재 월 예산 / 사용 금액 / 예산대비 퍼센트
+      ws.getRow(summaryRowNo).values = ["식자재 월 예산", budgetNum, "사용 금액", usedNum, "예산대비 퍼센트", ratioText];
       for (let c = 1; c <= Math.min(6, totalCols); c++) {
-        const cell = ws.getCell(`${toExcelColName(c)}2`);
+        const cell = ws.getCell(summaryRowNo, c);
         cell.border = borderThin;
-        cell.alignment = {
-          vertical: "middle",
-          horizontal: [2, 4, 6].includes(c) ? "right" : "center",
-        };
+        cell.alignment = { vertical: "middle", horizontal: [2, 4, 6].includes(c) ? "right" : "center" };
         if ([1, 3, 5].includes(c)) {
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
           cell.font = { bold: true };
         }
       }
-      ws.getCell("B2").numFmt = "#,##0";
-      ws.getCell("D2").numFmt = "#,##0";
+      ws.getCell(summaryRowNo, 2).numFmt = "#,##0";
+      ws.getCell(summaryRowNo, 4).numFmt = "#,##0";
 
-      // ✅ 조회년월 행 제거 후 표를 1행 위로 이동
-      const ratioRowNo = 4;
-      const headerRowNo = 5;
-      const dataStartRowNo = 6;
-
-      // ✅ 일 사용기준 % 행
-      ws.getCell(`A${ratioRowNo}`).value = "일 사용기준 %";
+      // 일 사용기준 % 행
+      ws.getCell(ratioRowNo, 1).value = "일 사용기준 %";
       ratioData.forEach((val, idx) => {
-        ws.getCell(`${toExcelColName(idx + 2)}${ratioRowNo}`).value = val;
+        ws.getCell(ratioRowNo, idx + 2).value = val;
       });
-      ws.getCell(`${endCol}${ratioRowNo}`).value = "";
+      ws.getCell(ratioRowNo, totalCols).value = "";
 
-      // ✅ 헤더 행 (구분 + 일자 + 합계)
-      ws.getCell(`A${headerRowNo}`).value = "구분";
+      // 헤더 행 (구분 + 1일~N일 + 합계)
+      ws.getCell(headerRowNo, 1).value = "구분";
       for (let d = 1; d <= daysCount; d++) {
-        ws.getCell(`${toExcelColName(d + 1)}${headerRowNo}`).value = `${d}일`;
+        ws.getCell(headerRowNo, d + 1).value = `${d}일`;
       }
-      ws.getCell(`${endCol}${headerRowNo}`).value = "합계";
+      ws.getCell(headerRowNo, totalCols).value = "합계";
 
-      // ✅ 본문 데이터 행
+      // 본문 데이터 행
       (tableRows || []).forEach((row, rowIdx) => {
         const r = dataStartRowNo + rowIdx;
-        ws.getCell(`A${r}`).value = row?.name ?? "";
+        ws.getCell(r, 1).value = row?.name ?? "";
         for (let d = 1; d <= daysCount; d++) {
-          const num = parseNumber(row?.[`day_${d}`]);
-          const cell = ws.getCell(`${toExcelColName(d + 1)}${r}`);
-          cell.value = num;
+          const cell = ws.getCell(r, d + 1);
+          cell.value = parseNumber(row?.[`day_${d}`]);
           cell.numFmt = "#,##0";
         }
-        const totalCell = ws.getCell(`${endCol}${r}`);
+        const totalCell = ws.getCell(r, totalCols);
         totalCell.value = parseNumber(row?.total);
         totalCell.numFmt = "#,##0";
       });
 
       const dataEndRowNo = dataStartRowNo + Math.max((tableRows || []).length - 1, 0);
 
-      // ✅ 공통 테두리/정렬
+      // 공통 테두리/정렬 (비율행 ~ 데이터 마지막 행)
       for (let r = ratioRowNo; r <= dataEndRowNo; r++) {
         for (let c = 1; c <= totalCols; c++) {
-          const cell = ws.getCell(`${toExcelColName(c)}${r}`);
+          const cell = ws.getCell(r, c);
           cell.border = borderThin;
           cell.alignment = { vertical: "middle", horizontal: "center" };
         }
       }
 
-      // ✅ 일 사용기준%/헤더 강조
+      // 일 사용기준% / 헤더 강조
       for (let c = 1; c <= totalCols; c++) {
-        ws.getCell(`${toExcelColName(c)}${ratioRowNo}`).fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFFFE3A9" },
-        };
-        const headerCell = ws.getCell(`${toExcelColName(c)}${headerRowNo}`);
+        ws.getCell(ratioRowNo, c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE3A9" } };
+        const headerCell = ws.getCell(headerRowNo, c);
         headerCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
         headerCell.font = { bold: true };
       }
 
-      // ✅ 총합 행 강조
-      const totalRowOffset = (tableRows || []).findIndex((r) => String(r?.name) === "총합");
-      if (totalRowOffset >= 0) {
-        const totalRowNo = dataStartRowNo + totalRowOffset;
+      // 총합 행 강조
+      const totalRowIdx = (tableRows || []).findIndex((r) => String(r?.name) === "총합");
+      if (totalRowIdx >= 0) {
+        const totalRowNo = dataStartRowNo + totalRowIdx;
         for (let c = 1; c <= totalCols; c++) {
-          const cell = ws.getCell(`${toExcelColName(c)}${totalRowNo}`);
+          const cell = ws.getCell(totalRowNo, c);
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE3A9" } };
           cell.font = { bold: true };
         }
       }
 
-      // ✅ 컬럼 폭: 전체 +1, E열(예산대비 퍼센트)은 추가 확대
-      ws.getColumn(1).width = 19;
-      for (let c = 2; c <= totalCols - 1; c++) {
-        ws.getColumn(c).width = 11;
+      // 컬럼 폭은 새 시트(첫 블록)에서만 설정 (targetSheet 없을 때 or rowOffset=0 일 때)
+      if (!targetSheet || rowOffset === 0) {
+        ws.getColumn(1).width = 19;
+        for (let c = 2; c <= totalCols - 1; c++) ws.getColumn(c).width = 11;
+        ws.getColumn(totalCols).width = 12;
+        if (totalCols >= 5) ws.getColumn(5).width = 18;
+        if (totalCols >= 2) ws.getColumn(2).width = 12;
+        if (totalCols >= 4) ws.getColumn(4).width = 12;
       }
-      ws.getColumn(totalCols).width = 12; // ✅ 합계열 폭 고정
-      if (totalCols >= 5) {
-        ws.getColumn(5).width = 18;
-      }
-      // ✅ 요청 반영: B, D 열도 조금 더 확대
-      if (totalCols >= 2) ws.getColumn(2).width = 12;
-      if (totalCols >= 4) ws.getColumn(4).width = 12;
+
+      // 이 블록이 차지한 마지막 행 번호 반환 (다음 블록 시작 위치 계산용)
+      return dataEndRowNo;
     },
     [toExcelColName]
   );
 
   // ✅ 집계표 엑셀 다운로드 (현재월/전월 시트 동시 생성)
   const handleExcelDownload = useCallback(async () => {
+    // 거래처 미선택 시 안내
     if (!selectedAccountId) {
       Swal.fire("안내", "거래처를 먼저 선택하세요.", "info");
       return;
     }
 
-    const hasNow = Array.isArray(tableData) && tableData.length > 0;
-    const hasPrev = Array.isArray(table2Data) && table2Data.length > 0;
-    if (!hasNow && !hasPrev) {
-      Swal.fire("안내", "다운로드할 데이터가 없습니다.", "info");
+    // 현재 선택된 거래처명 (모달 옵션 라벨로 사용)
+    const currentAccountName = String(selectedAccountOption?.account_name || selectedAccountId || "업장");
+
+    // 다운로드 방식 선택 모달: "거래처 전체" 또는 현재 거래처
+    const { value: mode } = await Swal.fire({
+      title: "전체 다운로드 옵션",
+      text: "다운로드 방식을 선택하세요.",
+      input: "radio",
+      inputOptions: {
+        all: "거래처 전체",
+        current: currentAccountName,
+      },
+      inputValidator: (v) => (!v ? "옵션을 선택해주세요." : undefined),
+      confirmButtonText: "다운로드",
+      showCancelButton: true,
+      cancelButtonText: "취소",
+    });
+
+    // 취소 시 중단
+    if (!mode) return;
+
+    // 엑셀 시트 헤더에 표시할 조회 날짜 레이블
+    const nowReportDateLabel = `${year}-${String(month).padStart(2, "0")}`;
+    const prevReportDateLabel = `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
+
+    // ─── 현재 거래처만 다운로드 ───────────────────────────────────────────────
+    if (mode === "current") {
+      // 화면에 이미 로드된 데이터 사용 (현재월 / 전월)
+      const hasNow = Array.isArray(tableData) && tableData.length > 0;
+      const hasPrev = Array.isArray(table2Data) && table2Data.length > 0;
+      if (!hasNow && !hasPrev) {
+        Swal.fire("안내", "다운로드할 데이터가 없습니다.", "info");
+        return;
+      }
+
+      try {
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = "tallysheet";
+        workbook.created = new Date();
+
+        // 현재월 시트 생성
+        if (hasNow) {
+          buildTallyExcelSheet(workbook, {
+            sheetName: `현재월(${nowReportDateLabel})`,
+            accountName: currentAccountName,
+            reportDateLabel: nowReportDateLabel,
+            budget: budgetGrant,
+            used: usedTotalNow,
+            ratioData: ratioDataNow,
+            tableRows: tableData,
+            daysCount: daysInMonthNow,
+          });
+        }
+
+        // 전월 시트 생성
+        if (hasPrev) {
+          buildTallyExcelSheet(workbook, {
+            sheetName: `전월(${prevReportDateLabel})`,
+            accountName: currentAccountName,
+            reportDateLabel: prevReportDateLabel,
+            budget: budget2Grant,
+            used: usedTotalPrev,
+            ratioData: ratioDataPrev,
+            tableRows: table2Data,
+            daysCount: daysInMonthPrev,
+          });
+        }
+
+        // 파일명에서 특수문자 제거 후 다운로드
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const safeAccountName = currentAccountName.replace(/[\\/:*?"<>|]/g, "_");
+        a.href = url;
+        a.download = `집계표_${safeAccountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
+      }
       return;
     }
 
+    // ─── 거래처 전체 다운로드 ─────────────────────────────────────────────────
+    // 로딩 모달 표시 (API 응답 대기 중)
+    Swal.fire({
+      title: "다운로드 중...",
+      text: "전체 업장 데이터를 불러오는 중입니다.",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
     try {
+      // 현재월 / 전월 전체 업장 데이터를 동시에 요청 (2회 API 호출)
+      // - /Operate/TallySheetAllList: account_name 오름차순 + budget_grant 포함하여 반환
+      const [nowRes, prevRes] = await Promise.all([
+        api.get("/Operate/TallySheetAllList", { params: { year, month } }),
+        api.get("/Operate/TallySheetAllList", { params: { year: prevYear, month: prevMonth } }),
+      ]);
+
+      const nowAllRows = Array.isArray(nowRes.data) ? nowRes.data : [];
+      const prevAllRows = Array.isArray(prevRes.data) ? prevRes.data : [];
+
+      if (nowAllRows.length === 0 && prevAllRows.length === 0) {
+        Swal.close();
+        Swal.fire("안내", "다운로드할 데이터가 없습니다.", "info");
+        return;
+      }
+
+      // 응답 rows를 account_id 기준으로 Map에 묶음
+      // Map 키: account_id, 값: { account_name, rows[] }
+      const groupByAccountId = (rows) => {
+        const map = new Map();
+        rows.forEach((r) => {
+          const aid = String(r?.account_id ?? "");
+          if (!aid) return;
+          if (!map.has(aid)) map.set(aid, { account_name: String(r?.account_name ?? ""), rows: [] });
+          map.get(aid).rows.push(r);
+        });
+        return map;
+      };
+
+      const nowByAccount = groupByAccountId(nowAllRows);
+      const prevByAccount = groupByAccountId(prevAllRows);
+
+      // accountList(드롭다운 기준)를 account_name 오름차순으로 정렬한 것을 기준으로 사용
+      // → API 응답에 없는 업장(데이터 0건)도 포맷은 출력됨
+      const allAccountIds = [...(accountList || [])]
+        .sort((a, b) =>
+          String(a.account_name ?? "").localeCompare(String(b.account_name ?? ""), "ko")
+        )
+        .map((a) => String(a.account_id));
+
       const workbook = new ExcelJS.Workbook();
       workbook.creator = "tallysheet";
       workbook.created = new Date();
 
-      const accountName = String(selectedAccountOption?.account_name || selectedAccountId || "업장");
-      const nowReportDateLabel = `${year}-${String(month).padStart(2, "0")}`;
-      const prevReportDateLabel = `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
-      // ✅ 엑셀 하단 시트 탭: 화면 조회 월을 함께 표기 (예: 현재월(2026-03))
-      const nowSheetName = `현재월(${nowReportDateLabel})`;
-      const prevSheetName = `전월(${prevReportDateLabel})`;
+      // 일 사용기준 % 배열 (현재월 / 전월 일수 기준)
+      const ratioNow = Array.from(
+        { length: daysInMonthNow },
+        (_, i) => (((i + 1) / daysInMonthNow) * 100).toFixed(2) + "%"
+      );
+      const ratioPrev = Array.from(
+        { length: daysInMonthPrev },
+        (_, i) => (((i + 1) / daysInMonthPrev) * 100).toFixed(2) + "%"
+      );
 
-      if (hasNow) {
-        buildTallyExcelSheet(workbook, {
-          sheetName: nowSheetName,
-          accountName,
-          reportDateLabel: nowReportDateLabel,
-          budget: budgetGrant,
-          used: usedTotalNow,
-          ratioData: ratioDataNow,
-          tableRows: tableData,
-          daysCount: daysInMonthNow,
+      // 시트 2개 생성: 현재월 / 전월
+      // 각 시트에 전체 업장 블록을 account_name 오름차순으로 이어서 작성
+      const nowSheet = workbook.addWorksheet(`현재월(${nowReportDateLabel})`);
+      const prevSheet = workbook.addWorksheet(`전월(${prevReportDateLabel})`);
+
+      // 각 시트의 현재 마지막 행 위치 (다음 업장 블록 시작 rowOffset 계산용)
+      let nowRowOffset = 0;
+      let prevRowOffset = 0;
+      const BLOCK_GAP = 1; // 업장 블록 사이 공백 행 수
+
+      // API 응답 rows 배열 → day 컬럼에 parseNumber 적용하는 공통 변환
+      const parseGroupRows = (rows) =>
+        rows.map((item) => {
+          const row = { account_id: item.account_id, name: item.name, type: item.type };
+          for (let i = 1; i <= 31; i++) row[`day_${i}`] = parseNumber(item[`day_${i}`]);
+          return row;
         });
+
+      // 예산: 같은 업장 rows 중 budget_grant 값이 있는 첫 번째 항목에서 추출
+      const pickBudget = (rows) =>
+        parseNumber((rows.find((x) => x?.budget_grant != null) || rows[0])?.budget_grant);
+
+      // accountList Map: account_id → account_name (accName fallback용)
+      const accountNameMap = new Map(
+        (accountList || []).map((a) => [String(a.account_id), String(a.account_name ?? "")])
+      );
+
+      for (const accId of allAccountIds) {
+        const nowGroup = nowByAccount.get(accId);
+        const prevGroup = prevByAccount.get(accId);
+        // account_name은 accountList 기준 우선, 없으면 API 응답에서 폴백
+        const accName =
+          accountNameMap.get(accId) ??
+          nowGroup?.account_name ??
+          prevGroup?.account_name ??
+          accId;
+
+        // 현재월 시트: 데이터 없는 업장도 포맷(제목/헤더)은 출력
+        {
+          const rawRows = nowGroup ? parseGroupRows(nowGroup.rows) : [];
+          const nowBudget = nowGroup ? pickBudget(nowGroup.rows) : 0;
+          const nowTableRows = makeTableData(rawRows, daysInMonthNow);
+          const nowUsed = parseNumber((nowTableRows || []).find((r) => r?.name === "총합")?.total);
+
+          const lastRow = buildTallyExcelSheet(workbook, {
+            sheetName: `현재월(${nowReportDateLabel})`,
+            accountName: accName,
+            reportDateLabel: nowReportDateLabel,
+            budget: nowBudget,
+            used: nowUsed,
+            ratioData: ratioNow,
+            tableRows: nowTableRows,
+            daysCount: daysInMonthNow,
+            targetSheet: nowSheet,
+            rowOffset: nowRowOffset,
+          });
+          // 다음 업장 시작 위치 = 이번 블록 마지막 행 + 공백 1행
+          nowRowOffset = lastRow + BLOCK_GAP;
+        }
+
+        // 전월 시트: 데이터 없는 업장도 포맷(제목/헤더)은 출력
+        {
+          const rawRows = prevGroup ? parseGroupRows(prevGroup.rows) : [];
+          const prevBudget = prevGroup ? pickBudget(prevGroup.rows) : 0;
+          const prevTableRows = makeTableData(rawRows, daysInMonthPrev);
+          const prevUsed = parseNumber((prevTableRows || []).find((r) => r?.name === "총합")?.total);
+
+          const lastRow = buildTallyExcelSheet(workbook, {
+            sheetName: `전월(${prevReportDateLabel})`,
+            accountName: accName,
+            reportDateLabel: prevReportDateLabel,
+            budget: prevBudget,
+            used: prevUsed,
+            ratioData: ratioPrev,
+            tableRows: prevTableRows,
+            daysCount: daysInMonthPrev,
+            targetSheet: prevSheet,
+            rowOffset: prevRowOffset,
+          });
+          prevRowOffset = lastRow + BLOCK_GAP;
+        }
       }
 
-      if (hasPrev) {
-        buildTallyExcelSheet(workbook, {
-          sheetName: prevSheetName,
-          accountName,
-          reportDateLabel: prevReportDateLabel,
-          budget: budget2Grant,
-          used: usedTotalPrev,
-          ratioData: ratioDataPrev,
-          tableRows: table2Data,
-          daysCount: daysInMonthPrev,
-        });
+      Swal.close();
+
+      if (workbook.worksheets.length === 0) {
+        Swal.fire("안내", "다운로드할 데이터가 없습니다.", "info");
+        return;
       }
 
+      // 엑셀 파일 생성 후 브라우저 다운로드
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const safeAccountName = accountName.replace(/[\\/:*?"<>|]/g, "_");
       a.href = url;
-      a.download = `집계표_${safeAccountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
+      a.download = `집계표_전체_${year}-${String(month).padStart(2, "0")}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (err) {
+      Swal.close();
       Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
     }
   }, [
     selectedAccountId,
     selectedAccountOption,
+    accountList,
     tableData,
     table2Data,
     year,

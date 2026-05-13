@@ -607,12 +607,16 @@ function PreviewOverlay({
             onClick={(e) => {
               e.stopPropagation();
               if (!currentPreviewUrl) return;
-              const link = document.createElement("a");
-              link.href = currentPreviewUrl;
-              link.download = currentFile?.name || "preview";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
+              if (/^blob:/i.test(currentPreviewUrl)) {
+                const link = document.createElement("a");
+                link.href = currentPreviewUrl;
+                link.download = currentFile?.name || "preview";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              } else {
+                window.open(currentPreviewUrl, "_blank", "noopener,noreferrer");
+              }
             }}
             disabled={!currentPreviewUrl}
             style={{

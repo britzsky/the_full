@@ -321,6 +321,12 @@ function AccountPurchaseDeadlineTab() {
     mouseY: 0,
     rowIndex: null,
   });
+  const [masterCtxMenu, setMasterCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
   // 테이블 강제 리렌더링용 키 (defaultValue 기반 input 초기화 시 사용)
   const [masterTableKey, setMasterTableKey] = useState(0);
   const [detailTableKey, setDetailTableKey] = useState(0);
@@ -1557,6 +1563,56 @@ function AccountPurchaseDeadlineTab() {
   const closeDetailCtxMenu = useCallback(() => {
     setDetailCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
   }, []);
+
+  const closeMasterCtxMenu = useCallback(() => {
+    setMasterCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  const handleMasterRowContextMenu = useCallback((e, rowIndex) => {
+    e.preventDefault();
+    setMasterCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  }, []);
+
+  const handleDeleteMasterRowData = useCallback(async () => {
+    const rowIndex = masterCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+
+    const row = rows?.[rowIndex];
+    if (!row) {
+      closeMasterCtxMenu();
+      return;
+    }
+
+    const payload = {
+      type: Number(row?.type ?? 0),
+      account_id: row?.account_id ?? filters.account_id ?? "",
+      sale_id: row?.sale_id ?? row?.saleId ?? "",
+      saleDate: row?.saleDate ?? "",
+    };
+
+    console.log("[AccountPurchaseTallyDelete] payload:", payload);
+
+    try {
+      const res = await api.post("/Account/AccountPurchaseTallyDelete", payload, {
+        headers: { "Content-Type": "application/json" },
+        validateStatus: () => true,
+      });
+      console.log("[AccountPurchaseTallyDelete] response:", res);
+      if (Number(res?.data?.code) === 200) {
+        await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
+        await fetchPurchaseList(latestFiltersRef.current);
+      }
+    } catch (err) {
+      console.error("[AccountPurchaseTallyDelete] error:", err);
+    } finally {
+      closeMasterCtxMenu();
+    }
+  }, [closeMasterCtxMenu, fetchPurchaseList, filters.account_id, masterCtxMenu.rowIndex, rows]);
 
   // 신규 상세행 우클릭 메뉴 열기
   const handleDetailRowContextMenu = useCallback(
@@ -2917,6 +2973,7 @@ function AccountPurchaseDeadlineTab() {
                         key={rowIndex}
                         data-sale-id={rowSaleId}
                         onClick={() => handleMasterRowClick(row, rowIndex)}
+                        onContextMenu={(e) => handleMasterRowContextMenu(e, rowIndex)}
                         style={{
                           cursor: isDeletedAccount ? "not-allowed" : "pointer",
                           backgroundColor:
@@ -3716,6 +3773,54 @@ function AccountPurchaseDeadlineTab() {
         </MDBox>
 
         {/* 저장된 증빙자료를 공용 오버레이로 미리보는 영역 */}
+        {masterCtxMenu.open && (
+          <div
+            onClick={closeMasterCtxMenu}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              closeMasterCtxMenu();
+            }}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              zIndex: 10000,
+            }}
+          >
+            <div
+              style={{
+                position: "absolute",
+                top: masterCtxMenu.mouseY,
+                left: masterCtxMenu.mouseX,
+                background: "#fff",
+                border: "1px solid #ddd",
+                borderRadius: 8,
+                boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+                minWidth: 140,
+                overflow: "hidden",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={handleDeleteMasterRowData}
+              >
+                데이터 삭제
+              </button>
+            </div>
+          </div>
+        )}
+
         {detailCtxMenu.open && (
           <div
             onClick={closeDetailCtxMenu}

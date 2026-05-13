@@ -478,6 +478,12 @@ function AccountCorporateCardSheet() {
     mouseY: 0,
     rowIndex: null,
   });
+  const [masterCtxMenu, setMasterCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
 
   // ========================= 초기 로드: 거래처 목록 =========================
   const didInitRef = useRef(false);
@@ -772,6 +778,71 @@ function AccountCorporateCardSheet() {
   const closeDetailCtxMenu = useCallback(() => {
     setDetailCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
   }, []);
+
+  const closeMasterCtxMenu = useCallback(() => {
+    setMasterCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  const handleMasterRowContextMenu = useCallback((e, rowIndex) => {
+    e.preventDefault();
+    setMasterCtxMenu({
+      open: true,
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      rowIndex,
+    });
+  }, []);
+
+  const handleDeleteMasterRowData = useCallback(async () => {
+    const rowIndex = masterCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+
+    const row = masterRows?.[rowIndex];
+    if (!row) {
+      closeMasterCtxMenu();
+      return;
+    }
+
+    const payload = {
+      type: 1000,
+      account_id: row?.account_id ?? selectedAccountId ?? "",
+      sale_id: row?.sale_id ?? row?.saleId ?? "",
+      payment_dt: row?.payment_dt ?? "",
+    };
+
+    console.log("[AccountCorporateCardPaymentDelete] payload:", payload);
+
+    try {
+      const res = await api.post("/Account/AccountCorporateCardPaymentDelete", payload, {
+        headers: { "Content-Type": "application/json" },
+        validateStatus: () => true,
+      });
+      console.log("[AccountCorporateCardPaymentDelete] response:", res);
+      if (Number(res?.data?.code) === 200) {
+        await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
+        setSelectedMaster(null);
+        setDetailRows([]);
+        setOrigDetailRows([]);
+        setSelectedSaleId("");
+        setSelectedMasterIndex(-1);
+        setPendingDetailMap(new Map());
+        detailEditedRef.current = false;
+        forceServerSyncRef.current = true;
+        skipPendingNewMergeRef.current = true;
+        await handleFetchMaster({ force: true });
+      }
+    } catch (err) {
+      console.error("[AccountCorporateCardPaymentDelete] error:", err);
+    } finally {
+      closeMasterCtxMenu();
+    }
+  }, [
+    closeMasterCtxMenu,
+    handleFetchMaster,
+    masterCtxMenu.rowIndex,
+    masterRows,
+    selectedAccountId,
+  ]);
 
   // 신규 상세행 우클릭 메뉴 열기
   const handleDetailRowContextMenu = useCallback((e, row, rowIndex) => {
@@ -1995,6 +2066,7 @@ function AccountCorporateCardSheet() {
                     cursor: "pointer",
                   }}
                   onClick={() => handleMasterRowClick(row, rowIndex)}
+                  onContextMenu={(ev) => handleMasterRowContextMenu(ev, rowIndex)}
                 >
                   {masterColumns.map((c) => {
                     const key = c.key;
@@ -2611,6 +2683,54 @@ function AccountCorporateCardSheet() {
           </MDBox>
         </MDBox>
       </MDBox>
+
+      {masterCtxMenu.open && (
+        <div
+          onClick={closeMasterCtxMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeMasterCtxMenu();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 10000,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: masterCtxMenu.mouseY,
+              left: masterCtxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={handleDeleteMasterRowData}
+            >
+              데이터 삭제
+            </button>
+          </div>
+        </div>
+      )}
 
       {detailCtxMenu.open && (
         <div

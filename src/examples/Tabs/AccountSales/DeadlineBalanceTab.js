@@ -1577,6 +1577,36 @@ export default function DeadlineBalanceTab() {
     []
   );
 
+  // 입금내역 표에서 비고가 길어져도 주요 컬럼은 한 줄로 유지한다.
+  const depositHistoryColumnStyleByKey = useMemo(
+    () => ({
+      input_dt: { width: isMobile ? "11%" : "10%" },
+      base_ym: { width: isMobile ? "12%" : "11%" },
+      type: { width: isMobile ? "10%" : "10%" },
+      deposit_amount: { width: isMobile ? "13%" : "12%" },
+      input_price: { width: isMobile ? "13%" : "12%" },
+      difference_price: { width: isMobile ? "10%" : "10%" },
+      note: {
+        width: isMobile ? "31%" : "35%",
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        overflowWrap: "anywhere",
+        textAlign: "left",
+      },
+    }),
+    [isMobile]
+  );
+
+  const getDepositHistoryColumnStyle = (key) => ({
+    ...(depositHistoryColumnStyleByKey[key] || {}),
+    ...(key === "note" ? {} : { whiteSpace: "nowrap" }),
+  });
+
+  const getDepositHistoryHeaderStyle = (key) => ({
+    ...getDepositHistoryColumnStyle(key),
+    textAlign: "center",
+  });
+
 
   // ✅ 반응형 테이블 스타일
   const tableSx = useMemo(
@@ -1981,12 +2011,20 @@ export default function DeadlineBalanceTab() {
             </MDTypography>
           </MDBox>
 
-          <Box sx={tableSx}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <Box sx={{ ...tableSx, overflowX: "hidden" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                tableLayout: "fixed",
+              }}
+            >
               <thead style={{ position: "sticky", top: 0, background: "#f0f0f0", zIndex: 2 }}>
                 <tr>
                   {columns2.map((col) => (
-                    <th key={col.accessorKey}>{col.header}</th>
+                    <th key={col.accessorKey} style={getDepositHistoryHeaderStyle(col.accessorKey)}>
+                      {col.header}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -2003,7 +2041,7 @@ export default function DeadlineBalanceTab() {
                           const y = Number(row?.year || 0);
                           const m = Number(row?.month || 0);
                           return (
-                            <td key={key}>
+                            <td key={key} style={getDepositHistoryColumnStyle(key)}>
                               {y > 0 && m > 0
                                 ? `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}`
                                 : "0000-00"}
@@ -2016,6 +2054,7 @@ export default function DeadlineBalanceTab() {
                             <td
                               key={key}
                               style={{
+                                ...getDepositHistoryColumnStyle(key),
                                 backgroundColor: getRightTypeCellColor(row),
                               }}
                             >
@@ -2026,16 +2065,24 @@ export default function DeadlineBalanceTab() {
 
                         if (["deposit_amount", "input_price", "difference_price"].includes(key)) {
                           return (
-                            <td key={key} align="right">
+                            <td key={key} align="right" style={getDepositHistoryColumnStyle(key)}>
                               {formatNumber(value)}
                             </td>
                           );
                         }
                         if (key === "note") {
                           const viewNote = String(value || "").replace(/^\[환불\]\s*/u, "");
-                          return <td key={key}>{viewNote}</td>;
+                          return (
+                            <td key={key} style={getDepositHistoryColumnStyle(key)}>
+                              {viewNote}
+                            </td>
+                          );
                         }
-                        return <td key={key}>{value}</td>;
+                        return (
+                          <td key={key} style={getDepositHistoryColumnStyle(key)}>
+                            {value}
+                          </td>
+                        );
                       })}
                     </tr>
                   ))}

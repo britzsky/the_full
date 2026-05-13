@@ -11,6 +11,19 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
 
+// 조리복 사이즈 선택지에 표시할 라벨을 변환하는 함수
+const getCookWearSizeLabel = (label) => {
+  const sizeLabelMap = {
+    "영양사(S)": "영양사(S-55)",
+    "영양사(M)": "영양사(M-66)",
+    "영양사(L)": "영양사(L-77)",
+    "영양사(XL)": "영양사(XL-88)",
+  };
+  const normalizedLabel = typeof label === "string" ? label.trim() : label;
+
+  return sizeLabelMap[normalizedLabel] || label;
+};
+
 function CookWearTabStyled() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -110,7 +123,10 @@ function CookWearTabStyled() {
       if (!map.has(String(type))) map.set(String(type), name || String(type));
     });
 
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries()).map(([value, label]) => ({
+      value,
+      label: getCookWearSizeLabel(label),
+    }));
   }, [cookWearRows, cookWearOutRows, cookWearNewRows, originalRows1]);
 
   const normalize = (value) =>
@@ -569,7 +585,9 @@ function CookWearTabStyled() {
                             <td key={col.accessorKey} style={{ width: w }}>
                               {readOnly ? (
                                 <span style={styleFn(rowIndex, col.accessorKey, value)}>
-                                  {getTypeLabel(value) || row.type_name || value}
+                                  {getTypeLabel(value) ||
+                                    getCookWearSizeLabel(row.type_name) ||
+                                    getCookWearSizeLabel(value)}
                                 </span>
                               ) : (
                                 <select

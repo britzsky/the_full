@@ -123,13 +123,13 @@ const routes = [
           "sy7", // 이수연 매니저(운영)
           "mh3", // 이미희 매니저
           "dh2", // 민다희 매니저
-          "ys",  // 박이슬 매니저
+          "ys", // 박이슬 매니저
           "db1", // 송다빈 매니저
           "ww1", // 이원우 매니저
           "iy1", // 최인영 매니저
           "me1", // 김맑음 매니저
           "sy9", // 전수연 매니저
-
+          "si1", // 김세인 매니저
         ],
 
         // (옵션) ✅ 특정 아이디는 무조건 차단
@@ -193,7 +193,7 @@ const routes = [
         allowUserIds: [
           "db1", // 송다빈 매니저
           "si1", // 김세인 매니저
-        ], // 
+        ], //
       },
       {
         type: "collapse",
@@ -307,7 +307,7 @@ const routes = [
         route: "/fieldstaff",
         component: <OperateTab_4 />,
         allowedDepartments: [0, 3, 5, 6], // 🔹 부서권한
-        allowUserIds: ["yh2"], // 이윤희 실장님 
+        allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "AND",
       },
       {
@@ -365,7 +365,7 @@ const routes = [
     key: "accounting",
     icon: <Icon fontSize="small">table_view</Icon>,
     allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
-    allowUserIds: ["yh2"], // 이윤희 실장님 
+    allowUserIds: ["yh2"], // 이윤희 실장님
     accessMode: "OR",
     collapse: [
       {
@@ -390,7 +390,7 @@ const routes = [
         allowedDepartments: [0, 2, 5, 6, 9], // 🔹 부서권한
         allowUserIds: [
           "yh2", // 이윤희 실장님
-          "sy9"  // 전수연 매니저
+          "sy9", // 전수연 매니저
         ],
         accessMode: "OR",
       },

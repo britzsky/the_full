@@ -284,11 +284,6 @@ export default function ProfitLossTableTab() {
 
   // 화면과 엑셀에 표시할 비율 값을 가져오는 함수
   const getDisplayRatio = (row, ratioField) => {
-    if (ratioField === "sales_total_ratio") {
-      const salesTotal = Number(row?.sales_total ?? 0);
-      return salesTotal !== 0 ? 100 : 0;
-    }
-
     return row?.[ratioField];
   };
 

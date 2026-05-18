@@ -520,7 +520,92 @@ function AccountCorporateCardSheet() {
     return accountOptions.find((o) => o.account_id === id) || null;
   }, [accountOptions, selectedAccountId]);
 
-  const selectAccountByInput = useCallback((inputText) => {
+  // 미저장 변경 여부 확인: 신규행(isNew), 강제빨간행(isForcedRed), 셀변경(__dirty) 모두 포함
+  const hasDirtyRowsEarly = useCallback(() => {
+    if ((masterRows || []).some((r) => r.__dirty || r.isNew || r.isForcedRed)) return true;
+    if (detailRows.some((r) => r.__dirty || r.isNew || r.isForcedRed)) return true;
+    // 누적 보관소에 저장된 다른 sale_id의 변경분 존재 여부
+    for (const saved of pendingDetailMap.values()) {
+      const arr = Array.isArray(saved) ? saved : (saved?.rows ?? []);
+      if (arr.some((r) => r.__dirty || r.isNew || r.isForcedRed)) return true;
+    }
+    return false;
+  }, [masterRows, detailRows, pendingDetailMap]);
+
+  // saveAll은 아래에서 정의되므로 ref로 참조
+  const saveAllRef = useRef(null);
+
+  // 연도 변경: 미저장 변경사항 있으면 저장/취소/중단 확인
+  const handleYearChange = useCallback(async (newYear) => {
+    if (hasDirtyRowsEarly()) {
+      const result = await Swal.fire({
+        title: "미저장 변경사항이 있습니다.",
+        text: "저장 후 이동하시겠습니까?",
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "저장 후 이동",
+        denyButtonText: "취소 후 이동",
+        cancelButtonText: "취소",
+        confirmButtonColor: "#1976d2",
+        denyButtonColor: "#e53935",
+        cancelButtonColor: "#9e9e9e",
+      });
+      if (result.isDismissed) return; // 취소: 아무것도 하지 않고 그대로 유지
+      if (result.isConfirmed) await saveAllRef.current?.(); // 저장 후 이동: 저장 실행 후 연도 변경
+      // result.isDenied(취소 후 이동): 변경사항 무시하고 바로 연도 변경
+    }
+    setYear(newYear);
+  }, [hasDirtyRowsEarly]);
+
+  // 월 변경: 미저장 변경사항 있으면 저장/취소/중단 확인
+  const handleMonthChange = useCallback(async (newMonth) => {
+    if (hasDirtyRowsEarly()) {
+      const result = await Swal.fire({
+        title: "미저장 변경사항이 있습니다.",
+        text: "저장 후 이동하시겠습니까?",
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "저장 후 이동",
+        denyButtonText: "취소 후 이동",
+        cancelButtonText: "취소",
+        confirmButtonColor: "#1976d2",
+        denyButtonColor: "#e53935",
+        cancelButtonColor: "#9e9e9e",
+      });
+      if (result.isDismissed) return; // 취소: 아무것도 하지 않고 그대로 유지
+      if (result.isConfirmed) await saveAllRef.current?.(); // 저장 후 이동: 저장 실행 후 월 변경
+      // result.isDenied(취소 후 이동): 변경사항 무시하고 바로 월 변경
+    }
+    setMonth(newMonth);
+  }, [hasDirtyRowsEarly]);
+
+  // 거래처 선택(드롭다운/엔터): 미저장 변경사항 있으면 저장/취소/중단 확인
+  const handleAccountSelect = useCallback(async (newAccountId) => {
+    if (!newAccountId) return;
+    if (hasDirtyRowsEarly()) {
+      const result = await Swal.fire({
+        title: "미저장 변경사항이 있습니다.",
+        text: "저장 후 이동하시겠습니까?",
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "저장 후 이동",
+        denyButtonText: "취소 후 이동",
+        cancelButtonText: "취소",
+        confirmButtonColor: "#1976d2",
+        denyButtonColor: "#e53935",
+        cancelButtonColor: "#9e9e9e",
+      });
+      if (result.isDismissed) return; // 취소: 아무것도 하지 않고 그대로 유지
+      if (result.isConfirmed) await saveAllRef.current?.(); // 저장 후 이동: 저장 실행 후 거래처 변경
+      // result.isDenied(취소 후 이동): 변경사항 무시하고 바로 거래처 변경
+    }
+    setSelectedAccountId(newAccountId);
+  }, [hasDirtyRowsEarly]);
+
+  const selectAccountByInput = useCallback(async (inputText) => {
     const q = String(inputText ?? accountInputRef.current ?? "").trim();
     if (!q) return;
     const list = accountOptions || [];
@@ -534,9 +619,9 @@ function AccountCorporateCardSheet() {
           .includes(qLower)
       );
     if (partial) {
-      setSelectedAccountId(partial.account_id);
+      await handleAccountSelect(partial.account_id);
     }
-  }, [accountOptions]);
+  }, [accountOptions, handleAccountSelect]);
 
   // ========================= 조회 =========================
   const handleFetchMaster = useCallback(async () => {
@@ -546,6 +631,27 @@ function AccountCorporateCardSheet() {
 
   const handleSearchMaster = useCallback(async () => {
     if (!selectedAccountId) return;
+
+    // 미저장 변경사항이 있으면 저장/취소/중단 중 선택
+    if (hasDirtyRowsEarly()) {
+      const result = await Swal.fire({
+        title: "미저장 변경사항이 있습니다.",
+        text: "저장 후 조회하시겠습니까?",
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "저장 후 이동",
+        denyButtonText: "취소 후 이동",
+        cancelButtonText: "취소",
+        confirmButtonColor: "#1976d2",
+        denyButtonColor: "#e53935",
+        cancelButtonColor: "#9e9e9e",
+      });
+      if (result.isDismissed) return; // 취소: 아무것도 하지 않고 그대로 유지
+      if (result.isConfirmed) await saveAllRef.current?.(); // 저장 후 이동: 저장 실행 후 조회 진행
+      // result.isDenied(취소 후 이동): 변경사항 무시하고 바로 조회 진행
+    }
+
     setSelectedMaster(null);
     setDetailRows([]);
     setOrigDetailRows([]);
@@ -555,7 +661,7 @@ function AccountCorporateCardSheet() {
     forceServerSyncRef.current = true;
     skipPendingNewMergeRef.current = true;
     await handleFetchMaster();
-  }, [selectedAccountId, handleFetchMaster]);
+  }, [selectedAccountId, hasDirtyRowsEarly, handleFetchMaster]);
 
   // ✅ 거래처/연/월 변경 시 자동 조회
   useEffect(() => {
@@ -675,7 +781,7 @@ function AccountCorporateCardSheet() {
 
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
-    setMasterRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value } : r)));
+    setMasterRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value, __dirty: true } : r)));
   }, []);
 
   const handleDetailCellChange = useCallback((rowIndex, key, value) => {
@@ -697,7 +803,7 @@ function AccountCorporateCardSheet() {
       return prev.map((r, i) => {
         if (i !== rowIndex) return r;
         const shouldClearCheck = key === "amount" && parseNumMaybe(nextVal) !== 0;
-        return { ...r, [key]: nextVal, ...(shouldClearCheck ? { __deleteChecked: false } : {}) };
+        return { ...r, [key]: nextVal, __dirty: true, ...(shouldClearCheck ? { __deleteChecked: false } : {}) };
       });
     });
   }, []);
@@ -1372,6 +1478,8 @@ function AccountCorporateCardSheet() {
     selectedAccountId,
     restoreMasterSelectionAfterSave,
   ]);
+  // saveAllRef에 최신 saveAll 함수 연결 (handleSearchMaster에서 ref로 참조)
+  saveAllRef.current = saveAll;
 
   // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -1664,7 +1772,7 @@ function AccountCorporateCardSheet() {
               onChange={(_, newValue) => {
                 // 거래처 선택값 유지 처리
                 if (!newValue?.account_id) return;
-                setSelectedAccountId(newValue.account_id);
+                handleAccountSelect(newValue.account_id);
               }}
               onInputChange={(_, newValue) => {
                 accountInputRef.current = newValue || "";
@@ -1696,7 +1804,7 @@ function AccountCorporateCardSheet() {
             <Select
               size="small"
               value={year}
-              onChange={(e) => setYear(e.target.value)}
+              onChange={(e) => handleYearChange(e.target.value)}
               sx={{ minWidth: 110 }}
             >
               {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
@@ -1709,7 +1817,7 @@ function AccountCorporateCardSheet() {
             <Select
               size="small"
               value={month}
-              onChange={(e) => setMonth(e.target.value)}
+              onChange={(e) => handleMonthChange(e.target.value)}
               sx={{ minWidth: 90 }}
             >
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (

@@ -827,7 +827,7 @@ function PreviewOverlay({
                 ) : excelPreview.error ? (
                   <MDBox sx={{ p: 2, fontSize: 12, color: "#d32f2f" }}>{excelPreview.error}</MDBox>
                 ) : excelPreview.rows.length > 0 ? (
-                  <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                  <table style={{ borderCollapse: "collapse" }}>
                     <tbody>
                       {excelPreview.rows.map((row, rowIndex) => (
                         <tr key={`excel-row-${rowIndex}`}>
@@ -839,8 +839,7 @@ function PreviewOverlay({
                                 padding: "6px 8px",
                                 fontSize: 11,
                                 whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
+                                minWidth: 110,
                               }}
                             >
                               {cell || "\u00a0"}

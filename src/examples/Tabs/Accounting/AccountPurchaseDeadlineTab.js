@@ -457,13 +457,16 @@ function AccountPurchaseDeadlineTab() {
           text: "저장 후 이동하시겠습니까?",
           icon: "warning",
           showCancelButton: true,
+          showDenyButton: true,
           confirmButtonText: "저장 후 이동",
+          denyButtonText: "취소 후 이동",
           cancelButtonText: "취소",
           confirmButtonColor: "#1976d2",
+          denyButtonColor: "#e53935",
           cancelButtonColor: "#9e9e9e",
         });
-        if (!result.isConfirmed) return;
-        await handleSaveRef.current?.();
+        if (result.isDismissed) return;
+        if (result.isConfirmed) await handleSaveRef.current?.();
       }
     }
     const next = { ...latestFiltersRef.current, [name]: value };
@@ -541,13 +544,16 @@ function AccountPurchaseDeadlineTab() {
           text: "저장 후 이동하시겠습니까?",
           icon: "warning",
           showCancelButton: true,
+          showDenyButton: true,
           confirmButtonText: "저장 후 이동",
+          denyButtonText: "취소 후 이동",
           cancelButtonText: "취소",
           confirmButtonColor: "#1976d2",
+          denyButtonColor: "#e53935",
           cancelButtonColor: "#9e9e9e",
         });
-        if (!result.isConfirmed) return;
-        await handleSaveRef.current?.();
+        if (result.isDismissed) return;
+        if (result.isConfirmed) await handleSaveRef.current?.();
       }
 
       setSelectedAccountDelYn(nextDelYn);
@@ -620,14 +626,19 @@ function AccountPurchaseDeadlineTab() {
           text: "저장 후 조회하시겠습니까?",
           icon: "warning",
           showCancelButton: true,
+          showDenyButton: true,
           confirmButtonText: "저장 후 이동",
+          denyButtonText: "취소 후 이동",
           cancelButtonText: "취소",
           confirmButtonColor: "#1976d2",
+          denyButtonColor: "#e53935",
           cancelButtonColor: "#9e9e9e",
         });
-        if (!result.isConfirmed) return;
-        await handleSaveRef.current?.();
-        return;
+        if (result.isDismissed) return;
+        if (result.isConfirmed) {
+          await handleSaveRef.current?.();
+          return;
+        }
       }
       await doSearch(latestFiltersRef.current);
     } catch (e) {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import api from "api/api";
 
 const EXCLUDED_ALL_TYPES = new Set(["1000", "1002", "1003", "1008"]);
+const WELLSTORY_TYPES = new Set(["1", "2", "3", "4"]);
 
 // 숫자 파싱
 const parseNumber = (value) => {
@@ -164,6 +165,7 @@ export default function useAccountPurchaseTallyData() {
       const toParam = (v) => (!v || v === "0" ? "" : v);
       const selectedRawType = String(filters?.rawType ?? filters?.type ?? "0");
       const isAllTypeQuery = selectedRawType === "0" || selectedRawType === "";
+      const isWellstoryQuery = selectedRawType === "wellstory";
       const year = toParam(filters?.year);
       const fromMonth = toParam(filters?.fromMonth); // 월 숫자 문자열
       const toMonth = toParam(filters?.toMonth);     // 월 숫자 문자열 (optional)
@@ -226,15 +228,22 @@ export default function useAccountPurchaseTallyData() {
         reg_dt: item.reg_dt || "",
       }));
 
-      // 전체 조회일 때는 타입 필터에서 숨긴 코드도 결과에서 동일하게 제외
-      const applyAllTypeExclusion = (targetRows) =>
-        isAllTypeQuery
-          ? (targetRows || []).filter((row) => !EXCLUDED_ALL_TYPES.has(String(row?.type ?? "")))
-          : (targetRows || []);
+      // 전체/삼성웰스토리 선택값에 맞춰 화면 표시 대상 타입만 남긴다.
+      const applyTypeVisibility = (targetRows) => {
+        if (isWellstoryQuery) {
+          return (targetRows || []).filter((row) => WELLSTORY_TYPES.has(String(row?.type ?? "")));
+        }
+
+        if (isAllTypeQuery) {
+          return (targetRows || []).filter((row) => !EXCLUDED_ALL_TYPES.has(String(row?.type ?? "")));
+        }
+
+        return targetRows || [];
+      };
 
       const hasSaleIdRow = mappedBase.some((row) => String(row?.sale_id ?? "").trim() !== "");
       if (!hasSaleIdRow) {
-        const visibleBaseRows = applyAllTypeExclusion(mappedBase);
+        const visibleBaseRows = applyTypeVisibility(mappedBase);
         setRows(visibleBaseRows);
         setOriginalRows(visibleBaseRows.map((r) => ({ ...r })));
         return;
@@ -247,7 +256,7 @@ export default function useAccountPurchaseTallyData() {
       const isBroadQuery = isAllAccountQuery && isAllTypeQuery;
       const useDetailRecalc = !isBroadQuery && (!isAllAccountQuery || mappedBase.length <= 300);
       if (!useDetailRecalc) {
-        const visibleBaseRows = applyAllTypeExclusion(mappedBase);
+        const visibleBaseRows = applyTypeVisibility(mappedBase);
         setRows(visibleBaseRows);
         setOriginalRows(visibleBaseRows.map((r) => ({ ...r })));
         return;
@@ -333,7 +342,7 @@ export default function useAccountPurchaseTallyData() {
         });
       }
 
-      const visibleMappedRows = applyAllTypeExclusion(mapped);
+      const visibleMappedRows = applyTypeVisibility(mapped);
       setRows(visibleMappedRows);
       setOriginalRows(visibleMappedRows.map((r) => ({ ...r })));
     } catch (err) {

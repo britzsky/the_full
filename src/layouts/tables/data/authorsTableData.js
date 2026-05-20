@@ -116,11 +116,30 @@ export default function useTableData(accountType, refreshKey = 0) {
               {formatPrice(item.diet_price)}
             </MDTypography>
           ),
-          normal: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
-              {formatEmpty(item.normal)}
-            </MDTypography>
-          ),
+          normal: (() => {
+            if (item.account_type === "요양원") {
+              const four = [item.basic_ceremony, item.basic, item.ceremony, item.normal];
+              const allEmpty = four.every((v) => v == null || String(v).trim() === "");
+              if (allEmpty) {
+                return <MDTypography variant="caption" color="text" fontWeight="medium">-</MDTypography>;
+              }
+              const hasText = four.some((v) => v != null && String(v).trim() !== "" && isNaN(Number(String(v).trim())));
+              if (hasText) {
+                return (
+                  <MDTypography variant="caption" color="text" fontWeight="medium">
+                    {four.map((v) => (v != null && String(v).trim() !== "" ? String(v) : "-")).join(" ")}
+                  </MDTypography>
+                );
+              }
+              const sum = four.reduce((acc, v) => acc + (Number(v) || 0), 0);
+              return <MDTypography variant="caption" color="text" fontWeight="medium">{sum}</MDTypography>;
+            }
+            return (
+              <MDTypography variant="caption" color="text" fontWeight="medium">
+                {formatEmpty(item.normal)}
+              </MDTypography>
+            );
+          })(),
           normal_daycare: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
               {formatEmpty(item.normal_daycare)}

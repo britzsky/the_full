@@ -1,4 +1,4 @@
-// src/layouts/property/PropertySheetTab.js
+﻿// src/layouts/property/PropertySheetTab.js
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -998,7 +998,8 @@ function PropertySheetTab() {
                 }}
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                  "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                  "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                 }}
               />
             )}

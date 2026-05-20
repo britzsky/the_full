@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+﻿import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   Grid,
   TextField,
@@ -2870,6 +2870,7 @@ function AccountPurchaseDeadlineTab() {
                 }}
                 sx={{
                   "& .MuiInputBase-root": { height: 45, fontSize: 12 },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
                   "& input": {
                     padding: "0 8px",
                     color: String(selectedAccountDelYn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",

@@ -71,6 +71,7 @@ export default function useAccountInfosheetData(initialAccountId) {
           account_id: item.account_id,
           account_name: item.account_name,
           del_yn: normalizeDelYn(item?.del_yn),
+          daycare_id: item.daycare_id ?? null,
         }));
         setAccountList(
           sortAccountRows(rows, {

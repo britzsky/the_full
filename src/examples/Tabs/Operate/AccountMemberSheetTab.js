@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition, react/prop-types */
+﻿/* eslint-disable react/function-component-definition, react/prop-types */
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
@@ -144,7 +144,8 @@ const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
           minWidth: 200,
           ...(isCompactLayout ? { flex: "1 1 220px" } : {}),
           "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-          "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+          "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
         }}
       />
 
@@ -188,7 +189,8 @@ const AccountMemberToolbar = React.memo(function AccountMemberToolbar({
             }}
             sx={{
               "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-              "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+              "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
             }}
           />
         )}
@@ -290,7 +292,8 @@ const DispatchAccountAutocomplete = React.memo(function DispatchAccountAutocompl
           }}
           sx={{
             "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-            "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+            "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
           }}
         />
       )}

@@ -1928,6 +1928,7 @@ function AccountPurchaseTallyTab() {
                 }}
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
                   "& input": {
                     padding: "0 8px",
                     color: isDeletedAccountSelected ? "#d32f2f" : "inherit",

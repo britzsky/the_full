@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+﻿/* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, forwardRef, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 
@@ -16,6 +16,8 @@ import {
   Card,
   Autocomplete,
   Tooltip,
+  Tabs,
+  Tab,
 } from "@mui/material";
 
 import MDBox from "components/MDBox";
@@ -145,6 +147,9 @@ function AccountInfoSheet() {
     Array.from({ length: 5 }, () => ({ name: "", price: "" }))
   );
 
+  const [bottomTab, setBottomTab] = useState(0);
+  const [daycareTab, setDaycareTab] = useState(0); // 0=요양원, 1=주간보호
+
   const { account_id: paramAccountId } = useParams();
   const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState(paramAccountId || "");
@@ -171,6 +176,11 @@ function AccountInfoSheet() {
   );
 
   const isDeletedAccount = String(selectedAccountOption?.del_yn ?? "N").toUpperCase() === "Y";
+
+  const hasDaycare = Boolean(selectedAccountOption?.daycare_id);
+  const activeId = hasDaycare && daycareTab === 1
+    ? String(selectedAccountOption.daycare_id)
+    : selectedAccountId;
 
   const showDeletedAccountReadonlyAlert = useCallback(() => {
     if (Swal.isVisible()) return;
@@ -234,12 +244,17 @@ function AccountInfoSheet() {
     }
   }, [accountList, paramAccountId]); // ✅ selectedAccountId 의존성 제거
 
-  // ✅ 선택된 account_id로 조회
+  // 거래처 변경 시 daycareTab 리셋
   useEffect(() => {
-    if (selectedAccountId) {
-      fetchAllData(selectedAccountId);
-    }
+    setDaycareTab(0);
   }, [selectedAccountId]);
+
+  // activeId 변경 시 조회 (거래처 변경 or 요양원/주간보호 탭 전환)
+  useEffect(() => {
+    if (activeId) {
+      fetchAllData(activeId);
+    }
+  }, [activeId]);
 
   const [selectedFiles, setSelectedFiles] = useState({
     business_report: null,
@@ -587,8 +602,7 @@ function AccountInfoSheet() {
     }
 
     const formData = new FormData();
-    const account_id = basicInfo.account_id;
-    formData.append("account_id", account_id);
+    formData.append("account_id", activeId || basicInfo.account_id);
 
     let hasFile = false;
     dirtyFiles.forEach((type) => {
@@ -636,7 +650,7 @@ function AccountInfoSheet() {
         // ✅ 업로드는 성공했는데 서버가 path를 안 준 케이스:
         // 👉 초기화하면 안 됨. 서버값으로 다시 조회해서 맞추기.
         if (ok) {
-          await fetchAllData(selectedAccountId); // ✅ 서버값으로 동기화
+          await fetchAllData(activeId); // ✅ 서버값으로 동기화
           setDirtyFiles(new Set()); // ✅ 업로드한 건 처리 완료로 본다
           Swal.fire("완료", "업로드 완료(응답 path 없음) - 재조회로 동기화했습니다.", "success");
           return;
@@ -815,6 +829,11 @@ function AccountInfoSheet() {
   const isExtraDietEnabled =
     Number(formData.account_type) === 4 || Number(formData.account_type) === 5;
 
+  const isType1 = Number(formData.account_type) === 1;
+
+  // 간식 1일 제공횟수: priceData 첫 번째 행 기준 (type1 전용, 그 외에는 1로 고정)
+  const snackFreq = isType1 ? (Number(priceData[0]?.eat_snack_count) || 0) : 1;
+
   // 🔹 학교 / 산업체 여부 (문자/숫자 둘 다 대응)
   const isSchoolOrIndustry =
     formData.account_type === "학교" ||
@@ -948,6 +967,37 @@ function AccountInfoSheet() {
     []
   );
 
+  // 식수관리 탭: 식단가+식수인원(row1), 경비(row2)
+  const priceColsRow1 = useMemo(() => priceTableColumns.slice(0, 2), [priceTableColumns]);
+  const priceColsRow2 = useMemo(() => priceTableColumns.slice(2), [priceTableColumns]);
+  // 식수관리 탭: 배식방법(row3) / 운영관리 탭: 구매+인력(row1)
+  // type1: eat_snack_count 값에 따라 간식시간 컬럼 0~3개 동적 구성
+  const etcColsRow1 = useMemo(() => {
+    if (!isType1) return etcTableColumns.slice(0, 1);
+
+    // snackFreq에 따라 간식시간 컬럼 추가 (0이면 숨김, 1~3이면 해당 개수만큼 표시)
+    const snackCols = [];
+    if (snackFreq >= 1) snackCols.push({ header: "간식시간", accessorKey: "snack_time" });
+    if (snackFreq >= 2) snackCols.push({ header: "간식시간2", accessorKey: "snack_time2" });
+    if (snackFreq >= 3) snackCols.push({ header: "간식시간3", accessorKey: "snack_time3" });
+
+    return [
+      {
+        header: "배식방법",
+        columns: [
+          { header: "세팅/바트/그릇", accessorKey: "setting_item" },
+          { header: "조리실", accessorKey: "cuisine" },
+          { header: "특이사항", accessorKey: "cuisine_note" },
+          { header: "조식시간", accessorKey: "breakfast_time" },
+          { header: "중식시간", accessorKey: "lunch_time" },
+          { header: "석식시간", accessorKey: "dinner_time" },
+          ...snackCols,
+        ],
+      },
+    ];
+  }, [isType1, snackFreq, etcTableColumns]);
+  const etcColsRow2 = useMemo(() => etcTableColumns.slice(1), [etcTableColumns]);
+
   // ✅ dropdown options
   const dropdownOptions = {
     puri_type: [
@@ -1021,6 +1071,8 @@ function AccountInfoSheet() {
     lunch_time: "2%",
     dinner_time: "2%",
     snack_time: "2%",
+    snack_time2: "2%",
+    snack_time3: "2%",
     members: "5%",
     work_system: "20%",
     puri_type: "7%",
@@ -1149,8 +1201,8 @@ function AccountInfoSheet() {
 
                         let newValue = e.target.innerText.trim();
                         if (isNumeric) {
-                          newValue = Number(newValue.replace(/,/g, "")) || 0;
-                          e.currentTarget.innerText = formatNumber(newValue);
+                          newValue = newValue === "" ? null : Number(newValue.replace(/,/g, ""));
+                          e.currentTarget.innerText = newValue != null ? formatNumber(newValue) : "";
                         }
 
                         const updatedRows = dataState.map((r, idx) =>
@@ -1223,6 +1275,450 @@ function AccountInfoSheet() {
     );
   };
 
+  // ── account_type=1 전용 식단가+식수인원 커스텀 테이블 ──────────────────────
+  const renderType1PriceRow1 = () => {
+    const dietCols = [
+      { header: "1일 식단가", key: "diet_price", isNumeric: true },
+      { header: "기초 식단가", key: "basic_price", isNumeric: true },
+      { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
+      { header: "인상시점", key: "after_dt", isNumeric: false },
+    ];
+    if (!isSchoolOrIndustry) {
+      dietCols.push(
+        { header: "1식 단가", key: "elderly", isNumeric: true },
+        { header: "간식가", key: "snack", isNumeric: true },
+        { header: "직원 식단가", key: "employ", isNumeric: false }
+      );
+    }
+    extraDiet
+      .filter((item) => item.name && item.name.trim())
+      .forEach((item, i) => {
+        dietCols.push({ header: item.name, key: `extra_diet${i + 1}_price`, isNumeric: true });
+      });
+
+    // 만실 컬럼 표시 대상
+    const fullRoomSubs =
+      hasDaycare && daycareTab === 1
+        ? [{ label: "주간보호", key: "full_room_daycare" }]
+        : [{ label: "요양원", key: "full_room" }];
+
+    const waterGroups = [
+      {
+        mainHeader: "만실",
+        subs: fullRoomSubs,
+      },
+      {
+        mainHeader: "기초",
+        subs: [
+          { label: "경관식", key: "basic_ceremony" },
+          { label: "일반식", key: "basic" },
+        ],
+      },
+      {
+        mainHeader: "일반",
+        subs: [
+          { label: "경관식", key: "ceremony" },
+          { label: "일반식", key: "normal" },
+        ],
+      },
+      {
+        mainHeader: "간식",
+        subs: [
+          { label: "인원", key: "eat_snack" },
+          { label: "1일 제공횟수", key: "eat_snack_count", isNumericOnly: true },
+        ],
+      },
+      {
+        mainHeader: "직원식",
+        subs: [
+          { label: "오전", key: "eat_employ" },
+          { label: "오후", key: "eat_employ_lunch" },
+        ],
+      },
+    ];
+
+    // 식수인원 전체 컬럼 수
+    const waterColSpan = waterGroups.reduce((sum, group) => sum + group.subs.length, 0);
+
+    const handleCellBlur = (e, rowIndex, key, isNumeric) => {
+      if (isDeletedAccount) return;
+      let val = e.target.innerText.trim();
+      if (isNumeric) {
+        val = val === "" ? null : Number(val.replace(/,/g, ""));
+        e.currentTarget.innerText = val != null ? formatNumber(val) : "";
+      }
+      setPriceData((prev) =>
+        prev.map((r, i) => (i === rowIndex ? { ...r, [key]: val } : r))
+      );
+    };
+
+    return (
+      <MDBox
+        sx={{
+          overflowX: "auto",
+          "& table": { borderCollapse: "collapse", width: "max-content", minWidth: "100%" },
+          "& th, & td": {
+            border: "1px solid #686D76",
+            textAlign: "center",
+            padding: "3px",
+            fontSize: "13px",
+            whiteSpace: "nowrap",
+          },
+          "& th": { backgroundColor: "#f0f0f0" },
+        }}
+      >
+        <table>
+          <thead>
+            {/* 그룹 헤더 */}
+            <tr>
+              <th colSpan={dietCols.length}>식단가</th>
+              <th colSpan={waterColSpan}>식수인원</th>
+            </tr>
+            {/* 식단가 컬럼명 및 식수인원 그룹명 */}
+            <tr>
+              {dietCols.map((col) => (
+                <th key={col.key} rowSpan={2}>
+                  {col.header}
+                </th>
+              ))}
+              {waterGroups.map((wg) => (
+                <th key={wg.mainHeader} colSpan={wg.subs.length}>
+                  {wg.mainHeader}
+                </th>
+              ))}
+            </tr>
+            {/* 식수인원 하위 컬럼명 */}
+            <tr>
+              {waterGroups.flatMap((wg) =>
+                wg.subs.map((sub) => <th key={sub.key}>{sub.label}</th>)
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {/* 식단가 및 식수인원 데이터 행 */}
+            {priceData.map((row, rowIndex) => {
+              const origRow = originalPrice[rowIndex] || {};
+              const isChangedKey = (key) =>
+                normalizeVal(row[key]) !== normalizeVal(origRow[key]);
+
+              return (
+                <tr key={rowIndex}>
+                  {dietCols.map((col) => {
+                    const val = row[col.key] ?? "";
+                    return (
+                      <td
+                        key={col.key}
+                        contentEditable={!isDeletedAccount}
+                        suppressContentEditableWarning
+                        style={{
+                          color: isChangedKey(col.key) ? "red" : "black",
+                          backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
+                        }}
+                        onBlur={(e) => handleCellBlur(e, rowIndex, col.key, col.isNumeric)}
+                      >
+                        {col.isNumeric ? formatNumber(val) : val}
+                      </td>
+                    );
+                  })}
+                  {waterGroups.flatMap((wg) =>
+                    wg.subs.map((sub) => {
+                      const val = row[sub.key] ?? "";
+                      return (
+                        <td
+                          key={sub.key}
+                          contentEditable={!isDeletedAccount}
+                          suppressContentEditableWarning
+                          style={{
+                            color: isChangedKey(sub.key) ? "red" : "black",
+                            backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
+                          }}
+                          onBlur={(e) => handleCellBlur(e, rowIndex, sub.key, !!sub.isNumericOnly)}
+                          onInput={sub.isNumericOnly ? (e) => {
+                            // 숫자 외 문자(한글 포함) 실시간 제거
+                            const el = e.currentTarget;
+                            const clean = el.innerText.replace(/[^0-9]/g, "");
+                            if (el.innerText !== clean) {
+                              el.innerText = clean;
+                              // 커서를 끝으로 이동
+                              const range = document.createRange();
+                              const sel = window.getSelection();
+                              range.selectNodeContents(el);
+                              range.collapse(false);
+                              sel.removeAllRanges();
+                              sel.addRange(range);
+                            }
+                          } : undefined}
+                        >
+                          {val}
+                        </td>
+                      );
+                    })
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </MDBox>
+    );
+  };
+
+  // ── account_type=1 전용 경비부담 커스텀 테이블 ──────────────────────────────
+  const renderType1ExpenseTable = () => {
+    // 음식물처리 유형 옵션 (기존 변경: 업체수거 / 종량제)
+    const foodProcessTypeOpts = [
+      { value: 0, label: "해당없음" },
+      { value: 1, label: "업체수거" },
+      { value: 2, label: "종량제" },
+    ];
+
+    // 식기세척기 유형 옵션 (새 DB 컬럼: dishwasher_process_type)
+    const dishwasherTypeOpts = [
+      { value: 0, label: "해당없음" },
+      { value: 1, label: "고객사 렌탈" },
+      { value: 2, label: "고객사 구매" },
+      { value: 3, label: "더채움 렌탈" },
+      { value: 4, label: "더채움 구매" },
+    ];
+
+    // 방역&방충 유형 옵션 (새 DB 컬럼: cesco_process_type)
+    const cescoTypeOpts = [
+      { value: 0, label: "해당없음" },
+      { value: 1, label: "더채움" },
+      { value: 2, label: "고객사" },
+    ];
+
+    // 정수기 유형 옵션 (새 DB 컬럼: water_puri_process_type)
+    const waterPuriTypeOpts = [
+      { value: 0, label: "해당없음" },
+      { value: 1, label: "고객사 렌탈" },
+      { value: 2, label: "고객사 구매" },
+      { value: 3, label: "더채움 렌탈" },
+      { value: 4, label: "더채움 구매" },
+    ];
+
+    // 수도광열비 유형 옵션 (새 DB 컬럼: utility_bills_process_type)
+    const utilityTypeOpts = [
+      { value: 0, label: "해당없음" },
+      { value: 1, label: "수도광열비 실비부담" },
+      { value: 2, label: "페이전달" },
+    ];
+
+    // 열 정의: header=2행 컬럼명, valueKey=4행 금액/값, typeKey=3행 드랍박스, typeKey=null이면 경비비고(rowspan 2)
+    // colWidth: 음식물처리 기준으로 5개 열 동일 폭, 경비비고는 넓게
+    const COL_W = "130px";      // 음식물처리 기준 공통 폭
+    const NOTE_W = "250px";     // 경비 비고 폭
+
+    const expenseCols = [
+      {
+        header: "음식물처리",
+        valueKey: "food_process",
+        typeKey: "food_process_type",
+        typeOpts: foodProcessTypeOpts,
+        isNumeric: true,
+        colWidth: COL_W,
+      },
+      {
+        header: "식기세척기",
+        valueKey: "dishwasher",
+        typeKey: "dishwasher_process_type",
+        typeOpts: dishwasherTypeOpts,
+        isNumeric: true,
+        colWidth: COL_W,
+      },
+      {
+        header: "방역&방충",
+        valueKey: "cesco",
+        typeKey: "cesco_process_type",
+        typeOpts: cescoTypeOpts,
+        isNumeric: true,
+        colWidth: COL_W,
+      },
+      {
+        header: "정수기",
+        valueKey: "water_puri",
+        typeKey: "water_puri_process_type",
+        typeOpts: waterPuriTypeOpts,
+        isNumeric: true,
+        colWidth: COL_W,
+      },
+      {
+        header: "수도광열비",
+        valueKey: "utility_bills",
+        typeKey: "utility_bills_process_type",
+        typeOpts: utilityTypeOpts,
+        isNumeric: true,
+        colWidth: COL_W,
+      },
+      // 경비 비고: 유형 드랍박스 없음, 3행+4행 rowspan 2로 병합
+      {
+        header: "경비 비고",
+        valueKey: "expenses_note",
+        typeKey: null,
+        typeOpts: null,
+        isNumeric: false,
+        colWidth: NOTE_W,
+      },
+    ];
+
+    // 금액/텍스트 값 편집 핸들러
+    const handleValueBlur = (e, rowIndex, key, isNumeric) => {
+      if (isDeletedAccount) return;
+      let val = e.target.innerText.trim();
+      if (isNumeric) {
+        val = val === "" ? null : Number(val.replace(/,/g, ""));
+        e.currentTarget.innerText = val != null ? formatNumber(val) : "";
+      }
+      setPriceData((prev) =>
+        prev.map((r, i) => (i === rowIndex ? { ...r, [key]: val } : r))
+      );
+    };
+
+    // 드랍박스 변경 핸들러 (숫자로 저장)
+    const handleTypeChange = (rowIndex, key, value) => {
+      if (isDeletedAccount) return;
+      setPriceData((prev) =>
+        prev.map((r, i) => (i === rowIndex ? { ...r, [key]: Number(value) } : r))
+      );
+    };
+
+    return (
+      <MDBox
+        sx={{
+          overflowX: "auto",
+          "& table": { borderCollapse: "collapse", width: "max-content", minWidth: "100%" },
+          "& th, & td": {
+            border: "1px solid #686D76",
+            textAlign: "center",
+            padding: "3px",
+            fontSize: "13px",
+            whiteSpace: "nowrap",
+          },
+          "& th": { backgroundColor: "#f0f0f0" },
+        }}
+      >
+        <table>
+          <thead>
+            {/* 1행: 경비부담 그룹 헤더 */}
+            <tr>
+              <th colSpan={expenseCols.length}>경비부담</th>
+            </tr>
+            {/* 2행: 각 열 컬럼명 */}
+            <tr>
+              {expenseCols.map((col) => (
+                <th key={col.header} style={{ width: col.colWidth, minWidth: col.colWidth }}>{col.header}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {priceData.map((row, rowIndex) => {
+              const origRow = originalPrice[rowIndex] || {};
+              // 원본 대비 변경 여부 (변경 시 빨간색)
+              const isChangedKey = (key) =>
+                key != null
+                  ? normalizeVal(row[key]) !== normalizeVal(origRow[key])
+                  : false;
+
+              return (
+                <React.Fragment key={rowIndex}>
+                  {/* 3행: 유형 드랍박스 + 경비비고(rowspan 2로 3행·4행 병합) */}
+                  <tr>
+                    {expenseCols.map((col) => {
+                      // 경비 비고: 3행+4행 병합 (rowspan 2)
+                      if (col.typeKey === null) {
+                        const val = row[col.valueKey] ?? "";
+                        return (
+                          <td
+                            key={col.header}
+                            rowSpan={2}
+                            contentEditable={!isDeletedAccount}
+                            suppressContentEditableWarning
+                            style={{
+                              color: isChangedKey(col.valueKey) ? "red" : "black",
+                              backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
+                              verticalAlign: "top",
+                              minWidth: "120px",
+                            }}
+                            onBlur={(e) => handleValueBlur(e, rowIndex, col.valueKey, false)}
+                          >
+                            {val}
+                          </td>
+                        );
+                      }
+                      // 유형 드랍박스 (DB에 숫자로 저장, 화면엔 라벨로 표시)
+                      const typeVal = Number(row[col.typeKey] ?? 0);
+                      return (
+                        <td
+                          key={col.header}
+                          style={{ backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent" }}
+                        >
+                          <select
+                            value={typeVal}
+                            disabled={isDeletedAccount}
+                            style={{
+                              width: "100%",
+                              color: isChangedKey(col.typeKey) ? "red" : "black",
+                              backgroundColor: isDeletedAccount ? "#f2f2f2" : "transparent",
+                              fontSize: "13px",
+                            }}
+                            onChange={(e) => handleTypeChange(rowIndex, col.typeKey, e.target.value)}
+                          >
+                            {col.typeOpts.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {/* 4행: 금액/값 셀 (경비비고는 rowspan으로 이미 채워짐, 제외) */}
+                  <tr>
+                    {expenseCols
+                      .filter((col) => col.typeKey !== null)
+                      .map((col) => {
+                        const val = row[col.valueKey] ?? "";
+                        return (
+                          <td
+                            key={col.header}
+                            contentEditable={!isDeletedAccount}
+                            suppressContentEditableWarning
+                            style={{
+                              color: isChangedKey(col.valueKey) ? "red" : "black",
+                              backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
+                            }}
+                            onBlur={(e) =>
+                              handleValueBlur(e, rowIndex, col.valueKey, col.isNumeric)
+                            }
+                            onInput={col.isNumeric ? (e) => {
+                              const el = e.currentTarget;
+                              const clean = el.innerText.replace(/[^0-9]/g, "");
+                              if (el.innerText !== clean) {
+                                el.innerText = clean;
+                                const range = document.createRange();
+                                const sel = window.getSelection();
+                                range.selectNodeContents(el);
+                                range.collapse(false);
+                                sel.removeAllRanges();
+                                sel.addRange(range);
+                              }
+                            } : undefined}
+                          >
+                            {col.isNumeric ? formatNumber(val) : val}
+                          </td>
+                        );
+                      })}
+                  </tr>
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </MDBox>
+    );
+  };
+
   // 🔹 extraDiet을 formData에 합쳐 payload 만드는 헬퍼
   const buildPayloadWithExtraDiet = () => {
     const updatedFormData = { ...formData };
@@ -1251,10 +1747,25 @@ function AccountInfoSheet() {
       return;
     }
 
+    // type1: 간식 1일 제공횟수가 4 이상이면 저장 차단
+    if (isType1) {
+      const snackCount = Number(priceData[0]?.eat_snack_count) || 0;
+      if (snackCount >= 4) {
+        Swal.fire({
+          title: "입력 오류",
+          text: "간식 1일 제공횟수는 3 이하로 입력해 주세요.",
+          icon: "warning",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        });
+        return;
+      }
+    }
+
     const user_id = localStorage.getItem("user_id") || "";
 
-    // ✅ formData에 user_id 주입
-    const _formData = { ...formData, user_id };
+    // ✅ formData에 user_id + activeId 주입 (주간보호 탭이면 daycare_id로 저장)
+    const _formData = { ...formData, user_id, account_id: activeId || formData.account_id };
 
     // ✅ 각 테이블 row에 user_id 주입 (배열이면 map으로)
     const _priceData = (priceData || []).map((r) => ({ ...r, user_id }));
@@ -1376,6 +1887,21 @@ function AccountInfoSheet() {
     // return <LoadingScreen />;
   }
 
+  // renderTable 내부에서 useReactTable(hook)을 호출하므로,
+  // 항상 동일한 순서·횟수(6번)로 unconditionally 호출해야 합니다.
+  const priceRow1JSX = renderTable(
+    priceData, setPriceData, "price",
+    isType1 ? priceColsRow1 : priceTableColumns
+  );
+  const priceRow2JSX = renderTable(priceData, setPriceData, "price", priceColsRow2);
+  const etcRow1JSX = renderTable(
+    etcData, setEtcData, "etc",
+    isType1 ? etcColsRow1 : etcTableColumns
+  );
+  const etcRow2JSX = renderTable(etcData, setEtcData, "etc", etcColsRow2);
+  const managerJSX = renderTable(managerData, setManagerData, "manager", managerTableColumns);
+  const eventJSX = renderTable(eventData, setEventData, "event", eventTableColumns);
+
   return (
     <DashboardLayout>
       <DashboardNavbar title="📋 고객사 상세관리" />
@@ -1394,6 +1920,26 @@ function AccountInfoSheet() {
           width: "100%",
         }}
       >
+        {/* 요양원/주간보호 탭 (daycare 거래처인 경우만) */}
+        {hasDaycare && (
+          <Box sx={{ flexBasis: "100%", mb: 0.5 }}>
+            <Tabs
+              value={daycareTab}
+              onChange={(_, v) => setDaycareTab(v)}
+              textColor="primary"
+              indicatorColor="primary"
+              sx={{
+                minHeight: 36,
+                width: "fit-content",
+                "& .MuiTab-root": { minHeight: 36, fontSize: 13, fontWeight: 600, px: 2 },
+              }}
+            >
+              <Tab label="요양원" />
+              <Tab label="주간보호" />
+            </Tabs>
+          </Box>
+        )}
+
         {/* 첨부파일 업로드 및 미리보기 영역 */}
         <MDBox
           onMouseDownCapture={isDeletedAccount ? handleBlockedMouseAction : undefined}
@@ -1541,6 +2087,18 @@ function AccountInfoSheet() {
                   }}
                 >
                   {option?.account_name ?? ""}
+                  {option?.daycare_id && (
+                    <span style={{
+                      marginLeft: "6px",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      color: "#fff",
+                      backgroundColor: "#36BA98",
+                      borderRadius: "4px",
+                      padding: "1px 5px",
+                      lineHeight: 1.5,
+                    }}>주간</span>
+                  )}
                 </li>
               )}
               renderInput={(params) => (
@@ -1555,8 +2113,33 @@ function AccountInfoSheet() {
                       setAccountOpen(false);
                     }
                   }}
+                  InputProps={{
+                    ...params.InputProps,
+                    endAdornment: (
+                      <>
+                        {selectedAccountOption?.daycare_id && (
+                          <span style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            flexShrink: 0,
+                            marginRight: "4px",
+                            fontSize: "10px",
+                            fontWeight: 700,
+                            color: "#fff",
+                            backgroundColor: "#36BA98",
+                            borderRadius: "4px",
+                            padding: "1px 5px",
+                            lineHeight: 1.5,
+                            whiteSpace: "nowrap",
+                          }}>주간</span>
+                        )}
+                        {params.InputProps.endAdornment}
+                      </>
+                    ),
+                  }}
                   sx={{
                     "& .MuiInputBase-root": { height: 32, fontSize: 12 },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
                     "& input": {
                       padding: "0 8px",
                       color: isDeletedAccount ? "#d32f2f" : "inherit",
@@ -2222,29 +2805,83 @@ function AccountInfoSheet() {
         </Card>
 
         {/* 하단 테이블 */}
-        <Card sx={{ p: 1, mb: 1 }}>
-          <MDBox sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}>
-            {isExtraDietEnabled && (
-              <MDButton
-                variant="outlined"
-                color="info"
-                size="small"
-                onClick={handleOpenExtraDietModal}
+        {isType1 ? (
+          <Card sx={{ p: 1, mb: 1 }}>
+            {/* 식수관리 / 운영관리 탭 */}
+            <MDBox
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                mb: 1,
+                borderBottom: "1px solid #e0e0e0",
+              }}
+            >
+              {isExtraDietEnabled && (
+                <MDButton
+                  variant="outlined"
+                  color="info"
+                  size="small"
+                  onClick={handleOpenExtraDietModal}
+                  sx={{ mr: 1 }}
+                >
+                  식단가 추가
+                </MDButton>
+              )}
+              <Tabs
+                value={bottomTab}
+                onChange={(_, v) => setBottomTab(v)}
+                textColor="primary"
+                indicatorColor="primary"
+                sx={{
+                  minHeight: 36,
+                  "& .MuiTab-root": { minHeight: 36, fontSize: 13, fontWeight: 600, px: 2 },
+                }}
               >
-                식단가 추가
-              </MDButton>
-            )}
-          </MDBox>
-          {renderTable(priceData, setPriceData, "price", priceTableColumns)}
-        </Card>
+                <Tab label="식수관리" />
+                <Tab label="운영관리" />
+              </Tabs>
+            </MDBox>
 
-        <Card sx={{ p: 1, mb: 1 }}>{renderTable(etcData, setEtcData, "etc", etcTableColumns)}</Card>
-        <Card sx={{ p: 1, mb: 1 }}>
-          {renderTable(managerData, setManagerData, "manager", managerTableColumns)}
-        </Card>
-        <Card sx={{ p: 1, mb: 1 }}>
-          {renderTable(eventData, setEventData, "event", eventTableColumns)}
-        </Card>
+            {/* 식수관리: 식단가+식수인원 / 경비 / 배식방법 */}
+            <Box sx={{ display: bottomTab === 0 ? "block" : "none" }}>
+              <Box sx={{ mb: 1 }}>{renderType1PriceRow1()}</Box>
+              <Box sx={{ mb: 1 }}>{renderType1ExpenseTable()}</Box>
+              <Box>{etcRow1JSX}</Box>
+            </Box>
+
+            {/* 운영관리: 구매+인력 / 운영유지유형+보험+마감 / 제안 */}
+            <Box sx={{ display: bottomTab === 1 ? "block" : "none" }}>
+              <Box sx={{ mb: 1 }}>{etcRow2JSX}</Box>
+              <Box sx={{ mb: 1 }}>{managerJSX}</Box>
+              <Box>{eventJSX}</Box>
+            </Box>
+          </Card>
+        ) : (
+          <>
+            <Card sx={{ p: 1, mb: 1 }}>
+              <MDBox
+                sx={{ display: "flex", justifyContent: "flex-start", alignItems: "center", mb: 1 }}
+              >
+                {isExtraDietEnabled && (
+                  <MDButton
+                    variant="outlined"
+                    color="info"
+                    size="small"
+                    onClick={handleOpenExtraDietModal}
+                  >
+                    식단가 추가
+                  </MDButton>
+                )}
+              </MDBox>
+              {priceRow1JSX}
+            </Card>
+            <Box sx={{ display: "none" }}>{priceRow2JSX}</Box>
+            <Card sx={{ p: 1, mb: 1 }}>{etcRow1JSX}</Card>
+            <Box sx={{ display: "none" }}>{etcRow2JSX}</Box>
+            <Card sx={{ p: 1, mb: 1 }}>{managerJSX}</Card>
+            <Card sx={{ p: 1, mb: 1 }}>{eventJSX}</Card>
+          </>
+        )}
       </MDBox>
 
       {/* 첨부파일(이미지/PDF/엑셀) 공용 미리보기 오버레이 */}

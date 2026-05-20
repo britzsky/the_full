@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+﻿/* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
@@ -100,7 +100,8 @@ function AccountAnnualLeaveTab() {
     return Number.isNaN(n) ? 0 : n;
   };
 
-  // ✅ 선택된 직원의 연차 합계 계산
+  // 선택된 직원의 연차 합계 계산
+  // DB에서 사용(U), 소멸(E)은 이미 음수로 저장되므로 단순 SUM으로 남은연차 계산 가능
   const summary = useMemo(() => {
     if (!detailRows || detailRows.length === 0) {
       return {
@@ -144,7 +145,7 @@ function AccountAnnualLeaveTab() {
     };
   }, [detailRows, selectedMemberId]);
 
-  // 오른쪽 테이블 셀 스타일 (변경 시 빨간 글씨)
+  // 셀 값이 조회 당시 원본과 다르면 빨간 글씨로 표시 (저장 전 변경 여부 시각화)
   const getDetailCellStyle = (rowIndex, key) => {
     const original = originalDetailRows[rowIndex];
     const current = detailRows[rowIndex];
@@ -167,11 +168,19 @@ function AccountAnnualLeaveTab() {
     return { color: "black" };
   };
 
-  // 전체 테이블 스타일 (모바일 대응)
-  const tableSx = {
+  // 파란 헤더 바 + 요약 바를 고정시키고 테이블만 스크롤되도록 분리한 구조
+  // tableWrapperSx: 전체 높이 제한 (flex column)
+  // tableScrollSx:  실제 스크롤되는 내부 영역
+  const tableWrapperSx = {
+    display: "flex",
+    flexDirection: "column",
+    maxHeight: isMobile ? "55vh" : "75vh",
+  };
+
+  // 내부 스크롤 영역 (테이블만)
+  const tableScrollSx = {
     flex: 1,
     minHeight: 0,
-    maxHeight: isMobile ? "55vh" : "75vh",
     overflowX: "auto",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
@@ -241,6 +250,62 @@ function AccountAnnualLeaveTab() {
     ],
     []
   );
+
+  // 우클릭 컨텍스트 메뉴 상태 (행 삭제용)
+  // open: 메뉴 표시 여부 / mouseX,mouseY: 표시 위치 / targetRow: 우클릭한 행 데이터
+  // tableType: "annualLeave" = 연차 테이블, "overTime" = 시간외근무 테이블
+  const [ctxMenu, setCtxMenu] = useState({ open: false, mouseX: 0, mouseY: 0, targetRow: null, tableType: null });
+
+  // 우클릭 시 컨텍스트 메뉴 표시 (tableType으로 어느 테이블인지 구분)
+  const handleRowContextMenu = (e, row, tableType) => {
+    e.preventDefault();
+    setCtxMenu({ open: true, mouseX: e.clientX, mouseY: e.clientY, targetRow: row, tableType });
+  };
+
+  // 컨텍스트 메뉴 닫기
+  const closeCtxMenu = () => setCtxMenu({ open: false, mouseX: 0, mouseY: 0, targetRow: null, tableType: null });
+
+  // 행 삭제: tableType에 따라 연차 또는 시간외근무 API를 선택해서 호출
+  const handleDeleteRow = async () => {
+    const { targetRow: row, tableType } = ctxMenu;
+    closeCtxMenu();
+    if (!row) return;
+
+    if (tableType === "annualLeave") {
+      // ledger_id 없는 행 = 아직 저장 안 된 신규 행 → 로컬에서 바로 제거
+      if (!row.ledger_id) {
+        setDetailRows((prev) => prev.filter((r) => r !== row));
+        return;
+      }
+      try {
+        const res = await api.post("/Operate/AnnualLeaveDelete", { ledger_id: row.ledger_id });
+        if (res.data.code === 200) {
+          Swal.fire({ title: "삭제", text: "삭제되었습니다.", icon: "success", confirmButtonText: "확인" });
+          // 삭제 후 해당 직원의 연차 목록 재조회
+          if (selectedMemberId) await fetchAnnualLeaveList(selectedMemberId);
+        } else {
+          Swal.fire({ title: "실패", text: res.data.message || "삭제 실패", icon: "error" });
+        }
+      } catch (err) {
+        Swal.fire({ title: "실패", text: err.message || "삭제 중 오류 발생", icon: "error" });
+      }
+    } else if (tableType === "overTime") {
+      // over_id 없는 행 = 아직 저장 안 된 신규 행 → 현재는 읽기 전용이므로 해당 없음
+      if (!row.over_id) return;
+      try {
+        const res = await api.post("/Operate/OverTimeDelete", { over_id: row.over_id });
+        if (res.data.code === 200) {
+          Swal.fire({ title: "삭제", text: "삭제되었습니다.", icon: "success", confirmButtonText: "확인" });
+          // 삭제 후 해당 직원의 시간외근무 목록 재조회
+          if (selectedMemberId) await fetchOverTimeList(selectedMemberId);
+        } else {
+          Swal.fire({ title: "실패", text: res.data.message || "삭제 실패", icon: "error" });
+        }
+      } catch (err) {
+        Swal.fire({ title: "실패", text: err.message || "삭제 중 오류 발생", icon: "error" });
+      }
+    }
+  };
 
   // 왼쪽 계약형태 옵션
   const contractOptions = useMemo(
@@ -423,7 +488,7 @@ function AccountAnnualLeaveTab() {
 
   // 왼쪽 테이블 렌더
   const renderLeftTable = () => (
-    <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableSx}>
+    <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableWrapperSx}>
       <MDBox
         mx={0}
         mt={-1}
@@ -443,6 +508,7 @@ function AccountAnnualLeaveTab() {
         </MDTypography>
       </MDBox>
 
+      <MDBox sx={tableScrollSx}>
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <table>
@@ -505,12 +571,13 @@ function AccountAnnualLeaveTab() {
           </table>
         </Grid>
       </Grid>
+      </MDBox>
     </MDBox>
   );
 
   // 오른쪽 테이블 렌더 (연차 상세) — 조회 전용
   const renderRightTable = () => (
-    <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableSx}>
+    <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableWrapperSx}>
       <MDBox
         mx={0}
         mt={-1}
@@ -586,6 +653,7 @@ function AccountAnnualLeaveTab() {
         </MDBox>
       </MDBox>
 
+      <MDBox sx={tableScrollSx}>
       <Grid container spacing={2}>
         <Grid item xs={12}>
           <table>
@@ -608,17 +676,28 @@ function AccountAnnualLeaveTab() {
               </tr>
             </thead>
             <tbody>
-              {detailRows.map((row, rowIndex) => {
-                if (
-                  selectedMemberId &&
-                  row.member_id &&
-                  String(row.member_id) !== String(selectedMemberId)
-                ) {
-                  return null;
-                }
-
+              {[...detailRows]
+                // 선택된 직원 행만 필터
+                .filter(
+                  (row) =>
+                    !selectedMemberId ||
+                    !row.member_id ||
+                    String(row.member_id) === String(selectedMemberId)
+                )
+                .sort((a, b) => {
+                  // 1차: 날짜 내림차순 (최신이 위)
+                  const dateA = a.ledger_dt || "";
+                  const dateB = b.ledger_dt || "";
+                  if (dateB !== dateA) return dateB.localeCompare(dateA);
+                  // 2차: 같은 날짜면 처리 순서 반영 (내림차순이므로 나중 처리된 게 위)
+                  // 처리순서: 소멸(E) → 부여(G) → 사용(U) / 표시순서(위→아래): 사용 → 부여 → 소멸
+                  const typeOrder = { U: 0, G: 1, N: 2, E: 3 };
+                  return (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9);
+                })
+                .map((row, rowIndex) => {
                 return (
-                  <tr key={rowIndex}>
+                  // 우클릭 시 연차 행 삭제 메뉴 표시
+                  <tr key={rowIndex} onContextMenu={(e) => handleRowContextMenu(e, row, "annualLeave")} style={{ cursor: "context-menu" }}>
                     {columnsRight.map((col) => {
                       const rawValue = row[col.accessorKey] || "";
                       const baseStyle = getDetailCellStyle(rowIndex, col.accessorKey);
@@ -647,6 +726,7 @@ function AccountAnnualLeaveTab() {
           </table>
         </Grid>
       </Grid>
+      </MDBox>
     </MDBox>
   );
 
@@ -670,7 +750,7 @@ function AccountAnnualLeaveTab() {
     });
 
     return (
-      <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableSx}>
+      <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableWrapperSx}>
         <MDBox
           mx={0}
           mt={-1}
@@ -687,7 +767,7 @@ function AccountAnnualLeaveTab() {
           alignItems="center"
         >
           <MDTypography variant={isMobile ? "button" : "h6"} color="white">
-            영양사 시간외 근무 내역
+            영양사 시간 외 근무 내역
           </MDTypography>
         </MDBox>
 
@@ -734,6 +814,7 @@ function AccountAnnualLeaveTab() {
           </MDBox>
         </MDBox>
 
+        <MDBox sx={tableScrollSx}>
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <table>
@@ -747,7 +828,8 @@ function AccountAnnualLeaveTab() {
               </thead>
               <tbody>
                 {nutritionOverRows.map((row, idx) => (
-                  <tr key={row.over_id || idx}>
+                  // 우클릭 시 시간외근무 행 삭제 메뉴 표시
+                  <tr key={row.over_id || idx} onContextMenu={(e) => handleRowContextMenu(e, row, "overTime")} style={{ cursor: "context-menu" }}>
                     <td style={{ width: nutritionColWidths.over_dt }}>{row.over_dt}</td>
                     <td style={{ ...compactCellStyle, width: nutritionColWidths.type }}>
                       {getTypeLabel(row.type)}
@@ -762,6 +844,7 @@ function AccountAnnualLeaveTab() {
             </table>
           </Grid>
         </Grid>
+        </MDBox>
       </MDBox>
     );
   };
@@ -810,7 +893,8 @@ function AccountAnnualLeaveTab() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 40, fontSize: 12 },
-                "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />
           )}
@@ -849,6 +933,55 @@ function AccountAnnualLeaveTab() {
           </Grid>
         )}
       </Grid>
+
+      {/* 우클릭 행 삭제 컨텍스트 메뉴 — accountissuesheettab.js와 동일한 스타일 */}
+      {ctxMenu.open && (
+        <div
+          onClick={closeCtxMenu}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            closeCtxMenu();
+          }}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 10000,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: ctxMenu.mouseY,
+              left: ctxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={handleDeleteRow}
+            >
+              🗑️ 행 삭제
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 품목 등록 모달 (현재 사용 X, 그대로 둠) */}
       <Modal open={open} onClose={handleModalClose}>

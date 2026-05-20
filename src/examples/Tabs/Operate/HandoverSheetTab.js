@@ -1,4 +1,4 @@
-// src/layouts/handover/HandoverSheetTab.js
+﻿// src/layouts/handover/HandoverSheetTab.js
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { TextField, useTheme, useMediaQuery } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
@@ -472,7 +472,8 @@ export default function HandoverSheetTab() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />
           )}

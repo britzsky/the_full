@@ -47,6 +47,7 @@ import WeekMenuManager from "layouts/weekmenusheet";
 import EventManager from "layouts/eventsheet";
 import CarManager from "examples/Tabs/Business/CorCarTab";
 import ElectronicPaymentManager from "layouts/headoffice/headofficetab_2";
+import HeadofficeNotice from "layouts/HeadofficeNotice";
 import HeadofficeScheduleSheet from "layouts/headoffice/headofficetab_3";
 
 // 영업
@@ -137,6 +138,16 @@ const routes = [
 
         accessMode: "AND",
       },
+      // {
+      //   type: "collapse",
+      //   name: "📢 공지사항",
+      //   key: "headoffice_notices",
+      //   route: "/headoffice/notices",
+      //   component: <HeadofficeNotice />,
+      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
+      //   allowedPositions: [0, 1, 2, 3],
+      //   accessMode: "AND",
+      // },
       {
         type: "collapse",
         name: "📅 급식사업부 일정관리",

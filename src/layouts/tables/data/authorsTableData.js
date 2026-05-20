@@ -78,8 +78,21 @@ export default function useTableData(accountType, refreshKey = 0) {
           del_yn: item.del_yn, // 삭제여부 원본값 유지
 
           account_name: (
-            <MDTypography variant="caption" color="text" fontWeight="medium">
+            <MDTypography variant="caption" color="text" fontWeight="medium" sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
               {item.account_name}
+              {item.daycare_id && (
+                <span style={{
+                  display: "inline-block",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  color: "#fff",
+                  backgroundColor: "#36BA98",
+                  borderRadius: "4px",
+                  padding: "1px 5px",
+                  lineHeight: 1.5,
+                  whiteSpace: "nowrap",
+                }}>주간</span>
+              )}
             </MDTypography>
           ),
           account_address: (

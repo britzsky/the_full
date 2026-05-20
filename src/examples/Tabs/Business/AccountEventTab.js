@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+﻿/* eslint-disable react/function-component-definition */
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Grid,
@@ -575,7 +575,8 @@ export default function AccountEventTab() {
                   }}
                   sx={{
                     "& .MuiInputBase-root": { height: 43, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                    "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                   }}
                 />
               )}

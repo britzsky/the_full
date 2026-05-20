@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+﻿/* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import Grid from "@mui/material/Grid";
@@ -1597,7 +1597,8 @@ function AccountMemberSheet() {
             minWidth: 200,
             ...(isTabletOrSmallDesktop ? { flex: "1 1 220px" } : {}),
             "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-            "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+            "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
           }}
         />
 
@@ -1648,7 +1649,8 @@ function AccountMemberSheet() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />
           )}

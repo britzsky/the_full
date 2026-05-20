@@ -48,6 +48,9 @@ export default function useDashBoardData() {
   const [bookmarks, setBookmarks] = useState([]);
   const [todos, setTodos] = useState([]);
 
+  // 대시보드 개인 데이터를 조회하고 저장할 때 사용하는 로그인 사용자 ID
+  const getLoginUserId = () => String(localStorage.getItem("user_id") || "").trim();
+
   // ✅ 오늘 날짜 YYYY-MM-DD (로컬 기준)
   const getTodayYmd = () => {
     const d = new Date();
@@ -75,11 +78,12 @@ export default function useDashBoardData() {
   }, []);
 
   // ✅ 임의 조회 함수들(엔드포인트는 너희 백엔드에 맞게 변경)
-  const fetchNotices = (account_id) =>
-    api.get("/Dashboard/NoticeList", { params: { account_id } }).then((res) =>
-      (res.data || []).map((x) => ({
-        title: x.title || x.notice_title || "",
-        date: x.reg_dt || x.date || "",
+  const fetchNotices = () =>
+    api.get("/HeadOffice/NoticeList").then((res) =>
+      (res.data || []).slice(0, 5).map((x) => ({
+        idx: x.idx ?? null,
+        content: x.title || "",
+        date: (x.reg_dt || "").slice(0, 10),
       }))
     );
 
@@ -170,28 +174,66 @@ export default function useDashBoardData() {
       }))
     );
 
-  const fetchBookmarks = (account_id) =>
-    api.get("/Dashboard/Bookmarks", { params: { account_id } }).then((res) =>
+  const fetchBookmarks = () =>
+    api.get("/User/Bookmarks", { params: { user_id: getLoginUserId() } }).then((res) =>
       (res.data || []).map((x) => ({
+        idx: x.idx ?? null,
+        type: x.type ?? 1,
         title: x.title || x.name || "",
+        content: x.title || x.name || "",
+        route: x.route || "",
         date: x.date || "",
       }))
     );
 
-  const fetchTodos = (account_id) =>
-    api.get("/Dashboard/Todos", { params: { account_id } }).then((res) =>
+  const fetchTodos = () =>
+    api.get("/User/Todos", { params: { user_id: getLoginUserId() } }).then((res) =>
       (res.data || []).map((x) => ({
+        idx: x.idx ?? null,
         title: x.title || x.todo || "",
+        content: x.title || x.todo || "",
+        start_date: x.start_date || "",
+        end_date: x.end_date || "",
+        complete_yn: x.complete_yn || "N",
         date: x.date || "",
       }))
     );
+
+  // 북마크 저장 후 목록 새로고침 (route: ERP 내부 경로)
+  const addBookmark = async (account_id, { idx, type, title, route }) => {
+    await api.post("/User/BookmarkAdd", { idx, user_id: getLoginUserId(), type: type || 1, title, route: route || "" });
+    await fetchAll(account_id);
+  };
+
+  const deleteBookmark = async (account_id, { idx }) => {
+    await api.post("/User/BookmarkDelete", { idx, user_id: getLoginUserId() });
+    await fetchAll(account_id);
+  };
+
+  // 투두 저장 후 목록 새로고침
+  const addTodo = async (account_id, { idx, title, start_date, end_date, complete_yn }) => {
+    await api.post("/User/TodoAdd", {
+      idx,
+      user_id: getLoginUserId(),
+      title,
+      start_date: start_date || "",
+      end_date: end_date || "",
+      complete_yn: complete_yn || "N",
+    });
+    await fetchAll(account_id);
+  };
+
+  const deleteTodo = async (account_id, { idx }) => {
+    await api.post("/User/TodoDelete", { idx, user_id: getLoginUserId() });
+    await fetchAll(account_id);
+  };
 
   // ✅ Dashboard 진입 시 한 번에 다 조회
   const fetchAll = useCallback(async (account_id) => {
     setLoading(true);
 
     const results = await Promise.allSettled([
-      fetchNotices(account_id),
+      fetchNotices(),
       fetchMeals(account_id),
       fetchEducations(account_id),
       fetchWelfares(account_id),
@@ -204,12 +246,7 @@ export default function useDashBoardData() {
 
     const pick = (idx, fallback) => (results[idx].status === "fulfilled" ? results[idx].value : fallback);
 
-    setNotices(
-      pick(0, [
-        { title: "지출결의서 작성요령", date: "2026-01-01" },
-        { title: "워크샵 관련 공지", date: "2025-12-30" },
-      ])
-    );
+    setNotices(pick(0, []));
 
     setMeals(
       pick(1, [
@@ -263,5 +300,9 @@ export default function useDashBoardData() {
     bookmarks,
     todos,
     fetchAll,
+    addBookmark,
+    deleteBookmark,
+    addTodo,
+    deleteTodo,
   };
 }

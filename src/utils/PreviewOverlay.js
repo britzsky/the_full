@@ -154,9 +154,17 @@ function PreviewOverlay({
   const [imageRotation, setImageRotation] = useState(0);
   // 오버레이 창 드래그 위치(좌상단 기준 px)
   const [viewerPos, setViewerPos] = useState(() => getCenteredViewerPos(isMobile, undefined, anchorX));
+  // 사용자가 resize 핸들로 조절한 실제 크기 (null이면 기본 vw/vh 비율 사용)
+  const [viewerSize, setViewerSize] = useState(null);
   // 드래그 상태/오프셋을 분리해 마우스 이동마다 불필요한 계산을 줄인다.
   const [dragging, setDragging] = useState(false);
   const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const panelRef = useRef(null);
+  const ghostRef = useRef(null);
+  // 커스텀 resize 핸들 상태: 드래그 중엔 setState 없이 고스트 DOM 직접 조작
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeStartRef = useRef(null);
+  const tempSizeRef = useRef(null);
   // 엑셀 미리보기 상태: 로딩/시트명/표데이터/오류를 한 객체로 관리한다.
   const [excelPreview, setExcelPreview] = useState({
     loading: false,
@@ -199,11 +207,59 @@ function PreviewOverlay({
     setImageRotation(0);
   }, [open, safeIndex]);
 
-  // 오버레이를 열 때 화면 중앙 위치로 기본 배치
+  // 오버레이를 열 때 화면 중앙 위치로 기본 배치, 파일 변경 시 사용자 지정 크기 초기화
   useLayoutEffect(() => {
     if (!open) return;
     setViewerPos(getCenteredViewerPos(isMobile, currentFile?.kind, anchorX));
+    setViewerSize(null);
   }, [open, isMobile, safeIndex, currentFile?.kind, anchorX]);
+
+  // 커스텀 resize 핸들 mousedown: 시작 마우스 위치와 패널 크기를 ref에만 저장
+  const handleResizeStart = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const el = panelRef.current;
+    if (!el) return;
+    resizeStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      initW: el.offsetWidth,
+      initH: el.offsetHeight,
+    };
+    tempSizeRef.current = null;
+    setIsResizing(true);
+  }, []);
+
+  // resize 드래그 중: 패널은 그대로, 고스트 박스 DOM만 직접 조작 → 버벅임 없음
+  const handleResizeMove = useCallback((e) => {
+    const start = resizeStartRef.current;
+    const ghost = ghostRef.current;
+    if (!start || !ghost) return;
+    const newW = Math.max(280, start.initW + (e.clientX - start.mouseX));
+    const newH = Math.max(200, start.initH + (e.clientY - start.mouseY));
+    ghost.style.width = `${newW}px`;
+    ghost.style.height = `${newH}px`;
+    tempSizeRef.current = { width: newW, height: newH };
+  }, []);
+
+  // resize 완료: 최종 크기를 state에 한 번만 저장 → 컨텐츠 렌더링
+  const handleResizeEnd = useCallback(() => {
+    if (tempSizeRef.current) {
+      setViewerSize(tempSizeRef.current);
+    }
+    resizeStartRef.current = null;
+    setIsResizing(false);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return undefined;
+    window.addEventListener("mousemove", handleResizeMove);
+    window.addEventListener("mouseup", handleResizeEnd);
+    return () => {
+      window.removeEventListener("mousemove", handleResizeMove);
+      window.removeEventListener("mouseup", handleResizeEnd);
+    };
+  }, [isResizing, handleResizeMove, handleResizeEnd]);
 
   // 오버레이가 열린 동안은 바깥 페이지 스크롤을 잠가
   // PDF 주변에 브라우저 기본 스크롤이 노출되지 않게 한다.
@@ -426,15 +482,15 @@ function PreviewOverlay({
         position: "absolute",
         left: viewerPos.x,
         top: viewerPos.y,
-        width: `${widthRatio * 100}vw`,
-        height: `${heightRatio * 100}vh`,
+        // 사용자가 resize 핸들로 조절한 크기가 있으면 그 값을 유지, 없으면 기본 비율
+        width: viewerSize ? viewerSize.width : `${widthRatio * 100}vw`,
+        height: viewerSize ? viewerSize.height : `${heightRatio * 100}vh`,
         minWidth: 280,
         minHeight: 200,
-        resize: "both",
         overflow: "hidden",
       };
     },
-    [viewerPos.x, viewerPos.y, isMobile, currentFile?.kind]
+    [viewerPos.x, viewerPos.y, isMobile, currentFile?.kind, viewerSize]
   );
 
   const titlebarIconButtonStyle = useMemo(
@@ -511,7 +567,27 @@ function PreviewOverlay({
         pointerEvents: "none",
       }}
     >
-      <div style={{ ...panelStyle, pointerEvents: "auto" }}>
+      {/* 리사이즈 중에만 표시되는 고스트 박스: 원본 패널은 그대로, 윤곽선만 따라감 */}
+      {isResizing && (
+        <div
+          ref={ghostRef}
+          style={{
+            position: "absolute",
+            left: viewerPos.x,
+            top: viewerPos.y,
+            width: panelRef.current ? panelRef.current.offsetWidth : panelStyle.width,
+            height: panelRef.current ? panelRef.current.offsetHeight : panelStyle.height,
+            border: "2px dashed rgba(255,255,255,0.7)",
+            borderRadius: 10,
+            backgroundColor: "rgba(0,0,0,0.15)",
+            pointerEvents: "none",
+            boxSizing: "border-box",
+            zIndex: 13001,
+          }}
+        />
+      )}
+
+      <div ref={panelRef} style={{ ...panelStyle, pointerEvents: "auto" }}>
         {/* 제목 바를 마우스로 잡아서 오버레이 위치를 이동할 수 있게 구성 */}
         <div
           style={{
@@ -639,6 +715,28 @@ function PreviewOverlay({
           >
             <X size={isMobile ? 12 : 14} />
           </button>
+        </div>
+
+        {/* 커스텀 resize 핸들: 우측 하단 고정 */}
+        <div
+          onMouseDown={handleResizeStart}
+          style={{
+            position: "absolute",
+            right: 0,
+            bottom: 0,
+            width: 18,
+            height: 18,
+            cursor: "nwse-resize",
+            zIndex: 1010,
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "flex-end",
+            padding: 3,
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="rgba(255,255,255,0.5)">
+            <path d="M9 1L1 9M9 5L5 9M9 9L9 9" stroke="rgba(255,255,255,0.5)" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
         </div>
 
         <div

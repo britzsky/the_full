@@ -1,4 +1,4 @@
-// ✅ src/layouts/membersFiles/AccountMembersFilesTab.js
+﻿// ✅ src/layouts/membersFiles/AccountMembersFilesTab.js
 import React, { useMemo, useState, useEffect, useCallback } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -462,7 +462,8 @@ function AccountMembersFilesTab() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />
           )}

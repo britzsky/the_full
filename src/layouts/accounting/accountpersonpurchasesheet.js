@@ -1795,7 +1795,8 @@ function AccountCorporateCardSheet() {
                   }}
                   sx={{
                     "& .MuiInputBase-root": { height: 45, fontSize: 12 },
-                    "& input": { padding: "0 8px" },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                    "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                   }}
                 />
               )}
@@ -2165,6 +2166,7 @@ function AccountCorporateCardSheet() {
                             inputProps={{ style: { textAlign: "center", fontSize: 12 } }}
                             sx={{
                               "& .MuiInputBase-root": { height: 28, fontSize: 12 },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
                               "& input": {
                                 padding: "6px 8px",
                                 color: changed ? "red" : "black",
@@ -2201,6 +2203,7 @@ function AccountCorporateCardSheet() {
                             inputProps={{ style: { textAlign: "center", fontSize: 12 } }}
                             sx={{
                               "& .MuiInputBase-root": { height: 28, fontSize: 12 },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
                               "& input": {
                                 padding: "6px 8px",
                                 color: changed ? "red" : "black",

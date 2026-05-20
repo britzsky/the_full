@@ -1277,19 +1277,32 @@ function AccountInfoSheet() {
 
   // ── account_type=1 전용 식단가+식수인원 커스텀 테이블 ──────────────────────
   const renderType1PriceRow1 = () => {
-    const dietCols = [
-      { header: "1일 식단가", key: "diet_price", isNumeric: true },
-      { header: "기초 식단가", key: "basic_price", isNumeric: true },
-      { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
-      { header: "인상시점", key: "after_dt", isNumeric: false },
-    ];
-    if (!isSchoolOrIndustry) {
-      dietCols.push(
+    const isDaycareView = hasDaycare && daycareTab === 1;
+
+    let dietCols;
+    if (isDaycareView) {
+      // 주간보호: 1식 단가, 간식가, 직원 식단가, 인상전 단가, 인상시점, 기초 식단가
+      dietCols = [
         { header: "1식 단가", key: "elderly", isNumeric: true },
         { header: "간식가", key: "snack", isNumeric: true },
-        { header: "직원 식단가", key: "employ", isNumeric: false }
-      );
+        { header: "직원 식단가", key: "employ", isNumeric: false },
+        { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
+        { header: "인상시점", key: "after_dt", isNumeric: false },
+        { header: "기초 식단가", key: "basic_price", isNumeric: true },
+      ];
+    } else {
+      // 요양원: 1일 식단가, 1식 단가, 간식가, 직원식단가, 인상전 단가, 인상시점, 기초 식단가
+      dietCols = [
+        { header: "1일 식단가", key: "diet_price", isNumeric: true },
+        { header: "1식 단가", key: "elderly", isNumeric: true },
+        { header: "간식가", key: "snack", isNumeric: true },
+        { header: "직원 식단가", key: "employ", isNumeric: false },
+        { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
+        { header: "인상시점", key: "after_dt", isNumeric: false },
+        { header: "기초 식단가", key: "basic_price", isNumeric: true },
+      ];
     }
+
     extraDiet
       .filter((item) => item.name && item.name.trim())
       .forEach((item, i) => {
@@ -1297,10 +1310,25 @@ function AccountInfoSheet() {
       });
 
     // 만실 컬럼 표시 대상
-    const fullRoomSubs =
-      hasDaycare && daycareTab === 1
-        ? [{ label: "주간보호", key: "full_room_daycare" }]
-        : [{ label: "요양원", key: "full_room" }];
+    const fullRoomSubs = isDaycareView
+      ? [{ label: "주간보호", key: "full_room_daycare" }]
+      : [{ label: "요양원", key: "full_room" }];
+
+    // 기초 그룹: 요양원은 경관식+일반식, 주간보호는 일반식만
+    const basicSubs = isDaycareView
+      ? [{ label: "일반식", key: "basic" }]
+      : [
+          { label: "경관식", key: "basic_ceremony" },
+          { label: "일반식", key: "basic" },
+        ];
+
+    // 일반 그룹: 요양원은 경관식+일반식, 주간보호는 일반식만
+    const normalSubs = isDaycareView
+      ? [{ label: "일반식", key: "normal" }]
+      : [
+          { label: "경관식", key: "ceremony" },
+          { label: "일반식", key: "normal" },
+        ];
 
     const waterGroups = [
       {
@@ -1309,17 +1337,11 @@ function AccountInfoSheet() {
       },
       {
         mainHeader: "기초",
-        subs: [
-          { label: "경관식", key: "basic_ceremony" },
-          { label: "일반식", key: "basic" },
-        ],
+        subs: basicSubs,
       },
       {
         mainHeader: "일반",
-        subs: [
-          { label: "경관식", key: "ceremony" },
-          { label: "일반식", key: "normal" },
-        ],
+        subs: normalSubs,
       },
       {
         mainHeader: "간식",
@@ -1331,8 +1353,9 @@ function AccountInfoSheet() {
       {
         mainHeader: "직원식",
         subs: [
-          { label: "오전", key: "eat_employ" },
-          { label: "오후", key: "eat_employ_lunch" },
+          { label: "조식", key: "eat_employ" },
+          { label: "중식", key: "eat_employ_lunch" },
+          { label: "석식", key: "eat_employ_dinner" },
         ],
       },
     ];

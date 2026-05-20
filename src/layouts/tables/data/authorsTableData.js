@@ -106,6 +106,11 @@ export default function useTableData(accountType, refreshKey = 0) {
               {formatEmpty(item.full_room)}
             </MDTypography>
           ),
+          full_room_daycare: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {formatEmpty(item.full_room_daycare)}
+            </MDTypography>
+          ),
           diet_price: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
               {formatPrice(item.diet_price)}
@@ -114,6 +119,11 @@ export default function useTableData(accountType, refreshKey = 0) {
           normal: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
               {formatEmpty(item.normal)}
+            </MDTypography>
+          ),
+          normal_daycare: (
+            <MDTypography variant="caption" color="text" fontWeight="medium">
+              {formatEmpty(item.normal_daycare)}
             </MDTypography>
           ),
           contract_period: (
@@ -216,9 +226,11 @@ export default function useTableData(accountType, refreshKey = 0) {
   const columns = [
     { Header: "업장명", accessor: "account_name", size: "3%", align: "left" },
     { Header: "주소", accessor: "account_address", size: "10%", align: "left" },
-    { Header: "만실인원", accessor: "full_room", size: "3%", align: "center" },
+    { Header: "만실인원_요양원", accessor: "full_room", size: "3%", align: "center" },
+    { Header: "만실인원_주간보호", accessor: "full_room_daycare", size: "3%", align: "center" },
     { Header: "현 식단가", accessor: "diet_price", size: "3%", align: "center" },
-    { Header: "현 식수", accessor: "normal", size: "3%", align: "center" },
+    { Header: "현식수_요양원", accessor: "normal", size: "3%", align: "center" },
+    { Header: "현식수_주간보호", accessor: "normal_daycare", size: "3%", align: "center" },
     { Header: "계약기간", accessor: "contract_period", size: "6%", align: "left" },
     { Header: "구분", accessor: "account_type", size: "3%", align: "left" },
     { Header: "필요조리인력", accessor: "account_rqd_member", size: "3%", align: "center" },

@@ -648,11 +648,25 @@ export default function Tables() {
       new Set([
         "account_address",
         "full_room",
+        "full_room_daycare",
         "diet_price",
         "normal",
+        "normal_daycare",
         "contract_period",
         "account_type",
       ]),
+    []
+  );
+
+  // 만실인원/현 식수를 2열로 나누는 커스텀 헤더 정의
+  // groupKey: colspan 2 그룹으로 묶일 기준 accessorKey(첫 번째 열)
+  const GROUPED_COLS = useMemo(
+    () => ({
+      full_room: { label: "만실인원", sub: "거래처" },
+      full_room_daycare: { parentKey: "full_room", sub: "주간보호" },
+      normal: { label: "현 식수", sub: "거래처" },
+      normal_daycare: { parentKey: "normal", sub: "주간보호" },
+    }),
     []
   );
 
@@ -847,23 +861,54 @@ export default function Tables() {
             >
               <table className="accountsheet-table">
                 <thead>
-                  {table.getHeaderGroups().map((hg) => (
-                    <tr key={hg.id}>
-                      {hg.headers.map((header) => (
+                  {/* 1행: rowspan2 컬럼 + 만실인원(colspan2) + 현 식수(colspan2) */}
+                  <tr>
+                    {table.getHeaderGroups()[0]?.headers.map((header) => {
+                      const key = header.column.id;
+                      const info = GROUPED_COLS[key];
+                      // 하위 컬럼(두 번째)은 1행에서 건너뜀
+                      if (info?.parentKey) return null;
+                      const isGroup = !!info?.label;
+                      return (
                         <th
                           key={header.id}
+                          colSpan={isGroup ? 2 : 1}
+                          rowSpan={isGroup ? 1 : 2}
                           style={{
                             padding:
-                              isCompactTable && paddedMobileColumnSet.has(header.column.id)
+                              isCompactTable && paddedMobileColumnSet.has(key)
                                 ? "2px 6px"
                                 : undefined,
                           }}
                         >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {isGroup
+                            ? info.label
+                            : flexRender(header.column.columnDef.header, header.getContext())}
                         </th>
-                      ))}
-                    </tr>
-                  ))}
+                      );
+                    })}
+                  </tr>
+                  {/* 2행: 그룹 컬럼의 하위 레이블(요양원/주간보호) */}
+                  <tr>
+                    {table.getHeaderGroups()[0]?.headers.map((header) => {
+                      const key = header.column.id;
+                      const info = GROUPED_COLS[key];
+                      if (!info) return null;
+                      return (
+                        <th
+                          key={header.id}
+                          style={{
+                            padding:
+                              isCompactTable && paddedMobileColumnSet.has(key)
+                                ? "2px 6px"
+                                : undefined,
+                          }}
+                        >
+                          {info.sub}
+                        </th>
+                      );
+                    })}
+                  </tr>
                 </thead>
 
                 <tbody>

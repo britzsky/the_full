@@ -1,4 +1,4 @@
-/* eslint-disable react/function-component-definition */
+﻿/* eslint-disable react/function-component-definition */
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import dayjs from "dayjs";
 import { Select, MenuItem, TextField, useMediaQuery, useTheme } from "@mui/material";
@@ -160,7 +160,7 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
     const mainKey = accountId === "20250819193651" ? "breakfast" : "lunch";
     const mainMeal = parseNumber(row[mainKey]);
 
-    // 🏭 산업체 중, TH에 "간편식"/"석식" 이 있는 특수 케이스
+    // 🏭 산업체 중, TH에 "간편식"/"석식" 이 있는 특수 케이스 
     const hasSimpleMealCols = extras.some((col) =>
       ["간편식", "석식"].includes((col.name || "").trim())
     );
@@ -213,6 +213,82 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
   }
 
   return total;
+};
+
+const defaultColumnLabels = {
+  breakfast: "조식",
+  lunch: "중식",
+  dinner: "석식",
+  ceremony: "경관식",
+  ceremony2: "경관식",
+  breakfast2: "조식",
+  lunch2: "중식",
+  dinner2: "석식",
+  daycare_breakfast: "주간보호 조식",
+  daycare_lunch: "주간보호 중식",
+  daycare_diner: "주간보호 석식",
+  daycare_employ_breakfast: "주간보호 직원 조식",
+  daycare_employ_lunch: "주간보호 직원 중식",
+  daycare_employ_dinner: "주간보호 직원 석식",
+  daycare_elderly_lunch: "주간보호 어르신 중식",
+  daycare_elderly_dinner: "주간보호 어르신 석식",
+  employ: "직원",
+  employ_breakfast: "직원 조식",
+  employ_lunch: "직원 중식",
+  employ_dinner: "직원 석식",
+};
+
+const getRevenueUnitPrice = (key, accountPriceInfo) => {
+  const priceInfo = accountPriceInfo || {};
+
+  if (key.startsWith("extra_diet")) return parseNumber(priceInfo[key]);
+  if (key.includes("employ")) return parseNumber(priceInfo.employ);
+  if (key.includes("ceremony")) {
+    return parseNumber(priceInfo.basic_price || priceInfo.elderly || priceInfo.diet_price);
+  }
+
+  if (
+    [
+      "breakfast",
+      "lunch",
+      "dinner",
+      "breakfast2",
+      "lunch2",
+      "dinner2",
+      "daycare_breakfast",
+      "daycare_lunch",
+      "daycare_diner",
+      "daycare_elderly_lunch",
+      "daycare_elderly_dinner",
+    ].includes(key)
+  ) {
+    return parseNumber(priceInfo.diet_price || priceInfo.elderly || priceInfo.basic_price);
+  }
+
+  return 0;
+};
+
+// 직원 식단가 텍스트 파싱 → 매출 계산
+// "고정" + 20만 초과 → 고정 총액, < 10000 → 합계×금액, 그 외 → 평균×금액
+// [추후] "일반 X원 / 요양보호사 Y원" 패턴 분리 파싱 여지
+const calcEmployRevenue = (priceText, totalCount, avgCount) => {
+  if (!priceText) return 0;
+  const str = String(priceText);
+
+  // 만원 단위 추출 (e.g. "80만원" → 800000)
+  const manWonMatch = str.match(/(\d[\d,]*)\s*만\s*원?/);
+  let amount;
+  if (manWonMatch) {
+    amount = parseNumber(manWonMatch[1]) * 10000;
+  } else {
+    const numMatch = str.replace(/,/g, "").match(/\d+/);
+    amount = numMatch ? Number(numMatch[0]) : 0;
+  }
+
+  if (amount === 0) return 0;
+  if (str.includes("고정") && amount > 200000) return amount;
+  if (amount < 10000) return totalCount * amount;
+  return Math.round(avgCount * amount);
 };
 
 // ✅ 비교용 공통 정규화 함수 (테이블용)
@@ -727,8 +803,15 @@ function DinersNumberSheet() {
   const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"));
   const isMobileOrTablet = isMobile || isTablet;
 
-  const { activeRows, setActiveRows, loading, fetchAllData, extraDietCols, accountList } =
-    useDinersNumbersheetData(selectedAccountId, year, month);
+  const {
+    activeRows,
+    setActiveRows,
+    loading,
+    fetchAllData,
+    extraDietCols,
+    accountPriceInfo,
+    accountList,
+  } = useDinersNumbersheetData(selectedAccountId, year, month);
 
   // ✅ 거래처 Autocomplete 옵션
   const accountOptions = useMemo(() => {
@@ -1094,6 +1177,58 @@ function DinersNumberSheet() {
     return { totals, avgs };
   }, [activeRows, visibleColumns]);
 
+  // 단일 행 헤더에서 컬럼 키 → 실제 헤더 라벨 자동 추출 ("오전간식" 등)
+  const headerDerivedLabels = useMemo(() => {
+    if (headerRows.length !== 1) return {};
+    const labels = {};
+    let visIdx = 0;
+    headerRows[0].forEach((cell, i) => {
+      if (i === 0) return; // 구분 컬럼 skip
+      const colSpan = Number(cell.colSpan) || 1;
+      if (visIdx < visibleColumns.length && cell.label) {
+        labels[visibleColumns[visIdx]] = cell.label;
+      }
+      visIdx += colSpan;
+    });
+    return labels;
+  }, [headerRows, visibleColumns]);
+
+  const revenueItems = useMemo(() => {
+    const extraLabelMap = (stableExtraDietCols || []).reduce((acc, col) => {
+      acc[col.priceKey] = col.name;
+      return acc;
+    }, {});
+
+    return visibleColumns
+      .filter((key) => numericCols.includes(key) && key !== "total")
+      .map((key) => {
+        const count = parseNumber(summaryRows.totals[key]);
+
+        // employ 단독 컬럼: 직원 식단가 파싱 로직 적용
+        if (key === "employ") {
+          const avgCount = parseNumber(summaryRows.avgs[key]);
+          return {
+            key,
+            label: extraLabelMap[key] || headerDerivedLabels[key] || defaultColumnLabels[key] || key,
+            amount: calcEmployRevenue(accountPriceInfo?.employ, count, avgCount),
+          };
+        }
+
+        // 헤더 라벨에 "간식"이 포함되면 snack 단가 사용
+        const derivedLabel = extraLabelMap[key] || headerDerivedLabels[key] || defaultColumnLabels[key] || key;
+        const isSnackCol = derivedLabel.includes("간식");
+        const unitPrice = isSnackCol
+          ? parseNumber(accountPriceInfo?.snack)
+          : getRevenueUnitPrice(key, accountPriceInfo);
+        return {
+          key,
+          label: derivedLabel,
+          amount: count * unitPrice,
+        };
+      })
+      .filter((item) => item.amount > 0);
+  }, [accountPriceInfo, headerDerivedLabels, stableExtraDietCols, summaryRows.totals, summaryRows.avgs, visibleColumns]);
+
   // ✅ 저장 처리
   const handleSave = async () => {
     if (!originalRows || originalRows.length === 0) {
@@ -1325,7 +1460,7 @@ function DinersNumberSheet() {
       pb={1}
       sx={{
         display: "flex",
-        justifyContent: isMobile ? "space-between" : "flex-end",
+        justifyContent: "flex-end",
         alignItems: "center",
         gap: isMobile ? 1 : 2,
         flexWrap: isMobile ? "wrap" : "nowrap",
@@ -1333,111 +1468,183 @@ function DinersNumberSheet() {
         borderBottom: "1px solid #eee",
       }}
     >
-      {isWorkingDayVisible && (
-        <>
-          <MDTypography variant="button">근무일수</MDTypography>
-          <TextField
-            value={workingDay}
-            onChange={(e) => setWorkingDay(e.target.value)}
-            onBlur={(e) => {
-              const num = parseNumber(e.target.value) || 0;
-              setWorkingDay(num.toString());
+      <MDBox
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: isMobile ? "space-between" : "flex-end",
+          gap: isMobile ? 1 : 2,
+          flexWrap: "wrap",
+          flex: 1,
+        }}
+      >
+        {/* 항목별 식수 합계에 거래처 식단가를 곱한 매출 요약 영역 */}
+        {revenueItems.length > 0 && (
+          <MDBox
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              border: "1px solid #111",
+              minWidth: isMobile ? "100%" : "auto",
+              overflow: "hidden",
+              flexShrink: 0,
             }}
-            variant="outlined"
-            size="small"
-            sx={{ width: 80, mr: 1 }}
-            inputProps={{
-              style: {
-                textAlign: "right",
-                ...(isWorkingDayChanged ? { color: "red" } : {}),
-              },
-            }}
-          />
-        </>
-      )}
-
-      {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
-      {(accountList || []).length > 0 && (
-        <Autocomplete
-          size="small"
-          sx={{ minWidth: 200 }}
-          options={accountOptions}
-          value={(() => {
-            const v = String(selectedAccountId ?? "");
-            return accountOptions.find((o) => o.value === v) || null;
-          })()}
-          onChange={(_, opt) => {
-            // 입력 비움 시 거래처 선택 유지
-            if (!opt) return;
-            setSelectedAccountId(opt.value);
-          }}
-          inputValue={accountInput}
-          onInputChange={(_, newValue) => setAccountInput(newValue)}
-          getOptionLabel={(opt) => opt?.label ?? ""}
-          isOptionEqualToValue={(opt, val) => opt.value === val.value}
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="거래처 검색"
-              placeholder="거래처명을 입력"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  selectAccountByInput();
-                }
-              }}
+          >
+            {/* 1행: 매출 헤더 */}
+            <MDBox
               sx={{
-                "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                "& input": { padding: "0 8px" },
+                bgcolor: "#288ebe",
+                borderBottom: "1px solid #111",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: 24,
+                px: 1,
+              }}
+            >
+              <MDTypography
+                sx={{ color: "#fff", fontSize: 12, fontWeight: 900, lineHeight: 1.2 }}
+              >
+                매출
+              </MDTypography>
+            </MDBox>
+            {/* 2행: 항목명: 금액 */}
+            <MDBox
+              sx={{
+                display: "flex",
+                flexWrap: isMobile ? "wrap" : "nowrap",
+                bgcolor: "#fff",
+                height: 28,
+              }}
+            >
+              {revenueItems.map((item, index) => (
+                <MDBox
+                  key={item.key}
+                  sx={{
+                    borderLeft: index > 0 ? "1px solid #111" : "none",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    px: 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <MDTypography sx={{ fontSize: 12, fontWeight: 800, color: "#444" }}>
+                    {item.label}: {formatNumber(item.amount)}
+                  </MDTypography>
+                </MDBox>
+              ))}
+            </MDBox>
+          </MDBox>
+        )}
+
+        {isWorkingDayVisible && (
+          <>
+            <MDTypography variant="button">근무일수</MDTypography>
+            <TextField
+              value={workingDay}
+              onChange={(e) => setWorkingDay(e.target.value)}
+              onBlur={(e) => {
+                const num = parseNumber(e.target.value) || 0;
+                setWorkingDay(num.toString());
+              }}
+              variant="outlined"
+              size="small"
+              sx={{ width: 80, mr: 1 }}
+              inputProps={{
+                style: {
+                  textAlign: "right",
+                  ...(isWorkingDayChanged ? { color: "red" } : {}),
+                },
               }}
             />
-          )}
-        />
-      )}
+          </>
+        )}
 
-      <TextField
-        select
-        size="small"
-        value={year}
-        onChange={(e) => setYear(Number(e.target.value))}
-        sx={{ minWidth: isMobile ? 140 : 150 }}
-        SelectProps={{ native: true }}
-      >
-        {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
-          <option key={y} value={y}>
-            {y}년
-          </option>
-        ))}
-      </TextField>
+        {/* ✅ 거래처: 문자 검색 가능한 Autocomplete로 변경 */}
+        {(accountList || []).length > 0 && (
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={(() => {
+              const v = String(selectedAccountId ?? "");
+              return accountOptions.find((o) => o.value === v) || null;
+            })()}
+            onChange={(_, opt) => {
+              // 입력 비움 시 거래처 선택 유지
+              if (!opt) return;
+              setSelectedAccountId(opt.value);
+            }}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
+            getOptionLabel={(opt) => opt?.label ?? ""}
+            isOptionEqualToValue={(opt, val) => opt.value === val.value}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
+                sx={{
+                  "& .MuiInputBase-root": { height: 35, fontSize: 12 },
+                  "& .MuiInputLabel-root": { fontSize: 12 },
+                  "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
+                }}
+              />
+            )}
+          />
+        )}
 
-      <TextField
-        select
-        size="small"
-        value={month}
-        onChange={(e) => setMonth(Number(e.target.value))}
-        sx={{ minWidth: isMobile ? 140 : 150 }}
-        SelectProps={{ native: true }}
-      >
-        {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-          <option key={m} value={m}>
-            {m}월
-          </option>
-        ))}
-      </TextField>
+        <TextField
+          select
+          size="small"
+          value={year}
+          onChange={(e) => setYear(Number(e.target.value))}
+          sx={{ minWidth: isMobile ? 96 : 105 }}
+          SelectProps={{ native: true }}
+        >
+          {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+            <option key={y} value={y}>
+              {y}년
+            </option>
+          ))}
+        </TextField>
 
-      <MDButton
-        variant="contained"
-        color="success"
-        startIcon={<DownloadIcon />}
-        onClick={handleExcelDownload}
-        sx={actionButtonSx}
-      >
-        엑셀다운로드
-      </MDButton>
+        <TextField
+          select
+          size="small"
+          value={month}
+          onChange={(e) => setMonth(Number(e.target.value))}
+          sx={{ minWidth: isMobile ? 86 : 95 }}
+          SelectProps={{ native: true }}
+        >
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+            <option key={m} value={m}>
+              {m}월
+            </option>
+          ))}
+        </TextField>
 
-      <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
-        저장
-      </MDButton>
+        <MDButton
+          variant="contained"
+          color="success"
+          startIcon={<DownloadIcon />}
+          onClick={handleExcelDownload}
+          sx={actionButtonSx}
+        >
+          엑셀다운로드
+        </MDButton>
+
+        <MDButton variant="gradient" color="info" onClick={handleSave} sx={actionButtonSx}>
+          저장
+        </MDButton>
+      </MDBox>
     </MDBox>
   );
 

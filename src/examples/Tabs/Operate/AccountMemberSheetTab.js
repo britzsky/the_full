@@ -388,6 +388,8 @@ function AccountMemberSheet() {
   const [wsOpen, setWsOpen] = useState(false);
   const [wsRows, setWsRows] = useState([]);
   const [wsOriginal, setWsOriginal] = useState([]);
+  // ✅ 근무형태 모달 우클릭 컨텍스트 메뉴 상태
+  const [wsCtxMenu, setWsCtxMenu] = useState({ open: false, mouseX: 0, mouseY: 0, rowIndex: null, idx: null });
 
   const numericCols = ["salary"];
 
@@ -1232,6 +1234,48 @@ function AccountMemberSheet() {
       setWsOpen(false);
     } catch (err) {
       Swal.fire("저장 실패", err?.message || "오류", "error");
+    }
+  };
+
+  const handleWsContextMenu = (e, rowIndex, idx) => {
+    e.preventDefault();
+    setWsCtxMenu({ open: true, mouseX: e.clientX, mouseY: e.clientY, rowIndex, idx });
+  };
+
+  const closeWsCtxMenu = () => setWsCtxMenu({ open: false, mouseX: 0, mouseY: 0, rowIndex: null, idx: null });
+
+  const handleWsDeleteRow = async () => {
+    const { rowIndex, idx } = wsCtxMenu;
+    closeWsCtxMenu();
+
+    if (idx == null) {
+      setWsRows((prev) => prev.filter((_, i) => i !== rowIndex));
+      setWsOriginal((prev) => prev.filter((_, i) => i !== rowIndex));
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      title: "행 삭제",
+      text: "해당 근무형태를 삭제하시겠습니까?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "삭제",
+      cancelButtonText: "취소",
+    });
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const res = await api.post("/Operate/AccountMemberWorkSystemDelete", { idx });
+      const ok = res?.data?.code === 200;
+      if (!ok) {
+        Swal.fire("삭제 실패", res?.data?.message || "서버 오류", "error");
+        return;
+      }
+      const latest = await fetchWorkSystemList({ snapshot: true });
+      setWsRows(latest || []);
+      setWsOriginal(latest || []);
+    } catch (err) {
+      Swal.fire("삭제 실패", err?.message || "오류", "error");
     }
   };
 
@@ -3059,7 +3103,7 @@ function AccountMemberSheet() {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 90 }}>idx</th>
+                    <th style={{ width: 90 }}>순번</th>
                     <th>근무형태명</th>
                     <th style={{ width: 140 }}>시작</th>
                     <th style={{ width: 140 }}>마감</th>
@@ -3078,8 +3122,13 @@ function AccountMemberSheet() {
                     const changedEndTime = String(r.end_time ?? "") !== String(o.end_time ?? "");
 
                     return (
-                      <tr key={`${r.idx ?? "new"}-${i}`} className={isNewRow ? "edited-cell" : ""}>
-                        <td className={isNewRow ? "edited-cell" : ""}>{r.idx ?? ""}</td>
+                      <tr
+                        key={`${r.idx ?? "new"}-${i}`}
+                        className={isNewRow ? "edited-cell" : ""}
+                        onContextMenu={(e) => handleWsContextMenu(e, i, r.idx)}
+                        style={{ cursor: "context-menu" }}
+                      >
+                        <td className={isNewRow ? "edited-cell" : ""}>{i + 1}</td>
 
                         <td className={isNewRow || changedWorkSystem ? "edited-cell" : ""}>
                           <input
@@ -3128,6 +3177,44 @@ function AccountMemberSheet() {
           </MDBox>
         </Box>
       </Modal>
+
+      {wsCtxMenu.open && (
+        <div
+          onClick={closeWsCtxMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeWsCtxMenu(); }}
+          style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 10000 }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: wsCtxMenu.mouseY,
+              left: wsCtxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={handleWsDeleteRow}
+            >
+              🗑️ 행 삭제
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* =========================
           ✅ 통합/유틸 관리 모달 (추가)

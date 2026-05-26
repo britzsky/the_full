@@ -73,6 +73,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const NAVBAR_H = 48;
   // ✅ 승인대기/문의답변대기/알림 뱃지 자동 갱신 주기 (화면 전체 새로고침 없이 알림만 업데이트)
   const NOTIF_POLL_MS = 30000;
+  // 알림 관련 API 호출을 임시로 중단하는 스위치
+  const DISABLE_NOTIFICATION_API = false;
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
   const THE_FULL_WEB_BASE_URL = resolveTheFullWebBaseUrl();
 
@@ -337,6 +339,13 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
   // ✅ 승인대기 목록 조회 (use_yn='N'만)  ※ approval_requested_* 로직 제거
   const fetchApprovePendingList = async (withLoading = false) => {
+    if (DISABLE_NOTIFICATION_API) {
+      setApproveRows([]);
+      setApproveOrigin([]);
+      if (withLoading) setApproveLoading2(false);
+      return;
+    }
+
     if (!isAdmin) return;
 
     try {
@@ -410,6 +419,12 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
   // ✅ 문의 목록 조회 (answer_yn 전체)
   const fetchInquiryPendingList = async (withLoading = false) => {
+    if (DISABLE_NOTIFICATION_API) {
+      setInquiryPendingRows([]);
+      if (withLoading) setInquiryPendingLoading(false);
+      return;
+    }
+
     if (!canViewInquiryAlert) {
       setInquiryPendingRows([]);
       return;
@@ -712,21 +727,36 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
               <td style={pendingBodyCellStyle}>{row.email || "-"}</td>
               <td style={pendingBodyCellStyle}>{row.phone_number || "-"}</td>
               <td style={pendingBodyCellStyle}>
-                <MDButton
-                  variant="outlined"
-                  color="info"
-                  size="small"
-                  onClick={row.answer_yn !== "Y" ? () => openInquiryManagePage(row.id) : undefined}
-                  disabled={row.answer_yn === "Y"}
-                  tabIndex={row.answer_yn === "Y" ? -1 : 0}
-                  sx={{
-                    ...inquiryActionButtonSx,
-                    visibility: row.answer_yn === "Y" ? "hidden" : "visible",
-                    pointerEvents: row.answer_yn === "Y" ? "none" : "auto",
-                  }}
-                >
-                  문의답변
-                </MDButton>
+                {row.answer_yn === "Y" ? (
+                  <MDBox
+                    sx={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "#dff3e0",
+                      color: "#1b5e20",
+                      borderRadius: "6px",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      px: 1.5,
+                      py: 0.3,
+                      whiteSpace: "nowrap",
+                      minWidth: 72,
+                    }}
+                  >
+                    답변 완료
+                  </MDBox>
+                ) : (
+                  <MDButton
+                    variant="outlined"
+                    color="info"
+                    size="small"
+                    onClick={() => openInquiryManagePage(row.id)}
+                    sx={inquiryActionButtonSx}
+                  >
+                    문의답변
+                  </MDButton>
+                )}
               </td>
             </tr>
           ))}
@@ -820,6 +850,12 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   }, [canViewInquiryAlert, isAdmin]);
 
   const fetchNotifications = async () => {
+    if (DISABLE_NOTIFICATION_API) {
+      setNotifications([]);
+      setNotifLoading(false);
+      return;
+    }
+
     if (!userId) {
       setNotifications([]);
       return;
@@ -838,6 +874,12 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   };
 
   const fetchBirthdayMemberList = async (withLoading = false) => {
+    if (DISABLE_NOTIFICATION_API) {
+      setBirthdayMemberRows([]);
+      if (withLoading) setBirthdayMemberLoading(false);
+      return;
+    }
+
     if (!userId) {
       setBirthdayMemberRows([]);
       return;
@@ -873,6 +915,11 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   };
 
   const fetchElectronicPaymentNotifications = async () => {
+    if (DISABLE_NOTIFICATION_API) {
+      setElectronicPaymentNotifications([]);
+      return;
+    }
+
     if (!userId) {
       setElectronicPaymentNotifications([]);
       return;

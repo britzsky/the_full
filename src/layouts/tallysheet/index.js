@@ -458,6 +458,8 @@ function TallySheet() {
     () => [0, 2, 6].includes(localDepartmentCode) || [0, 1].includes(localPositionCode),
     [localDepartmentCode, localPositionCode]
   );
+  // ✅ 집계표 메모 편집 권한:
+  //    부서(2:회계팀, 5:운영팀, 6:개발팀) 또는 직책(0:대표, 1:팀장) 중 하나라도 맞으면 허용(OR)
   const canEditTallyNote = useMemo(
     () => [2, 5, 6].includes(localDepartmentCode) || [0, 1].includes(localPositionCode),
     [localDepartmentCode, localPositionCode]
@@ -2607,11 +2609,11 @@ function TallySheet() {
       const ratioText = `${ratioNum.toFixed(2)}%`;
 
       // 행 번호: rowOffset 기준 상대 위치
-      const titleRowNo    = rowOffset + 1;
-      const summaryRowNo  = rowOffset + 2;
+      const titleRowNo = rowOffset + 1;
+      const summaryRowNo = rowOffset + 2;
       // rowOffset + 3 은 공백행
-      const ratioRowNo    = rowOffset + 4;
-      const headerRowNo   = rowOffset + 5;
+      const ratioRowNo = rowOffset + 4;
+      const headerRowNo = rowOffset + 5;
       const dataStartRowNo = rowOffset + 6;
 
       // 제목: ■ {업장명} / {조회날짜}
@@ -4060,7 +4062,7 @@ function TallySheet() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& .MuiInputLabel-root": { fontSize: 12 },
                 "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />

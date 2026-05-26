@@ -2885,6 +2885,9 @@ function RecordSheet() {
           const oldTypeNum = orgType === "" ? null : Number(orgType);
           const isDispatchType = isDispatchTypeValue(curType);
           const isNoteType = curType === "3" || curType === "11" || curType === "17";
+          const isAccountHolidayType = curType === "16";
+          const recordStartTime = isAccountHolidayType ? org_start_time : val.start || "";
+          const recordEndTime = isAccountHolidayType ? org_end_time : val.end || "";
           const normalizedSalary = isDispatchType
             ? val?.salary
               ? Number(String(val.salary).replace(/,/g, ""))
@@ -2945,8 +2948,8 @@ function RecordSheet() {
             record_year: year,
             record_month: month,
             type: Number(curType),
-            start_time: val.start || "",
-            end_time: val.end || "",
+            start_time: recordStartTime,
+            end_time: recordEndTime,
             salary: normalizedSalary,
             note: normalizedNote,
             position: row.position || "",

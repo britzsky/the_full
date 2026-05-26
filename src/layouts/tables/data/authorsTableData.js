@@ -18,20 +18,20 @@ const normalizeYmd = (value) => {
 const formatContractPeriod = (start, end) => {
   const startText = normalizeYmd(start);
   const endText = normalizeYmd(end);
-  if (!startText || !endText) return "-";
+  if (!startText || !endText) return "";
   return `${startText}~${endText}`;
 };
 
 // 빈값 화면 표시 문자열 변환
 const formatEmpty = (value) => {
-  if (value == null) return "-";
+  if (value == null) return "";
   const text = String(value).trim();
-  return text ? value : "-";
+  return text ? value : "";
 };
 
 // 금액 천단위 표시 문자열 변환
 const formatPrice = (value) => {
-  if (formatEmpty(value) === "-") return "-";
+  if (formatEmpty(value) === "") return "";
   const numeric = Number(String(value).replace(/,/g, ""));
   if (Number.isNaN(numeric)) return value;
   return numeric.toLocaleString("ko-KR");
@@ -119,19 +119,19 @@ export default function useTableData(accountType, refreshKey = 0) {
           normal: (() => {
             if (item.account_type === "요양원") {
               const four = [item.basic_ceremony, item.basic, item.ceremony, item.normal];
-              const allEmpty = four.every((v) => v == null || String(v).trim() === "");
-              if (allEmpty) {
-                return <MDTypography variant="caption" color="text" fontWeight="medium">-</MDTypography>;
+              const vals = four.filter((v) => v != null && String(v).trim() !== "");
+              if (vals.length === 0) {
+                return <MDTypography variant="caption" color="text" fontWeight="medium"></MDTypography>;
               }
-              const hasText = four.some((v) => v != null && String(v).trim() !== "" && isNaN(Number(String(v).trim())));
+              const hasText = vals.some((v) => isNaN(Number(String(v).trim())));
               if (hasText) {
                 return (
                   <MDTypography variant="caption" color="text" fontWeight="medium">
-                    {four.map((v) => (v != null && String(v).trim() !== "" ? String(v) : "-")).join(" ")}
+                    {vals.join(" | ")}
                   </MDTypography>
                 );
               }
-              const sum = four.reduce((acc, v) => acc + (Number(v) || 0), 0);
+              const sum = vals.reduce((acc, v) => acc + (Number(v) || 0), 0);
               return <MDTypography variant="caption" color="text" fontWeight="medium">{sum}</MDTypography>;
             }
             return (
@@ -152,7 +152,7 @@ export default function useTableData(accountType, refreshKey = 0) {
           ),
           account_type: (
             <MDTypography variant="caption" color="text" fontWeight="medium">
-              {item.account_type || "-"}
+              {item.account_type || ""}
             </MDTypography>
           ),
           account_rqd_member: (

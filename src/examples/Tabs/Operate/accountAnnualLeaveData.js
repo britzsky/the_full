@@ -71,9 +71,13 @@ export default function useAccountAnnualLeaveData() {
 
       const rows = (res.data || []).map((item) => {
         const ws = wsMap.get(String(item.idx));
+        const account = (accountList || []).find(
+          (acc) => String(acc.account_id) === String(item.account_id)
+        );
 
         return {
           account_id: item.account_id,
+          account_name: item.account_name || account?.account_name || "",
           member_id: item.member_id,
           name: item.name,
           position_type: item.position_type,

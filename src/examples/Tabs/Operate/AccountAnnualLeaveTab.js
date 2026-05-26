@@ -128,14 +128,14 @@ function AccountAnnualLeaveTab() {
       if (row.type === "G") {
         totalGrant += days;
       } else if (row.type === "U") {
-        totalUse += days;
+        totalUse += Math.abs(days);
       } else if (row.type === "E") {
-        totalExpire += days;
+        totalExpire += Math.abs(days);
       }
     });
 
-    // ✅ 남은연차 = 부여 - 사용 - 소멸 (DB 에서 U, E 가 음수라면 단순 합으로 처리됨)
-    const remaining = totalGrant + totalUse + totalExpire;
+    // 남은연차 = 부여 - 사용 - 소멸
+    const remaining = totalGrant - totalUse - totalExpire;
 
     return {
       totalGrant,
@@ -509,68 +509,68 @@ function AccountAnnualLeaveTab() {
       </MDBox>
 
       <MDBox sx={tableScrollSx}>
-      <Grid container spacing={2}>
-        <Grid item xs={12}>
-          <table>
-            <thead>
-              <tr>
-                {columnsLeft.map((col) => (
-                  <th key={col.accessorKey}>{col.header}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {accountMemberRows.map((row, rowIndex) => (
-                <tr
-                  key={rowIndex}
-                  onClick={async () => {
-                    setSelectedMemberId(row.member_id);
-                    if (row.member_id) {
-                      await Promise.all([
-                        fetchAnnualLeaveList(row.member_id),
-                        fetchOverTimeList(row.member_id),
-                      ]);
-                    }
-                  }}
-                  style={{
-                    cursor: "pointer",
-                    backgroundColor:
-                      String(selectedMemberId) === String(row.member_id)
-                        ? "#e0f7fa"
-                        : "transparent",
-                  }}
-                >
-                  {columnsLeft.map((col) => {
-                    const value = row[col.accessorKey] || "";
-                    let displayValue = value;
-
-                    if (col.type === "contractOptions") {
-                      displayValue = getContractLabel(value);
-                    }
-
-                    const getWorkSystemLabel = (idx) => {
-                      const found = (accountWorkSystemList || []).find(
-                        (w) => String(w.idx) === String(idx)
-                      );
-                      return found ? found.work_system : idx ?? "";
-                    };
-
-                    if (col.accessorKey === "idx") {
-                      displayValue = getWorkSystemLabel(value);
-                    }
-
-                    return (
-                      <td key={col.accessorKey}>
-                        <span>{displayValue}</span>
-                      </td>
-                    );
-                  })}
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <table>
+              <thead>
+                <tr>
+                  {columnsLeft.map((col) => (
+                    <th key={col.accessorKey}>{col.header}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {accountMemberRows.map((row, rowIndex) => (
+                  <tr
+                    key={rowIndex}
+                    onClick={async () => {
+                      setSelectedMemberId(row.member_id);
+                      if (row.member_id) {
+                        await Promise.all([
+                          fetchAnnualLeaveList(row.member_id),
+                          fetchOverTimeList(row.member_id),
+                        ]);
+                      }
+                    }}
+                    style={{
+                      cursor: "pointer",
+                      backgroundColor:
+                        String(selectedMemberId) === String(row.member_id)
+                          ? "#e0f7fa"
+                          : "transparent",
+                    }}
+                  >
+                    {columnsLeft.map((col) => {
+                      const value = row[col.accessorKey] || "";
+                      let displayValue = value;
+
+                      if (col.type === "contractOptions") {
+                        displayValue = getContractLabel(value);
+                      }
+
+                      const getWorkSystemLabel = (idx) => {
+                        const found = (accountWorkSystemList || []).find(
+                          (w) => String(w.idx) === String(idx)
+                        );
+                        return found ? found.work_system : idx ?? "";
+                      };
+
+                      if (col.accessorKey === "idx") {
+                        displayValue = getWorkSystemLabel(value);
+                      }
+
+                      return (
+                        <td key={col.accessorKey}>
+                          <span>{displayValue}</span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Grid>
         </Grid>
-      </Grid>
       </MDBox>
     </MDBox>
   );
@@ -654,78 +654,78 @@ function AccountAnnualLeaveTab() {
       </MDBox>
 
       <MDBox sx={tableScrollSx}>
-      <Grid container spacing={2}>
-        <Grid item xs={12}>
-          <table>
-            <thead>
-              <tr>
-                {columnsRight.map((col) => {
-                  const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
-                  const widthStyle = middleColWidths[col.accessorKey]
-                    ? { width: middleColWidths[col.accessorKey] }
-                    : {};
-                  return (
-                    <th
-                      key={col.accessorKey}
-                      style={isCompact ? { ...compactHeaderStyle, ...widthStyle } : widthStyle}
-                    >
-                      {col.header}
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {[...detailRows]
-                // 선택된 직원 행만 필터
-                .filter(
-                  (row) =>
-                    !selectedMemberId ||
-                    !row.member_id ||
-                    String(row.member_id) === String(selectedMemberId)
-                )
-                .sort((a, b) => {
-                  // 1차: 날짜 내림차순 (최신이 위)
-                  const dateA = a.ledger_dt || "";
-                  const dateB = b.ledger_dt || "";
-                  if (dateB !== dateA) return dateB.localeCompare(dateA);
-                  // 2차: 같은 날짜면 처리 순서 반영 (내림차순이므로 나중 처리된 게 위)
-                  // 처리순서: 소멸(E) → 부여(G) → 사용(U) / 표시순서(위→아래): 사용 → 부여 → 소멸
-                  const typeOrder = { U: 0, G: 1, N: 2, E: 3 };
-                  return (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9);
-                })
-                .map((row, rowIndex) => {
-                return (
-                  // 우클릭 시 연차 행 삭제 메뉴 표시
-                  <tr key={rowIndex} onContextMenu={(e) => handleRowContextMenu(e, row, "annualLeave")} style={{ cursor: "context-menu" }}>
-                    {columnsRight.map((col) => {
-                      const rawValue = row[col.accessorKey] || "";
-                      const baseStyle = getDetailCellStyle(rowIndex, col.accessorKey);
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <table>
+              <thead>
+                <tr>
+                  {columnsRight.map((col) => {
+                    const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
+                    const widthStyle = middleColWidths[col.accessorKey]
+                      ? { width: middleColWidths[col.accessorKey] }
+                      : {};
+                    return (
+                      <th
+                        key={col.accessorKey}
+                        style={isCompact ? { ...compactHeaderStyle, ...widthStyle } : widthStyle}
+                      >
+                        {col.header}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {[...detailRows]
+                  // 선택된 직원 행만 필터
+                  .filter(
+                    (row) =>
+                      !selectedMemberId ||
+                      !row.member_id ||
+                      String(row.member_id) === String(selectedMemberId)
+                  )
+                  .sort((a, b) => {
+                    // 1차: 날짜 내림차순 (최신이 위)
+                    const dateA = a.ledger_dt || "";
+                    const dateB = b.ledger_dt || "";
+                    if (dateB !== dateA) return dateB.localeCompare(dateA);
+                    // 2차: 같은 날짜면 처리 순서 반영 (내림차순이므로 나중 처리된 게 위)
+                    // 처리순서: 소멸(E) → 부여(G) → 사용(U) / 표시순서(위→아래): 사용 → 부여 → 소멸
+                    const typeOrder = { U: 0, G: 1, N: 2, E: 3 };
+                    return (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9);
+                  })
+                  .map((row, rowIndex) => {
+                    return (
+                      // 우클릭 시 연차 행 삭제 메뉴 표시
+                      <tr key={rowIndex} onContextMenu={(e) => handleRowContextMenu(e, row, "annualLeave")} style={{ cursor: "context-menu" }}>
+                        {columnsRight.map((col) => {
+                          const rawValue = row[col.accessorKey] || "";
+                          const baseStyle = getDetailCellStyle(rowIndex, col.accessorKey);
 
-                      const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
-                      const widthStyle = middleColWidths[col.accessorKey]
-                        ? { width: middleColWidths[col.accessorKey] }
-                        : {};
-                      const style = isCompact
-                        ? { ...baseStyle, ...compactCellStyle, ...widthStyle }
-                        : { ...baseStyle, ...widthStyle };
+                          const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
+                          const widthStyle = middleColWidths[col.accessorKey]
+                            ? { width: middleColWidths[col.accessorKey] }
+                            : {};
+                          const style = isCompact
+                            ? { ...baseStyle, ...compactCellStyle, ...widthStyle }
+                            : { ...baseStyle, ...widthStyle };
 
-                      let displayValue = rawValue;
-                      if (col.type === "itemOptions") displayValue = getTypeLabel(row.type);
+                          let displayValue = rawValue;
+                          if (col.type === "itemOptions") displayValue = getTypeLabel(row.type);
 
-                      return (
-                        <td key={col.accessorKey} style={style}>
-                          {displayValue}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          return (
+                            <td key={col.accessorKey} style={style}>
+                              {displayValue}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </Grid>
         </Grid>
-      </Grid>
       </MDBox>
     </MDBox>
   );
@@ -749,104 +749,105 @@ function AccountAnnualLeaveTab() {
       remainingTime += t;
     });
 
-    return (
-      <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableWrapperSx}>
-        <MDBox
-          mx={0}
-          mt={-1}
-          mb={0}
-          py={0.8}
-          px={2}
-          pt={1}
-          variant="gradient"
-          bgColor="info"
-          borderRadius="lg"
-          coloredShadow="info"
-          display="flex"
-          justifyContent="space-between"
-          alignItems="center"
-        >
-          <MDTypography variant={isMobile ? "button" : "h6"} color="white">
-            영양사 시간 외 근무 내역
-          </MDTypography>
-        </MDBox>
+    // 영양사 시간 외 근무 내역 잠시 제외
+    // return (
+    //   <MDBox pt={isMobile ? 1 : 2} pb={3} sx={tableWrapperSx}>
+    //     <MDBox
+    //       mx={0}
+    //       mt={-1}
+    //       mb={0}
+    //       py={0.8}
+    //       px={2}
+    //       pt={1}
+    //       variant="gradient"
+    //       bgColor="info"
+    //       borderRadius="lg"
+    //       coloredShadow="info"
+    //       display="flex"
+    //       justifyContent="space-between"
+    //       alignItems="center"
+    //     >
+    //       <MDTypography variant={isMobile ? "button" : "h6"} color="white">
+    //         영양사 시간 외 근무 내역
+    //       </MDTypography>
+    //     </MDBox>
 
-        <MDBox
-          mt={0}
-          mb={0}
-          px={2}
-          py={0.5}
-          sx={{
-            borderRadius: 1,
-            border: "1px solid #cccccc",
-            backgroundColor: "#fafafa",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: isMobile ? 1 : 3,
-          }}
-        >
-          <MDBox display="flex" alignItems="center" gap={0.5}>
-            <MDTypography variant="caption" sx={{ fontWeight: "bold" }}>
-              보상시간 부여
-            </MDTypography>
-            <MDTypography variant="button" sx={{ fontWeight: "bold" }}>
-              {totalGrantTime}
-            </MDTypography>
-          </MDBox>
-          <MDBox display="flex" alignItems="center" gap={0.5}>
-            <MDTypography variant="caption" sx={{ fontWeight: "bold" }}>
-              보상시간 사용
-            </MDTypography>
-            <MDTypography variant="button" sx={{ fontWeight: "bold" }}>
-              {totalUseTime}
-            </MDTypography>
-          </MDBox>
-          <MDBox display="flex" alignItems="center" gap={0.5}>
-            <MDTypography variant="caption" sx={{ fontWeight: "bold" }}>
-              남은시간
-            </MDTypography>
-            <MDTypography
-              variant="button"
-              sx={{ fontWeight: "bold", color: remainingTime < 0 ? "red" : "black" }}
-            >
-              {remainingTime}
-            </MDTypography>
-          </MDBox>
-        </MDBox>
+    //     <MDBox
+    //       mt={0}
+    //       mb={0}
+    //       px={2}
+    //       py={0.5}
+    //       sx={{
+    //         borderRadius: 1,
+    //         border: "1px solid #cccccc",
+    //         backgroundColor: "#fafafa",
+    //         display: "flex",
+    //         flexWrap: "wrap",
+    //         gap: isMobile ? 1 : 3,
+    //       }}
+    //     >
+    //       <MDBox display="flex" alignItems="center" gap={0.5}>
+    //         <MDTypography variant="caption" sx={{ fontWeight: "bold" }}>
+    //           보상시간 부여
+    //         </MDTypography>
+    //         <MDTypography variant="button" sx={{ fontWeight: "bold" }}>
+    //           {totalGrantTime}
+    //         </MDTypography>
+    //       </MDBox>
+    //       <MDBox display="flex" alignItems="center" gap={0.5}>
+    //         <MDTypography variant="caption" sx={{ fontWeight: "bold" }}>
+    //           보상시간 사용
+    //         </MDTypography>
+    //         <MDTypography variant="button" sx={{ fontWeight: "bold" }}>
+    //           {totalUseTime}
+    //         </MDTypography>
+    //       </MDBox>
+    //       <MDBox display="flex" alignItems="center" gap={0.5}>
+    //         <MDTypography variant="caption" sx={{ fontWeight: "bold" }}>
+    //           남은시간
+    //         </MDTypography>
+    //         <MDTypography
+    //           variant="button"
+    //           sx={{ fontWeight: "bold", color: remainingTime < 0 ? "red" : "black" }}
+    //         >
+    //           {remainingTime}
+    //         </MDTypography>
+    //       </MDBox>
+    //     </MDBox>
 
-        <MDBox sx={tableScrollSx}>
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: nutritionColWidths.over_dt }}>기준일자</th>
-                  <th style={{ ...compactHeaderStyle, width: nutritionColWidths.type }}>구분</th>
-                  <th style={{ ...compactHeaderStyle, width: nutritionColWidths.times }}>시간</th>
-                  <th style={{ width: nutritionColWidths.reason }}>사유</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nutritionOverRows.map((row, idx) => (
-                  // 우클릭 시 시간외근무 행 삭제 메뉴 표시
-                  <tr key={row.over_id || idx} onContextMenu={(e) => handleRowContextMenu(e, row, "overTime")} style={{ cursor: "context-menu" }}>
-                    <td style={{ width: nutritionColWidths.over_dt }}>{row.over_dt}</td>
-                    <td style={{ ...compactCellStyle, width: nutritionColWidths.type }}>
-                      {getTypeLabel(row.type)}
-                    </td>
-                    <td style={{ ...compactCellStyle, width: nutritionColWidths.times }}>
-                      {row.times}
-                    </td>
-                    <td style={{ width: nutritionColWidths.reason }}>{row.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Grid>
-        </Grid>
-        </MDBox>
-      </MDBox>
-    );
+    //     <MDBox sx={tableScrollSx}>
+    //     <Grid container spacing={2}>
+    //       <Grid item xs={12}>
+    //         <table>
+    //           <thead>
+    //             <tr>
+    //               <th style={{ width: nutritionColWidths.over_dt }}>기준일자</th>
+    //               <th style={{ ...compactHeaderStyle, width: nutritionColWidths.type }}>구분</th>
+    //               <th style={{ ...compactHeaderStyle, width: nutritionColWidths.times }}>시간</th>
+    //               <th style={{ width: nutritionColWidths.reason }}>사유</th>
+    //             </tr>
+    //           </thead>
+    //           <tbody>
+    //             {nutritionOverRows.map((row, idx) => (
+    //               // 우클릭 시 시간외근무 행 삭제 메뉴 표시
+    //               <tr key={row.over_id || idx} onContextMenu={(e) => handleRowContextMenu(e, row, "overTime")} style={{ cursor: "context-menu" }}>
+    //                 <td style={{ width: nutritionColWidths.over_dt }}>{row.over_dt}</td>
+    //                 <td style={{ ...compactCellStyle, width: nutritionColWidths.type }}>
+    //                   {getTypeLabel(row.type)}
+    //                 </td>
+    //                 <td style={{ ...compactCellStyle, width: nutritionColWidths.times }}>
+    //                   {row.times}
+    //                 </td>
+    //                 <td style={{ width: nutritionColWidths.reason }}>{row.reason}</td>
+    //               </tr>
+    //             ))}
+    //           </tbody>
+    //         </table>
+    //       </Grid>
+    //     </Grid>
+    //     </MDBox>
+    //   </MDBox>
+    // );
   };
 
   return (
@@ -893,7 +894,7 @@ function AccountAnnualLeaveTab() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 40, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& .MuiInputLabel-root": { fontSize: 12 },
                 "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />
@@ -919,19 +920,14 @@ function AccountAnnualLeaveTab() {
         </MDButton>
       </MDBox>
 
-      {/* 왼쪽 / 가운데 / 오른쪽(영양사 전용) 테이블 */}
+      {/* 왼쪽 / 오른쪽 테이블 */}
       <Grid container spacing={2}>
-        <Grid item xs={12} md={isNutritionist ? 4 : 6}>
+        <Grid item xs={12} md={6}>
           {renderLeftTable()}
         </Grid>
-        <Grid item xs={12} md={isNutritionist ? 4 : 6}>
+        <Grid item xs={12} md={6}>
           {renderRightTable()}
         </Grid>
-        {isNutritionist && (
-          <Grid item xs={12} md={4}>
-            {renderNutritionTable()}
-          </Grid>
-        )}
       </Grid>
 
       {/* 우클릭 행 삭제 컨텍스트 메뉴 — accountissuesheettab.js와 동일한 스타일 */}

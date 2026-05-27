@@ -2394,10 +2394,6 @@ function RecordSheet() {
             const rowGubun = safeTrim(props.row.original?.gubun ?? "", "").toLowerCase();
 
             let typeOptions = FULL_TYPE_OPTIONS;
-            // 강남(20250819193630)은 초과(3), 결근(4) 숨김
-            if (String(selectedAccountId).trim() === "20250819193630") {
-              typeOptions = typeOptions.filter((o) => o.value !== "3" && o.value !== "4");
-            }
             // ✅ 파출회원(dis)은 기존처럼 0/5 옵션 유지
             if (rowGubun === "dis") typeOptions = DISPATCH_TYPE_OPTIONS;
             // ✅ 직원파출관리 조건에 따라 월 전체 또는 등록일자만 0/6 옵션 적용
@@ -2408,7 +2404,7 @@ function RecordSheet() {
           size: isMobile ? 52 : 80,
         };
       }),
-    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap, selectedAccountId]
+    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap]
   );
 
   const attendanceColumns = useMemo(

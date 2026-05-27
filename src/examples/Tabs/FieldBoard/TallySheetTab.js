@@ -2293,13 +2293,20 @@ function TallySheet() {
     return [...calculatedRows, { name: "총합", ...totals, total: grandTotal }];
   };
 
+  const isWelstory = String(selectedAccountId).trim() === "20250819193630";
+
+  const filterWelstoryRows = (rows) => {
+    if (!isWelstory) return rows;
+    return (rows || []).filter((r) => String(r.type) !== "3" && String(r.type) !== "4");
+  };
+
   const tableData = useMemo(
-    () => makeTableData(dataRows, daysInMonthNow),
-    [dataRows, daysInMonthNow]
+    () => makeTableData(filterWelstoryRows(dataRows), daysInMonthNow),
+    [dataRows, daysInMonthNow, isWelstory]
   );
   const table2Data = useMemo(
-    () => makeTableData(data2Rows, daysInMonthPrev),
-    [data2Rows, daysInMonthPrev]
+    () => makeTableData(filterWelstoryRows(data2Rows), daysInMonthPrev),
+    [data2Rows, daysInMonthPrev, isWelstory]
   );
 
   const table = useReactTable({

@@ -47,6 +47,7 @@ const typeColors = {
   19: "#d9f2e6",
   16: "#DDAED3",
   17: "#9F8383",
+  21: "#dd7b93",
 };
 
 const TYPE_LABEL = {
@@ -71,6 +72,7 @@ const TYPE_LABEL = {
   18: "경조사",
   19: "통합",
   20: "재택근무",
+  21: "공휴일",
 };
 
 const FULL_TYPE_OPTIONS = [
@@ -95,6 +97,7 @@ const FULL_TYPE_OPTIONS = [
   { value: "16", label: "업장휴무" },
   { value: "18", label: "경조사" },
   { value: "20", label: "재택근무" },
+  { value: "21", label: "공휴일" },
 ];
 const EMPLOYEE_DISPATCH_TYPE_OPTIONS = [
   { value: "0", label: "-" },
@@ -1739,9 +1742,7 @@ function RecordSheet() {
     const isDispatchType = String(t) === "5" || String(t) === "6";
     // ✅ 파출은 salary, 초과/조기퇴근/대체휴무 등은 note 값을 4번째 줄에 반영
     let bottomValue = "";
-    if (String(t) === "4") {
-      bottomValue = 8;
-    } else if (isDispatchType) {
+    if (isDispatchType) {
       bottomValue = toNumberMaybe(salaryRaw);
     } else if (noteRaw !== "") {
       bottomValue = toNumberMaybe(noteRaw);
@@ -2882,7 +2883,7 @@ function RecordSheet() {
   };
 
   // ✅ "출근한 사람" 카운트 타입
-  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8", "19"]);
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8", "19", "20"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
     if (!t || t === "0") return false;
@@ -4713,7 +4714,7 @@ function RecordSheet() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 40, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& .MuiInputLabel-root": { fontSize: 12 },
                 "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />

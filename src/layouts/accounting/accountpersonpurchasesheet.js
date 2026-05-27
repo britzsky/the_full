@@ -813,9 +813,11 @@ function AccountCorporateCardSheet() {
     setDetailCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
   }, []);
 
-  // 신규 상세행 우클릭 메뉴 열기
+  // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback((e, row, rowIndex) => {
-    if (!canDeleteNewDetailRow(row)) return;
+    const isNew = canDeleteNewDetailRow(row);
+    const isSaved = !row?.isNew && String(row?.item_id ?? "").trim() !== "";
+    if (!isNew && !isSaved) return;
     e.preventDefault();
     setDetailCtxMenu({
       open: true,
@@ -866,6 +868,49 @@ function AccountCorporateCardSheet() {
       )
     );
   }, []);
+
+  // 저장된 상세행 DB 삭제
+  const handleDeleteSavedDetailRow = useCallback(async () => {
+    const rowIndex = detailCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+    const row = detailRows?.[rowIndex];
+    if (!row) { closeDetailCtxMenu(); return; }
+
+    const payload = {
+      item_id: row.item_id,
+      sale_id: row.sale_id,
+      saleDate: row.saleDate ?? selectedMaster?.saleDate ?? "",
+      account_id: row.account_id ?? selectedAccountId ?? "",
+      type: selectedMaster?.type ?? 1008,
+    };
+
+    try {
+      const res = await api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
+        headers: { "Content-Type": "application/json" },
+        validateStatus: () => true,
+      });
+      if (Number(res?.data?.code) === 200) {
+        await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
+        await fetchAccountCorporateCardPaymentDetailList({
+          sale_id: selectedSaleId,
+          account_id: selectedAccountId,
+          saleDate: selectedMaster?.saleDate ?? "",
+        });
+      }
+    } catch (err) {
+      console.error("[AccountPurchaseTallyDetailDelete] error:", err);
+    } finally {
+      closeDetailCtxMenu();
+    }
+  }, [
+    detailCtxMenu.rowIndex,
+    detailRows,
+    selectedMaster,
+    selectedSaleId,
+    selectedAccountId,
+    closeDetailCtxMenu,
+    fetchAccountCorporateCardPaymentDetailList,
+  ]);
 
   const canOpenReceiptFilePicker = useCallback((row) => {
     const payDt = toDateInputValue(row?.saleDate);
@@ -2780,20 +2825,37 @@ function AccountCorporateCardSheet() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "none",
-                background: "transparent",
-                textAlign: "left",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-              onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
-            >
-              🗑️ 행 삭제
-            </button>
+            {detailRows?.[detailCtxMenu.rowIndex]?.isNew ? (
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
+              >
+                🗑️ 행 삭제
+              </button>
+            ) : (
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={handleDeleteSavedDetailRow}
+              >
+                🗑️ 데이터 삭제
+              </button>
+            )}
           </div>
         </div>
       )}

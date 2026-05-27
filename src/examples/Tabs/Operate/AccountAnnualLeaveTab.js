@@ -33,6 +33,9 @@ function AccountAnnualLeaveTab() {
   // 왼쪽: 원본 스냅샷 (수정은 안 하지만 구조 맞춰 둠)
   const [originalMasterRows, setOriginalMasterRows] = useState([]);
 
+  // 연차부여여부 체크박스 변경 추적 { member_id: 'Y'/'N' }
+  const [ledgerYnChanges, setLedgerYnChanges] = useState({});
+
   // 오른쪽: 화면에서 수정할 상세 데이터 (연차)
   const [detailRows, setDetailRows] = useState([]);
   const [originalDetailRows, setOriginalDetailRows] = useState([]); // 조회 당시 스냅샷
@@ -73,6 +76,7 @@ function AccountAnnualLeaveTab() {
       setSelectedMemberId("");
       setDetailRows([]);
       setOriginalDetailRows([]);
+      setLedgerYnChanges({});
     };
     loadMembers();
   }, [selectedAccountId]); // ❗ fetchAccountMemberList 도 의존성에서 뺀다
@@ -84,9 +88,17 @@ function AccountAnnualLeaveTab() {
 
   // 상세(오른쪽) 데이터 & 원본 스냅샷 세팅 (연차 리스트 기준)
   useEffect(() => {
-    const copied = annualLeaveRows.map((r) => ({ ...r }));
-    setDetailRows(copied);
-    setOriginalDetailRows(copied);
+    const typeOrder = { U: 0, G: 1, N: 2, E: 3 };
+    const sorted = annualLeaveRows
+      .map((r) => ({ ...r }))
+      .sort((a, b) => {
+        const dateA = a.ledger_dt || "";
+        const dateB = b.ledger_dt || "";
+        if (dateB !== dateA) return dateB.localeCompare(dateA);
+        return (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9);
+      });
+    setDetailRows(sorted);
+    setOriginalDetailRows(sorted);
   }, [annualLeaveRows]);
 
   // normalize 함수 (공백, 문자열 차이 최소화)
@@ -145,29 +157,6 @@ function AccountAnnualLeaveTab() {
     };
   }, [detailRows, selectedMemberId]);
 
-  // 셀 값이 조회 당시 원본과 다르면 빨간 글씨로 표시 (저장 전 변경 여부 시각화)
-  const getDetailCellStyle = (rowIndex, key) => {
-    const original = originalDetailRows[rowIndex];
-    const current = detailRows[rowIndex];
-
-    // 새로 추가된 행 (원본 없음) + 뭔가 값이 있는 경우 -> 빨간색
-    if (!original) {
-      const v = current?.[key];
-      if (v !== undefined && v !== null && v !== "") {
-        return { color: "red" };
-      }
-      return { color: "black" };
-    }
-
-    const v1 = normalize(original[key] ?? "");
-    const v2 = normalize(current?.[key] ?? "");
-
-    if (String(v1) !== String(v2)) {
-      return { color: "red" };
-    }
-    return { color: "black" };
-  };
-
   // 파란 헤더 바 + 요약 바를 고정시키고 테이블만 스크롤되도록 분리한 구조
   // tableWrapperSx: 전체 높이 제한 (flex column)
   // tableScrollSx:  실제 스크롤되는 내부 영역
@@ -197,8 +186,10 @@ function AccountAnnualLeaveTab() {
       fontSize: isMobile ? "10px" : "12px",
       whiteSpace: "pre-wrap",
       verticalAlign: "middle",
-      overflow: "hidden",
       textOverflow: "ellipsis",
+    },
+    "& th": {
+      overflow: "hidden",
     },
     "& th": {
       backgroundColor: "#f0f0f0",
@@ -214,14 +205,21 @@ function AccountAnnualLeaveTab() {
       background: "transparent",
       outline: "none",
     },
+    "& input[type='number']::-webkit-outer-spin-button, & input[type='number']::-webkit-inner-spin-button": {
+      WebkitAppearance: "none",
+      margin: 0,
+    },
+    "& input[type='number']": {
+      MozAppearance: "textfield",
+    },
   };
 
   // ✅ width 조절용: 가운데(연차) 테이블 컬럼 폭
   const middleColWidths = {
-    type: isMobile ? "12%" : "10%", // 구분
+    type: isMobile ? "16%" : "14%", // 구분
     ledger_dt: isMobile ? "26%" : "25%", // 기준일자
     days: isMobile ? "12%" : "10%", // 일수
-    reason: isMobile ? "50%" : "55%", // 사유
+    reason: isMobile ? "46%" : "51%", // 사유
   };
 
   // ✅ 오른쪽(영양사) 테이블 컬럼 폭
@@ -340,11 +338,6 @@ function AccountAnnualLeaveTab() {
     }
   }, [accountInput, accountOptions]);
 
-  const getTypeLabel = (type) => {
-    const opt = itemOptions.find((o) => String(o.value) === String(type));
-    return opt ? opt.label : type || "";
-  };
-
   const getContractLabel = (contract_type) => {
     const opt = contractOptions.find((o) => String(o.value) === String(contract_type));
     return opt ? opt.label : contract_type || "";
@@ -358,6 +351,7 @@ function AccountAnnualLeaveTab() {
       { header: "근무형태", accessorKey: "idx" },
       { header: "시작", accessorKey: "start_time" },
       { header: "종료", accessorKey: "end_time" },
+      { header: "연차부여 여부", accessorKey: "ledger_yn" },
     ],
     []
   );
@@ -408,11 +402,14 @@ function AccountAnnualLeaveTab() {
     setSelectedMemberId("");
     setDetailRows([]);
     setOriginalDetailRows([]);
+    setLedgerYnChanges({});
   };
 
   // 저장 버튼 (변경된 행만 서버 전송)
   const handleSave = async () => {
-    if (!detailRows.length) {
+    const hasLedgerYnChanges = Object.keys(ledgerYnChanges).length > 0;
+
+    if (!detailRows.length && !hasLedgerYnChanges) {
       Swal.fire({ title: "안내", text: "저장할 데이터가 없습니다.", icon: "info" });
       return;
     }
@@ -423,7 +420,7 @@ function AccountAnnualLeaveTab() {
       const original = originalDetailRows[idx];
 
       // 완전 빈 새 행이면 스킵
-      const hasAnyValue = Object.values(row).some((v) => v !== null && v !== undefined && v !== "");
+      const hasAnyValue = row.type || row.ledger_dt || row.days !== "" || row.reason;
       if (!original && !hasAnyValue) return;
 
       // 새 행이고 값이 있으면 변경으로 간주
@@ -433,7 +430,7 @@ function AccountAnnualLeaveTab() {
       }
 
       // 기존 행이면 필드 비교
-      const keys = ["type", "account_id", "ledger_dt", "days", "reason"];
+      const keys = ["type", "ledger_dt", "days", "reason"];
       const isChanged = keys.some((key) => {
         const v1 = normalize(original[key] ?? "");
         const v2 = normalize(row[key] ?? "");
@@ -443,33 +440,51 @@ function AccountAnnualLeaveTab() {
       if (isChanged) changedRows.push(row);
     });
 
-    if (!changedRows.length) {
+    if (!changedRows.length && !hasLedgerYnChanges) {
       Swal.fire({ title: "안내", text: "변경된 내용이 없습니다.", icon: "info" });
       return;
     }
 
     try {
-      const payload = { outList: { list: changedRows } };
+      // 연차 상세 저장
+      if (changedRows.length > 0) {
+        const response = await api.post("/Operate/AnnualLeaveSave", { list: changedRows }, {
+          headers: { "Content-Type": "application/json" },
+        });
+        if (response.data.code !== 200) {
+          Swal.fire({ title: "실패", text: response.data.message || "연차 저장 실패", icon: "error" });
+          return;
+        }
+      }
 
-      const response = await api.post("/Business/CookWearSave", payload, {
-        headers: { "Content-Type": "application/json" },
+      // 연차부여여부 저장 (N으로 해제 시 프로시저 생성 레코드 삭제)
+      if (hasLedgerYnChanges) {
+        await Promise.all(
+          Object.entries(ledgerYnChanges).map(async ([member_id, ledger_yn]) => {
+            if (ledger_yn === "N") {
+              await api.post("/Operate/AnnualLeaveDeleteProcedureRecords", { member_id });
+            }
+            return api.post("/Operate/AnnualLeaveLedgerYnSave", { member_id, ledger_yn });
+          })
+        );
+      }
+
+      await Swal.fire({
+        title: "저장",
+        text: "저장되었습니다.",
+        icon: "success",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
       });
 
-      if (response.data.code === 200) {
-        Swal.fire({
-          title: "저장",
-          text: "저장되었습니다.",
-          icon: "success",
-          confirmButtonColor: "#d33",
-          confirmButtonText: "확인",
-        });
+      // 확인 누른 후에 재조회 (모달 중 테이블 깜빡임 방지)
+      await Promise.all([
+        hasLedgerYnChanges ? fetchAccountMemberList(selectedAccountId) : Promise.resolve(),
+        selectedMemberId ? fetchAnnualLeaveList(selectedMemberId) : Promise.resolve(),
+      ]);
 
-        if (selectedMemberId) {
-          await fetchAnnualLeaveList(selectedMemberId); // member_id만 전달
-        }
-      } else {
-        Swal.fire({ title: "실패", text: response.data.message || "저장 실패", icon: "error" });
-      }
+      // 재조회 완료 후 변경 추적 초기화 (Swal 중 체크박스 상태 유지를 위해 여기서 클리어)
+      if (hasLedgerYnChanges) setLedgerYnChanges({});
     } catch (error) {
       Swal.fire({ title: "실패", text: error.message || "저장 중 오류 발생", icon: "error" });
     }
@@ -485,6 +500,9 @@ function AccountAnnualLeaveTab() {
     (m) => String(m.member_id) === String(selectedMemberId)
   );
   const isNutritionist = selectedMember && String(selectedMember.position_type) === "1";
+
+  // 오른쪽 패널 숨김은 저장 완료 후 DB 값 기준으로만 반영 (미저장 체크박스 변경은 무시)
+  const selectedLedgerYn = selectedMember ? (selectedMember.ledger_yn ?? "Y") : "Y";
 
   // 왼쪽 테이블 렌더
   const renderLeftTable = () => (
@@ -541,6 +559,27 @@ function AccountAnnualLeaveTab() {
                     }}
                   >
                     {columnsLeft.map((col) => {
+                      if (col.accessorKey === "ledger_yn") {
+                        const effectiveYn = ledgerYnChanges[row.member_id] ?? row.ledger_yn ?? "Y";
+                        return (
+                          <td key={col.accessorKey} onClick={(e) => e.stopPropagation()} style={{ verticalAlign: "middle" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+                              <input
+                                type="checkbox"
+                                checked={effectiveYn === "Y"}
+                                onChange={(e) => {
+                                  setLedgerYnChanges((prev) => ({
+                                    ...prev,
+                                    [row.member_id]: e.target.checked ? "Y" : "N",
+                                  }));
+                                }}
+                                style={{ cursor: "pointer", margin: 0, width: 16, height: 16 }}
+                              />
+                            </div>
+                          </td>
+                        );
+                      }
+
                       const value = row[col.accessorKey] || "";
                       let displayValue = value;
 
@@ -684,38 +723,138 @@ function AccountAnnualLeaveTab() {
                       !row.member_id ||
                       String(row.member_id) === String(selectedMemberId)
                   )
-                  .sort((a, b) => {
-                    // 1차: 날짜 내림차순 (최신이 위)
-                    const dateA = a.ledger_dt || "";
-                    const dateB = b.ledger_dt || "";
-                    if (dateB !== dateA) return dateB.localeCompare(dateA);
-                    // 2차: 같은 날짜면 처리 순서 반영 (내림차순이므로 나중 처리된 게 위)
-                    // 처리순서: 소멸(E) → 부여(G) → 사용(U) / 표시순서(위→아래): 사용 → 부여 → 소멸
-                    const typeOrder = { U: 0, G: 1, N: 2, E: 3 };
-                    return (typeOrder[a.type] ?? 9) - (typeOrder[b.type] ?? 9);
-                  })
                   .map((row, rowIndex) => {
+                    // 실제 detailRows 내 인덱스 (필터/정렬 후 rowIndex와 다를 수 있음)
+                    const actualIdx = detailRows.indexOf(row);
+                    const isNewRow = !row.ledger_id;
+
                     return (
                       // 우클릭 시 연차 행 삭제 메뉴 표시
                       <tr key={rowIndex} onContextMenu={(e) => handleRowContextMenu(e, row, "annualLeave")} style={{ cursor: "context-menu" }}>
                         {columnsRight.map((col) => {
-                          const rawValue = row[col.accessorKey] || "";
-                          const baseStyle = getDetailCellStyle(rowIndex, col.accessorKey);
+                          const rawValue = row[col.accessorKey] ?? "";
+                          const original = originalDetailRows[actualIdx];
+                          const origVal = normalize(original?.[col.accessorKey] ?? "");
+                          const currVal = normalize(rawValue);
+                          const isChanged = isNewRow || String(origVal) !== String(currVal);
 
                           const isCompact = col.accessorKey === "type" || col.accessorKey === "days";
                           const widthStyle = middleColWidths[col.accessorKey]
                             ? { width: middleColWidths[col.accessorKey] }
                             : {};
+                          const textColor = isChanged ? { color: "red" } : {};
                           const style = isCompact
-                            ? { ...baseStyle, ...compactCellStyle, ...widthStyle }
-                            : { ...baseStyle, ...widthStyle };
+                            ? { ...textColor, ...compactCellStyle, ...widthStyle }
+                            : { ...textColor, ...widthStyle };
 
-                          let displayValue = rawValue;
-                          if (col.type === "itemOptions") displayValue = getTypeLabel(row.type);
+                          if (col.accessorKey === "type") {
+                            if (!isNewRow) {
+                              const label = itemOptions.find((o) => o.value === rawValue)?.label ?? rawValue;
+                              return <td key={col.accessorKey} style={style}>{label}</td>;
+                            }
+                            return (
+                              <td key={col.accessorKey} style={{ ...style, padding: 0 }}>
+                                <select
+                                  value={rawValue}
+                                  onChange={(e) => handleDetailCellChange(actualIdx, "type", e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    fontSize: isMobile ? "10px" : "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    outline: "none",
+                                    cursor: "pointer",
+                                    color: isChanged ? "red" : "inherit",
+                                    padding: "0 12px",
+                                  }}
+                                >
+                                  <option value="">선택</option>
+                                  {itemOptions.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
+                              </td>
+                            );
+                          }
+
+                          if (col.accessorKey === "ledger_dt") {
+                            if (!isNewRow) {
+                              return <td key={col.accessorKey} style={{ ...style, textAlign: "center" }}>{rawValue}</td>;
+                            }
+                            return (
+                              <td key={col.accessorKey} style={{ ...style, textAlign: "center" }}>
+                                <input
+                                  type="date"
+                                  value={rawValue}
+                                  onChange={(e) => handleDetailCellChange(actualIdx, "ledger_dt", e.target.value)}
+                                  style={{
+                                    fontSize: isMobile ? "10px" : "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    outline: "none",
+                                    width: "100%",
+                                    textAlign: "center",
+                                    color: isChanged ? "red" : "inherit",
+                                  }}
+                                />
+                              </td>
+                            );
+                          }
+
+                          if (col.accessorKey === "days") {
+                            const daysDisplayValue = toNumber(rawValue) === 0 ? "" : rawValue;
+                            if (!isNewRow) {
+                              return <td key={col.accessorKey} style={style}>{daysDisplayValue}</td>;
+                            }
+                            return (
+                              <td key={col.accessorKey} style={style}>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  value={daysDisplayValue}
+                                  onChange={(e) => handleDetailCellChange(actualIdx, "days", e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    textAlign: "center",
+                                    fontSize: isMobile ? "10px" : "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    outline: "none",
+                                    color: isChanged ? "red" : "inherit",
+                                    MozAppearance: "textfield",
+                                    WebkitAppearance: "none",
+                                  }}
+                                />
+                              </td>
+                            );
+                          }
+
+                          if (col.accessorKey === "reason") {
+                            if (!isNewRow) {
+                              return <td key={col.accessorKey} style={style}>{rawValue}</td>;
+                            }
+                            return (
+                              <td key={col.accessorKey} style={style}>
+                                <input
+                                  type="text"
+                                  value={rawValue}
+                                  onChange={(e) => handleDetailCellChange(actualIdx, "reason", e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    fontSize: isMobile ? "10px" : "12px",
+                                    border: "none",
+                                    background: "transparent",
+                                    outline: "none",
+                                    color: isChanged ? "red" : "inherit",
+                                  }}
+                                />
+                              </td>
+                            );
+                          }
 
                           return (
                             <td key={col.accessorKey} style={style}>
-                              {displayValue}
+                              {rawValue}
                             </td>
                           );
                         })}
@@ -912,6 +1051,15 @@ function AccountAnnualLeaveTab() {
 
         <MDButton
           variant="gradient"
+          color="success"
+          onClick={handleAddDetailRow}
+          sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 80 }}
+        >
+          행추가
+        </MDButton>
+
+        <MDButton
+          variant="gradient"
           color="info"
           onClick={handleSave}
           sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : 80 }}
@@ -926,7 +1074,7 @@ function AccountAnnualLeaveTab() {
           {renderLeftTable()}
         </Grid>
         <Grid item xs={12} md={6}>
-          {renderRightTable()}
+          {selectedLedgerYn !== "N" && renderRightTable()}
         </Grid>
       </Grid>
 

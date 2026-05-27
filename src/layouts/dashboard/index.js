@@ -1275,7 +1275,7 @@ function MiniCalendar({ todos }) {
         onClose={() => setPopover({ anchor: null, date: null })}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         transformOrigin={{ vertical: "top", horizontal: "center" }}
-        slotProps={{ paper: { sx: { borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", p: 1.5, minWidth: 180, maxWidth: 260, backgroundColor: "#fff" } } }}
+        slotProps={{ paper: { sx: { borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", p: 1.5, minWidth: 180, maxWidth: 260, backgroundColor: "#fff", background: "#fff" } } }}
       >
         <MDTypography variant="caption" fontWeight="bold" color="dark" sx={{ display: "block", mb: 0.75, opacity: 0.6 }}>
           {popover.date}

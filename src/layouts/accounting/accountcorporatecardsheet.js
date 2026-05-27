@@ -950,9 +950,11 @@ function AccountCorporateCardSheet() {
     selectedAccountId,
   ]);
 
-  // 신규 상세행 우클릭 메뉴 열기
+  // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback((e, row, rowIndex) => {
-    if (!canDeleteNewDetailRow(row)) return;
+    const isNew = canDeleteNewDetailRow(row);
+    const isSaved = !row?.isNew && row?.idx != null;
+    if (!isNew && !isSaved) return;
     e.preventDefault();
     setDetailCtxMenu({
       open: true,
@@ -973,8 +975,8 @@ function AccountCorporateCardSheet() {
         checkedIndexes.length > 0
           ? new Set(checkedIndexes)
           : canDeleteNewDetailRow(prev?.[rowIndex])
-          ? new Set([rowIndex])
-          : new Set();
+            ? new Set([rowIndex])
+            : new Set();
       if (deleteIndexes.size === 0) return prev;
       detailEditedRef.current = true;
       return prev.filter((_, i) => !deleteIndexes.has(i));
@@ -987,8 +989,8 @@ function AccountCorporateCardSheet() {
         checkedIndexes.length > 0
           ? new Set(checkedIndexes)
           : canDeleteNewDetailRow(detailRows?.[rowIndex])
-          ? new Set([rowIndex])
-          : new Set();
+            ? new Set([rowIndex])
+            : new Set();
       return deleteIndexes.size === 0 ? prev : prev.filter((_, i) => !deleteIndexes.has(i));
     });
     setDetailRenderKey((k) => k + 1);
@@ -1003,6 +1005,48 @@ function AccountCorporateCardSheet() {
       )
     );
   }, []);
+
+  // 저장된 상세행 DB 삭제
+  const handleDeleteSavedDetailRow = useCallback(async () => {
+    const rowIndex = detailCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+    const row = detailRows?.[rowIndex];
+    if (!row) { closeDetailCtxMenu(); return; }
+
+    const payload = {
+      idx: row.idx,
+      sale_id: row.sale_id,
+      payment_dt: selectedMaster?.payment_dt ?? "",
+      account_id: selectedMaster?.account_id ?? selectedAccountId ?? "",
+    };
+
+    try {
+      const res = await api.post("/Account/AccountCorporateCardPaymentDetailDelete", payload, {
+        headers: { "Content-Type": "application/json" },
+        validateStatus: () => true,
+      });
+      if (Number(res?.data?.code) === 200) {
+        await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
+        await fetchAccountCorporateCardPaymentDetailList({
+          sale_id: selectedSaleId,
+          account_id: selectedAccountId,
+          payment_dt: selectedMaster?.payment_dt ?? "",
+        });
+      }
+    } catch (err) {
+      console.error("[AccountCorporateCardPaymentDetailDelete] error:", err);
+    } finally {
+      closeDetailCtxMenu();
+    }
+  }, [
+    detailCtxMenu.rowIndex,
+    detailRows,
+    selectedMaster,
+    selectedSaleId,
+    selectedAccountId,
+    closeDetailCtxMenu,
+    fetchAccountCorporateCardPaymentDetailList,
+  ]);
 
   // ✅ 카드 선택 (idx 기반)
   const handleCardSelect = useCallback(
@@ -1532,8 +1576,8 @@ function AccountCorporateCardSheet() {
           missingTax && missingItem
             ? "과세구분과 상품구분이"
             : missingTax
-            ? "과세구분이"
-            : "상품구분이";
+              ? "과세구분이"
+              : "상품구분이";
         return Swal.fire("저장 불가", `하단 상세 ${invalidRows.length}행에 ${missingMsg} 선택되지 않았습니다.\n선택 후 저장해주세요.`, "warning");
       }
 
@@ -1988,102 +2032,102 @@ function AccountCorporateCardSheet() {
           borderBottom: "1px solid #eee",
         }}
       >
-          <Box
-            sx={{
-              flexWrap: isMobile ? "wrap" : "nowrap",
-              justifyContent: isMobile ? "flex-start" : "flex-end",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "right",
-              gap: 1,
+        <Box
+          sx={{
+            flexWrap: isMobile ? "wrap" : "nowrap",
+            justifyContent: isMobile ? "flex-start" : "flex-end",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "right",
+            gap: 1,
+          }}
+        >
+          {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={accountOptions}
+            value={selectedAccountOption}
+            onChange={(_, newValue) => {
+              // 거래처 선택값 유지 처리
+              if (!newValue?.account_id) return;
+              handleAccountSelect(newValue.account_id);
             }}
-          >
-            {/* ✅ 거래처: 문자 검색 가능한 Autocomplete */}
-            <Autocomplete
-              size="small"
-              sx={{ minWidth: 200 }}
-              options={accountOptions}
-              value={selectedAccountOption}
-              onChange={(_, newValue) => {
-                // 거래처 선택값 유지 처리
-                if (!newValue?.account_id) return;
-                handleAccountSelect(newValue.account_id);
-              }}
-              onInputChange={(_, newValue) => {
-                accountInputRef.current = newValue || "";
-              }}
-              getOptionLabel={(opt) => opt?.account_name || ""}
-              isOptionEqualToValue={(opt, val) => String(opt.account_id) === String(val.account_id)}
-              disablePortal
-              autoHighlight
-              openOnFocus
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  label="거래처 검색"
-                  placeholder="거래처명을 입력"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      selectAccountByInput(e.currentTarget.value);
-                    }
-                  }}
-                  sx={{
-                    "& .MuiInputBase-root": { height: 45, fontSize: 12 },
+            onInputChange={(_, newValue) => {
+              accountInputRef.current = newValue || "";
+            }}
+            getOptionLabel={(opt) => opt?.account_name || ""}
+            isOptionEqualToValue={(opt, val) => String(opt.account_id) === String(val.account_id)}
+            disablePortal
+            autoHighlight
+            openOnFocus
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput(e.currentTarget.value);
+                  }
+                }}
+                sx={{
+                  "& .MuiInputBase-root": { height: 45, fontSize: 12 },
                   "& .MuiInputLabel-root": { fontSize: 12 },
-                    "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
-                  }}
-                />
-              )}
-            />
+                  "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
+                }}
+              />
+            )}
+          />
 
-            <Select
-              size="small"
-              value={year}
-              onChange={(e) => handleYearChange(e.target.value)}
-              sx={{ minWidth: 110 }}
-            >
-              {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
-                <MenuItem key={y} value={y}>
-                  {y}년
-                </MenuItem>
-              ))}
-            </Select>
+          <Select
+            size="small"
+            value={year}
+            onChange={(e) => handleYearChange(e.target.value)}
+            sx={{ minWidth: 110 }}
+          >
+            {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
+              <MenuItem key={y} value={y}>
+                {y}년
+              </MenuItem>
+            ))}
+          </Select>
 
-            <Select
-              size="small"
-              value={month}
-              onChange={(e) => handleMonthChange(e.target.value)}
-              sx={{ minWidth: 90 }}
-            >
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                <MenuItem key={m} value={m}>
-                  {m}월
-                </MenuItem>
-              ))}
-            </Select>
+          <Select
+            size="small"
+            value={month}
+            onChange={(e) => handleMonthChange(e.target.value)}
+            sx={{ minWidth: 90 }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <MenuItem key={m} value={m}>
+                {m}월
+              </MenuItem>
+            ))}
+          </Select>
 
-            <MDButton color="info" onClick={handleSearchMaster} sx={{ minWidth: 80 }}>
-              조회
-            </MDButton>
+          <MDButton color="info" onClick={handleSearchMaster} sx={{ minWidth: 80 }}>
+            조회
+          </MDButton>
 
-            <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
-              행추가
-            </MDButton>
+          <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
+            행추가
+          </MDButton>
 
-            <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
-              저장
-            </MDButton>
+          <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
+            저장
+          </MDButton>
 
-            <MDButton
-              variant="gradient"
-              color="info"
-              onClick={openCardModal}
-              sx={{ minWidth: 120 }}
-            >
-              법인카드관리
-            </MDButton>
-          </Box>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={openCardModal}
+            sx={{ minWidth: 120 }}
+          >
+            법인카드관리
+          </MDButton>
+        </Box>
       </MDBox>
 
       {/* ====== 상단/하단 50:50 영역 ====== */}
@@ -2597,180 +2641,180 @@ function AccountCorporateCardSheet() {
                         backgroundColor: isDetailRowChanged ? "rgba(211,47,47,0.10)" : "transparent",
                       }}
                     >
-                    {detailColumns.map((c) => {
-                      const key = c.key;
-                      const rawVal = row[key] ?? "";
-                      const orig = origDetailRows[rowIndex]?.[key];
+                      {detailColumns.map((c) => {
+                        const key = c.key;
+                        const rawVal = row[key] ?? "";
+                        const orig = origDetailRows[rowIndex]?.[key];
 
-                      const changed = row?.isNew
-                        ? true
-                        : isForcedRedRow(row)
+                        const changed = row?.isNew
                           ? true
-                          : isDetailFieldChanged(key, orig, rawVal);
+                          : isForcedRedRow(row)
+                            ? true
+                            : isDetailFieldChanged(key, orig, rawVal);
 
-                      const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
-                      const isAmountCol = key === "amount";
-                      const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
+                        const isNumCol = DETAIL_NUMBER_KEYS.includes(key);
+                        const isAmountCol = key === "amount";
+                        const displayVal = isNumCol ? formatNumber(rawVal) : String(rawVal ?? "");
 
-                      if (key === "__newDetailDelete") {
-                        const enabled = canDeleteNewDetailRow(row);
-                        return (
-                          <td key={key} style={fixedColStyle(c.size)}>
-                            {row?.isNew && (
-                              <input
-                                type="checkbox"
-                                checked={enabled ? !!row.__deleteChecked : false}
-                                disabled={!enabled}
-                                readOnly
-                                style={{
-                                  ...nativeCheckboxCenterStyle,
-                                  cursor: enabled ? "pointer" : "not-allowed",
+                        if (key === "__newDetailDelete") {
+                          const enabled = canDeleteNewDetailRow(row);
+                          return (
+                            <td key={key} style={fixedColStyle(c.size)}>
+                              {row?.isNew && (
+                                <input
+                                  type="checkbox"
+                                  checked={enabled ? !!row.__deleteChecked : false}
+                                  disabled={!enabled}
+                                  readOnly
+                                  style={{
+                                    ...nativeCheckboxCenterStyle,
+                                    cursor: enabled ? "pointer" : "not-allowed",
+                                  }}
+                                  onClick={(ev) => {
+                                    ev.stopPropagation();
+                                    handleNewDetailCheckChange(rowIndex, ev.currentTarget.checked);
+                                  }}
+                                  onChange={(ev) => {
+                                    ev.stopPropagation();
+                                    handleNewDetailCheckChange(rowIndex, ev.target.checked);
+                                  }}
+                                  onContextMenu={(ev) => handleDetailRowContextMenu(ev, row, rowIndex)}
+                                />
+                              )}
+                            </td>
+                          );
+                        }
+
+                        if (c.type === "select") {
+                          const curNum = parseNumMaybe(rawVal);
+                          const curStr = curNum == null ? "" : String(curNum);
+
+                          return (
+                            <td key={key} style={fixedColStyle(c.size)}>
+                              <Select
+                                size="small"
+                                fullWidth
+                                value={curStr}
+                                onChange={(e) =>
+                                  handleDetailCellChange(rowIndex, key, e.target.value)
+                                }
+                                onClick={(ev) => ev.stopPropagation()}
+                                displayEmpty
+                                sx={{
+                                  fontSize: 12,
+                                  height: 25,
+                                  "& .MuiSelect-select": { color: changed ? "red" : "black" },
+                                  "& .MuiSvgIcon-root": { color: changed ? "red" : "black" },
                                 }}
-                                onClick={(ev) => {
-                                  ev.stopPropagation();
-                                  handleNewDetailCheckChange(rowIndex, ev.currentTarget.checked);
-                                }}
-                                onChange={(ev) => {
-                                  ev.stopPropagation();
-                                  handleNewDetailCheckChange(rowIndex, ev.target.checked);
-                                }}
-                                onContextMenu={(ev) => handleDetailRowContextMenu(ev, row, rowIndex)}
-                              />
-                            )}
-                          </td>
-                        );
-                      }
-
-                      if (c.type === "select") {
-                        const curNum = parseNumMaybe(rawVal);
-                        const curStr = curNum == null ? "" : String(curNum);
-
-                        return (
-                          <td key={key} style={fixedColStyle(c.size)}>
-                            <Select
-                              size="small"
-                              fullWidth
-                              value={curStr}
-                              onChange={(e) =>
-                                handleDetailCellChange(rowIndex, key, e.target.value)
-                              }
-                              onClick={(ev) => ev.stopPropagation()}
-                              displayEmpty
-                              sx={{
-                                fontSize: 12,
-                                height: 25,
-                                "& .MuiSelect-select": { color: changed ? "red" : "black" },
-                                "& .MuiSvgIcon-root": { color: changed ? "red" : "black" },
-                              }}
-                            >
-                              <MenuItem value="">
-                                <em>선택</em>
-                              </MenuItem>
-                              {c.options.map((opt) => (
-                                <MenuItem key={opt.value} value={String(opt.value)}>
-                                  {opt.value}:{opt.label}
+                              >
+                                <MenuItem value="">
+                                  <em>선택</em>
                                 </MenuItem>
-                              ))}
-                            </Select>
-                          </td>
-                        );
-                      }
+                                {c.options.map((opt) => (
+                                  <MenuItem key={opt.value} value={String(opt.value)}>
+                                    {opt.value}:{opt.label}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </td>
+                          );
+                        }
 
-                      if (c.editable) {
-                        return (
-                          <td
-                            key={key}
-                            contentEditable
-                            suppressContentEditableWarning
-                            style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
-                            onMouseDown={(ev) => {
-                              if (!isNumCol) return;
+                        if (c.editable) {
+                          return (
+                            <td
+                              key={key}
+                              contentEditable
+                              suppressContentEditableWarning
+                              style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
+                              onMouseDown={(ev) => {
+                                if (!isNumCol) return;
 
-                              const el = ev.currentTarget;
-                              ev.preventDefault();
+                                const el = ev.currentTarget;
+                                ev.preventDefault();
 
-                              requestAnimationFrame(() => {
-                                if (!el || !el.isConnected) return;
+                                requestAnimationFrame(() => {
+                                  if (!el || !el.isConnected) return;
 
-                                try {
-                                  el.focus();
-                                } catch (e) {
-                                  // ignore
+                                  try {
+                                    el.focus();
+                                  } catch (e) {
+                                    // ignore
+                                  }
+
+                                  el.innerText = String(parseNumber(el.innerText) || "");
+                                  selectAllContent(el);
+                                });
+                              }}
+                              onFocus={(ev) => {
+                                const el = ev.currentTarget;
+                                if (!isNumCol) {
+                                  keepEditableTailVisible(el);
+                                  return;
                                 }
 
                                 el.innerText = String(parseNumber(el.innerText) || "");
-                                selectAllContent(el);
-                              });
-                            }}
-                            onFocus={(ev) => {
-                              const el = ev.currentTarget;
-                              if (!isNumCol) {
-                                keepEditableTailVisible(el);
-                                return;
-                              }
+                                requestAnimationFrame(() => {
+                                  if (!el || !el.isConnected) return;
+                                  selectAllContent(el);
+                                });
+                              }}
+                              onInput={(ev) => {
+                                if (isAmountCol) {
+                                  enforceAmountEditable(ev.currentTarget);
+                                  return;
+                                }
+                                if (isNumCol) {
+                                  enforceDigitsOnlyEditable(ev.currentTarget);
+                                  return;
+                                }
+                                keepEditableTailVisible(ev.currentTarget);
+                              }}
+                              onKeyDown={(ev) => {
+                                if (!isNumCol) return;
+                                if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+                                const allowKeys = [
+                                  "Backspace",
+                                  "Delete",
+                                  "ArrowLeft",
+                                  "ArrowRight",
+                                  "ArrowUp",
+                                  "ArrowDown",
+                                  "Tab",
+                                  "Home",
+                                  "End",
+                                ];
+                                if (allowKeys.includes(ev.key)) return;
+                                if (isAmountCol && ev.key === "-") return;
+                                if (!/^\d$/.test(ev.key)) {
+                                  ev.preventDefault();
+                                }
+                              }}
+                              onClick={(ev) => ev.stopPropagation()}
+                              onBlur={(e) => {
+                                const text = e.currentTarget.innerText.trim();
 
-                              el.innerText = String(parseNumber(el.innerText) || "");
-                              requestAnimationFrame(() => {
-                                if (!el || !el.isConnected) return;
-                                selectAllContent(el);
-                              });
-                            }}
-                            onInput={(ev) => {
-                              if (isAmountCol) {
-                                enforceAmountEditable(ev.currentTarget);
-                                return;
-                              }
-                              if (isNumCol) {
-                                enforceDigitsOnlyEditable(ev.currentTarget);
-                                return;
-                              }
-                              keepEditableTailVisible(ev.currentTarget);
-                            }}
-                            onKeyDown={(ev) => {
-                              if (!isNumCol) return;
-                              if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-                              const allowKeys = [
-                                "Backspace",
-                                "Delete",
-                                "ArrowLeft",
-                                "ArrowRight",
-                                "ArrowUp",
-                                "ArrowDown",
-                                "Tab",
-                                "Home",
-                                "End",
-                              ];
-                              if (allowKeys.includes(ev.key)) return;
-                              if (isAmountCol && ev.key === "-") return;
-                              if (!/^\d$/.test(ev.key)) {
-                                ev.preventDefault();
-                              }
-                            }}
-                            onClick={(ev) => ev.stopPropagation()}
-                            onBlur={(e) => {
-                              const text = e.currentTarget.innerText.trim();
+                                if (isNumCol) {
+                                  const n = parseNumber(text);
+                                  e.currentTarget.innerText = formatNumber(n);
+                                  handleDetailCellChange(rowIndex, key, n);
+                                  return;
+                                }
+                                handleDetailCellChange(rowIndex, key, text);
+                              }}
+                            >
+                              {displayVal}
+                            </td>
+                          );
+                        }
 
-                              if (isNumCol) {
-                                const n = parseNumber(text);
-                                e.currentTarget.innerText = formatNumber(n);
-                                handleDetailCellChange(rowIndex, key, n);
-                                return;
-                              }
-                              handleDetailCellChange(rowIndex, key, text);
-                            }}
-                          >
+                        return (
+                          <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
                             {displayVal}
                           </td>
                         );
-                      }
-
-                      return (
-                        <td key={key} style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}>
-                          {displayVal}
-                        </td>
-                      );
-                    })}
-                  </tr>
+                      })}
+                    </tr>
                   );
                 })}
               </tbody>
@@ -2835,7 +2879,7 @@ function AccountCorporateCardSheet() {
               }}
               onClick={handleDeleteMasterRowData}
             >
-              데이터 삭제
+              🗑️ 데이터 삭제
             </button>
           </div>
         </div>
@@ -2871,20 +2915,37 @@ function AccountCorporateCardSheet() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "none",
-                background: "transparent",
-                textAlign: "left",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-              onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
-            >
-              🗑️ 행 삭제
-            </button>
+            {detailRows?.[detailCtxMenu.rowIndex]?.isNew ? (
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
+              >
+                🗑️ 행 삭제
+              </button>
+            ) : (
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={handleDeleteSavedDetailRow}
+              >
+                🗑️ 데이터 삭제
+              </button>
+            )}
           </div>
         </div>
       )}

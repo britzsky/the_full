@@ -90,6 +90,9 @@ export default function useAccountAnnualLeaveData() {
           // ✅ start/end가 서버에서 비어있거나, 표준화가 필요하면 workSystemList 기준으로 보정
           start_time: normalizeTime(item.start_time) || ws?.start_time || "",
           end_time: normalizeTime(item.end_time) || ws?.end_time || "",
+
+          // 연차부여여부 (Y/N, 기본값 Y)
+          ledger_yn: item.ledger_yn || "Y",
         };
       });
 

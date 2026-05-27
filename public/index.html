@@ -47,13 +47,81 @@ Software.
     ></script>
   
     <style type="text/css">
+        /* SweetAlert2 팝업이 다른 요소들 위에 오도록 z-index 강제 설정 */
         .swal2-container {
           z-index: 99999 !important;
+        }
+        /* 커스텀 마우스 커서 기본 적용 (JS 로드 전 깜빡임 방지용 초기값) */
+        div, span, p, a, button, input, select, textarea,
+        table, tr, td, th, thead, tbody, tfoot,
+        ul, ol, li, label, img, svg, path,
+        section, article, header, footer, main, nav, aside,
+        h1, h2, h3, h4, h5, h6, form, * {
+          cursor: url('/mousecursor.png') 0 0, auto !important;
         }
     </style>
   </head>
   <body style="background-color: #ffffff;">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="app"></div>
+    <script>
+      /* 페이지 완전 로드 후 커스텀 마우스 커서 적용 (MUI 스타일이 모두 주입된 이후에 실행) */
+      window.addEventListener('load', function() {
+
+        /* 커서 이미지 3종 CSS 동적 주입 — MUI 스타일보다 나중에 추가해서 우선순위 확보 */
+        /* data-cur를 html 루트에 설정해서 React 리렌더링 시에도 커서 상태 유지 */
+        var style = document.createElement('style');
+        style.textContent = [
+          '* { cursor: url("/mousecursor.png") 0 0, auto !important; }',                      /* 기본 커서 */
+          'html[data-cur="hover"] * { cursor: url("/mousehover.png") 0 0, auto !important; }', /* 클릭 가능한 요소 위에 올렸을 때 */
+          'html[data-cur="click"] * { cursor: url("/mouseclick.png") 0 0, auto !important; }'  /* 마우스 누르고 있을 때 */
+        ].join(' ');
+        document.head.appendChild(style);
+
+        /* 클릭 가능한 요소로 판단하는 기준 목록 */
+        var CLICK_ROLES = ['button','menuitem','menuitemcheckbox','menuitemradio',
+          'option','tab','link','checkbox','radio','switch','treeitem',
+          'gridcell','row','columnheader'];
+        var CLICK_TAGS = ['A','BUTTON','SELECT'];                          /* 기본 클릭 HTML 태그 */
+        var CLICK_INPUT = ['submit','button','reset','checkbox','radio'];  /* 클릭형 input 타입 */
+        var FC_RE = /fc-event|fc-daygrid-day|fc-button|fc-col-header|fc-list-event|fc-daygrid-day-number/; /* FullCalendar 클릭 요소 */
+
+        /* 마우스가 올라간 요소(또는 부모)가 클릭 가능한지 DOM 위로 탐색해서 판단 */
+        function isClickable(el) {
+          while (el && el !== document.documentElement) {
+            var tag = el.tagName;
+            if (CLICK_TAGS.indexOf(tag) !== -1) return true;
+            if (tag === 'INPUT' && CLICK_INPUT.indexOf(el.type) !== -1) return true;
+            var role = el.getAttribute && el.getAttribute('role');
+            if (role && CLICK_ROLES.indexOf(role) !== -1) return true;
+            var cls = typeof el.className === 'string' ? el.className : '';
+            if (FC_RE.test(cls)) return true;
+            el = el.parentElement;
+          }
+          return false;
+        }
+
+        var html = document.documentElement;
+        var isMouseDown = false;
+
+        /* 마우스가 요소 위로 이동할 때 — 클릭 중엔 mouseover 무시해서 클릭 커서 유지 */
+        document.addEventListener('mouseover', function(e) {
+          if (isMouseDown) return;
+          html.setAttribute('data-cur', isClickable(e.target) ? 'hover' : 'default');
+        });
+
+        /* 마우스 누를 때 클릭 커서로 고정 */
+        document.addEventListener('mousedown', function(e) {
+          isMouseDown = true;
+          html.setAttribute('data-cur', 'click');
+        });
+
+        /* 마우스 뗄 때 커서 복원 — React 리렌더링 후에도 html 속성이 유지됨 */
+        document.addEventListener('mouseup', function(e) {
+          isMouseDown = false;
+          html.setAttribute('data-cur', isClickable(e.target) ? 'hover' : 'default');
+        });
+      });
+    </script>
   </body>
 </html>

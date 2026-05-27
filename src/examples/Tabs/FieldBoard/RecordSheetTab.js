@@ -43,6 +43,7 @@ const typeColors = {
   19: "#d9f2e6",
   16: "#DDAED3",
   17: "#9F8383",
+  21: "#dd7b93",
 };
 
 const TYPE_LABEL = {
@@ -67,6 +68,7 @@ const TYPE_LABEL = {
   18: "경조사",
   19: "통합",
   20: "재택근무",
+  21: "공휴일",
 };
 
 const FULL_TYPE_OPTIONS = [
@@ -91,6 +93,7 @@ const FULL_TYPE_OPTIONS = [
   { value: "16", label: "업장휴무" },
   { value: "18", label: "경조사" },
   { value: "20", label: "재택근무" },
+  { value: "21", label: "공휴일" },
 ];
 const EMPLOYEE_DISPATCH_TYPE_OPTIONS = [
   { value: "0", label: "-" },
@@ -1477,7 +1480,7 @@ function RecordSheet() {
   };
 
   // ✅ "출근한 사람" 카운트 타입
-  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8", "19"]);
+  const COUNT_TYPES = new Set(["1", "2", "3", "5", "6", "7", "8", "19", "20"]);
   const isWorkingType = (cell) => {
     const t = safeTrim(cell?.type, "");
     if (!t || t === "0") return false;
@@ -2391,6 +2394,10 @@ function RecordSheet() {
             const rowGubun = safeTrim(props.row.original?.gubun ?? "", "").toLowerCase();
 
             let typeOptions = FULL_TYPE_OPTIONS;
+            // 강남(20250819193630)은 초과(3), 결근(4) 숨김
+            if (String(selectedAccountId).trim() === "20250819193630") {
+              typeOptions = typeOptions.filter((o) => o.value !== "3" && o.value !== "4");
+            }
             // ✅ 파출회원(dis)은 기존처럼 0/5 옵션 유지
             if (rowGubun === "dis") typeOptions = DISPATCH_TYPE_OPTIONS;
             // ✅ 직원파출관리 조건에 따라 월 전체 또는 등록일자만 0/6 옵션 적용
@@ -2401,7 +2408,7 @@ function RecordSheet() {
           size: isMobile ? 52 : 80,
         };
       }),
-    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap]
+    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap, selectedAccountId]
   );
 
   const attendanceColumns = useMemo(
@@ -3120,7 +3127,7 @@ function RecordSheet() {
                   }}
                   sx={{
                     "& .MuiInputBase-root": { height: 40, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
+                    "& .MuiInputLabel-root": { fontSize: 12 },
                     "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                   }}
                 />

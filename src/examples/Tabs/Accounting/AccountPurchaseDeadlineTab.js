@@ -1625,10 +1625,12 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [closeMasterCtxMenu, fetchPurchaseList, filters.account_id, masterCtxMenu.rowIndex, rows]);
 
-  // 신규 상세행 우클릭 메뉴 열기
+  // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback(
     (e, row, rowIndex) => {
-      if (!canDeleteNewDetailRow(row)) return;
+      const isNew = canDeleteNewDetailRow(row);
+      const isSaved = !row?.isNew && String(row?.item_id ?? "").trim() !== "";
+      if (!isNew && !isSaved) return;
       e.preventDefault();
       setDetailCtxMenu({
         open: true,
@@ -1652,8 +1654,8 @@ function AccountPurchaseDeadlineTab() {
           checkedIndexes.length > 0
             ? new Set(checkedIndexes)
             : canDeleteNewDetailRow(prev?.[rowIndex])
-            ? new Set([rowIndex])
-            : new Set();
+              ? new Set([rowIndex])
+              : new Set();
         if (deleteIndexes.size === 0) return prev;
         return prev.filter((_, i) => !deleteIndexes.has(i));
       });
@@ -1665,8 +1667,8 @@ function AccountPurchaseDeadlineTab() {
           checkedIndexes.length > 0
             ? new Set(checkedIndexes)
             : canDeleteNewDetailRow(detailRows?.[rowIndex])
-            ? new Set([rowIndex])
-            : new Set();
+              ? new Set([rowIndex])
+              : new Set();
         return deleteIndexes.size === 0 ? prev : prev.filter((_, i) => !deleteIndexes.has(i));
       });
       setDetailTableKey((k) => k + 1);
@@ -1674,6 +1676,47 @@ function AccountPurchaseDeadlineTab() {
     },
     [canDeleteNewDetailRow, closeDetailCtxMenu, detailRows, setDetailRows, setOriginalDetailRows]
   );
+
+  // 저장된 상세행 DB 삭제
+  const handleDeleteSavedDetailRow = useCallback(async () => {
+    const rowIndex = detailCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+    const row = detailRows?.[rowIndex];
+    if (!row) { closeDetailCtxMenu(); return; }
+
+    const masterRow = rows?.[selectedMasterIndex];
+    const payload = {
+      item_id: row.item_id,
+      sale_id: row.sale_id,
+      saleDate: row.saleDate ?? masterRow?.saleDate ?? "",
+      account_id: row.account_id ?? masterRow?.account_id ?? filters.account_id ?? "",
+      type: masterRow?.type ?? row.type ?? 0,
+    };
+
+    try {
+      const res = await api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
+        headers: { "Content-Type": "application/json" },
+        validateStatus: () => true,
+      });
+      if (Number(res?.data?.code) === 200) {
+        await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
+        await fetchPurchaseDetailList({ sale_id: selectedSaleId, account_id: filters.account_id });
+      }
+    } catch (err) {
+      console.error("[AccountPurchaseTallyDetailDelete] error:", err);
+    } finally {
+      closeDetailCtxMenu();
+    }
+  }, [
+    detailCtxMenu.rowIndex,
+    detailRows,
+    rows,
+    selectedMasterIndex,
+    selectedSaleId,
+    filters.account_id,
+    closeDetailCtxMenu,
+    fetchPurchaseDetailList,
+  ]);
 
   // 신규 상세행 삭제 체크 상태 변경
   const handleNewDetailCheckChange = useCallback(
@@ -2448,77 +2491,77 @@ function AccountPurchaseDeadlineTab() {
       }
 
       const nextRows = (detailRowsRef.current || []).map((x, idx) => {
-          if (idx !== rowIndex) return x;
+        if (idx !== rowIndex) return x;
 
-          const rawValue = value?.__autoCalc ? value.value : value;
-          const itemId = String(x?.item_id ?? "");
-          const origRow = itemId ? originalDetailMap.get(itemId) : undefined;
-          const origVal = origRow?.[key];
-          const actuallyChanged = origRow === undefined
-            ? false
-            : DETAIL_MONEY_KEYS.includes(key)
-              ? stripComma(origVal) !== stripComma(rawValue)
-              : normalizeStr(String(origVal ?? "")) !== normalizeStr(String(rawValue ?? ""));
-          const currentValueChanged = DETAIL_MONEY_KEYS.includes(key)
-            ? stripComma(x?.[key]) !== stripComma(rawValue)
-            : normalizeStr(String(x?.[key] ?? "")) !== normalizeStr(String(rawValue ?? ""));
-          const updated = { ...x, [key]: value, __dirty: x.__dirty || actuallyChanged };
-          if (key === "amount" && stripComma(rawValue) !== "" && Number(stripComma(rawValue)) !== 0) {
-            updated.__deleteChecked = false;
+        const rawValue = value?.__autoCalc ? value.value : value;
+        const itemId = String(x?.item_id ?? "");
+        const origRow = itemId ? originalDetailMap.get(itemId) : undefined;
+        const origVal = origRow?.[key];
+        const actuallyChanged = origRow === undefined
+          ? false
+          : DETAIL_MONEY_KEYS.includes(key)
+            ? stripComma(origVal) !== stripComma(rawValue)
+            : normalizeStr(String(origVal ?? "")) !== normalizeStr(String(rawValue ?? ""));
+        const currentValueChanged = DETAIL_MONEY_KEYS.includes(key)
+          ? stripComma(x?.[key]) !== stripComma(rawValue)
+          : normalizeStr(String(x?.[key] ?? "")) !== normalizeStr(String(rawValue ?? ""));
+        const updated = { ...x, [key]: value, __dirty: x.__dirty || actuallyChanged };
+        if (key === "amount" && stripComma(rawValue) !== "" && Number(stripComma(rawValue)) !== 0) {
+          updated.__deleteChecked = false;
+        }
+
+        // 과세/부가세 값을 실제로 바꾼 행만 수기 입력으로 판단한다.
+        if (key === "tax" || key === "vat") {
+          if (currentValueChanged) {
+            updated.__taxManual = true;
           }
+          return updated;
+        }
 
-          // 과세/부가세 값을 실제로 바꾼 행만 수기 입력으로 판단한다.
-          if (key === "tax" || key === "vat") {
-            if (currentValueChanged) {
-              updated.__taxManual = true;
-            }
-            return updated;
-          }
-
-          // qty 또는 unitPrice 변경 시: blur 확정(autoCalc=true)이면 amount 자동계산
-          // tax/vat를 수기 입력한 행은 이후 자동계산으로 덮어쓰지 않는다.
-          if (key === "qty" || key === "unitPrice") {
-            if (value?.__autoCalc) {
-              const finalVal = value.value;
-              updated[key] = finalVal;
-              // ref에서 읽어온 상대방 값 우선, 없으면 state 값 사용
-              const qtyVal = key === "qty" ? finalVal : (value._qtyValue ?? x.qty);
-              const upVal = key === "unitPrice" ? finalVal : (value._upValue ?? x.unitPrice);
-              const qNum = Number(String(qtyVal).replace(/,/g, "")) || 0;
-              const pNum = Number(String(upVal).replace(/,/g, "")) || 0;
-              if (qNum && pNum) {
-                const autoAmt = qNum * pNum;
-                updated.amount = autoAmt.toLocaleString("ko-KR");
-                updated.__deleteChecked = false;
-                if (!x.__taxManual) {
-                  const tType = String(x.taxType ?? "");
-                  const autoVat = tType === "1" ? Math.floor(autoAmt / 11) : 0;
-                  const autoTax = tType === "1" ? autoAmt - autoVat : 0;
-                  updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
-                  updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
-                }
+        // qty 또는 unitPrice 변경 시: blur 확정(autoCalc=true)이면 amount 자동계산
+        // tax/vat를 수기 입력한 행은 이후 자동계산으로 덮어쓰지 않는다.
+        if (key === "qty" || key === "unitPrice") {
+          if (value?.__autoCalc) {
+            const finalVal = value.value;
+            updated[key] = finalVal;
+            // ref에서 읽어온 상대방 값 우선, 없으면 state 값 사용
+            const qtyVal = key === "qty" ? finalVal : (value._qtyValue ?? x.qty);
+            const upVal = key === "unitPrice" ? finalVal : (value._upValue ?? x.unitPrice);
+            const qNum = Number(String(qtyVal).replace(/,/g, "")) || 0;
+            const pNum = Number(String(upVal).replace(/,/g, "")) || 0;
+            if (qNum && pNum) {
+              const autoAmt = qNum * pNum;
+              updated.amount = autoAmt.toLocaleString("ko-KR");
+              updated.__deleteChecked = false;
+              if (!x.__taxManual) {
+                const tType = String(x.taxType ?? "");
+                const autoVat = tType === "1" ? Math.floor(autoAmt / 11) : 0;
+                const autoTax = tType === "1" ? autoAmt - autoVat : 0;
+                updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
+                updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
               }
             }
-            return updated;
           }
-
-          // amount 또는 taxType 변경 시: 수기 입력 행이 아니면 자동계산
-          if (key === "amount" || key === "taxType") {
-            const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
-            const tType = String(key === "taxType" ? value : x.taxType);
-            if (tType === "2" || tType === "") {
-              updated.vat = "";
-              updated.tax = "";
-            } else if (!x.__taxManual) {
-              const autoVat = tType === "1" ? Math.floor(amt / 11) : 0;
-              const autoTax = tType === "1" ? amt - autoVat : 0;
-              updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
-              updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
-            }
-          }
-
           return updated;
-        });
+        }
+
+        // amount 또는 taxType 변경 시: 수기 입력 행이 아니면 자동계산
+        if (key === "amount" || key === "taxType") {
+          const amt = Number(String(key === "amount" ? value : x.amount).replace(/,/g, "")) || 0;
+          const tType = String(key === "taxType" ? value : x.taxType);
+          if (tType === "2" || tType === "") {
+            updated.vat = "";
+            updated.tax = "";
+          } else if (!x.__taxManual) {
+            const autoVat = tType === "1" ? Math.floor(amt / 11) : 0;
+            const autoTax = tType === "1" ? amt - autoVat : 0;
+            updated.vat = autoVat === 0 ? "" : autoVat.toLocaleString("ko-KR");
+            updated.tax = autoTax === 0 ? "" : autoTax.toLocaleString("ko-KR");
+          }
+        }
+
+        return updated;
+      });
 
       detailRowsRef.current = nextRows;
       setDetailRows(nextRows);
@@ -3827,7 +3870,7 @@ function AccountPurchaseDeadlineTab() {
                 }}
                 onClick={handleDeleteMasterRowData}
               >
-                데이터 삭제
+                🗑️ 데이터 삭제
               </button>
             </div>
           </div>
@@ -3863,20 +3906,37 @@ function AccountPurchaseDeadlineTab() {
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              <button
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  border: "none",
-                  background: "transparent",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  fontSize: 13,
-                }}
-                onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
-              >
-                🗑️ 행 삭제
-              </button>
+              {detailRows?.[detailCtxMenu.rowIndex]?.isNew ? (
+                <button
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "none",
+                    background: "transparent",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                  onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
+                >
+                  🗑️ 행 삭제
+                </button>
+              ) : (
+                <button
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    border: "none",
+                    background: "transparent",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                  onClick={handleDeleteSavedDetailRow}
+                >
+                  🗑️ 데이터 삭제
+                </button>
+              )}
             </div>
           </div>
         )}

@@ -71,6 +71,7 @@ import AccountPersonPurchaseManager from "layouts/accounting/accountpersonpurcha
 
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
+import Education from "layouts/humanresource/education";
 // 사용자 관리
 import UserManagement from "layouts/humanresource/usermanagement";
 // 현장
@@ -138,16 +139,16 @@ const routes = [
 
         accessMode: "AND",
       },
-      // {
-      //   type: "collapse",
-      //   name: "📢 공지사항",
-      //   key: "headoffice_notices",
-      //   route: "/headoffice/notices",
-      //   component: <HeadofficeNotice />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
-      //   allowedPositions: [0, 1, 2, 3],
-      //   accessMode: "AND",
-      // },
+      {
+        type: "collapse",
+        name: "📢 공지사항",
+        key: "headoffice_notices",
+        route: "/headoffice/notices",
+        component: <HeadofficeNotice />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
+        allowedPositions: [0, 1, 2, 3],
+        accessMode: "AND",
+      },
       {
         type: "collapse",
         name: "📅 급식사업부 일정관리",
@@ -468,17 +469,16 @@ const routes = [
           "si1", // 김세인 매니저
         ],
       },
-      // {
-      //   type: "collapse",
-      //   name: "본사 교육",
-      //   key: "account",
-      //   icon: <Icon fontSize="small">*</Icon>,
-      //   route: "/tables",
-      //   component: <Tables />,
-      //   allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],   // 🔹 부서권한
-      //   allowedPositions: [0, 1, 2, 3],   // 🔹 직책권한
-      //   accessMode: "AND",
-      // },
+      {
+        type: "collapse",
+        name: "📚 본사 교육",
+        key: "education",
+        route: "/humanresource/education",
+        component: <Education />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
+        allowedPositions: [0, 1, 2, 3],
+        accessMode: "AND",
+      },
       // {
       //   type: "collapse",
       //   name: "인사평가",

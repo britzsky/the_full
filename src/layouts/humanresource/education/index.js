@@ -1,7 +1,6 @@
 /* eslint-disable react/function-component-definition */
 // ── 외부 라이브러리 임포트 ────────────────────────────────────
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
 import { IconButton, TextField, useTheme, useMediaQuery } from "@mui/material";
 import { Download, Paperclip, RotateCcw, Trash2 } from "lucide-react";
 import Swal from "sweetalert2";
@@ -14,45 +13,34 @@ import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 
 // ── 내부 훅 및 유틸리티 임포트 ───────────────────────────────
-import useHeadofficeNoticeData from "./data/HeadofficeNoticeData";
+import useEducationData from "./data/EducationData";
 import PreviewOverlay from "utils/PreviewOverlay";
 import logo from "assets/images/the-full-logo4.png";
 
-// ── 환경 변수 및 파일 제한 상수 ──────────────────────────────
+// 백엔드가 파일 경로를 상대경로(/uploads/...)로 내려주므로, 앞에 서버 주소를 붙여 실제 접근 URL을 만들 때 사용
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8080";
-const MAX_NOTICE_FILES = 10; // 첨부파일 최대 개수
+const MAX_FILES = 10; // 첨부파일 최대 개수
 
-// ── 대분류 옵션 상수 ──────────────────────────────────────────
-// DB에는 숫자로 저장, 백엔드 CASE WHEN으로 한글명도 함께 반환됨
+// ── 교육 분류 옵션 (DB large_type 값과 매핑) ─────────────────
 const LARGE_TYPE_OPTIONS = [
-  { value: 1, label: "회사소식" },
-  { value: 2, label: "업무표준화" },
-  { value: 3, label: "커뮤니티" },
-  { value: 4, label: "업무협조" },
-  { value: 5, label: "영업&마케팅" },
+  { value: 1, label: "법정 의무교육" },
+  { value: 2, label: "사외 교육" },
+  { value: 3, label: "사내 교육" },
 ];
 
-// ── 대분류별 중분류 매핑 테이블 ───────────────────────────────
-const MIDDLE_TYPE_MAP = {
-  1: [{ value: 11, label: "전사공지" }, { value: 12, label: "회사규정" }, { value: 13, label: "계정관리" }],
-  2: [{ value: 21, label: "본사회의록" }, { value: 22, label: "내부사용양식" }, { value: 23, label: "오리엔테이션" }],
-  3: [{ value: 31, label: "아이디어 공유" }, { value: 32, label: "업무노하우" }, { value: 33, label: "지식정보공유" }],
-  4: [{ value: 41, label: "기획" }, { value: 42, label: "관리" }, { value: 43, label: "영업" }],
-  5: [{ value: 51, label: "신규영업정보" }, { value: 52, label: "마케팅활동" }],
-};
-
-// ── 본사 공지사항 메인 컴포넌트 ──────────────────────────────
-function HeadofficeNotice() {
+// ── 교육 메인 컴포넌트 ────────────────────────────────────────
+function Education() {
   // 테마 및 반응형 분기
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("md")); // 모바일 여부 (md 미만)
-  const location = useLocation(); // 대시보드에서 전달된 state 수신용
+  const isMobile = useMediaQuery(theme.breakpoints.down("md")); // md 미만이면 모바일
 
   // ── 로그인 사용자 정보 (localStorage 읽기) ───────────────────
   const loginUserId = String(localStorage.getItem("user_id") || "").trim();
   const loginPosition = Number(localStorage.getItem("position") ?? 99);
-  // 작성·수정·삭제 권한 여부 (position 3 이하)
-  const canWrite = loginPosition <= 3;
+  const loginDept = Number(localStorage.getItem("department") ?? -1);
+  // position = 대표님, 팀장님들
+  // department = 3(인사팀) · 6(개발팀) 이면 작성·수정·삭제 가능
+  const canWrite = loginPosition === 0 || loginPosition === 1 || loginDept === 3 || loginDept === 6;
 
   // ── 데이터 훅 (상태·API 함수 일괄 구조분해) ─────────────────
   const {
@@ -61,65 +49,57 @@ function HeadofficeNotice() {
     detail,
     detailLoading,
     saving,
-    noticeFiles,
+    educationFiles,
     loadList,
     loadDetail,
-    saveNotice,
-    deleteNotice,
-    syncNoticeFiles,
-    clearNoticeFiles,
-  } = useHeadofficeNoticeData();
+    saveEducation,
+    deleteEducation,
+    syncEducationFiles,
+    clearEducationFiles,
+  } = useEducationData();
 
   // ── 현재 화면 모드: "list"(목록) | "detail"(상세) | "write"(작성·수정) ──
   const [view, setView] = useState("list");
 
-  // ── 목록 필터 상태 (0 = 전체) ────────────────────────────────
-  const [filterLarge, setFilterLarge] = useState(0);   // 대분류 필터 코드
-  const [filterMiddle, setFilterMiddle] = useState(0); // 중분류 필터 코드
-  const [filterText, setFilterText] = useState("");     // 키워드 검색어
+  // ── 목록 필터 상태 ───────────────────────────────────────────
+  const [filterLarge, setFilterLarge] = useState(0);  // 분류 필터 (0 = 전체)
+  const [filterText, setFilterText] = useState("");    // 키워드 검색어
 
   // ── 작성·수정 폼 입력 상태 ───────────────────────────────────
   const [editIdx, setEditIdx] = useState(null);        // null: 신규 작성, 숫자: 수정 대상 idx
-  const [formTitle, setFormTitle] = useState("");       // 공지 제목
-  const [formContent, setFormContent] = useState("");   // 공지 본문
-  const [formLargeType, setFormLargeType] = useState(0);  // 대분류 코드
-  const [formMiddleType, setFormMiddleType] = useState(0); // 중분류 코드
-  const [formExpireDt, setFormExpireDt] = useState("");    // 게시 유효일 (YYYY-MM-DD)
+  const [formTitle, setFormTitle] = useState("");      // 교육 제목
+  const [formContent, setFormContent] = useState(""); // 교육 본문
+  const [formLargeType, setFormLargeType] = useState(0); // 분류 코드
 
   // ── 첨부파일 상태 ─────────────────────────────────────────────
-  // pendingFiles: 선택했지만 아직 서버에 미저장된 파일 객체 배열 { file, name, previewUrl }
-  // deletedFileOrders: 삭제 예정 기존 파일의 image_order 집합
+  // pendingFiles: 선택했지만 아직 서버에 미저장된 파일 배열 { file, name, previewUrl }
+  // deletedFileOrders: 삭제 예약된 기존 파일의 image_order Set
   const [pendingFiles, setPendingFiles] = useState([]);
   const [deletedFileOrders, setDeletedFileOrders] = useState(new Set());
-  const pendingFilesRef = useRef([]);   // 언마운트 시 blob URL 해제용 ref
-  const fileInputRef = useRef(null);    // 파일 선택 input ref
+  const pendingFilesRef = useRef([]);  // 언마운트 시 blob URL 해제용 ref
+  const fileInputRef = useRef(null);   // 파일 선택 input ref
+
   // ── 미리보기 오버레이 상태 ────────────────────────────────────
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewList, setPreviewList] = useState([]);
   const [previewIndex, setPreviewIndex] = useState(0);
 
   // pendingFiles 변경 시 ref 동기화 (언마운트 핸들러에서 최신 값 참조)
-  useEffect(() => {
-    pendingFilesRef.current = pendingFiles;
-  }, [pendingFiles]);
+  useEffect(() => { pendingFilesRef.current = pendingFiles; }, [pendingFiles]);
 
-  // 컴포넌트 언마운트 시 생성된 blob URL 일괄 해제
+  // 컴포넌트 언마운트 시 생성된 blob URL 일괄 해제 (메모리 누수 방지)
   useEffect(() => () => {
     pendingFilesRef.current.forEach((pf) => {
       if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
     });
   }, []);
 
-  // 최초 마운트 시 공지사항 목록 자동 조회
-  useEffect(() => {
-    loadList();
-  }, [loadList]);
+  // 최초 마운트 시 교육 목록 자동 조회
+  useEffect(() => { loadList(); }, [loadList]);
 
-  // ── 클라이언트 사이드 필터링 ──────────────────────────────────
-  // 대분류·중분류·키워드 필터 (API 재호출 없이 로컬 처리)
+  // ── 클라이언트 사이드 필터링 (API 재호출 없이 로컬 처리) ─────
   const filteredRows = rows.filter((row) => {
     if (filterLarge && Number(row.large_type) !== filterLarge) return false;
-    if (filterMiddle && Number(row.middle_type) !== filterMiddle) return false;
     if (filterText.trim()) {
       const keyword = filterText.trim().toLowerCase();
       const title = String(row.title || "").toLowerCase();
@@ -129,72 +109,51 @@ function HeadofficeNotice() {
     return true;
   });
 
-  // ── 상세 화면 열기 (idx로 상세 조회 후 뷰 전환) ────────────
+  // ── 상세 화면 열기 ───────────────────────────────────────────
   const openDetail = useCallback(async (idx) => {
     const data = await loadDetail(idx);
     if (!data) {
       Swal.fire({ title: "오류", text: "상세 정보를 불러오지 못했습니다.", icon: "error" });
       return;
     }
-    window.history.pushState({ notice: "detail" }, "");
+    window.history.pushState({ education: "detail" }, "");
     setView("detail");
   }, [loadDetail]);
 
-  // 대시보드에서 특정 공지 idx를 state로 전달받은 경우 상세 자동 진입
-  useEffect(() => {
-    const noticeIdx = location.state?.noticeIdx;
-    if (!noticeIdx) return;
-    openDetail(noticeIdx);
-    window.history.replaceState({}, "");
-  }, [location.state, openDetail]);
-
-  // ── 작성·수정 폼 열기 (existing: 수정 대상 데이터, null: 신규) ──
+  // ── 작성·수정 폼 열기 ────────────────────────────────────────
   const openWrite = useCallback((existing = null) => {
     pendingFilesRef.current.forEach((pf) => {
       if (pf.previewUrl) URL.revokeObjectURL(pf.previewUrl);
     });
     setPendingFiles([]);
     setDeletedFileOrders(new Set());
-
-    // 신규 작성 시 이전 상세의 첨부파일이 남아있지 않도록 초기화
-    if (!existing) clearNoticeFiles();
-
+    if (!existing) clearEducationFiles();
     if (existing) {
       setEditIdx(existing.idx ?? null);
       setFormTitle(existing.title || "");
       setFormContent(existing.content || "");
       setFormLargeType(Number(existing.large_type) || 0);
-      setFormMiddleType(Number(existing.middle_type) || 0);
-      setFormExpireDt(existing.expire_dt || "");
     } else {
       setEditIdx(null);
       setFormTitle("");
       setFormContent("");
       setFormLargeType(0);
-      setFormMiddleType(0);
-      setFormExpireDt("");
     }
-    window.history.pushState({ notice: "write" }, "");
+    window.history.pushState({ education: "write" }, "");
     setView("write");
-  }, [clearNoticeFiles]);
+  }, [clearEducationFiles]);
 
-  // ── 목록 화면 복귀 및 데이터 재조회 ─────────────────────────
+  // ── 목록 화면 복귀 및 재조회 ─────────────────────────────────
   const goList = useCallback(() => {
     setView("list");
     loadList();
   }, [loadList]);
 
-  // ── 브라우저 뒤로가기(popstate) 처리 ───────────────────────
+  // ── 브라우저 뒤로가기 처리 ───────────────────────────────────
   useEffect(() => {
     const handlePopState = () => {
       if (view === "write") {
-        // 수정 모드: 상세로 복귀 / 신규 모드: 목록으로 복귀
-        if (editIdx) {
-          setView("detail");
-        } else {
-          setView("list");
-          loadList();
-        }
+        if (editIdx) { setView("detail"); } else { setView("list"); loadList(); }
       } else if (view === "detail") {
         setView("list");
         loadList();
@@ -204,14 +163,10 @@ function HeadofficeNotice() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [view, editIdx, loadList]);
 
-  // ── 저장 처리 (유효성 검사 → API 호출 → 첨부파일 동기화) ───
+  // ── 저장 처리 (유효성 검사 → API → 첨부파일 동기화) ─────────
   const handleSave = async () => {
     if (!formLargeType) {
-      Swal.fire({ title: "확인", text: "대분류를 선택해주세요.", icon: "warning" });
-      return;
-    }
-    if (!formMiddleType) {
-      Swal.fire({ title: "확인", text: "중분류를 선택해주세요.", icon: "warning" });
+      Swal.fire({ title: "확인", text: "분류를 선택해주세요.", icon: "warning" });
       return;
     }
     if (!formTitle.trim()) {
@@ -222,7 +177,6 @@ function HeadofficeNotice() {
       Swal.fire({ title: "확인", text: "내용을 입력해주세요.", icon: "warning" });
       return;
     }
-
     const confirm = await Swal.fire({
       title: editIdx ? "수정하시겠습니까?" : "등록하시겠습니까?",
       icon: "question",
@@ -232,31 +186,26 @@ function HeadofficeNotice() {
     });
     if (!confirm.isConfirmed) return;
 
-    const result = await saveNotice({
+    const result = await saveEducation({
       editIdx,
       title: formTitle.trim(),
       content: formContent.trim(),
       largeType: formLargeType,
-      middleType: formMiddleType,
-      expireDt: formExpireDt || "2099-12-31",
       userId: loginUserId,
     });
-
     if (!result?.ok) {
       Swal.fire({ title: "실패", text: "저장 중 오류가 발생했습니다.", icon: "error" });
       return;
     }
-
-    // 첨부파일 동기화: 삭제 대상 제거 + 신규 파일 업로드
+    // 첨부파일 변경사항이 있을 때만 동기화
     if ((pendingFiles.length > 0 || deletedFileOrders.size > 0) && result.idx) {
-      await syncNoticeFiles({
-        noticeIdx: result.idx,
+      await syncEducationFiles({
+        educationIdx: result.idx,
         pendingFiles,
         deletedFileOrders,
-        existingFiles: noticeFiles,
+        existingFiles: educationFiles,
       });
     }
-
     await Swal.fire({
       title: "저장",
       text: editIdx ? "수정되었습니다." : "등록되었습니다.",
@@ -266,7 +215,7 @@ function HeadofficeNotice() {
     goList();
   };
 
-  // ── 삭제 처리 (확인 팝업 → API 호출 → 목록 복귀) ───────────
+  // ── 삭제 처리 ────────────────────────────────────────────────
   const handleDelete = async (idx) => {
     const result = await Swal.fire({
       title: "삭제하시겠습니까?",
@@ -278,21 +227,19 @@ function HeadofficeNotice() {
       confirmButtonColor: "#d32f2f",
     });
     if (!result.isConfirmed) return;
-
-    const ok = await deleteNotice({ idx, userId: loginUserId });
+    const ok = await deleteEducation({ idx, userId: loginUserId });
     if (!ok) {
       Swal.fire({ title: "실패", text: "삭제 중 오류가 발생했습니다.", icon: "error" });
       return;
     }
-
     await Swal.fire({ title: "삭제", text: "삭제되었습니다.", icon: "success", confirmButtonText: "확인" });
     goList();
   };
 
-  // ── 첨부파일 선택 핸들러 (최대 개수 초과 방지) ──────────────
+  // ── 첨부파일 선택 (최대 개수 초과 방지) ─────────────────────
   const handleSelectFiles = useCallback((fileList) => {
-    const existingCount = (noticeFiles.length - deletedFileOrders.size) + pendingFiles.length;
-    const available = MAX_NOTICE_FILES - existingCount;
+    const existingCount = (educationFiles.length - deletedFileOrders.size) + pendingFiles.length;
+    const available = MAX_FILES - existingCount;
     if (available <= 0) {
       Swal.fire("첨부 파일은 최대 10개까지 등록 가능합니다.", "", "warning");
       return;
@@ -304,7 +251,7 @@ function HeadofficeNotice() {
       previewUrl: URL.createObjectURL(f),
     }));
     setPendingFiles((prev) => [...prev, ...newPending]);
-  }, [noticeFiles, deletedFileOrders, pendingFiles]);
+  }, [educationFiles, deletedFileOrders, pendingFiles]);
 
   // 신규 선택 파일 제거 (blob URL 해제 포함)
   const handleRemovePending = useCallback((index) => {
@@ -326,28 +273,28 @@ function HeadofficeNotice() {
     });
   }, []);
 
-  // ── 상세 뷰 미리보기 목록 (저장된 파일 중 미리보기 가능한 항목) ──
+  // ── 상세 뷰 미리보기 목록 ────────────────────────────────────
   const detailPreviewList = useMemo(() =>
-    noticeFiles
+    educationFiles
       .map((f) => ({
         key: `saved-${f.image_order}`,
         url: `${API_BASE_URL}${f.image_path}`,
         name: f.image_name || "",
-        kind: getNoticeFileKind(f.image_name),
+        kind: getFileKind(f.image_name),
       }))
       .filter((f) => ["image", "pdf", "excel"].includes(f.kind) && !!f.url),
-    [noticeFiles]
+    [educationFiles]
   );
 
   // ── 작성 뷰 미리보기 목록 (삭제 예약 제외 + 신규 파일 합산) ──
   const writePreviewList = useMemo(() => {
-    const saved = noticeFiles
+    const saved = educationFiles
       .filter((f) => !deletedFileOrders.has(Number(f.image_order)))
       .map((f) => ({
         key: `saved-${f.image_order}`,
         url: `${API_BASE_URL}${f.image_path}`,
         name: f.image_name || "",
-        kind: getNoticeFileKind(f.image_name),
+        kind: getFileKind(f.image_name),
       }))
       .filter((f) => ["image", "pdf", "excel"].includes(f.kind));
     const pending = pendingFiles
@@ -355,13 +302,13 @@ function HeadofficeNotice() {
         key: `pending-${i}`,
         url: pf.previewUrl || "",
         name: pf.name,
-        kind: getNoticeFileKind(pf.name),
+        kind: getFileKind(pf.name),
       }))
       .filter((f) => ["image", "pdf", "excel"].includes(f.kind) && !!f.url);
     return [...saved, ...pending];
-  }, [noticeFiles, deletedFileOrders, pendingFiles]);
+  }, [educationFiles, deletedFileOrders, pendingFiles]);
 
-  // 미리보기 오버레이 열기 (파일 key 기준으로 초기 인덱스 결정)
+  // 미리보기 오버레이 열기
   const openPreview = useCallback((key, list) => {
     if (!list.length) return;
     const idx = list.findIndex((f) => f.key === key);
@@ -375,51 +322,33 @@ function HeadofficeNotice() {
     if (loading || detailLoading) return <LoadingScreen />;
 
     // ──────────────────────────────────────────────────────────
-    // 목록 뷰
-    // - 대분류·중분류 필터 + 전체 공지사항 테이블
-    // - 권한자(canWrite)에게만 글작성 버튼 노출
+    // 목록 뷰: 버튼/필터 고정 + 테이블 스크롤
     // ──────────────────────────────────────────────────────────
     if (view === "list") {
       return (
         <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-          {/* 필터 + 버튼 1행 (고정 영역) */}
+          {/* 고정 필터+버튼 영역 */}
           <MDBox
             pt={1} pb={1} px={1}
             sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap", flexShrink: 0, borderBottom: "1px solid #e8ecf0", background: "#fff" }}
           >
-            {/* 좌측: 대분류·중분류 필터 + 건수 */}
+            {/* 좌측: 분류 필터 + 건수 */}
             <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
               <select
                 value={filterLarge}
-                onChange={(e) => {
-                  setFilterLarge(Number(e.target.value));
-                  setFilterMiddle(0);
-                }}
+                onChange={(e) => setFilterLarge(Number(e.target.value))}
                 style={filterSelectSx}
               >
-                <option value={0}>전체 대분류</option>
+                <option value={0}>전체 분류</option>
                 {LARGE_TYPE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
-              <select
-                value={filterMiddle}
-                onChange={(e) => setFilterMiddle(Number(e.target.value))}
-                style={{ ...filterSelectSx, opacity: filterLarge ? 1 : 0.5 }}
-                disabled={!filterLarge}
-              >
-                <option value={0}>전체 중분류</option>
-                {(MIDDLE_TYPE_MAP[filterLarge] || []).map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              {/* 건수 - 항상 표시 */}
               <span style={{ fontSize: 12, color: "#888", whiteSpace: "nowrap" }}>
                 {filteredRows.length}건
               </span>
             </MDBox>
-
-            {/* 우측: 검색·새로고침·글작성 버튼 */}
+            {/* 우측: 검색·새로고침·글작성 */}
             <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <input
                 type="text"
@@ -428,56 +357,44 @@ function HeadofficeNotice() {
                 placeholder="검색어를 입력해주세요."
                 style={{ ...filterSelectSx, minWidth: isMobile ? 120 : 160, paddingRight: 10 }}
               />
-              <MDButton
-                variant="gradient" color="info"
-                onClick={loadList}
-                sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 70 : 90 }}
-              >
+              <MDButton variant="gradient" color="info" onClick={loadList} sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 70 : 90 }}>
                 새로고침
               </MDButton>
               {canWrite && (
-                <MDButton
-                  variant="gradient" color="success"
-                  onClick={() => openWrite(null)}
-                  sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 70 : 90 }}
-                >
+                <MDButton variant="gradient" color="success" onClick={() => openWrite(null)} sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 70 : 90 }}>
                   글작성
                 </MDButton>
               )}
             </MDBox>
           </MDBox>
 
-          {/* 공지사항 목록 테이블 (스크롤 영역) */}
+          {/* 스크롤 내용 영역 */}
           <MDBox sx={{ flex: 1, overflowY: "auto" }}>
             <MDBox sx={sheetWrapSx(isMobile)}>
               <MDBox sx={sectionTitleSx}>목록</MDBox>
               <MDBox sx={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1050, tableLayout: "fixed" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700, tableLayout: "fixed" }}>
                   <colgroup>
-                    <col style={{ width: 50 }} />                              {/* 번호 */}
-                    <col style={{ width: isMobile ? 100 : 140 }} />            {/* 대분류 */}
-                    <col style={{ width: isMobile ? 110 : 145 }} />            {/* 중분류 */}
-                    <col />                                                     {/* 제목 */}
-                    <col style={{ width: isMobile ? 115 : 150 }} />            {/* 작성자 */}
-                    <col style={{ width: isMobile ? 105 : 125 }} />            {/* 게시 유효일 */}
-                    <col style={{ width: isMobile ? 140 : 165 }} />            {/* 작성일시 */}
+                    <col style={{ width: 50 }} />
+                    <col style={{ width: isMobile ? 120 : 160 }} />
+                    <col />
+                    <col style={{ width: isMobile ? 115 : 150 }} />
+                    <col style={{ width: isMobile ? 140 : 165 }} />
                   </colgroup>
                   <thead>
                     <tr>
                       <th style={{ ...th2Cell, height: 38 }}>번호</th>
-                      <th style={{ ...th2Cell, height: 38 }}>대분류</th>
-                      <th style={{ ...th2Cell, height: 38 }}>중분류</th>
+                      <th style={{ ...th2Cell, height: 38 }}>분류</th>
                       <th style={{ ...th2Cell, height: 38 }}>제목</th>
                       <th style={{ ...th2Cell, height: 38 }}>작성자</th>
-                      <th style={{ ...th2Cell, height: 38 }}>게시 유효일</th>
                       <th style={{ ...th2Cell, height: 38 }}>작성일시</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredRows.length === 0 ? (
                       <tr>
-                        <td style={{ ...td2CellCenter, padding: "16px" }} colSpan={7}>
-                          공지사항이 없습니다.
+                        <td style={{ ...td2CellCenter, padding: "16px" }} colSpan={5}>
+                          교육 자료가 없습니다.
                         </td>
                       </tr>
                     ) : (
@@ -488,19 +405,15 @@ function HeadofficeNotice() {
                           : "-";
                         const fileCnt = Number(row.file_cnt) || 0;
                         return (
-                          <tr
-                            key={`${rowIdx}-${i}`}
-                            onClick={() => openDetail(rowIdx)}
-                            style={{ cursor: "pointer" }}
-                          >
+                          <tr key={`${rowIdx}-${i}`} onClick={() => openDetail(rowIdx)} style={{ cursor: "pointer" }}>
                             <td style={{ ...td2CellCenter, height: 44 }}>{rowIdx}</td>
                             <td style={{ ...td2CellCenter, height: 44 }}>{row.large_type_nm || "-"}</td>
-                            <td style={{ ...td2CellCenter, height: 44 }}>{row.middle_type_nm || "-"}</td>
                             <td style={{ ...td2CellLeft, height: 44, overflow: "hidden" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
                                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                                   {row.title || "-"}
                                 </span>
+                                {/* 첨부파일 있을 때 클립 아이콘 + 개수 표시 */}
                                 {fileCnt > 0 && (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, color: "#1976d2", fontSize: 11, fontWeight: 700 }}>
                                     <Paperclip size={12} />
@@ -510,7 +423,6 @@ function HeadofficeNotice() {
                               </div>
                             </td>
                             <td style={{ ...td2CellCenter, height: 44 }}>{writer}</td>
-                            <td style={{ ...td2CellCenter, height: 44 }}>{row.expire_dt || "-"}</td>
                             <td style={{ ...td2CellCenter, height: 44 }}>{row.reg_dt || "-"}</td>
                           </tr>
                         );
@@ -526,60 +438,46 @@ function HeadofficeNotice() {
     }
 
     // ──────────────────────────────────────────────────────────
-    // 상세 뷰
-    // - 선택한 공지사항의 분류·제목·작성자·작성일·유효일·본문 표시
-    // - 권한자(canWrite)에게만 수정·삭제 버튼 노출
+    // 상세 뷰: 버튼 고정 + 내용 스크롤
+    // - 작성자 본인(canWrite + user_id 일치)에게만 수정·삭제 버튼 노출
     // ──────────────────────────────────────────────────────────
     if (view === "detail") {
       const detailIdx = detail?.idx ?? null;
-
       return (
         <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-          {/* 상단 액션 버튼 영역 (고정 영역): 좌측 ← 이전, 우측 삭제·수정 */}
+          {/* 고정 버튼 영역 */}
           <MDBox
             pt={1} pb={1} px={1}
             sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexWrap: "wrap", flexShrink: 0, borderBottom: "1px solid #e8ecf0", background: "#fff" }}
           >
-            <MDButton
-              variant="outlined" color="secondary"
-              onClick={goList}
-              sx={{ fontSize: isMobile ? 11 : 13 }}
-            >
+            <MDButton variant="outlined" color="secondary" onClick={goList} sx={{ fontSize: isMobile ? 11 : 13 }}>
               ← 목록으로
             </MDButton>
+            {/* 작성자 본인에게만 수정·삭제 버튼 표시 */}
             {canWrite && detail?.user_id === loginUserId && (
               <MDBox sx={{ display: "flex", gap: 1 }}>
-                <MDButton
-                  variant="gradient" color="error"
-                  onClick={() => handleDelete(detailIdx)}
-                  sx={{ fontSize: isMobile ? 11 : 13 }}
-                >
+                <MDButton variant="gradient" color="error" onClick={() => handleDelete(detailIdx)} sx={{ fontSize: isMobile ? 11 : 13 }}>
                   삭제
                 </MDButton>
-                <MDButton
-                  variant="gradient" color="info"
-                  onClick={() => openWrite(detail)}
-                  sx={{ fontSize: isMobile ? 11 : 13 }}
-                >
+                <MDButton variant="gradient" color="info" onClick={() => openWrite(detail)} sx={{ fontSize: isMobile ? 11 : 13 }}>
                   수정
                 </MDButton>
               </MDBox>
             )}
           </MDBox>
 
-          {/* 공지 내용 영역 (스크롤 영역) */}
+          {/* 스크롤 내용 영역 */}
           <MDBox sx={{ flex: 1, overflowY: "auto" }}>
-            {/* 공지 기본 정보 테이블 */}
+            {/* 교육 기본 정보 */}
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
-              {/* 로고 헤더 바 */}
               <MDBox sx={noticeHeaderBarSx}>
                 <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                   <img src={logo} alt="logo" style={{ height: isMobile ? 22 : 28 }} />
                 </MDBox>
-                <MDBox sx={noticeTitleSx(isMobile)}>공지사항</MDBox>
+                <MDBox sx={noticeTitleSx(isMobile)}>교육 자료</MDBox>
                 <MDBox sx={{ width: isMobile ? 90 : 110 }} />
               </MDBox>
-              <MDBox sx={sectionTitleSx}>공지 정보</MDBox>
+              <MDBox sx={sectionTitleSx}>교육 정보</MDBox>
               <table style={summaryTableSx}>
                 <colgroup>
                   <col style={{ width: isMobile ? 68 : 85 }} />
@@ -589,10 +487,8 @@ function HeadofficeNotice() {
                 </colgroup>
                 <tbody>
                   <tr>
-                    <td style={thCell}>대분류</td>
-                    <td style={tdCell}>{detail?.large_type_nm || "-"}</td>
-                    <td style={thCell}>중분류</td>
-                    <td style={tdCell}>{detail?.middle_type_nm || "-"}</td>
+                    <td style={thCell}>분류</td>
+                    <td style={tdCell} colSpan={3}>{detail?.large_type_nm || "-"}</td>
                   </tr>
                   <tr>
                     <td style={thCell}>제목</td>
@@ -608,15 +504,11 @@ function HeadofficeNotice() {
                     <td style={thCell}>작성일</td>
                     <td style={tdCell}>{detail?.reg_dt || "-"}</td>
                   </tr>
-                  <tr>
-                    <td style={thCell}>게시 유효일</td>
-                    <td style={tdCell} colSpan={3}>{detail?.expire_dt || "-"}</td>
-                  </tr>
                 </tbody>
               </table>
             </MDBox>
 
-            {/* 공지 본문 영역 */}
+            {/* 교육 본문 */}
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
               <MDBox sx={sectionTitleSx}>문서 내용</MDBox>
               <MDBox sx={{ p: 2, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", minHeight: 120, background: "#fff", wordBreak: "break-word" }}>
@@ -624,27 +516,28 @@ function HeadofficeNotice() {
               </MDBox>
             </MDBox>
 
-            {/* 첨부파일 영역 */}
+            {/* 첨부파일 */}
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
               <MDBox sx={sectionTitleSx}>첨부파일</MDBox>
               <MDBox sx={{ p: "10px 12px", display: "flex", flexDirection: "column", gap: 1 }}>
                 <MDBox sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
                   <MDBox component="span" sx={{ fontWeight: 700, color: "#1f4e79", fontSize: 12 }}>첨부파일 목록</MDBox>
-                  <MDBox component="span" sx={{ fontWeight: 700, color: "#1f4e79", fontSize: 12, ml: 0.5 }}>({noticeFiles.length}/10)</MDBox>
+                  <MDBox component="span" sx={{ fontWeight: 700, color: "#1f4e79", fontSize: 12, ml: 0.5 }}>({educationFiles.length}/10)</MDBox>
                 </MDBox>
-                {noticeFiles.length === 0 ? (
+                {educationFiles.length === 0 ? (
                   <MDBox component="span" sx={{ fontSize: 11, color: "#8a93a3" }}>첨부된 파일이 없습니다.</MDBox>
                 ) : (
                   <MDBox sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                    {noticeFiles.map((f) => {
-                      const kind = getNoticeFileKind(f.image_name);
+                    {educationFiles.map((f) => {
+                      const kind = getFileKind(f.image_name);
                       const canPreview = kind === "image" || kind === "pdf" || kind === "excel";
                       const previewKey = `saved-${f.image_order}`;
                       const fileUrl = `${API_BASE_URL}${f.image_path}`;
                       const fileName = f.image_name || "-";
                       const thumbLabel = kind === "pdf" ? "PDF" : kind === "excel" ? "XLSX" : getFileExtLabel(f.image_name);
                       return (
-                        <MDBox key={`nf-${f.image_order}`} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, border: "1px solid #d7dce3", borderRadius: "6px", px: 1, py: 0.5, backgroundColor: "#fafbfc" }}>
+                        <MDBox key={`ef-${f.image_order}`} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1, border: "1px solid #d7dce3", borderRadius: "6px", px: 1, py: 0.5, backgroundColor: "#fafbfc" }}>
+                          {/* 파일 썸네일 */}
                           <MDBox sx={attachmentThumbBoxSx}>
                             {kind === "image" ? (
                               canPreview ? (
@@ -656,6 +549,7 @@ function HeadofficeNotice() {
                               )
                             ) : kind === "pdf" ? (
                               <MDBox component={canPreview ? "button" : "span"} type={canPreview ? "button" : undefined} onClick={canPreview ? () => openPreview(previewKey, detailPreviewList) : undefined} sx={{ border: "none", width: "100%", height: "100%", p: 0, cursor: canPreview ? "pointer" : "default", position: "relative", backgroundColor: "#fff" }}>
+                                {/* scrolling="no": iframe 스크롤바 제거 */}
                                 <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
                                   <iframe title={`pdf-d-${f.image_order}`} src={toPdfThumbSrc(fileUrl)} loading="lazy" style={{ width: "calc(100% + 20px)", height: "calc(100% + 20px)", border: 0, backgroundColor: "#fff", display: "block" }} />
                                 </div>
@@ -671,7 +565,7 @@ function HeadofficeNotice() {
                               </MDBox>
                             )}
                           </MDBox>
-
+                          {/* 파일명 */}
                           {canPreview ? (
                             <button type="button" onClick={() => openPreview(previewKey, detailPreviewList)} style={{ border: "none", background: "none", padding: 0, fontSize: "12px", color: "#1f4e79", textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, textAlign: "left", cursor: "pointer" }}>
                               {fileName}
@@ -681,7 +575,7 @@ function HeadofficeNotice() {
                               {fileName}
                             </a>
                           )}
-
+                          {/* 다운로드 버튼 */}
                           <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", mr: 1, "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
                             <Download size={17} />
                           </IconButton>
@@ -706,64 +600,43 @@ function HeadofficeNotice() {
     }
 
     // ──────────────────────────────────────────────────────────
-    // 작성·수정 뷰
-    // - 대분류 → 중분류(연동) → 제목 → 게시유효일 → 본문
-    // - "← 이전": 수정 시 상세로, 신규 시 목록으로 복귀
+    // 작성·수정 뷰: 버튼 고정 + 폼 내용 스크롤
     // ──────────────────────────────────────────────────────────
     if (view === "write") {
-      // 선택된 대분류에 해당하는 중분류 목록
-      const middleOptions = MIDDLE_TYPE_MAP[formLargeType] || [];
-
       return (
         <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-          {/* 상단 버튼 영역 (고정 영역): 좌측 ← 취소, 우측 저장 */}
+          {/* 고정 버튼 영역 */}
           <MDBox
             pt={1} pb={1} px={1}
             sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1, flexShrink: 0, borderBottom: "1px solid #e8ecf0", background: "#fff" }}
           >
-            <MDButton
-              variant="outlined" color="secondary"
-              onClick={() => (editIdx ? setView("detail") : goList())}
-              sx={{ fontSize: isMobile ? 11 : 13 }}
-            >
+            <MDButton variant="outlined" color="secondary" onClick={() => (editIdx ? setView("detail") : goList())} sx={{ fontSize: isMobile ? 11 : 13 }}>
               ← 취소 후 목록으로 이동
             </MDButton>
-            <MDButton
-              variant="gradient" color="success"
-              onClick={handleSave}
-              disabled={saving}
-              sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 80 : 100 }}
-            >
+            <MDButton variant="gradient" color="success" onClick={handleSave} disabled={saving} sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 80 : 100 }}>
               {saving ? "저장중..." : "저장"}
             </MDButton>
           </MDBox>
 
-          {/* 폼 입력 영역 (스크롤 영역) */}
+          {/* 스크롤 내용 영역 */}
           <MDBox sx={{ flex: 1, overflowY: "auto" }}>
-            {/* 공지 정보 입력 테이블 */}
+            {/* 교육 정보 입력 */}
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
-              <MDBox sx={sectionTitleSx}>공지 정보</MDBox>
+              <MDBox sx={sectionTitleSx}>교육 정보</MDBox>
               <table style={summaryTableSx}>
                 <colgroup>
                   <col style={{ width: isMobile ? 68 : 85 }} />
                   <col />
-                  <col style={{ width: isMobile ? 68 : 85 }} />
-                  <col />
                 </colgroup>
                 <tbody>
-                  {/* 대분류 / 중분류 선택 */}
+                  {/* 분류 선택 */}
                   <tr>
-                    <td style={thCell}>대분류</td>
+                    <td style={thCell}>분류</td>
                     <td style={writeTdCell}>
                       <TextField
-                        select
-                        fullWidth
-                        size="small"
+                        select fullWidth size="small"
                         value={formLargeType || ""}
-                        onChange={(e) => {
-                          setFormLargeType(Number(e.target.value));
-                          setFormMiddleType(0);
-                        }}
+                        onChange={(e) => setFormLargeType(Number(e.target.value))}
                         SelectProps={{ native: true }}
                         inputProps={{ style: { fontSize: isMobile ? 11 : 13 } }}
                         sx={formTextFieldSx}
@@ -774,33 +647,13 @@ function HeadofficeNotice() {
                         ))}
                       </TextField>
                     </td>
-                    <td style={thCell}>중분류</td>
-                    <td style={writeTdCell}>
-                      <TextField
-                        select
-                        fullWidth
-                        size="small"
-                        value={formMiddleType || ""}
-                        onChange={(e) => setFormMiddleType(Number(e.target.value))}
-                        SelectProps={{ native: true }}
-                        disabled={!formLargeType}
-                        inputProps={{ style: { fontSize: isMobile ? 11 : 13 } }}
-                        sx={formTextFieldSx}
-                      >
-                        <option value="">선택</option>
-                        {middleOptions.map((o) => (
-                          <option key={o.value} value={o.value}>{o.label}</option>
-                        ))}
-                      </TextField>
-                    </td>
                   </tr>
                   {/* 제목 입력 */}
                   <tr>
                     <td style={thCell}>제목</td>
-                    <td style={writeTdCell} colSpan={3}>
+                    <td style={writeTdCell}>
                       <TextField
-                        fullWidth
-                        size="small"
+                        fullWidth size="small"
                         placeholder="제목을 입력하세요"
                         value={formTitle}
                         onChange={(e) => setFormTitle(e.target.value)}
@@ -809,48 +662,21 @@ function HeadofficeNotice() {
                       />
                     </td>
                   </tr>
-                  {/* 게시 유효일 입력 (미입력 시 무제한 = 2099-12-31 저장) */}
-                  <tr>
-                    <td style={thCell}>게시 유효일</td>
-                    <td style={writeTdCell} colSpan={3}>
-                      <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                        <TextField
-                          type="date"
-                          size="small"
-                          value={formExpireDt}
-                          onChange={(e) => setFormExpireDt(e.target.value)}
-                          inputProps={{ style: { fontSize: isMobile ? 11 : 13 } }}
-                          sx={{ ...formTextFieldSx, width: isMobile ? 150 : 170 }}
-                        />
-                        {!formExpireDt && (
-                          <span style={{ fontSize: isMobile ? 10 : 11, color: "#8a93a3" }}>
-                            입력하지 않을 시 무제한입니다.
-                          </span>
-                        )}
-                      </MDBox>
-                    </td>
-                  </tr>
                 </tbody>
               </table>
             </MDBox>
 
-            {/* 본문 입력 textarea */}
+            {/* 본문 입력 */}
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
               <MDBox sx={sectionTitleSx}>문서 내용</MDBox>
               <MDBox sx={{ p: 1 }}>
                 <TextField
-                  fullWidth multiline minRows={10}
-                  size="small"
+                  fullWidth multiline minRows={10} size="small"
                   placeholder="내용을 입력하세요"
                   value={formContent}
                   onChange={(e) => setFormContent(e.target.value)}
                   inputProps={{ style: { fontSize: 13, lineHeight: 1.7 } }}
-                  sx={{
-                    "& .MuiOutlinedInput-root": {
-                      borderRadius: 1,
-                      "& fieldset": { borderColor: "#cfd8e3" },
-                    },
-                  }}
+                  sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1, "& fieldset": { borderColor: "#cfd8e3" } } }}
                 />
               </MDBox>
             </MDBox>
@@ -859,26 +685,27 @@ function HeadofficeNotice() {
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
               <MDBox sx={sectionTitleSx}>첨부파일</MDBox>
               <MDBox sx={{ p: "10px 12px", display: "flex", flexDirection: "column", gap: 1 }}>
-                {/* 헤더: 제목 + 카운트 + 파일선택 버튼 */}
+                {/* 헤더: 카운트 + 파일선택 버튼 */}
                 <MDBox sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <MDBox sx={{ display: "inline-flex", alignItems: "center", gap: 0.75 }}>
                     <MDBox component="span" sx={{ fontWeight: 700, color: "#1f4e79", fontSize: 12 }}>첨부파일 목록</MDBox>
                     <MDBox component="span" sx={{ fontWeight: 700, color: "#1f4e79", fontSize: 12, ml: 0.5 }}>
-                      ({(noticeFiles.length - deletedFileOrders.size) + pendingFiles.length}/{MAX_NOTICE_FILES})
+                      ({(educationFiles.length - deletedFileOrders.size) + pendingFiles.length}/{MAX_FILES})
                     </MDBox>
                   </MDBox>
                   <MDButton variant="outlined" color="info" size="small" onClick={() => fileInputRef.current?.click()} sx={{ fontSize: 11, py: 0.3, px: 1.2 }}>
                     파일 선택
                   </MDButton>
+                  {/* 숨겨진 파일 input */}
                   <input ref={fileInputRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { handleSelectFiles(e.target.files); e.target.value = ""; }} />
                 </MDBox>
 
-                {/* 기존 파일 목록 (수정 모드) */}
-                {noticeFiles.length > 0 && (
+                {/* 기존 파일 목록 (수정 모드, 삭제 예약 시 흐리게) */}
+                {educationFiles.length > 0 && (
                   <MDBox sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-                    {noticeFiles.map((f) => {
+                    {educationFiles.map((f) => {
                       const isDeleted = deletedFileOrders.has(Number(f.image_order));
-                      const kind = getNoticeFileKind(f.image_name);
+                      const kind = getFileKind(f.image_name);
                       const canPreview = (kind === "image" || kind === "pdf" || kind === "excel") && !isDeleted;
                       const previewKey = `saved-${f.image_order}`;
                       const fileUrl = `${API_BASE_URL}${f.image_path}`;
@@ -912,7 +739,7 @@ function HeadofficeNotice() {
                               </MDBox>
                             )}
                           </MDBox>
-
+                          {/* 삭제 예약 상태면 일반 텍스트 */}
                           {isDeleted ? (
                             <MDBox component="span" sx={{ fontSize: 12, color: "#6b7280", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, textAlign: "left" }}>{fileName}</MDBox>
                           ) : canPreview ? (
@@ -924,11 +751,11 @@ function HeadofficeNotice() {
                               {fileName}
                             </a>
                           )}
-
                           <MDBox sx={{ display: "inline-flex", alignItems: "center", gap: "4px", mr: 1 }}>
                             <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
                               <Download size={17} />
                             </IconButton>
+                            {/* 삭제 예약/복원 토글 */}
                             <IconButton size="small" color={isDeleted ? "warning" : "error"} onClick={() => handleToggleDeleteFile(Number(f.image_order))} sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #e2b4b4", backgroundColor: isDeleted ? "#fff4e5" : "#fff1f1", "&:hover": { backgroundColor: isDeleted ? "#ffe8c2" : "#ffe3e3" } }}>
                               {isDeleted ? <RotateCcw size={17} /> : <Trash2 size={17} />}
                             </IconButton>
@@ -939,11 +766,11 @@ function HeadofficeNotice() {
                   </MDBox>
                 )}
 
-                {/* 신규 선택 파일 목록 (연두색 배경) */}
+                {/* 신규 선택 파일 목록 (연두색 배경으로 기존 파일과 구분) */}
                 {pendingFiles.length > 0 && (
                   <MDBox sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
                     {pendingFiles.map((pf, i) => {
-                      const kind = getNoticeFileKind(pf.name);
+                      const kind = getFileKind(pf.name);
                       const canPreview = (kind === "image" || kind === "pdf" || kind === "excel") && !!pf.previewUrl;
                       const previewKey = `pending-${i}`;
                       const pendingFileName = pf.name || "-";
@@ -983,6 +810,7 @@ function HeadofficeNotice() {
                               </a>
                             )}
                           </MDBox>
+                          {/* 신규 파일 제거 버튼 */}
                           <IconButton size="small" color="error" onClick={() => handleRemovePending(i)} sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #e2b4b4", backgroundColor: "#fff1f1", mr: 1, "&:hover": { backgroundColor: "#ffe3e3" } }}>
                             <Trash2 size={17} />
                           </IconButton>
@@ -992,7 +820,7 @@ function HeadofficeNotice() {
                   </MDBox>
                 )}
 
-                {noticeFiles.length === 0 && pendingFiles.length === 0 && (
+                {educationFiles.length === 0 && pendingFiles.length === 0 && (
                   <MDBox component="span" sx={{ fontSize: 11, color: "#8a93a3" }}>첨부된 파일이 없습니다. (모든 형식, 최대 10개)</MDBox>
                 )}
               </MDBox>
@@ -1015,7 +843,8 @@ function HeadofficeNotice() {
 
   return (
     <DashboardLayout>
-      <DashboardNavbar title="📢 공지사항" />
+      <DashboardNavbar title="📚 본사 교육" />
+      {/* 전체를 flex column으로 감싸서 버튼 고정 + 내용 스크롤 구조 */}
       <MDBox sx={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)", overflow: "hidden" }}>
         {renderContent()}
       </MDBox>
@@ -1023,10 +852,9 @@ function HeadofficeNotice() {
   );
 }
 
-export default HeadofficeNotice;
+export default Education;
 
 // ── 스타일 상수 정의 ──────────────────────────────────────────
-// ElectronicPaymentManageTab과 동일한 디자인 톤 유지
 
 // 섹션 카드 래퍼 스타일 (반응형 폰트 포함)
 const sheetWrapSx = (isMobile) => ({
@@ -1049,7 +877,7 @@ const sectionTitleSx = {
   color: "#1f4e79",
 };
 
-// 상세 테이블 헤더 셀 (레이블)
+// 상세 테이블 헤더 셀
 const thCell = {
   border: "1px solid #cfd8e3",
   background: "#f3f6fb",
@@ -1059,7 +887,7 @@ const thCell = {
   whiteSpace: "nowrap",
 };
 
-// 상세 테이블 데이터 셀 (값 표시)
+// 상세 테이블 데이터 셀
 const tdCell = {
   border: "1px solid #cfd8e3",
   padding: "4px 8px",
@@ -1099,7 +927,7 @@ const summaryTableSx = {
   tableLayout: "fixed",
 };
 
-// 필터 바 select 스타일 (버튼 높이 36px 통일)
+// 필터 바 select/input 스타일 (높이 36px 통일)
 const filterSelectSx = {
   border: "1px solid #cfd8e3",
   borderRadius: 4,
@@ -1113,7 +941,7 @@ const filterSelectSx = {
   boxSizing: "border-box",
 };
 
-// 작성 폼 입력 셀 (TextField 등 입력 요소 포함, 세로 중앙 정렬)
+// 작성 폼 입력 셀
 const writeTdCell = {
   border: "1px solid #cfd8e3",
   padding: "3px 6px",
@@ -1121,7 +949,7 @@ const writeTdCell = {
   verticalAlign: "middle",
 };
 
-// 작성 폼 TextField 공통 스타일 (테두리 제거, 폰트 크기·여백 통일)
+// 작성 폼 TextField 공통 스타일
 const formTextFieldSx = {
   "& .MuiOutlinedInput-root": {
     "& fieldset": { border: "none" },
@@ -1136,7 +964,7 @@ const formTextFieldSx = {
   },
 };
 
-// 첨부파일 썸네일 박스 스타일 (이미지·PDF·엑셀 공통)
+// 첨부파일 썸네일 박스 스타일
 const attachmentThumbBoxSx = {
   width: 62,
   height: 92,
@@ -1150,24 +978,14 @@ const attachmentThumbBoxSx = {
   justifyContent: "center",
 };
 
-// PDF 썸네일용 iframe src 조립 (toolbar·네비게이션 숨김 파라미터 포함)
+// PDF 썸네일용 iframe src 조립 (toolbar·스크롤바 숨김)
 function toPdfThumbSrc(fileUrl) {
   const baseUrl = String(fileUrl ?? "").trim();
   if (!baseUrl) return "";
   return `${baseUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&view=FitH&zoom=80&page=1`;
 }
 
-// 파일명 → 확장자 뱃지 레이블 추출 (JPEG → JPG 정규화)
-function getFileExtLabel(fileName) {
-  const name = String(fileName || "");
-  const dot = name.lastIndexOf(".");
-  if (dot < 0) return "FILE";
-  const ext = name.substring(dot + 1).toUpperCase();
-  if (ext === "JPEG") return "JPG";
-  return ext || "FILE";
-}
-
-// 상세 뷰 로고 헤더 바 스타일 (ElectronicPaymentSheetTab 동일 톤)
+// 상세 뷰 로고 헤더 바 스타일
 const noticeHeaderBarSx = {
   display: "grid",
   gridTemplateColumns: "1fr 2fr 1fr",
@@ -1185,8 +1003,18 @@ const noticeTitleSx = (isMobile) => ({
   fontSize: isMobile ? 15 : 19,
 });
 
-// 파일명 → PreviewOverlay kind 결정 (미지원 형식은 "file" 반환)
-function getNoticeFileKind(fileName) {
+// 파일명 → 확장자 뱃지 레이블 추출 (JPEG → JPG 정규화)
+function getFileExtLabel(fileName) {
+  const name = String(fileName || "");
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return "FILE";
+  const ext = name.substring(dot + 1).toUpperCase();
+  if (ext === "JPEG") return "JPG";
+  return ext || "FILE";
+}
+
+// 파일명 → PreviewOverlay kind 결정
+function getFileKind(fileName) {
   const ext = String(fileName || "").split(".").pop().toLowerCase();
   if (["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext)) return "image";
   if (ext === "pdf") return "pdf";

@@ -1230,9 +1230,11 @@ function CorporateCardSheet() {
     selectedAccountId,
   ]);
 
-  // 신규 상세행 우클릭 메뉴 열기
+  // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback((e, row, rowIndex) => {
-    if (!canDeleteNewDetailRow(row)) return;
+    const isNew = canDeleteNewDetailRow(row);
+    const isSaved = !row?.isNew && row?.idx != null;
+    if (!isNew && !isSaved) return;
     e.preventDefault();
     setDetailCtxMenu({
       open: true,
@@ -1253,8 +1255,8 @@ function CorporateCardSheet() {
         checkedIndexes.length > 0
           ? new Set(checkedIndexes)
           : canDeleteNewDetailRow(prev?.[rowIndex])
-          ? new Set([rowIndex])
-          : new Set();
+            ? new Set([rowIndex])
+            : new Set();
       if (deleteIndexes.size === 0) return prev;
       detailEditedRef.current = true;
       return prev.filter((_, i) => !deleteIndexes.has(i));
@@ -1267,8 +1269,8 @@ function CorporateCardSheet() {
         checkedIndexes.length > 0
           ? new Set(checkedIndexes)
           : canDeleteNewDetailRow(detailRows?.[rowIndex])
-          ? new Set([rowIndex])
-          : new Set();
+            ? new Set([rowIndex])
+            : new Set();
       return deleteIndexes.size === 0 ? prev : prev.filter((_, i) => !deleteIndexes.has(i));
     });
     setDetailRenderKey((k) => k + 1);
@@ -1283,6 +1285,57 @@ function CorporateCardSheet() {
       )
     );
   }, []);
+
+  // 저장된 상세행 DB 삭제
+  const handleDeleteSavedDetailRow = useCallback(async () => {
+    const rowIndex = detailCtxMenu.rowIndex;
+    if (rowIndex == null) return;
+    const row = detailRows?.[rowIndex];
+    if (!row) { closeDetailCtxMenu(); return; }
+
+    const payload = {
+      idx: row.idx,
+      sale_id: row.sale_id,
+      payment_dt: selectedMaster?.payment_dt ?? "",
+      account_id: selectedMaster?.account_id ?? selectedAccountId ?? "",
+      type: selectedMaster?.type ?? 0,
+    };
+
+    try {
+      const res = await api.post("/Account/HeadOfficeCorporateCardPaymentDetailDelete", payload, {
+        headers: { "Content-Type": "application/json" },
+        validateStatus: () => true,
+      });
+      if (Number(res?.data?.code) === 200) {
+        await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
+        const fetchRes = await api.get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
+          params: {
+            sale_id: selectedSaleId,
+            account_id: selectedAccountId,
+            payment_dt: selectedMaster?.payment_dt ?? "",
+          },
+        });
+        const refreshed = (fetchRes.data || []).map((r) => ({ ...r, isForcedRed: false, isNew: false }));
+        setDetailRows(refreshed);
+        setOrigDetailRows(refreshed);
+        detailEditedRef.current = false;
+        setDetailRenderKey((k) => k + 1);
+      }
+    } catch (err) {
+      console.error("[HeadOfficeCorporateCardPaymentDetailDelete] error:", err);
+    } finally {
+      closeDetailCtxMenu();
+    }
+  }, [
+    detailCtxMenu.rowIndex,
+    detailRows,
+    selectedMaster,
+    selectedSaleId,
+    selectedAccountId,
+    closeDetailCtxMenu,
+    setDetailRows,
+    setOrigDetailRows,
+  ]);
 
   // 상단 행 카드번호 선택 처리
   const handleCardSelect = useCallback(
@@ -3254,7 +3307,7 @@ function CorporateCardSheet() {
               }}
               onClick={handleDeleteMasterRowData}
             >
-              데이터 삭제
+              🗑️ 데이터 삭제
             </button>
           </div>
         </div>
@@ -3290,20 +3343,37 @@ function CorporateCardSheet() {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "none",
-                background: "transparent",
-                textAlign: "left",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-              onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
-            >
-              🗑️ 행 삭제
-            </button>
+            {detailRows?.[detailCtxMenu.rowIndex]?.isNew ? (
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={() => handleDeleteNewDetailRow(detailCtxMenu.rowIndex)}
+              >
+                🗑️ 행 삭제
+              </button>
+            ) : (
+              <button
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  border: "none",
+                  background: "transparent",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  fontSize: 13,
+                }}
+                onClick={handleDeleteSavedDetailRow}
+              >
+                🗑️ 데이터 삭제
+              </button>
+            )}
           </div>
         </div>
       )}

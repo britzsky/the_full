@@ -35,6 +35,7 @@ const SPECIAL_LAYOUT_IDS = [
   "20250819193634",
   "20250819193630",
   "20250819193610", // ✅ 추가(직원 3칸 구조)
+  "20260415190758", // ✅ 추가(직원 조식/중식 2칸)
 ];
 
 // 🔹 숫자 컬럼 목록
@@ -591,6 +592,40 @@ const getTableStructure = (
         "dinner2",
         "ceremony",
         "ceremony2",
+        "employ_breakfast",
+        "employ_lunch",
+        "total",
+        "note",
+        "breakcancel",
+        "lunchcancel",
+        "dinnercancel",
+      ],
+    };
+  }
+
+  if (selectedAccountId === "20260415190758") {
+    return {
+      headerRows: [
+        [
+          { label: "구분" },
+          { label: "조식" },
+          { label: "중식" },
+          { label: "석식" },
+          { label: "경관식" },
+          { label: "직원(조식)" },
+          { label: "직원(중식)" },
+          { label: "계" },
+          { label: "비고" },
+          { label: "조식취소" },
+          { label: "중식취소" },
+          { label: "석식취소" },
+        ],
+      ],
+      visibleColumns: [
+        "breakfast",
+        "lunch",
+        "dinner",
+        "ceremony",
         "employ_breakfast",
         "employ_lunch",
         "total",

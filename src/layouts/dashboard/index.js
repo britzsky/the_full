@@ -487,6 +487,18 @@ const INTERNAL_ROUTES = {
 };
 
 // 북마크 전용 모달: 카테고리 → 페이지 순으로 선택하는 2단계 드롭박스
+const findInternalRoutePage = (route) => {
+  const routeText = String(route || "");
+  const category = Object.keys(INTERNAL_ROUTES).find((cat) =>
+    INTERNAL_ROUTES[cat].some((page) => page.route === routeText)
+  );
+
+  if (!category) return null;
+
+  const page = INTERNAL_ROUTES[category].find((item) => item.route === routeText);
+  return page ? { category, page } : null;
+};
+
 function BookmarkAddModal({ open, onClose, onSubmit }) {
   const [category, setCategory] = useState("");
   const [selectedRoute, setSelectedRoute] = useState("");
@@ -1275,7 +1287,7 @@ function MiniCalendar({ todos }) {
         onClose={() => setPopover({ anchor: null, date: null })}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         transformOrigin={{ vertical: "top", horizontal: "center" }}
-        slotProps={{ paper: { sx: { borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", p: 1.5, minWidth: 180, maxWidth: 260, backgroundColor: "#fff", background: "#fff" } } }}
+        slotProps={{ paper: { sx: { borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", p: 1.5, minWidth: 180, maxWidth: 260, backgroundColor: "#fff !important", background: "#fff !important" } } }}
       >
         <MDTypography variant="caption" fontWeight="bold" color="dark" sx={{ display: "block", mb: 0.75, opacity: 0.6 }}>
           {popover.date}
@@ -1503,6 +1515,19 @@ function Dashboard() {
     navigate(route);
   };
 
+  const bookmarkItems = useMemo(() =>
+    bookmarks.map((item) => {
+      if (String(item?.type || "1") !== "1") return item;
+
+      const found = findInternalRoutePage(item?.route);
+      if (!found) return item;
+
+      const title = `[${found.category}] ${found.page.name}`;
+      return { ...item, title, content: title };
+    }),
+    [bookmarks]
+  );
+
   const handleEditSubmit = async (values) => {
     try {
       if (editType === "bookmark") {
@@ -1568,14 +1593,22 @@ function Dashboard() {
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard title="본사교육" onClick={() => navigate("/education")}> {/*  ✅ 기존대로(라우트 경로만 맞추면 됨) */}
-              <ListLines items={educations} emptyText="교육이 없습니다." />
+            <HeaderCard title="본사 교육" onClick={() => navigate("/humanresource/education")}>
+              <ListLines
+                items={educations}
+                emptyText="본사교육이 없습니다."
+                onItemClick={(item) =>
+                  navigate("/humanresource/education", {
+                    state: { educationIdx: item.idx ?? null },
+                  })
+                }
+              />
             </HeaderCard>
           </Grid>
 
           <Grid item xs={12} md={6} lg={3}>
             <HeaderCard title="복리후생" onClick={() => navigate("/welfare")}> {/*  ✅ 기존대로(라우트 경로만 맞추면 됨) */}
-              <ListLines items={welfares} emptyText="복리후생 공지가 없습니다." />
+              <ListLines items={welfares} emptyText="복리후생이 없습니다." />
             </HeaderCard>
           </Grid>
         </Grid>
@@ -1631,7 +1664,7 @@ function Dashboard() {
                 <Grid item xs={12}>
                   <SmallBox
                     title="Bookmark"
-                    items={bookmarks}
+                    items={bookmarkItems}
                     onAdd={() => setModalType("bookmark")}
                     onItemClick={handleBookmarkClick}
                     onItemContextMenu={(item) => openEditModal("bookmark", item)}

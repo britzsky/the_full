@@ -157,6 +157,55 @@ export default function useAccountCorporateCardData() {
     [withLoading]
   );
 
+  const fetchHeadOfficeCorporateCardPaymentDetailRaw = useCallback(
+    async (params, options = {}) => {
+      return api.get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
+        params,
+        ...options,
+      });
+    },
+    []
+  );
+
+  const deleteHeadOfficeCorporateCardPayment = useCallback(async (payload) => {
+    return api.post("/Account/HeadOfficeCorporateCardPaymentDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const deleteHeadOfficeCorporateCardPaymentDetail = useCallback(async (payload) => {
+    return api.post("/Account/HeadOfficeCorporateCardPaymentDetailDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const parseHeadOfficeCorporateCardReceipt = useCallback(async (endpoint, formData) => {
+    return api.post(endpoint, formData, {
+      headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const saveHeadOfficeCorporateCardPaymentAllWithFiles = useCallback(async (formData) => {
+    return api.post("/Account/HeadOfficeCorporateCardPaymentAllSaveWithFiles", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  }, []);
+
+  const saveHeadOfficeCorporateCardPaymentAll = useCallback(async (payload) => {
+    return api.post("/Account/HeadOfficeCorporateCardPaymentAllSave", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+  }, []);
+
+  const saveHeadOfficeCorporateCard = useCallback(async (payload) => {
+    return api.post("/Account/HeadOfficeCorporateCardSave", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+  }, []);
+
   return {
     // state
     loading,
@@ -184,6 +233,13 @@ export default function useAccountCorporateCardData() {
     fetchHeadOfficeCorporateCardPaymentList,
     fetchHeadOfficeCorporateCardPaymentDetailList,
     fetchCorporateCardPayList,
+    fetchHeadOfficeCorporateCardPaymentDetailRaw,
+    deleteHeadOfficeCorporateCardPayment,
+    deleteHeadOfficeCorporateCardPaymentDetail,
+    parseHeadOfficeCorporateCardReceipt,
+    saveHeadOfficeCorporateCardPaymentAllWithFiles,
+    saveHeadOfficeCorporateCardPaymentAll,
+    saveHeadOfficeCorporateCard,
   };
 }
 

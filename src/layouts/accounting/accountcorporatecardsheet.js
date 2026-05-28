@@ -35,7 +35,6 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import LoadingScreen from "layouts/loading/loadingscreen";
-import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useAccountCorporateCardData from "./data/AccountCorporateCardData";
@@ -306,6 +305,11 @@ function AccountCorporateCardSheet() {
     paymentDetailRows,
     fetchAccountCorporateCardPaymentDetailList,
     fetchAccountList,
+    deleteAccountCorporateCardPayment,
+    deleteAccountCorporateCardPaymentDetail,
+    parseAccountCorporateCardReceipt,
+    saveAccountCorporateCardPaymentAll,
+    saveAccountCorporateCard,
   } = useAccountCorporateCardData();
 
   const now = new Date();
@@ -919,10 +923,7 @@ function AccountCorporateCardSheet() {
     console.log("[AccountCorporateCardPaymentDelete] payload:", payload);
 
     try {
-      const res = await api.post("/Account/AccountCorporateCardPaymentDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteAccountCorporateCardPayment(payload);
       console.log("[AccountCorporateCardPaymentDelete] response:", res);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
@@ -947,6 +948,7 @@ function AccountCorporateCardSheet() {
     handleFetchMaster,
     masterCtxMenu.rowIndex,
     masterRows,
+    deleteAccountCorporateCardPayment,
     selectedAccountId,
   ]);
 
@@ -1021,10 +1023,7 @@ function AccountCorporateCardSheet() {
     };
 
     try {
-      const res = await api.post("/Account/AccountCorporateCardPaymentDetailDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteAccountCorporateCardPaymentDetail(payload);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
         await fetchAccountCorporateCardPaymentDetailList({
@@ -1045,6 +1044,7 @@ function AccountCorporateCardSheet() {
     selectedSaleId,
     selectedAccountId,
     closeDetailCtxMenu,
+    deleteAccountCorporateCardPaymentDetail,
     fetchAccountCorporateCardPaymentDetailList,
   ]);
 
@@ -1204,10 +1204,7 @@ function AccountCorporateCardSheet() {
           formData.append("sale_id", String(row.sale_id));
         }
 
-        const res = await api.post("/card-receipt/parse", formData, {
-          headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
-          validateStatus: () => true,
-        });
+        const res = await parseAccountCorporateCardReceipt(formData);
 
         Swal.close();
 
@@ -1340,6 +1337,7 @@ function AccountCorporateCardSheet() {
       handleFetchMaster,
       cardsByAccount,
       restoreMasterSelectionAfterSave,
+      parseAccountCorporateCardReceipt,
       fetchAccountCorporateCardPaymentDetailList,
     ]
   );
@@ -1589,11 +1587,11 @@ function AccountCorporateCardSheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      const res = await api.post(
-        "/Account/AccountCorporateCardPaymentAllSave",
-        { user_id: userId, main, item: allModifiedDetail },
-        { headers: { "Content-Type": "application/json" } }
-      );
+      const res = await saveAccountCorporateCardPaymentAll({
+        user_id: userId,
+        main,
+        item: allModifiedDetail,
+      });
 
       if (!(res.data?.code === 200 || res.status === 200)) {
         Swal.close();
@@ -1644,6 +1642,7 @@ function AccountCorporateCardSheet() {
     origMasterBySaleId,
     normalizeMasterForSave,
     calcMasterTotalsFromDetail,
+    saveAccountCorporateCardPaymentAll,
     restoreMasterSelectionAfterSave,
   ]);
   // saveAllRef에 최신 saveAll 함수 연결 (handleSearchMaster에서 ref로 참조)
@@ -1814,9 +1813,7 @@ function AccountCorporateCardSheet() {
         user_id: localStorage.getItem("user_id") || "",
       }));
 
-      const res = await api.post("/Account/AccountCorporateCardSave", payload, {
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await saveAccountCorporateCard(payload);
 
       if (res.data?.code === 200 || res.status === 200) {
         Swal.fire("성공", "저장되었습니다.", "success");
@@ -1827,7 +1824,7 @@ function AccountCorporateCardSheet() {
     } catch (e) {
       Swal.fire("오류", e.message || "저장 중 오류", "error");
     }
-  }, [cardRows, fetchAccountCorporateCardList, selectedAccountId]);
+  }, [cardRows, fetchAccountCorporateCardList, selectedAccountId, saveAccountCorporateCard]);
 
   // ========================= 컬럼 정의 =========================
   const masterColumns = useMemo(

@@ -307,6 +307,15 @@ export default function Tables() {
 
   const handleModalOpen = () => setOpen(true);
 
+  const keepHoverCursor = () => {
+    document.documentElement.setAttribute("data-cur", "hover");
+  };
+
+  const keepHoverCursorBeforeDocument = (e) => {
+    keepHoverCursor();
+    e.stopPropagation();
+  };
+
   const handleModalClose = () => {
     setFormData({
       account_name: "",
@@ -917,6 +926,13 @@ export default function Tables() {
                       {row.getVisibleCells().map((cell) => (
                         <td
                           key={cell.id}
+                          className={cell.column.id === "info" ? "accountsheet-link-cell" : undefined}
+                          data-clickable={cell.column.id === "info" ? "true" : undefined}
+                          onMouseEnter={cell.column.id === "info" ? keepHoverCursor : undefined}
+                          onMouseMove={cell.column.id === "info" ? keepHoverCursor : undefined}
+                          onMouseOverCapture={
+                            cell.column.id === "info" ? keepHoverCursorBeforeDocument : undefined
+                          }
                           style={{
                             padding:
                               isCompactTable && paddedMobileColumnSet.has(cell.column.id)

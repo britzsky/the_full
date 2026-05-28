@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import api from "api/api";
 
 // 숫자 파싱
@@ -121,6 +121,47 @@ export default function useAccountPurchaseDeadlineDetailData() {
     }
   };
 
+  const fetchPurchaseDetailRawList = useCallback(async (filters) => {
+    return api.get("/Account/AccountPurchaseDetailList_tmp", {
+      params: filters,
+    });
+  }, []);
+
+  const saveAccountPurchase = useCallback(async (payload) => {
+    return api.post("/Account/AccountPurchaseSave", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const saveAccountPurchaseDetail = useCallback(async (payload) => {
+    return api.post("/Account/AccountPurchaseDetailSave", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const parseAccountPurchaseReceipt = useCallback(async (endpoint, formData) => {
+    return api.post(endpoint, formData, {
+      headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const deleteAccountPurchaseTally = useCallback(async (payload) => {
+    return api.post("/Account/AccountPurchaseTallyDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const deleteAccountPurchaseTallyDetail = useCallback(async (payload) => {
+    return api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
   return {
     detailRows,
     setDetailRows,
@@ -129,6 +170,12 @@ export default function useAccountPurchaseDeadlineDetailData() {
     detailLoading,
     setDetailLoading,
     fetchPurchaseDetailList,
+    fetchPurchaseDetailRawList,
+    saveAccountPurchase,
+    saveAccountPurchaseDetail,
+    parseAccountPurchaseReceipt,
+    deleteAccountPurchaseTally,
+    deleteAccountPurchaseTallyDetail,
   };
 }
 

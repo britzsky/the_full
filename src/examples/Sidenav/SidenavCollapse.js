@@ -7,7 +7,6 @@ import ListItemText from "@mui/material/ListItemText";
 import List from "@mui/material/List";
 import Icon from "@mui/material/Icon";
 import MDBox from "components/MDBox";
-import { useMaterialUIController } from "context";
 
 function SidenavCollapse({
   icon,
@@ -23,8 +22,6 @@ function SidenavCollapse({
 }) {
   const location = useLocation();
   const currentPath = location.pathname;
-  const [controller] = useMaterialUIController();
-  const { miniSidenav } = controller;
 
   const isOpen = openKey === myKey;
   // 하위 경로 포함 활성 메뉴 판별
@@ -50,13 +47,12 @@ function SidenavCollapse({
     <>
       <ListItem
         component="li"
+        data-clickable="true"
         onClick={handleClick}
         disableGutters
         sx={{
           px: 1,
           py: 0.1,
-          cursor: subMenu ? "pointer" : "default",
-
           // ✅ 메인은 왼쪽 정렬 / 서브도 왼쪽 정렬
           justifyContent: "flex-start",
         }}
@@ -134,6 +130,7 @@ function SidenavCollapse({
             <NavLink
               key={item.key}
               to={item.route || "#"}
+              data-clickable="true"
               style={{ textDecoration: "none", color: "inherit", width: "100%" }}
             >
               <SidenavCollapse

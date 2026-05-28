@@ -27,6 +27,15 @@ const dedupeSchedulesByIdx = (rows) => {
   });
 };
 
+// DB 문자셋에서 저장 가능한 북마크 제목으로 정리하는 함수
+const normalizeBookmarkTitle = (title) =>
+  String(title || "")
+    .replace(/[\uD800-\uDFFF]/g, "")
+    .replace(/[\u2600-\u27BF]\uFE0F?/g, "")
+    .replace(/\uFE0F/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
 export default function useDashBoardData() {
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -99,19 +108,21 @@ export default function useDashBoardData() {
       );
   };
 
-  const fetchEducations = (account_id) =>
-    api.get("/Dashboard/EducationList", { params: { account_id } }).then((res) =>
-      (res.data || []).map((x) => ({
-        title: x.title || x.edu_title || "",
-        date: x.date || x.reg_dt || "",
+  const fetchEducations = () =>
+    api.get("/Education/EducationList").then((res) =>
+      (res.data || []).slice(0, 5).map((x) => ({
+        idx: x.idx ?? null,
+        content: x.title || "",
+        date: (x.reg_dt || "").slice(0, 10),
       }))
     );
 
   const fetchWelfares = (account_id) =>
     api.get("/Dashboard/WelfareList", { params: { account_id } }).then((res) =>
-      (res.data || []).map((x) => ({
-        title: x.title || "",
-        date: x.date || x.reg_dt || "",
+      (res.data || []).slice(0, 5).map((x) => ({
+        idx: x.idx ?? null,
+        content: x.title || "",
+        date: (x.date || x.reg_dt || "").slice(0, 10),
       }))
     );
 
@@ -175,7 +186,7 @@ export default function useDashBoardData() {
     );
 
   const fetchBookmarks = () =>
-    api.get("/User/Bookmarks", { params: { user_id: getLoginUserId() } }).then((res) =>
+    api.get("/User/Bookmarklist", { params: { user_id: getLoginUserId() } }).then((res) =>
       (res.data || []).map((x) => ({
         idx: x.idx ?? null,
         type: x.type ?? 1,
@@ -187,7 +198,7 @@ export default function useDashBoardData() {
     );
 
   const fetchTodos = () =>
-    api.get("/User/Todos", { params: { user_id: getLoginUserId() } }).then((res) =>
+    api.get("/User/Todoslist", { params: { user_id: getLoginUserId() } }).then((res) =>
       (res.data || []).map((x) => ({
         idx: x.idx ?? null,
         title: x.title || x.todo || "",
@@ -201,7 +212,7 @@ export default function useDashBoardData() {
 
   // 북마크 저장 후 목록 새로고침 (route: ERP 내부 경로)
   const addBookmark = async (account_id, { idx, type, title, route }) => {
-    await api.post("/User/BookmarkAdd", { idx, user_id: getLoginUserId(), type: type || 1, title, route: route || "" });
+    await api.post("/User/BookmarkAdd", { idx, user_id: getLoginUserId(), type: type || 1, title: normalizeBookmarkTitle(title), route: route || "" });
     await fetchAll(account_id);
   };
 
@@ -258,8 +269,8 @@ export default function useDashBoardData() {
       ])
     );
 
-    setEducations(pick(2, [{ title: "지출결의서 교육", date: "2026-01-01" }]));
-    setWelfares(pick(3, [{ title: "워크샵", date: "2026-01-01" }]));
+    setEducations(pick(2, []));
+    setWelfares(pick(3, []));
 
     setOpsSchedules(pick(4, [{ time: "09:30~16:30", title: "교육용 현장 인수인계(이수연 파트장)" }]));
     setSalesSchedules(pick(5, [{ time: "11:00~12:00", title: "로나운영팀 인력 승계 미팅(김경임 매니저+김주광 파트장)" }]));

@@ -155,6 +155,26 @@ export default function useAccountCorporateCardData() {
     [withLoading]
   );
 
+  const deleteAccountPersonPurchaseTallyDetail = useCallback(async (payload) => {
+    return api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const scanAccountPersonPurchaseReceipt = useCallback(async (formData) => {
+    return api.post("/receipt-scanV5", formData, {
+      headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const saveAccountPersonPurchasePaymentAll = useCallback(async (payload) => {
+    return api.post("/Account/AccountPersonPurchasePaymentAllSave", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+  }, []);
+
   return {
     // state
     loading,
@@ -182,6 +202,9 @@ export default function useAccountCorporateCardData() {
     fetchAccountCorporateCardPaymentList,
     fetchAccountCorporateCardPaymentDetailList,
     fetchCorporateCardPayList,
+    deleteAccountPersonPurchaseTallyDetail,
+    scanAccountPersonPurchaseReceipt,
+    saveAccountPersonPurchasePaymentAll,
   };
 }
 

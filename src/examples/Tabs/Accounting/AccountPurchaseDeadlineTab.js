@@ -29,7 +29,6 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
-import api from "api/api";
 import { API_BASE_URL } from "config";
 import ExcelJS from "exceljs";
 import PreviewOverlay from "utils/PreviewOverlay";
@@ -309,6 +308,12 @@ function AccountPurchaseDeadlineTab() {
     detailLoading,
     setDetailLoading,
     fetchPurchaseDetailList,
+    fetchPurchaseDetailRawList,
+    saveAccountPurchase,
+    saveAccountPurchaseDetail,
+    parseAccountPurchaseReceipt,
+    deleteAccountPurchaseTally,
+    deleteAccountPurchaseTallyDetail,
   } = useAccountPurchaseDeadlineDetailData();
 
   // 선택된 상단 행 식별자 및 인덱스
@@ -1092,9 +1097,7 @@ function AccountPurchaseDeadlineTab() {
             savetype: 1,
           };
 
-          const clearRes = await api.post("/Account/AccountPurchaseSave", [clearPayload], {
-            validateStatus: () => true,
-          });
+          const clearRes = await saveAccountPurchase([clearPayload]);
           if (clearRes.status !== 200 || clearRes.data?.code !== 200) {
             const message = clearRes?.data?.message || "기존 영수증 초기화에 실패했습니다.";
             throw new Error(message);
@@ -1123,10 +1126,7 @@ function AccountPurchaseDeadlineTab() {
         formData.append("saveType", rowType === "1000" ? "cor" : "account");
         formData.append("sale_id", String(row.sale_id || ""));
 
-        const res = await api.post(endpoint, formData, {
-          headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
-          validateStatus: () => true,
-        });
+        const res = await parseAccountPurchaseReceipt(endpoint, formData);
 
         if (res.status !== 200) {
           failMessages.push(res?.data?.message || "영수증 업로드 실패");
@@ -1213,6 +1213,8 @@ function AccountPurchaseDeadlineTab() {
       showDeletedAccountReadonlyAlert,
       filters.type,
       getReceiptImagePaths,
+      saveAccountPurchase,
+      parseAccountPurchaseReceipt,
       setRows,
       setSelectedSaleId,
       setSelectedMasterIndex,
@@ -1609,10 +1611,7 @@ function AccountPurchaseDeadlineTab() {
     console.log("[AccountPurchaseTallyDelete] payload:", payload);
 
     try {
-      const res = await api.post("/Account/AccountPurchaseTallyDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteAccountPurchaseTally(payload);
       console.log("[AccountPurchaseTallyDelete] response:", res);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
@@ -1623,7 +1622,14 @@ function AccountPurchaseDeadlineTab() {
     } finally {
       closeMasterCtxMenu();
     }
-  }, [closeMasterCtxMenu, fetchPurchaseList, filters.account_id, masterCtxMenu.rowIndex, rows]);
+  }, [
+    closeMasterCtxMenu,
+    deleteAccountPurchaseTally,
+    fetchPurchaseList,
+    filters.account_id,
+    masterCtxMenu.rowIndex,
+    rows,
+  ]);
 
   // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback(
@@ -1694,10 +1700,7 @@ function AccountPurchaseDeadlineTab() {
     };
 
     try {
-      const res = await api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteAccountPurchaseTallyDetail(payload);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
         await fetchPurchaseDetailList({ sale_id: selectedSaleId, account_id: filters.account_id });
@@ -1715,6 +1718,7 @@ function AccountPurchaseDeadlineTab() {
     selectedSaleId,
     filters.account_id,
     closeDetailCtxMenu,
+    deleteAccountPurchaseTallyDetail,
     fetchPurchaseDetailList,
   ]);
 
@@ -1913,10 +1917,7 @@ function AccountPurchaseDeadlineTab() {
 
       // 모든 sale_id의 detail 변경분을 한 번에 저장
       if (allModifiedDetail.length > 0) {
-        const res2 = await api.post("/Account/AccountPurchaseDetailSave", allModifiedDetail, {
-          headers: { "Content-Type": "application/json" },
-          validateStatus: () => true,
-        });
+        const res2 = await saveAccountPurchaseDetail(allModifiedDetail);
         const ok2 = res2?.status === 200 || res2?.data?.code === 200;
         if (!ok2) {
           Swal.close();
@@ -1925,10 +1926,7 @@ function AccountPurchaseDeadlineTab() {
       }
 
       if (modifiedMaster.length > 0) {
-        const res1 = await api.post("/Account/AccountPurchaseSave", modifiedMaster, {
-          headers: { "Content-Type": "application/json" },
-          validateStatus: () => true,
-        });
+        const res1 = await saveAccountPurchase(modifiedMaster);
         const ok1 = res1?.status === 200 || res1?.data?.code === 200;
         if (!ok1) {
           Swal.close();
@@ -1976,6 +1974,8 @@ function AccountPurchaseDeadlineTab() {
     originalDetailRows,
     isDetailRowChanged,
     buildDetailRowForSave,
+    saveAccountPurchaseDetail,
+    saveAccountPurchase,
     setDetailTableKey,
     pendingDetailMap,
     restoreMasterSelectionAfterSave,
@@ -2282,9 +2282,7 @@ function AccountPurchaseDeadlineTab() {
           const saleId = String(row.sale_id ?? "").trim();
           if (!saleId) return;
           try {
-            const res = await api.get("/Account/AccountPurchaseDetailList_tmp", {
-              params: { sale_id: saleId },
-            });
+            const res = await fetchPurchaseDetailRawList({ sale_id: saleId });
             const list = Array.isArray(res.data)
               ? res.data
               : res.data?.rows || res.data?.data || [];

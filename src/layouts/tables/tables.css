@@ -25,3 +25,19 @@
   font-size: 12px;
   font-weight: bold;
 }
+
+/* 상세정보 셀 안에서 링크 박스가 셀 영역을 기준으로 자리 잡도록 처리 */
+.accountsheet-table td.accountsheet-link-cell {
+  position: relative;
+  min-width: 54px;
+  padding: 0 !important;
+}
+
+/* 상세정보 셀 전체를 이동 링크 판정 영역으로 사용 */
+.accountsheet-table td.accountsheet-link-cell .accountsheet-nav-link {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: 100%;
+  z-index: 1;
+}

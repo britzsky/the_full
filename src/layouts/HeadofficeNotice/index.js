@@ -16,6 +16,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 // ── 내부 훅 및 유틸리티 임포트 ───────────────────────────────
 import useHeadofficeNoticeData from "./data/HeadofficeNoticeData";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { toHeadOfficeDocumentViewUrl } from "utils/headOfficeDocumentImageUtils";
 import logo from "assets/images/the-full-logo4.png";
 
 // ── 환경 변수 및 파일 제한 상수 ──────────────────────────────
@@ -306,6 +307,25 @@ function HeadofficeNotice() {
     setPendingFiles((prev) => [...prev, ...newPending]);
   }, [noticeFiles, deletedFileOrders, pendingFiles]);
 
+  // 작성 화면 전체에서 드롭한 파일을 첨부파일 목록에 추가하는 함수
+  const handleDropFiles = useCallback((e) => {
+    const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files");
+    if (!hasFiles) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.dataTransfer?.files?.length) return;
+    handleSelectFiles(e.dataTransfer.files);
+  }, [handleSelectFiles]);
+
+  // 브라우저가 드롭 파일을 직접 열지 않도록 작성 화면 드래그 동작을 처리하는 함수
+  const handleDragOverFiles = useCallback((e) => {
+    const hasFiles = Array.from(e.dataTransfer?.types || []).includes("Files");
+    if (!hasFiles) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }, []);
+
   // 신규 선택 파일 제거 (blob URL 해제 포함)
   const handleRemovePending = useCallback((index) => {
     setPendingFiles((prev) => {
@@ -381,7 +401,7 @@ function HeadofficeNotice() {
     // ──────────────────────────────────────────────────────────
     if (view === "list") {
       return (
-        <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%", ...selectableAreaSx }}>
           {/* 필터 + 버튼 1행 (고정 영역) */}
           <MDBox
             pt={1} pb={1} px={1}
@@ -534,7 +554,7 @@ function HeadofficeNotice() {
       const detailIdx = detail?.idx ?? null;
 
       return (
-        <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%", ...selectableAreaSx }}>
           {/* 상단 액션 버튼 영역 (고정 영역): 좌측 ← 이전, 우측 삭제·수정 */}
           <MDBox
             pt={1} pb={1} px={1}
@@ -619,7 +639,7 @@ function HeadofficeNotice() {
             {/* 공지 본문 영역 */}
             <MDBox sx={{ ...sheetWrapSx(isMobile), mb: 2 }}>
               <MDBox sx={sectionTitleSx}>문서 내용</MDBox>
-              <MDBox sx={{ p: 2, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", minHeight: 120, background: "#fff", wordBreak: "break-word" }}>
+              <MDBox sx={{ p: 2, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", minHeight: 120, background: "#fff", wordBreak: "break-word", userSelect: "text" }}>
                 {detail?.content || <span style={{ opacity: 0.5 }}>내용이 없습니다.</span>}
               </MDBox>
             </MDBox>
@@ -641,6 +661,7 @@ function HeadofficeNotice() {
                       const canPreview = kind === "image" || kind === "pdf" || kind === "excel";
                       const previewKey = `saved-${f.image_order}`;
                       const fileUrl = `${API_BASE_URL}${f.image_path}`;
+                      const fileViewUrl = toHeadOfficeDocumentViewUrl(fileUrl);
                       const fileName = f.image_name || "-";
                       const thumbLabel = kind === "pdf" ? "PDF" : kind === "excel" ? "XLSX" : getFileExtLabel(f.image_name);
                       return (
@@ -649,17 +670,15 @@ function HeadofficeNotice() {
                             {kind === "image" ? (
                               canPreview ? (
                                 <MDBox component="button" type="button" onClick={() => openPreview(previewKey, detailPreviewList)} sx={{ border: "none", background: "none", p: 0, width: "100%", height: "100%", cursor: "pointer" }}>
-                                  <MDBox component="img" src={fileUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  <MDBox component="img" src={fileViewUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
                                 </MDBox>
                               ) : (
-                                <MDBox component="img" src={fileUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                <MDBox component="img" src={fileViewUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
                               )
                             ) : kind === "pdf" ? (
-                              <MDBox component={canPreview ? "button" : "span"} type={canPreview ? "button" : undefined} onClick={canPreview ? () => openPreview(previewKey, detailPreviewList) : undefined} sx={{ border: "none", width: "100%", height: "100%", p: 0, cursor: canPreview ? "pointer" : "default", position: "relative", backgroundColor: "#fff" }}>
-                                <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-                                  <iframe title={`pdf-d-${f.image_order}`} src={toPdfThumbSrc(fileUrl)} loading="lazy" style={{ width: "calc(100% + 20px)", height: "calc(100% + 20px)", border: 0, backgroundColor: "#fff", display: "block" }} />
-                                </div>
-                                <MDBox component="span" sx={{ position: "absolute", right: 4, bottom: 4, px: 0.5, py: 0.1, borderRadius: "4px", fontSize: 9, fontWeight: 800, color: "#fff", backgroundColor: "rgba(198, 40, 40, 0.9)", lineHeight: 1.2 }}>PDF</MDBox>
+                              <MDBox component={canPreview ? "button" : "span"} type={canPreview ? "button" : undefined} onClick={canPreview ? () => openPreview(previewKey, detailPreviewList) : undefined} sx={{ ...pdfThumbButtonSx, cursor: canPreview ? "pointer" : "default" }}>
+                                <MDBox component="iframe" title={`pdf-thumb-saved-${f.image_order}`} src={toPdfThumbSrc(fileViewUrl)} loading="lazy" sx={pdfThumbFrameSx} />
+                                <MDBox component="span" sx={pdfThumbLabelSx}>PDF</MDBox>
                               </MDBox>
                             ) : canPreview ? (
                               <MDBox component="button" type="button" onClick={() => openPreview(previewKey, detailPreviewList)} sx={{ border: "none", width: "100%", height: "100%", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#2e7d32", backgroundColor: "#e8f5e9" }}>
@@ -715,7 +734,11 @@ function HeadofficeNotice() {
       const middleOptions = MIDDLE_TYPE_MAP[formLargeType] || [];
 
       return (
-        <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <MDBox
+          onDragOver={handleDragOverFiles}
+          onDrop={handleDropFiles}
+          sx={{ display: "flex", flexDirection: "column", height: "100%", ...selectableAreaSx }}
+        >
           {/* 상단 버튼 영역 (고정 영역): 좌측 ← 취소, 우측 저장 */}
           <MDBox
             pt={1} pb={1} px={1}
@@ -882,6 +905,7 @@ function HeadofficeNotice() {
                       const canPreview = (kind === "image" || kind === "pdf" || kind === "excel") && !isDeleted;
                       const previewKey = `saved-${f.image_order}`;
                       const fileUrl = `${API_BASE_URL}${f.image_path}`;
+                      const fileViewUrl = toHeadOfficeDocumentViewUrl(fileUrl);
                       const fileName = f.image_name || "-";
                       const thumbLabel = kind === "pdf" ? "PDF" : kind === "excel" ? "XLSX" : getFileExtLabel(f.image_name);
                       return (
@@ -890,17 +914,15 @@ function HeadofficeNotice() {
                             {kind === "image" ? (
                               canPreview ? (
                                 <MDBox component="button" type="button" onClick={() => openPreview(previewKey, writePreviewList)} sx={{ border: "none", background: "none", p: 0, width: "100%", height: "100%", cursor: "pointer" }}>
-                                  <MDBox component="img" src={fileUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  <MDBox component="img" src={fileViewUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
                                 </MDBox>
                               ) : (
-                                <MDBox component="img" src={fileUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                <MDBox component="img" src={fileViewUrl} alt={fileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
                               )
                             ) : kind === "pdf" ? (
-                              <MDBox component={canPreview ? "button" : "span"} type={canPreview ? "button" : undefined} onClick={canPreview ? () => openPreview(previewKey, writePreviewList) : undefined} sx={{ border: "none", width: "100%", height: "100%", p: 0, cursor: canPreview ? "pointer" : "default", position: "relative", backgroundColor: "#fff" }}>
-                                <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-                                  <iframe title={`pdf-ef-${f.image_order}`} src={toPdfThumbSrc(fileUrl)} loading="lazy" style={{ width: "calc(100% + 20px)", height: "calc(100% + 20px)", border: 0, backgroundColor: "#fff", display: "block" }} />
-                                </div>
-                                <MDBox component="span" sx={{ position: "absolute", right: 4, bottom: 4, px: 0.5, py: 0.1, borderRadius: "4px", fontSize: 9, fontWeight: 800, color: "#fff", backgroundColor: "rgba(198, 40, 40, 0.9)", lineHeight: 1.2 }}>PDF</MDBox>
+                              <MDBox component={canPreview ? "button" : "span"} type={canPreview ? "button" : undefined} onClick={canPreview ? () => openPreview(previewKey, writePreviewList) : undefined} sx={{ ...pdfThumbButtonSx, cursor: canPreview ? "pointer" : "default" }}>
+                                <MDBox component="iframe" title={`pdf-thumb-saved-${f.image_order}`} src={toPdfThumbSrc(fileViewUrl)} loading="lazy" sx={pdfThumbFrameSx} />
+                                <MDBox component="span" sx={pdfThumbLabelSx}>PDF</MDBox>
                               </MDBox>
                             ) : canPreview ? (
                               <MDBox component="button" type="button" onClick={() => openPreview(previewKey, writePreviewList)} sx={{ border: "none", width: "100%", height: "100%", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#2e7d32", backgroundColor: "#e8f5e9" }}>
@@ -957,11 +979,9 @@ function HeadofficeNotice() {
                                   <MDBox component="img" src={pf.previewUrl} alt={pendingFileName} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
                                 </MDBox>
                               ) : kind === "pdf" && pf.previewUrl ? (
-                                <MDBox component="button" type="button" onClick={() => openPreview(previewKey, writePreviewList)} sx={{ border: "none", width: "100%", height: "100%", p: 0, cursor: "pointer", position: "relative", backgroundColor: "#fff" }}>
-                                  <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-                                    <iframe title={`pdf-pf-${i}`} src={toPdfThumbSrc(pf.previewUrl)} loading="lazy" style={{ width: "calc(100% + 20px)", height: "calc(100% + 20px)", border: 0, backgroundColor: "#fff", display: "block" }} />
-                                  </div>
-                                  <MDBox component="span" sx={{ position: "absolute", right: 4, bottom: 4, px: 0.5, py: 0.1, borderRadius: "4px", fontSize: 9, fontWeight: 800, color: "#fff", backgroundColor: "rgba(198, 40, 40, 0.9)", lineHeight: 1.2 }}>PDF</MDBox>
+                                <MDBox component="button" type="button" onClick={() => openPreview(previewKey, writePreviewList)} sx={{ ...pdfThumbButtonSx, cursor: "pointer" }}>
+                                  <MDBox component="iframe" title={`pdf-thumb-pending-${i}`} src={toPdfThumbSrc(pf.previewUrl)} loading="lazy" sx={pdfThumbFrameSx} />
+                                  <MDBox component="span" sx={pdfThumbLabelSx}>PDF</MDBox>
                                 </MDBox>
                               ) : canPreview ? (
                                 <MDBox component="button" type="button" onClick={() => openPreview(previewKey, writePreviewList)} sx={{ border: "none", width: "100%", height: "100%", cursor: "pointer", fontSize: 13, fontWeight: 800, color: "#2e7d32", backgroundColor: "#e8f5e9" }}>
@@ -1150,11 +1170,51 @@ const attachmentThumbBoxSx = {
   justifyContent: "center",
 };
 
+// 전역 선택 제한을 덮어 화면 텍스트를 드래그로 선택할 수 있게 하는 영역 스타일
+const selectableAreaSx = {
+  userSelect: "text",
+  "& *": {
+    userSelect: "text",
+  },
+};
+
+// PDF 첨부파일을 스크롤 없는 썸네일 카드로 보여주는 공통 스타일
+const pdfThumbButtonSx = {
+  width: "100%",
+  height: "100%",
+  border: "none",
+  p: 0,
+  backgroundColor: "#fff",
+  position: "relative",
+};
+
+const pdfThumbLabelSx = {
+  position: "absolute",
+  right: 4,
+  bottom: 4,
+  px: 0.5,
+  py: 0.1,
+  borderRadius: "4px",
+  fontSize: 9,
+  fontWeight: 800,
+  color: "#fff",
+  backgroundColor: "rgba(198, 40, 40, 0.9)",
+  lineHeight: 1.2,
+};
+
+const pdfThumbFrameSx = {
+  width: "100%",
+  height: "100%",
+  border: 0,
+  pointerEvents: "none",
+  backgroundColor: "#fff",
+};
+
 // PDF 썸네일용 iframe src 조립 (toolbar·네비게이션 숨김 파라미터 포함)
 function toPdfThumbSrc(fileUrl) {
   const baseUrl = String(fileUrl ?? "").trim();
   if (!baseUrl) return "";
-  return `${baseUrl}#toolbar=0&navpanes=0&scrollbar=0&statusbar=0&view=FitH&zoom=80&page=1`;
+  return `${baseUrl}#page=1&view=FitH&toolbar=0&navpanes=0&scrollbar=0`;
 }
 
 // 파일명 → 확장자 뱃지 레이블 추출 (JPEG → JPG 정규화)

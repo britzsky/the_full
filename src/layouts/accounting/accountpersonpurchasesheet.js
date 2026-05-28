@@ -33,7 +33,6 @@ import RestartAltIcon from "@mui/icons-material/RestartAlt";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import LoadingScreen from "layouts/loading/loadingscreen";
-import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useAccountPersonPurchaseData from "./data/AccountPersonPurchaseData";
@@ -327,6 +326,9 @@ function AccountCorporateCardSheet() {
     fetchAccountCorporateCardPaymentList,
     paymentDetailRows,
     fetchAccountCorporateCardPaymentDetailList,
+    deleteAccountPersonPurchaseTallyDetail,
+    scanAccountPersonPurchaseReceipt,
+    saveAccountPersonPurchasePaymentAll,
   } = useAccountPersonPurchaseData();
 
   const now = new Date();
@@ -885,10 +887,7 @@ function AccountCorporateCardSheet() {
     };
 
     try {
-      const res = await api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteAccountPersonPurchaseTallyDetail(payload);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
         await fetchAccountCorporateCardPaymentDetailList({
@@ -909,6 +908,7 @@ function AccountCorporateCardSheet() {
     selectedSaleId,
     selectedAccountId,
     closeDetailCtxMenu,
+    deleteAccountPersonPurchaseTallyDetail,
     fetchAccountCorporateCardPaymentDetailList,
   ]);
 
@@ -1074,10 +1074,7 @@ function AccountCorporateCardSheet() {
           formData.append("sale_id", String(row.sale_id));
         }
 
-        const res = await api.post("/receipt-scanV5", formData, {
-          headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
-          validateStatus: () => true,
-        });
+        const res = await scanAccountPersonPurchaseReceipt(formData);
 
         Swal.close();
 
@@ -1193,7 +1190,12 @@ function AccountCorporateCardSheet() {
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [masterRows, handleFetchMaster, fetchAccountCorporateCardPaymentDetailList]
+    [
+      masterRows,
+      handleFetchMaster,
+      fetchAccountCorporateCardPaymentDetailList,
+      scanAccountPersonPurchaseReceipt,
+    ]
   );
 
   // ========================= 마스터 행 클릭 (pendingDetailMap 보존/복원) =========================
@@ -1461,11 +1463,7 @@ function AccountCorporateCardSheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      const res = await api.post(
-        "/Account/AccountPersonPurchasePaymentAllSave",
-        { main, item: allModifiedDetail },
-        { headers: { "Content-Type": "application/json" } }
-      );
+      const res = await saveAccountPersonPurchasePaymentAll({ main, item: allModifiedDetail });
 
       if (!(res.data?.code === 200 || res.status === 200)) {
         Swal.close();
@@ -1521,6 +1519,7 @@ function AccountCorporateCardSheet() {
     normalizeMasterForSave,
     calcMasterTotalsFromDetail,
     selectedAccountId,
+    saveAccountPersonPurchasePaymentAll,
     restoreMasterSelectionAfterSave,
   ]);
   // saveAllRef에 최신 saveAll 함수 연결 (handleSearchMaster에서 ref로 참조)

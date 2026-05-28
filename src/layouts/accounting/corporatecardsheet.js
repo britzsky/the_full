@@ -25,7 +25,6 @@ import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import PreviewOverlay from "utils/PreviewOverlay";
 
 import LoadingScreen from "layouts/loading/loadingscreen";
-import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useCorporateCardData from "./data/CorporateCardData";
@@ -408,6 +407,13 @@ function CorporateCardSheet() {
     fetchHeadOfficeCorporateCardPaymentList,
     paymentDetailRows,
     fetchAccountList,
+    fetchHeadOfficeCorporateCardPaymentDetailRaw,
+    deleteHeadOfficeCorporateCardPayment,
+    deleteHeadOfficeCorporateCardPaymentDetail,
+    parseHeadOfficeCorporateCardReceipt,
+    saveHeadOfficeCorporateCardPaymentAllWithFiles,
+    saveHeadOfficeCorporateCardPaymentAll,
+    saveHeadOfficeCorporateCard,
   } = useCorporateCardData();
 
   const now = new Date();
@@ -693,14 +699,14 @@ function CorporateCardSheet() {
 
             const { row, idx, saleId } = current;
             try {
-              const res = await api.get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
-                params: {
+              const res = await fetchHeadOfficeCorporateCardPaymentDetailRaw(
+                {
                   sale_id: saleId,
                   account_id: row?.account_id ?? selectedAccountId ?? "",
                   payment_dt: row?.payment_dt ?? "",
                 },
-                validateStatus: () => true,
-              });
+                { validateStatus: () => true }
+              );
 
               const detailList =
                 res?.status === 200
@@ -732,7 +738,7 @@ function CorporateCardSheet() {
         setMasterFilterLoading(false);
       }
     },
-    [itemTypeFilter, selectedAccountId]
+    [fetchHeadOfficeCorporateCardPaymentDetailRaw, itemTypeFilter, selectedAccountId]
   );
 
   // 상단 결제내역 조회(중복 방지 포함)
@@ -1199,10 +1205,7 @@ function CorporateCardSheet() {
     console.log("[HeadOfficeCorporateCardPaymentDelete] payload:", payload);
 
     try {
-      const res = await api.post("/Account/HeadOfficeCorporateCardPaymentDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteHeadOfficeCorporateCardPayment(payload);
       console.log("[HeadOfficeCorporateCardPaymentDelete] response:", res);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
@@ -1227,6 +1230,7 @@ function CorporateCardSheet() {
     handleFetchMaster,
     masterCtxMenu.rowIndex,
     masterRows,
+    deleteHeadOfficeCorporateCardPayment,
     selectedAccountId,
   ]);
 
@@ -1302,18 +1306,13 @@ function CorporateCardSheet() {
     };
 
     try {
-      const res = await api.post("/Account/HeadOfficeCorporateCardPaymentDetailDelete", payload, {
-        headers: { "Content-Type": "application/json" },
-        validateStatus: () => true,
-      });
+      const res = await deleteHeadOfficeCorporateCardPaymentDetail(payload);
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
-        const fetchRes = await api.get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
-          params: {
+        const fetchRes = await fetchHeadOfficeCorporateCardPaymentDetailRaw({
             sale_id: selectedSaleId,
             account_id: selectedAccountId,
             payment_dt: selectedMaster?.payment_dt ?? "",
-          },
         });
         const refreshed = (fetchRes.data || []).map((r) => ({ ...r, isForcedRed: false, isNew: false }));
         setDetailRows(refreshed);
@@ -1332,6 +1331,8 @@ function CorporateCardSheet() {
     selectedMaster,
     selectedSaleId,
     selectedAccountId,
+    fetchHeadOfficeCorporateCardPaymentDetailRaw,
+    deleteHeadOfficeCorporateCardPaymentDetail,
     closeDetailCtxMenu,
     setDetailRows,
     setOrigDetailRows,
@@ -1527,10 +1528,7 @@ function CorporateCardSheet() {
         // 기존 sale_id 포함(재업로드/재스캔 구분)
         formData.append("sale_id", row.sale_id || "");
 
-        const res = await api.post(parseEndpoint, formData, {
-          headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
-          validateStatus: () => true,
-        });
+        const res = await parseHeadOfficeCorporateCardReceipt(parseEndpoint, formData);
 
         Swal.close();
 
@@ -1626,7 +1624,7 @@ function CorporateCardSheet() {
         Swal.fire("오류", err.message || "영수증 확인 중 문제가 발생했습니다.", "error");
       }
     },
-    [handleFetchMaster, origMasterRows]
+    [handleFetchMaster, origMasterRows, parseHeadOfficeCorporateCardReceipt]
   );
 
   // 하단 수정 있는 sale_id 집합(상단 행 색상 표시용)
@@ -1748,13 +1746,10 @@ function CorporateCardSheet() {
       const fetchSeq = detailFetchSeqRef.current + 1;
       detailFetchSeqRef.current = fetchSeq;
 
-      api
-        .get("/Account/HeadOfficeCorporateCardPaymentDetailList", {
-          params: {
+      fetchHeadOfficeCorporateCardPaymentDetailRaw({
             sale_id: nextSaleId,
             account_id: row.account_id,
             payment_dt: row.payment_dt,
-          },
         })
         .then((res) => {
           if (detailFetchSeqRef.current !== fetchSeq) return;
@@ -1786,6 +1781,7 @@ function CorporateCardSheet() {
       detailRows,
       origDetailRows,
       pendingDetailMap,
+      fetchHeadOfficeCorporateCardPaymentDetailRaw,
       saveMasterScroll,
     ]
   );
@@ -1950,21 +1946,13 @@ function CorporateCardSheet() {
             )
           );
         });
-        const res = await api.post(
-          "/Account/HeadOfficeCorporateCardPaymentAllSaveWithFiles",
-          form,
-          { headers: { "Content-Type": "multipart/form-data" } }
-        );
+        const res = await saveHeadOfficeCorporateCardPaymentAllWithFiles(form);
         if (!(res.data?.code === 200 || res.status === 200)) {
           Swal.close();
           return Swal.fire("실패", res.data?.message || "저장 실패", "error");
         }
       } else {
-        const res = await api.post(
-          "/Account/HeadOfficeCorporateCardPaymentAllSave",
-          { main, item: allModifiedDetail },
-          { headers: { "Content-Type": "application/json" } }
-        );
+        const res = await saveHeadOfficeCorporateCardPaymentAll({ main, item: allModifiedDetail });
         if (!(res.data?.code === 200 || res.status === 200)) {
           Swal.close();
           return Swal.fire("실패", res.data?.message || "저장 실패", "error");
@@ -2017,6 +2005,8 @@ function CorporateCardSheet() {
     calcMasterTotalsFromDetail,
     handleFetchMaster,
     restoreMasterSelectionAfterSave,
+    saveHeadOfficeCorporateCardPaymentAllWithFiles,
+    saveHeadOfficeCorporateCardPaymentAll,
   ]);
   // saveAllRef에 최신 saveAll 함수 연결 (handleSearchMaster에서 ref로 참조)
   saveAllRef.current = saveAll;
@@ -2166,9 +2156,7 @@ function CorporateCardSheet() {
         user_id: localStorage.getItem("user_id"),
       }));
 
-      const res = await api.post("/Account/HeadOfficeCorporateCardSave", payload, {
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await saveHeadOfficeCorporateCard(payload);
 
       if (res.data?.code === 200 || res.status === 200) {
         Swal.fire("성공", "저장되었습니다.", "success");
@@ -2179,7 +2167,7 @@ function CorporateCardSheet() {
     } catch (e) {
       Swal.fire("오류", e.message || "저장 중 오류", "error");
     }
-  }, [cardRows, fetchHeadOfficeCorporateCardList, selectedAccountId]);
+  }, [cardRows, fetchHeadOfficeCorporateCardList, selectedAccountId, saveHeadOfficeCorporateCard]);
 
   // ========================= 컬럼 정의 =========================
   const masterColumns = useMemo(

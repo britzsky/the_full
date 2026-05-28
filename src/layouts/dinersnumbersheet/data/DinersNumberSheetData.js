@@ -15,6 +15,7 @@ const formatNumber = (value) => {
 export default function useDinersNumbersheetData(accountId, year, month) {
   const [activeRows, setActiveRows] = useState([]);
   const [extraDietCols, setExtraDietCols] = useState([]);     // 🔹 추가 식단가 컬럼 정보
+  const [accountPriceInfo, setAccountPriceInfo] = useState({}); // 🔹 거래처 식단가 정보
   const [accountList, setAccountList] = useState([]);         // 🔹 거래처 목록
   const [loading, setLoading] = useState(false);
 
@@ -97,16 +98,22 @@ export default function useDinersNumbersheetData(accountId, year, month) {
   useEffect(() => {
     if (!accountId) {
       setExtraDietCols([]);
+      setAccountPriceInfo({});
       return;
     }
 
     const fetchExtraDiet = async () => {
       try {
-        const res = await api.get("/Business/AccountEctDietList", {
-          params: { account_id: accountId },
-        });
+        const [extraRes, priceRes] = await Promise.all([
+          api.get("/Business/AccountEctDietList", {
+            params: { account_id: accountId },
+          }),
+          api.get("/Account/AccountInfoList_2", {
+            params: { account_id: accountId },
+          }),
+        ]);
 
-        const row = Array.isArray(res.data) ? res.data[0] || {} : res.data || {};
+        const row = Array.isArray(extraRes.data) ? extraRes.data[0] || {} : extraRes.data || {};
 
         const cols = Array.from({ length: 5 }, (_, i) => {
           const idx = i + 1;
@@ -122,8 +129,9 @@ export default function useDinersNumbersheetData(accountId, year, month) {
         }).filter(Boolean);
 
         setExtraDietCols(cols);
+        setAccountPriceInfo(Array.isArray(priceRes.data) ? priceRes.data[0] || {} : {});
       } catch (e) {
-        console.error("추가 식단가 조회 실패:", e);
+        console.error("식단가 조회 실패:", e);
       }
     };
 
@@ -154,6 +162,7 @@ export default function useDinersNumbersheetData(accountId, year, month) {
     loading,
     fetchAllData,
     extraDietCols,
+    accountPriceInfo,
     accountList,
   };
 }

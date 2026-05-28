@@ -3125,6 +3125,7 @@ function RecordSheet() {
                     "& .MuiInputBase-root": { height: 40, fontSize: 12 },
                     "& .MuiInputLabel-root": { fontSize: 12 },
                     "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
+                    "& .MuiOutlinedInput-notchedOutline legend": { paddingRight: "12px" },
                   }}
                 />
               )}

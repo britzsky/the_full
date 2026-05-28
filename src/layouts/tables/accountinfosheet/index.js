@@ -958,6 +958,7 @@ function AccountInfoSheet() {
           { header: "위생점검", accessorKey: "hygiene_note" },
           { header: "이벤트", accessorKey: "event_note" },
           { header: "집단급식소 여부", accessorKey: "group_feed_yn" },
+          { header: "위생관리책임자(영양사)", accessorKey: "hygiene_manager" },
           { header: "생신잔치 여부", accessorKey: "birthday_note" },
           { header: "영양사실 여부", accessorKey: "nutritionist_room_yn" },
           { header: "조리사휴게실 여부", accessorKey: "chef_lounge_yn" },
@@ -1083,6 +1084,7 @@ function AccountInfoSheet() {
     satis_note: "33%",
     hygiene_note: "33%",
     event_note: "33%",
+    hygiene_manager: "2%",
     dishwasher_cnt: "2%",
     water_puri_cnt: "2%",
     food_process_type: "170px",
@@ -1318,17 +1320,17 @@ function AccountInfoSheet() {
     const basicSubs = isDaycareView
       ? [{ label: "일반식", key: "basic" }]
       : [
-          { label: "경관식", key: "basic_ceremony" },
-          { label: "일반식", key: "basic" },
-        ];
+        { label: "경관식", key: "basic_ceremony" },
+        { label: "일반식", key: "basic" },
+      ];
 
     // 일반 그룹: 요양원은 경관식+일반식, 주간보호는 일반식만
     const normalSubs = isDaycareView
       ? [{ label: "일반식", key: "normal" }]
       : [
-          { label: "경관식", key: "ceremony" },
-          { label: "일반식", key: "normal" },
-        ];
+        { label: "경관식", key: "ceremony" },
+        { label: "일반식", key: "normal" },
+      ];
 
     const waterGroups = [
       {
@@ -2162,7 +2164,7 @@ function AccountInfoSheet() {
                   }}
                   sx={{
                     "& .MuiInputBase-root": { height: 32, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
+                    "& .MuiInputLabel-root": { fontSize: 12 },
                     "& input": {
                       padding: "0 8px",
                       color: isDeletedAccount ? "#d32f2f" : "inherit",

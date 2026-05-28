@@ -125,12 +125,12 @@ const routes = [
           "sy7", // 이수연 매니저(운영)
           "mh3", // 이미희 매니저
           "dh2", // 민다희 매니저
-          "ys", // 박이슬 매니저
+          "ys",  // 박이슬 매니저
           "db1", // 송다빈 매니저
           "ww1", // 이원우 매니저
           "iy1", // 최인영 매니저
-          "me1", // 김맑음 매니저
           "sy9", // 전수연 매니저
+          "hh1", // 김현호 매니저
           "si1", // 김세인 매니저
         ],
 
@@ -273,7 +273,7 @@ const routes = [
         component: <AccountSales />,
         allowedDepartments: [0, 4, 5, 6, 8, 9], // 🔹 부서권한
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["dh2", "ww1", "hh2", "mh3"],
+        allowUserIds: ["dh2", "ww1", "hh1", "hh2", "mh3"],
         accessMode: "OR",
       },
     ],

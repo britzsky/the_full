@@ -40,12 +40,36 @@ const formatPrice = (value) => {
 // 행 이동 링크 컴포넌트
 function NavLink({ to, color, text }) {
   const navigate = useNavigate();
+  const keepHoverCursor = () => {
+    document.documentElement.setAttribute("data-cur", "hover");
+  };
+
   return (
     <MDTypography
+      className="accountsheet-nav-link"
       component="a"
+      data-clickable="true"
+      role="link"
+      onMouseEnter={keepHoverCursor}
+      onMouseMove={keepHoverCursor}
       onClick={() => navigate(to)}
       variant="caption"
-      sx={{ color, cursor: "pointer" }}
+      sx={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        minWidth: 42,
+        px: 0.75,
+        pt: "3.5px",
+        pb: "1.5px",
+        color,
+        border: `1px solid ${color}`,
+        borderRadius: "4px",
+        backgroundColor: `${color}14`,
+        boxSizing: "border-box",
+        lineHeight: 1.2,
+        transform: "translateY(-1px)",
+      }}
       fontWeight="medium"
     >
       {text}

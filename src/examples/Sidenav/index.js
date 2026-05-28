@@ -106,6 +106,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
           <NavLink
             key={key}
             to={route || "#"}
+            data-clickable="true"
             style={{ textDecoration: "none", color: "inherit" }}
             onClick={() => {
               if (key === "dashboard") setOpenKey(null);
@@ -164,6 +165,9 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             backgroundImage: "none",
             border: "none",
             overflow: "auto",
+            scrollbarWidth: "none",
+            msOverflowStyle: "none",
+            "&::-webkit-scrollbar": { display: "none" },
             zIndex: 1250,
 
             // ⚠️ 너가 현재 적용해둔 숨김 방식 유지

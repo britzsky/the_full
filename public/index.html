@@ -1,4 +1,4 @@
-<!--
+﻿<!--
 =========================================================
 * Material Dashboard 2 React - v2.2.0
 =========================================================
@@ -45,83 +45,125 @@ Software.
       data-site="YOUR_DOMAIN_HERE"
       src="https://api.nepcha.com/js/nepcha-analytics.js"
     ></script>
+    <link rel="preload" as="image" href="/mousecursor.png">
+    <link rel="preload" as="image" href="/mousehover.png">
+    <link rel="preload" as="image" href="/mouseclick.png">
   
     <style type="text/css">
-        /* SweetAlert2 팝업이 다른 요소들 위에 오도록 z-index 강제 설정 */
-        .swal2-container {
-          z-index: 99999 !important;
-        }
-        /* 커스텀 마우스 커서 기본 적용 (JS 로드 전 깜빡임 방지용 초기값) */
-        div, span, p, a, button, input, select, textarea,
-        table, tr, td, th, thead, tbody, tfoot,
-        ul, ol, li, label, img, svg, path,
-        section, article, header, footer, main, nav, aside,
-        h1, h2, h3, h4, h5, h6, form, * {
-          cursor: url('/mousecursor.png') 0 0, auto !important;
-        }
+        /* SweetAlert2 팝업이 화면 위에 표시되도록 레이어 우선순위를 높인다. */
+        .swal2-container { z-index: 99999 !important; }
     </style>
   </head>
   <body style="background-color: #ffffff;">
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="app"></div>
+
+    <style id="app-custom-cursor-style">
+      /* React 앱 루트와 문서 전체가 화면 전체 높이를 기준으로 커서 영역을 잡도록 한다. */
+      html, body, #app {
+        min-height: 100vh;
+      }
+
+      /* 문서 전체에서 브라우저 기본 커서 대신 커스텀 기본 커서를 사용한다.
+         fallback을 none 대신 default로 설정해서, 혹시 이미지가 1프레임 못 뜨는 순간에도
+         native 화살표 대신 브라우저 기본 커서가 보이도록 한다. */
+      *, *::before, *::after,
+      html, body, #app {
+        cursor: url('/mousecursor.png') 0 0, default !important;
+      }
+
+      /* 링크, 버튼, 메뉴처럼 사용자가 누를 수 있는 영역은 오버 커서를 사용한다.
+         fallback을 pointer로 설정해서, 이미지 로딩이 잠깐 끊겨도 손 모양이 보인다. */
+      a, button, label, select, summary,
+      [role="button"], [role="tab"], [role="option"], [role="menuitem"],
+      [role="checkbox"], [role="radio"], [role="switch"],
+      [data-clickable="true"],
+      a *, button *, [data-clickable="true"] *,
+      [role="button"] *, [role="tab"] *, [role="menuitem"] * {
+        cursor: url('/mousehover.png') 0 0, pointer !important;
+      }
+
+      /* 마우스를 누르는 동안 클릭 커서를 고정한다.
+         html에 data-cur="click" 속성이 붙어 있는 동안 이 규칙이 적용된다.
+         fallback을 pointer로 설정해서 이미지 로딩 실패 시 손 모양으로 대체한다. */
+      html[data-cur="click"], html[data-cur="click"] body,
+      html[data-cur="click"] body *, html[data-cur="click"] body *::before,
+      html[data-cur="click"] body *::after {
+        cursor: url('/mouseclick.png') 0 0, pointer !important;
+      }
+
+      /* data-native-cursor="true" 영역 안에서는 브라우저 기본 커서를 사용한다. */
+      [data-native-cursor="true"],
+      [data-native-cursor="true"] * {
+        cursor: auto !important;
+      }
+      [data-native-cursor="true"] a,
+      [data-native-cursor="true"] button,
+      [data-native-cursor="true"] label,
+      [data-native-cursor="true"] select,
+      [data-native-cursor="true"] [role="button"],
+      [data-native-cursor="true"] [role="tab"],
+      [data-native-cursor="true"] [data-clickable="true"],
+      [data-native-cursor="true"] a *,
+      [data-native-cursor="true"] button *,
+      [data-native-cursor="true"] [role="button"] *,
+      [data-native-cursor="true"] [role="tab"] * {
+        cursor: pointer !important;
+      }
+    </style>
+
     <script>
-      /* 페이지 완전 로드 후 커스텀 마우스 커서 적용 (MUI 스타일이 모두 주입된 이후에 실행) */
-      window.addEventListener('load', function() {
+      (function() {
+        var html = document.documentElement;
+        var cursorStyle = document.getElementById('app-custom-cursor-style');
 
-        /* 커서 이미지 3종 CSS 동적 주입 — MUI 스타일보다 나중에 추가해서 우선순위 확보 */
-        /* data-cur를 html 루트에 설정해서 React 리렌더링 시에도 커서 상태 유지 */
-        var style = document.createElement('style');
-        style.textContent = [
-          '* { cursor: url("/mousecursor.png") 0 0, auto !important; }',                      /* 기본 커서 */
-          'html[data-cur="hover"] * { cursor: url("/mousehover.png") 0 0, auto !important; }', /* 클릭 가능한 요소 위에 올렸을 때 */
-          'html[data-cur="click"] * { cursor: url("/mouseclick.png") 0 0, auto !important; }'  /* 마우스 누르고 있을 때 */
-        ].join(' ');
-        document.head.appendChild(style);
-
-        /* 클릭 가능한 요소로 판단하는 기준 목록 */
-        var CLICK_ROLES = ['button','menuitem','menuitemcheckbox','menuitemradio',
-          'option','tab','link','checkbox','radio','switch','treeitem',
-          'gridcell','row','columnheader'];
-        var CLICK_TAGS = ['A','BUTTON','SELECT'];                          /* 기본 클릭 HTML 태그 */
-        var CLICK_INPUT = ['submit','button','reset','checkbox','radio'];  /* 클릭형 input 타입 */
-        var FC_RE = /fc-event|fc-daygrid-day|fc-button|fc-col-header|fc-list-event|fc-daygrid-day-number/; /* FullCalendar 클릭 요소 */
-
-        /* 마우스가 올라간 요소(또는 부모)가 클릭 가능한지 DOM 위로 탐색해서 판단 */
-        function isClickable(el) {
-          while (el && el !== document.documentElement) {
-            var tag = el.tagName;
-            if (CLICK_TAGS.indexOf(tag) !== -1) return true;
-            if (tag === 'INPUT' && CLICK_INPUT.indexOf(el.type) !== -1) return true;
-            var role = el.getAttribute && el.getAttribute('role');
-            if (role && CLICK_ROLES.indexOf(role) !== -1) return true;
-            var cls = typeof el.className === 'string' ? el.className : '';
-            if (FC_RE.test(cls)) return true;
-            el = el.parentElement;
-          }
-          return false;
+        /* React와 MUI(Emotion)가 라우트 전환 중 새 스타일 태그를 head에 주입해도
+           커서 규칙이 항상 가장 나중에 적용되도록 style 요소를 head 맨 끝으로 옮긴다.
+           !important 규칙은 나중에 선언된 쪽이 우선순위를 가지기 때문이다. */
+        function keepCursorStyleLast() {
+          if (!cursorStyle || !document.head || document.head.lastElementChild === cursorStyle) return;
+          document.head.appendChild(cursorStyle);
         }
 
-        var html = document.documentElement;
-        var isMouseDown = false;
+        /* 페이지 초기 로드 시 즉시 한 번, 그리고 load 이벤트 후에도 실행한다.
+           setTimeout으로 여러 타이밍에 실행해서 React 초기 렌더링 이후에도 보장한다. */
+        keepCursorStyleLast();
+        window.addEventListener('load', keepCursorStyleLast);
+        setTimeout(keepCursorStyleLast, 0);
+        setTimeout(keepCursorStyleLast, 120);
+        setTimeout(keepCursorStyleLast, 400);
 
-        /* 마우스가 요소 위로 이동할 때 — 클릭 중엔 mouseover 무시해서 클릭 커서 유지 */
-        document.addEventListener('mouseover', function(e) {
-          if (isMouseDown) return;
-          html.setAttribute('data-cur', isClickable(e.target) ? 'hover' : 'default');
-        });
+        /* Emotion이 새 style 태그를 head에 삽입할 때마다 커서 스타일을 다시 맨 끝으로 이동한다. */
+        if (window.MutationObserver && document.head) {
+          var obs = new MutationObserver(keepCursorStyleLast);
+          obs.observe(document.head, { childList: true });
+        }
 
-        /* 마우스 누를 때 클릭 커서로 고정 */
-        document.addEventListener('mousedown', function(e) {
-          isMouseDown = true;
+        /* 마우스를 누르는 순간 html에 data-cur="click"을 붙여 클릭 커서를 활성화한다.
+           capture 단계에서 잡아서 React 이벤트보다 먼저 실행되도록 한다. */
+        document.addEventListener('pointerdown', function() {
           html.setAttribute('data-cur', 'click');
-        });
+        }, true);
 
-        /* 마우스 뗄 때 커서 복원 — React 리렌더링 후에도 html 속성이 유지됨 */
-        document.addEventListener('mouseup', function(e) {
-          isMouseDown = false;
-          html.setAttribute('data-cur', isClickable(e.target) ? 'hover' : 'default');
+        /* 마우스를 뗀 직후 120ms 뒤에 클릭 커서를 해제한다.
+           라우트 전환 중에도 커서가 깜빡이지 않도록 짧은 딜레이를 준다.
+           이벤트 핸들러 안에서 keepCursorStyleLast를 직접 호출하지 않는 이유:
+           style 요소를 DOM에서 잠깐 분리·재삽입하는 과정에서 1프레임 native 커서가
+           보이는 부작용이 생기기 때문이다. MutationObserver가 대신 처리한다. */
+        document.addEventListener('pointerup', function() {
+          setTimeout(function() { html.removeAttribute('data-cur'); }, 120);
+        }, true);
+
+        /* 포인터 동작이 취소된 경우(예: 멀티터치, 스크롤 감지) 즉시 클릭 커서를 해제한다. */
+        document.addEventListener('pointercancel', function() {
+          html.removeAttribute('data-cur');
+        }, true);
+
+        /* 창이 포커스를 잃으면 클릭 상태를 초기화해서 커서가 click 상태로 굳지 않게 한다. */
+        window.addEventListener('blur', function() {
+          html.removeAttribute('data-cur');
         });
-      });
+      })();
     </script>
   </body>
 </html>

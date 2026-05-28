@@ -154,6 +154,39 @@ export default function useAccountCorporateCardData() {
     [withLoading]
   );
 
+  const deleteAccountCorporateCardPayment = useCallback(async (payload) => {
+    return api.post("/Account/AccountCorporateCardPaymentDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const deleteAccountCorporateCardPaymentDetail = useCallback(async (payload) => {
+    return api.post("/Account/AccountCorporateCardPaymentDetailDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const parseAccountCorporateCardReceipt = useCallback(async (formData) => {
+    return api.post("/card-receipt/parse", formData, {
+      headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  const saveAccountCorporateCardPaymentAll = useCallback(async (payload) => {
+    return api.post("/Account/AccountCorporateCardPaymentAllSave", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+  }, []);
+
+  const saveAccountCorporateCard = useCallback(async (payload) => {
+    return api.post("/Account/AccountCorporateCardSave", payload, {
+      headers: { "Content-Type": "application/json" },
+    });
+  }, []);
+
   return {
     // state
     loading,
@@ -181,6 +214,11 @@ export default function useAccountCorporateCardData() {
     fetchAccountCorporateCardPaymentList,
     fetchAccountCorporateCardPaymentDetailList,
     fetchCorporateCardPayList,
+    deleteAccountCorporateCardPayment,
+    deleteAccountCorporateCardPaymentDetail,
+    parseAccountCorporateCardReceipt,
+    saveAccountCorporateCardPaymentAll,
+    saveAccountCorporateCard,
   };
 }
 

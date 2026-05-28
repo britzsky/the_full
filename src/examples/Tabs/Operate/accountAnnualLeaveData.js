@@ -82,7 +82,7 @@ export default function useAccountAnnualLeaveData() {
           name: item.name,
           position_type: item.position_type,
           contract_type: item.contract_type,
-          join_dt: item.join_dt,
+          act_join_dt: item.act_join_dt,
 
           // ✅ 근무형태 idx
           idx: item.idx,

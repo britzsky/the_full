@@ -347,7 +347,7 @@ function AccountAnnualLeaveTab() {
   const columnsLeft = useMemo(
     () => [
       { header: "성명", accessorKey: "name" },
-      { header: "입사일자", accessorKey: "join_dt" },
+      { header: "입사일자", accessorKey: "act_join_dt" },
       { header: "근무형태", accessorKey: "idx" },
       { header: "시작", accessorKey: "start_time" },
       { header: "종료", accessorKey: "end_time" },

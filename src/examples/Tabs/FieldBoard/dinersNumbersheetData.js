@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "api/api";
+import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
 
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -132,19 +133,19 @@ export default function useDinersNumbersheetData(accountId, year, month) {
 
   // ✅ 계정 목록 조회 (최초 1회)
   useEffect(() => {
-    api
-      .get("/Account/AccountList", {
-        params: { account_type: "0" },
-      })
-      .then((res) => {
-        const rows = (res.data || []).map((item) => ({
+    fetchFieldBoardAccountList({ endpoint: "/Account/AccountList", accountType: "0" })
+      .then((list) => {
+        const rows = (list || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
           account_type: item.account_type,
         }));
         setAccountList(rows);
       })
-      .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
+      .catch((err) => {
+        console.error("데이터 조회 실패 (AccountList):", err);
+        setAccountList([]);
+      });
   }, []);
 
   // 🔹 extraDietCols + accountList 까지 같이 리턴

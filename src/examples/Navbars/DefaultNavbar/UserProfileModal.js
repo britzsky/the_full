@@ -685,7 +685,7 @@ function UserProfileModal({ open, onClose }) {
                     label="주소"
                     value={form.address}
                     fullWidth
-                    sx={inputSx}
+                    sx={{ ...inputSx, flex: "1 1 auto", minWidth: 0 }}
                     readOnly
                     error={!!errors.address}
                     helperText={errors.address}
@@ -695,7 +695,14 @@ function UserProfileModal({ open, onClose }) {
                     variant="gradient"
                     color="info"
                     onClick={() => setOpenPostcode(true)}
-                    sx={{ ml: isMdDown ? 0 : 1, px: 1.25, py: 0.5, alignSelf: isMdDown ? "flex-end" : "center" }}
+                    sx={{
+                      ml: isMdDown ? 0 : 0.5,
+                      px: 1.5,
+                      py: 0.5,
+                      minWidth: 92,
+                      whiteSpace: "nowrap",
+                      alignSelf: isMdDown ? "flex-end" : "center",
+                    }}
                   >
                     주소찾기
                   </MDButton>

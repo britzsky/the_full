@@ -231,12 +231,22 @@ function OperateScheduleStatTab() {
 
   useEffect(() => {
     if (!rightPanelRef.current) return;
+    let frameId = null;
     const observer = new ResizeObserver((entries) => {
       const h = entries[0]?.contentRect?.height;
-      if (h) setRightPanelHeight(h);
+      if (!h) return;
+
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(() => {
+        const nextHeight = Math.round(h);
+        setRightPanelHeight((prevHeight) => (prevHeight === nextHeight ? prevHeight : nextHeight));
+      });
     });
     observer.observe(rightPanelRef.current);
-    return () => observer.disconnect();
+    return () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
   }, []);
 
   // 기본 조회 기준: 현재 연/월

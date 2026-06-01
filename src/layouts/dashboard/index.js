@@ -442,7 +442,7 @@ DatePickerTextInput.propTypes = {
   required: PropTypes.bool,
 };
 
-// ERP 내부 메뉴 경로 목록 (카테고리 → 페이지)
+// ERP 북마크 내부 메뉴 경로 목록 (카테고리 → 페이지)
 const INTERNAL_ROUTES = {
   본사: [
     { name: "🗂️ 관리표", route: "/HeadOffice/PeopleCountingTab" },
@@ -477,6 +477,7 @@ const INTERNAL_ROUTES = {
   ],
   인사: [
     { name: "🧑‍🔧 현장관리", route: "/fieldstaff_1" },
+    { name: "📚 본사 교육", route: "/humanresource/education" },
   ],
   현장: [
     { name: "📋 집계표", route: "/layouts/tallysheet" },
@@ -485,7 +486,6 @@ const INTERNAL_ROUTES = {
     { name: "📋 집계표-개발팀", route: "/layouts/tallysheet_develop" },
   ],
 };
-
 // 북마크 전용 모달: 카테고리 → 페이지 순으로 선택하는 2단계 드롭박스
 const findInternalRoutePage = (route) => {
   const routeText = String(route || "");
@@ -1287,7 +1287,7 @@ function MiniCalendar({ todos }) {
         onClose={() => setPopover({ anchor: null, date: null })}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
         transformOrigin={{ vertical: "top", horizontal: "center" }}
-        slotProps={{ paper: { sx: { borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", p: 1.5, minWidth: 180, maxWidth: 260, backgroundColor: "#fff !important", background: "#fff !important" } } }}
+        slotProps={{ paper: { style: { backgroundColor: "#fff", background: "#fff" }, sx: { borderRadius: "12px", boxShadow: "0 4px 20px rgba(0,0,0,0.15)", p: 1.5, minWidth: 180, maxWidth: 260, backgroundColor: "#fff !important", background: "#fff !important" } } }}
       >
         <MDTypography variant="caption" fontWeight="bold" color="dark" sx={{ display: "block", mb: 0.75, opacity: 0.6 }}>
           {popover.date}

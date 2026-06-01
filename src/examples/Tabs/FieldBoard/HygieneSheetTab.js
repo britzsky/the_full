@@ -70,6 +70,16 @@ function HygieneSheetTab() {
     return accountOptions.find((o) => o.value === v) || null;
   }, [accountOptions, selectedAccountId]);
 
+  useEffect(() => {
+    if (!isAccountLocked || !selectedAccountId) return;
+    const matched = (accountList || []).find(
+      (acc) => String(acc.account_id) === String(selectedAccountId)
+    );
+    if (matched) {
+      setAccountInput(matched.account_name || "");
+    }
+  }, [accountList, isAccountLocked, selectedAccountId]);
+
   // 거래처 변경 시 로딩을 먼저 시작하고 조회를 트리거
   const beginListLoading = useCallback(() => {
     setViewLoading(true);

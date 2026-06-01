@@ -756,6 +756,16 @@ function DinersNumberSheet() {
   }, [filteredAccountList]);
 
   useEffect(() => {
+    if (!isAccountLocked || !selectedAccountId) return;
+    const matched = (accountList || []).find(
+      (acc) => String(acc.account_id) === String(selectedAccountId)
+    );
+    if (matched) {
+      setAccountInput(matched.account_name || "");
+    }
+  }, [accountList, isAccountLocked, selectedAccountId]);
+
+  useEffect(() => {
     if (!accountListEffectRanRef.current) {
       accountListEffectRanRef.current = true;
       return;

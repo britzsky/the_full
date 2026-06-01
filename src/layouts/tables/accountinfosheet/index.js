@@ -138,6 +138,8 @@ const FILE_TYPES = [
   { key: "meal_service_contract", label: "위탁급식계약서" },
 ];
 
+const ACCOUNT_TABLE_RESTORE_PAGINATION_KEY = "accountTableRestorePagination";
+
 function AccountInfoSheet() {
   // 🔹 추가 식단가 모달 상태
   const [extraDietModalOpen, setExtraDietModalOpen] = useState(false);
@@ -186,6 +188,13 @@ function AccountInfoSheet() {
     if (Swal.isVisible()) return;
     Swal.fire("안내", "삭제업장은 수정할 수 없습니다.", "info");
   }, []);
+
+  const goAccountList = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(ACCOUNT_TABLE_RESTORE_PAGINATION_KEY, "Y");
+    }
+    navigate("/account");
+  }, [navigate]);
 
   const handleBlockedMouseAction = useCallback(
     (e) => {
@@ -2179,7 +2188,7 @@ function AccountInfoSheet() {
             variant="gradient"
             color="secondary"
             size="small"
-            onClick={() => navigate("/account")}
+            onClick={goAccountList}
             sx={{ minWidth: 88, height: 32, px: 1, fontSize: 12, lineHeight: 1 }}
           >
             목록보기

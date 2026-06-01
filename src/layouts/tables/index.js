@@ -33,10 +33,45 @@ import Swal from "sweetalert2";
 import api from "api/api";
 
 import useTableData from "layouts/tables/data/authorsTableData";
+import { useNavigationType } from "react-router-dom";
 import "./tables.css";
+
+const ACCOUNT_TABLE_PENDING_PAGINATION_KEY = "accountTablePendingPagination";
+const ACCOUNT_TABLE_RESTORE_PAGINATION_KEY = "accountTableRestorePagination";
+
+const getSavedAccountTablePagination = (restoreByBack = false) => {
+  if (typeof window === "undefined") return null;
+
+  const shouldRestore =
+    restoreByBack || window.sessionStorage.getItem(ACCOUNT_TABLE_RESTORE_PAGINATION_KEY) === "Y";
+  if (!shouldRestore) {
+    window.sessionStorage.removeItem(ACCOUNT_TABLE_PENDING_PAGINATION_KEY);
+    return null;
+  }
+
+  try {
+    const saved = window.sessionStorage.getItem(ACCOUNT_TABLE_PENDING_PAGINATION_KEY);
+    if (!saved) return null;
+
+    const parsed = JSON.parse(saved);
+    const pageIndex = Number(parsed?.pageIndex);
+    const pageSize = Number(parsed?.pageSize);
+
+    if (!Number.isInteger(pageIndex) || pageIndex < 0) return null;
+    if (!Number.isInteger(pageSize) || pageSize <= 0) return null;
+
+    return { pageIndex, pageSize };
+  } catch {
+    return null;
+  } finally {
+    window.sessionStorage.removeItem(ACCOUNT_TABLE_PENDING_PAGINATION_KEY);
+    window.sessionStorage.removeItem(ACCOUNT_TABLE_RESTORE_PAGINATION_KEY);
+  }
+};
 
 export default function Tables() {
   const theme = useTheme();
+  const navigationType = useNavigationType();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isCompactTable = useMediaQuery("(max-width:1536px)");
   const [selectedType, setSelectedType] = useState("0");
@@ -52,7 +87,10 @@ export default function Tables() {
   const searchStartedRef = useRef(false);
   // 로딩 원인 추적(SEARCH: 서버조회, LOCAL: 화면 정렬/필터)
   const sortLoadingReasonRef = useRef("");
-  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 21 });
+  const savedPaginationRef = useRef(getSavedAccountTablePagination(navigationType === "POP"));
+  const [pagination, setPagination] = useState(
+    savedPaginationRef.current || { pageIndex: 0, pageSize: 21 }
+  );
 
   const [open, setOpen] = useState(false);
   const [addrOpen, setAddrOpen] = useState(false);
@@ -138,6 +176,8 @@ export default function Tables() {
   const [originalMap, setOriginalMap] = useState({});
 
   useLayoutEffect(() => {
+    if (loading) return;
+
     const base = Array.isArray(rowsByDelYn) ? rowsByDelYn : [];
     const next = base.map((r, idx) => {
       const accountId = r?.account_id;
@@ -167,10 +207,23 @@ export default function Tables() {
     });
     setOriginalMap(om);
 
-    // 조회결과 변경 시 첫 페이지 이동
-    setPagination((p) => ({ ...p, pageIndex: 0 }));
+    if (savedPaginationRef.current) {
+      savedPaginationRef.current = null;
+    } else {
+      // 조회 결과가 새로 바뀌면 첫 페이지부터 보여주는 기존 흐름
+      setPagination((p) => ({ ...p, pageIndex: 0 }));
+    }
     setViewLoading(false);
-  }, [rowsByDelYn, toPlainText, toNumberString]);
+  }, [rowsByDelYn, toPlainText, toNumberString, loading]);
+
+  const savePendingPaginationForDetail = useCallback(() => {
+    if (typeof window === "undefined") return;
+
+    window.sessionStorage.setItem(
+      ACCOUNT_TABLE_PENDING_PAGINATION_KEY,
+      JSON.stringify(pagination)
+    );
+  }, [pagination]);
 
   // 수정값 누적 상태
   const [editedMap, setEditedMap] = useState({});
@@ -928,6 +981,9 @@ export default function Tables() {
                           key={cell.id}
                           className={cell.column.id === "info" ? "accountsheet-link-cell" : undefined}
                           data-clickable={cell.column.id === "info" ? "true" : undefined}
+                          onClickCapture={
+                            cell.column.id === "info" ? savePendingPaginationForDetail : undefined
+                          }
                           onMouseEnter={cell.column.id === "info" ? keepHoverCursor : undefined}
                           onMouseMove={cell.column.id === "info" ? keepHoverCursor : undefined}
                           onMouseOverCapture={

@@ -2267,11 +2267,7 @@ function TallySheet() {
   // ✅ 직접 입력 허용 타입 (1~4)
   const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
 
-  // ======================== ✅ "type != 1 직접입력 불가" 라우팅 ========================
-  const shouldBlockModalByType = useCallback((typeValue) => {
-    return false;
-  }, []);
-
+  // ======================== ✅ 직접 입력이 아닌 타입별 모달 라우팅 ========================
   const handleSpecialCellClick = useCallback(
     (rowOriginal, rIdx, colKey, isSecond) => {
       if (!rowOriginal || rowOriginal.name === "총합") return;
@@ -2281,8 +2277,6 @@ function TallySheet() {
 
       const t = String(rowOriginal.type ?? "");
       if (!t) return;
-
-      if (shouldBlockModalByType(t)) return;
 
       // ✅ type 1~4 는 직접 입력 대상이므로 모달/기타 클릭로직 타지 않게 종료
       if (INLINE_EDIT_TYPES.has(t)) return;
@@ -2301,7 +2295,6 @@ function TallySheet() {
     },
     [
       INLINE_EDIT_TYPES,
-      shouldBlockModalByType,
       handleCorpCardCellClick,
       handleCashCellClick,
       handleOtherCellClick,
@@ -3929,9 +3922,7 @@ function TallySheet() {
                           ? "not-allowed"
                           : canInlineEdit
                             ? "text"
-                            : shouldBlockModalByType(rowType)
-                              ? "not-allowed"
-                              : "pointer",
+                            : "pointer",
                       // ✅ 우선순위: 활성셀 > 포인트색 > 활성행 > 기본BG
                       background: mergedBg,
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
@@ -5062,6 +5053,7 @@ function TallySheet() {
                           fullWidth
                           displayEmpty
                           sx={{
+                            height: "40px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               String(orig.card_idx ?? orig.corp_card_idx ?? orig.idx ?? ""),
                               String(r.card_idx ?? r.corp_card_idx ?? r.idx ?? "")
@@ -5095,6 +5087,7 @@ function TallySheet() {
                           }
                           fullWidth
                           sx={{
+                            height: "40px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               orig.receipt_type,
                               r.receipt_type
@@ -5543,6 +5536,7 @@ function TallySheet() {
                           }}
                           fullWidth
                           sx={{
+                            height: "39px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               String(orig.payType ?? "1"),
                               payType
@@ -5570,6 +5564,7 @@ function TallySheet() {
                           }
                           fullWidth
                           sx={{
+                            height: "39px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               String(orig.cash_receipt_type ?? "3"),
                               String(r.cash_receipt_type ?? "3")
@@ -5597,6 +5592,7 @@ function TallySheet() {
                           }
                           fullWidth
                           sx={{
+                            height: "39px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               orig.receipt_type,
                               r.receipt_type
@@ -6007,7 +6003,7 @@ function TallySheet() {
                           }
                           fullWidth
                           sx={{
-                            height: "40px",
+                            height: "39px",
                             "& .MuiSelect-select": getCellStyleByCompare(
                               orig.receipt_type,
                               r.receipt_type
@@ -6623,6 +6619,7 @@ function TallySheet() {
                   }))
                 }
                 fullWidth
+                sx={{ height: "40px" }}
               >
                 <MenuItem value="1">현금</MenuItem>
                 <MenuItem value="2">카드</MenuItem>
@@ -6641,6 +6638,7 @@ function TallySheet() {
                   }))
                 }
                 fullWidth
+                sx={{ height: "40px" }}
               >
                 <MenuItem value="1">개인소득공제</MenuItem>
                 <MenuItem value="2">사업자지출증빙</MenuItem>
@@ -6654,6 +6652,7 @@ function TallySheet() {
                 value={cashForm.receipt_type || "UNKNOWN"}
                 onChange={(e) => setCashForm((p) => ({ ...p, receipt_type: e.target.value }))}
                 fullWidth
+                sx={{ height: "40px" }}
               >
                 <MenuItem value="UNKNOWN" disabled>
                   <em>영수증 타입 선택</em>

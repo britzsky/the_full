@@ -155,6 +155,15 @@ export default function useAccountCorporateCardData() {
     [withLoading]
   );
 
+  // 개인구매 상단 테이블 행 삭제
+  const deleteAccountPersonPurchaseTally = useCallback(async (payload) => {
+    return api.post("/Account/AccountPurchaseTallyDelete", payload, {
+      headers: { "Content-Type": "application/json" },
+      validateStatus: () => true,
+    });
+  }, []);
+
+  // 개인구매 하단 상세 테이블 행 삭제
   const deleteAccountPersonPurchaseTallyDetail = useCallback(async (payload) => {
     return api.post("/Account/AccountPurchaseTallyDetailDelete", payload, {
       headers: { "Content-Type": "application/json" },
@@ -202,6 +211,7 @@ export default function useAccountCorporateCardData() {
     fetchAccountCorporateCardPaymentList,
     fetchAccountCorporateCardPaymentDetailList,
     fetchCorporateCardPayList,
+    deleteAccountPersonPurchaseTally,
     deleteAccountPersonPurchaseTallyDetail,
     scanAccountPersonPurchaseReceipt,
     saveAccountPersonPurchasePaymentAll,

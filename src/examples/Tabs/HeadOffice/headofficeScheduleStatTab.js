@@ -63,6 +63,37 @@ const TYPE_OPTIONS_BY_DEPT = {
     { value: "9", label: "오전반차" },
     { value: "10", label: "오후반차" },
   ],
+  // 개발팀/기획팀은 현재 통계 탭 집계 대상에서 제외
+  // development: [
+  //   { value: "1", label: "행사" },
+  //   { value: "2", label: "위생" },
+  //   { value: "3", label: "관리" },
+  //   { value: "4", label: "이슈" },
+  //   { value: "5", label: "미팅" },
+  //   { value: "6", label: "오픈" },
+  //   { value: "7", label: "오픈준비" },
+  //   { value: "8", label: "외근" },
+  //   { value: "9", label: "출장" },
+  //   { value: "10", label: "체크" },
+  //   { value: "11", label: "연차" },
+  //   { value: "12", label: "오전반차" },
+  //   { value: "13", label: "오후반차" },
+  // ],
+  // planning: [
+  //   { value: "1", label: "행사" },
+  //   { value: "2", label: "위생" },
+  //   { value: "3", label: "관리" },
+  //   { value: "4", label: "이슈" },
+  //   { value: "5", label: "미팅" },
+  //   { value: "6", label: "오픈" },
+  //   { value: "7", label: "오픈준비" },
+  //   { value: "8", label: "외근" },
+  //   { value: "9", label: "출장" },
+  //   { value: "10", label: "체크" },
+  //   { value: "11", label: "연차" },
+  //   { value: "12", label: "오전반차" },
+  //   { value: "13", label: "오후반차" },
+  // ],
 };
 
 const TOP_FILTER_CONTROL_HEIGHT = 38;
@@ -688,14 +719,17 @@ function HeadofficeScheduleStatTab() {
         onClose={handleCloseMemberPopover}
         anchorOrigin={{ vertical: "top", horizontal: "center" }}
         transformOrigin={{ vertical: "bottom", horizontal: "center" }}
-        PaperProps={{
-          sx: {
-            borderRadius: 1,
-            boxShadow: "0 2px 10px rgba(0,0,0,0.16)",
-            border: "1px solid #ddd",
-            p: 1,
-            width: 520,
-            maxWidth: "90vw",
+        slotProps={{
+          paper: {
+            style: { backgroundColor: "#ffffff" },
+            sx: {
+              borderRadius: 1,
+              boxShadow: "0 2px 10px rgba(0,0,0,0.16)",
+              border: "1px solid #ddd",
+              p: 1,
+              width: 520,
+              maxWidth: "90vw",
+            },
           },
         }}
       >

@@ -31,11 +31,14 @@ function HeaderWithLogout({ title, rightContent, showMenuButton }) {
     localStorage.removeItem("login_session_id");
     localStorage.removeItem("position_name");
     localStorage.removeItem("user_name");
+    localStorage.removeItem("autoLogin");
+    localStorage.removeItem("autoLoginUserId");
+    localStorage.removeItem("autoLoginPassword");
     sessionStorage.removeItem("login_session_id");
     sessionStorage.removeItem("login_user_id");
     clearSharedAuthCookies();
 
-    navigate("/authentication/sign-in");
+    navigate("/authentication/sign-in", { replace: true });
   };
 
   // ✅ 햄버거 버튼 클릭 시 사이드 메뉴 토글

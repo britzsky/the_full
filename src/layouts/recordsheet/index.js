@@ -75,8 +75,10 @@ const TYPE_LABEL = {
   21: "공휴일",
 };
 
-const NOTELESS_TYPE_VALUES = new Set(["0", "1", "2"]);
-const shouldSendEmptyNoteForType = (type) => NOTELESS_TYPE_VALUES.has(String(type ?? ""));
+const SALARY_INPUT_TYPE_VALUES = new Set(["5", "6"]);
+const NOTE_INPUT_TYPE_VALUES = new Set(["3", "11", "17"]);
+const shouldClearSalaryForType = (type) => !SALARY_INPUT_TYPE_VALUES.has(String(type ?? ""));
+const shouldSendEmptyNoteForType = (type) => !NOTE_INPUT_TYPE_VALUES.has(String(type ?? ""));
 
 const FULL_TYPE_OPTIONS = [
   { value: "0", label: "-" },
@@ -439,8 +441,9 @@ const AttendanceCell = React.memo(function AttendanceCell({
 
     if (field === "type") {
       const nextType = String(newVal ?? "");
-      const nextIsDispatch = ["5", "6"].includes(nextType);
+      const nextIsDispatch = SALARY_INPUT_TYPE_VALUES.has(nextType);
       if (!nextIsDispatch) updatedValue.pay_yn = "N";
+      if (shouldClearSalaryForType(nextType)) updatedValue.salary = "";
       if (shouldSendEmptyNoteForType(nextType)) updatedValue.note = "";
     }
 

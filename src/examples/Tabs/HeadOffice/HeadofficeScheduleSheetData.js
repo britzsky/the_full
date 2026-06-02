@@ -2,8 +2,10 @@
 import { useState } from "react";
 import api from "api/api";
 
-// team_code: 1=영업팀, 2=운영팀, 3=급식사업부
-export const TEAM_CODE = { BUSINESS: 1, OPERATE: 2, CATERING: 3 };
+// team_code: 1=영업팀, 2=운영팀, 3=급식사업부, 4=개발팀, 5=기획팀
+export const TEAM_CODE = { BUSINESS: 1, OPERATE: 2, CATERING: 3, DEVELOPMENT: 4, PLANNING: 5 };
+// 사용자 department: 4=영업팀, 5=운영팀, 8=급식사업부, 6=개발팀, 9=기획팀
+export const DEPARTMENT_CODE = { BUSINESS: 4, OPERATE: 5, CATERING: 8, DEVELOPMENT: 6, PLANNING: 9 };
 
 // 일정 조회 커스텀 훅 (tb_business_calendar 단일 테이블, team_code로 구분)
 export default function useHeadofficeSchedulesheetData(currentYear, currentMonth) {
@@ -16,12 +18,12 @@ export default function useHeadofficeSchedulesheetData(currentYear, currentMonth
     try {
       const formattedMonth = currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
 
-      // team_code 없이 전체 조회 → 서버에서 1/2/3 모두 반환
+      // team_code 없이 전체 조회 → 서버에서 등록된 본사 일정 전체 반환
       const res = await api.get("/HeadOffice/HeadOfficeScheduleList", {
         params: { year: currentYear, month: formattedMonth },
       });
 
-      // team_code(1/2/3)를 dept_type 문자열로 변환해 기존 화면 로직과 호환
+      // team_code를 dept_type 문자열로 변환해 기존 화면 로직과 호환
       const rows = (res.data || []).map((item) => ({
         ...item,
         dept_type: teamCodeToDeptType(item.team_code),
@@ -54,6 +56,8 @@ export function teamCodeToDeptType(teamCode) {
   if (n === TEAM_CODE.BUSINESS) return "business";
   if (n === TEAM_CODE.OPERATE)  return "operate";
   if (n === TEAM_CODE.CATERING) return "catering";
+  if (n === TEAM_CODE.DEVELOPMENT) return "development";
+  if (n === TEAM_CODE.PLANNING) return "planning";
   return "";
 }
 
@@ -62,5 +66,17 @@ export function deptTypeToTeamCode(deptType) {
   if (deptType === "business") return TEAM_CODE.BUSINESS;
   if (deptType === "operate")  return TEAM_CODE.OPERATE;
   if (deptType === "catering") return TEAM_CODE.CATERING;
+  if (deptType === "development") return TEAM_CODE.DEVELOPMENT;
+  if (deptType === "planning") return TEAM_CODE.PLANNING;
+  return null;
+}
+
+// dept_type 문자열 → 사용자 department 숫자 변환 (담당자 조회/저장 요청용)
+export function deptTypeToDepartmentCode(deptType) {
+  if (deptType === "business") return DEPARTMENT_CODE.BUSINESS;
+  if (deptType === "operate")  return DEPARTMENT_CODE.OPERATE;
+  if (deptType === "catering") return DEPARTMENT_CODE.CATERING;
+  if (deptType === "development") return DEPARTMENT_CODE.DEVELOPMENT;
+  if (deptType === "planning") return DEPARTMENT_CODE.PLANNING;
   return null;
 }

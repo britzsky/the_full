@@ -261,8 +261,11 @@ const collectDelEntriesFromRows = (targetRows, originalsById) =>
     })
     .filter(Boolean);
 
-const buildSearchBlob = (row) =>
-  [
+const buildSearchBlob = (row) => {
+  const isField =
+    asText(row.account_id).trim() || normalizeCode(row.user_type) === "4" ? "현장" : "본사";
+
+  return [
     row.ui_index,
     row.user_id,
     row.user_name,
@@ -273,9 +276,11 @@ const buildSearchBlob = (row) =>
     row.phone,
     row.address_full,
     row.del_yn === "Y" ? "퇴사" : "재직",
+    isField,
   ]
     .map((value) => asText(value).toLowerCase())
     .join(" ");
+};
 
 function UserManagement() {
   const theme = useTheme();
@@ -988,7 +993,7 @@ function UserManagement() {
   };
 
   // 텍스트를 클릭하면 같은 자리에서 바로 수정되도록 contentEditable을 사용한다
-  const renderEditableCell = (row, field, align = "left", isChanged = false) => {
+  const renderEditableCell = (row, field, align = "left", isChanged = false, padding = "1px 2px 0") => {
     const rowKey = getRowKey(row);
     const value = asText(row[field]);
     const isInvalid = invalidRequiredCells[rowKey]?.includes(field);
@@ -1023,7 +1028,7 @@ function UserManagement() {
           height: `${CELL_INNER_HEIGHT}px`,
           lineHeight: "normal",
           margin: 0,
-          padding: "1px 2px 0",
+          padding,
           boxSizing: "border-box",
           whiteSpace: "nowrap",
           overflow: "hidden",
@@ -1239,12 +1244,12 @@ function UserManagement() {
     }
 
     // 3) 일반 텍스트 편집 셀
-    if (columnKey === "user_name") return renderEditableCell(row, "user_name", "center", cellChanged);
+    if (columnKey === "user_name") return renderEditableCell(row, "user_name", "center", cellChanged, "0 2px 2px");
     if (columnKey === "password") return renderEditableCell(row, "password", "center", cellChanged);
     if (columnKey === "join_dt") return renderEditableCell(row, "join_dt", "center", cellChanged);
     if (columnKey === "birth_date") return renderEditableCell(row, "birth_date", "center", cellChanged);
     if (columnKey === "phone") return renderEditableCell(row, "phone", "center", cellChanged);
-    if (columnKey === "address_full") return renderEditableCell(row, "address", "left", cellChanged);
+    if (columnKey === "address_full") return renderEditableCell(row, "address", "left", cellChanged, "0 2px 2px");
 
     // 4) 부서/거래처 클릭 편집 셀
     if (columnKey === "dept_or_account") {
@@ -1680,7 +1685,7 @@ function UserManagement() {
                 <MDBox sx={{ width: isMobile ? "100%" : "14rem", mr: isMobile ? 0 : 1 }}>
                   <MDInput
                     key={`search-input-${searchInputResetKey}`}
-                    placeholder="검색"
+                    placeholder="검색(ex. 본사, 현장, 김ㅇㅇ, 한결)"
                     size="small"
                     fullWidth
                     onChange={({ currentTarget }) => {

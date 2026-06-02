@@ -505,20 +505,72 @@ export default function DeadlineBalanceTab() {
   };
 
   // ✅ 타입 + 미수기준 연/월 기준으로 입금금액 재계산
+  const getBaseYmTotalOutstandingAmount = (accountId, targetYear, targetMonth) => {
+    const normalizedAccountId = normalizeAccountId(accountId);
+    const normalizedYear = Number(targetYear || 0);
+    const normalizedMonth = Number(targetMonth || 0);
+    if (!normalizedAccountId || normalizedYear <= 0 || normalizedMonth <= 0) return null;
+
+    const ymKey = `${String(normalizedYear).padStart(4, "0")}-${String(normalizedMonth).padStart(2, "0")}`;
+    const baseRow = (allUnpaidBaseRows || []).find(
+      (row) =>
+        normalizeAccountId(row?.account_id) === normalizedAccountId
+        && Number(row?.year || 0) === normalizedYear
+        && Number(row?.month || 0) === normalizedMonth
+    );
+    const currentRow =
+      normalizedYear === Number(year) && normalizedMonth === Number(month)
+        ? selectedCustomer
+        : null;
+    const sourceRow = baseRow || currentRow;
+
+    const typeExpectedTotal = sourceRow
+      ? TRACKED_UNPAID_TYPE_CODES.reduce((acc, typeCode) => {
+        const accessorKey = TYPE_ACCESSOR_BY_CODE[typeCode];
+        return acc + Math.max(0, parseNumber(sourceRow?.[accessorKey]));
+      }, 0)
+      : 0;
+    const typePaidTotal = TRACKED_UNPAID_TYPE_CODES.reduce((acc, typeCode) => {
+      const key = `${normalizedAccountId}_${ymKey}_${typeCode}`;
+      const sum = rightStatusMapByBaseYmType.get(key) || { actual: 0 };
+      return acc + Math.max(0, parseNumber(sum?.actual));
+    }, 0);
+    const balancePaidKey = `${normalizedAccountId}_${ymKey}_${BALANCE_TYPE_CODE}`;
+    const balancePaid = Math.max(
+      0,
+      parseNumber((rightStatusMapByBaseYmType.get(balancePaidKey) || { actual: 0 })?.actual)
+    );
+
+    if (!sourceRow && typePaidTotal === 0 && balancePaid === 0) return null;
+
+    const typeOutstanding = Math.max(0, typeExpectedTotal - typePaidTotal);
+    return Math.max(0, typeOutstanding - balancePaid);
+  };
+
   const resolveDepositAmountByType = async (formState, typeValue) => {
     if (!selectedCustomer) return "";
 
     const normalizedType = String(typeValue || "");
     if (!AUTO_DEPOSIT_TYPES.has(normalizedType)) return "";
     if (normalizedType === "6") return formatNumber(0);
-    // ✅ 미수잔액(4)은 항상 좌측 총 미수잔액을 표시
+    // 미수잔액은 미수기준일 월이 아니라 거래처의 총 미수잔액을 입금 대상으로 사용한다.
     if (normalizedType === "4") return formatNumber(parseNumber(selectedCustomer?.balance_price));
-
-    if (!API_BASED_TYPES.has(normalizedType)) return "";
 
     const targetYear = Number(formState.base_year || year);
     const targetMonth = Number(formState.base_month || month);
     const isCurrentBaseYm = targetYear === Number(year) && targetMonth === Number(month);
+    const baseYmTotalOutstanding = getBaseYmTotalOutstandingAmount(
+      selectedCustomer.account_id,
+      targetYear,
+      targetMonth
+    );
+
+    // 미수기준일의 총 미수잔액이 이미 0원이면 품목별 잔액도 입금 대상으로 표시하지 않는다.
+    if (baseYmTotalOutstanding !== null && baseYmTotalOutstanding === 0) {
+      return formatNumber(0);
+    }
+
+    if (!API_BASED_TYPES.has(normalizedType)) return "";
 
     // ✅ 1/2/3/4/5 모두 선택한 미수기준 연/월의 차액조회 API를 우선 사용
     const found = await fetchDifferenceByBaseYm(
@@ -732,6 +784,35 @@ export default function DeadlineBalanceTab() {
   };
 
   // ✅ 연도 선택 왼쪽에 표시할 입금상태 범례
+  const getLongTermTypeAmountColor = (monthInfo, typeCode) => {
+    const typeRows = (monthInfo?.typeRows || []).map((item, index) => ({
+      ...item,
+      index,
+      expected: Math.max(0, parseNumber(item?.expected)),
+      paid: Math.max(0, parseNumber(item?.paid)),
+      outstanding: Math.max(0, parseNumber(item?.outstanding)),
+    }));
+    const targetRow = typeRows.find((item) => item.typeCode === typeCode);
+    if (!targetRow || targetRow.expected <= 0) return "transparent";
+
+    let remainingBalancePaid = Math.max(0, parseNumber(monthInfo?.appliedBalancePaid));
+    const displayRows = typeRows.sort((a, b) => a.index - b.index);
+    const targetPaidMap = new Map();
+
+    displayRows.forEach((item) => {
+      const directPaid = Math.min(item.expected, item.paid);
+      const unpaidAmount = Math.max(0, item.expected - directPaid);
+      const balancePaid = Math.min(remainingBalancePaid, unpaidAmount);
+
+      targetPaidMap.set(item.typeCode, directPaid + balancePaid);
+      remainingBalancePaid -= balancePaid;
+    });
+
+    const paidAmount = Math.max(0, parseNumber(targetPaidMap.get(typeCode)));
+    if (paidAmount <= 0) return "transparent";
+    return getStatusColorByExpectedAndPaid(targetRow.expected, paidAmount);
+  };
+
   const DepositStatusLegend = () => (
     <Box
       sx={{
@@ -2195,6 +2276,7 @@ export default function DeadlineBalanceTab() {
                                     monthInfo.typeRows.find((item) => item.typeCode === typeCode)?.expected
                                   )
                                 );
+                                const amountColor = getLongTermTypeAmountColor(monthInfo, typeCode);
                                 return (
                                   <td
                                     key={`${monthInfo.ymKey}_expected_${typeCode}`}
@@ -2202,6 +2284,7 @@ export default function DeadlineBalanceTab() {
                                       ...detailTableCellStyle,
                                       textAlign: "right",
                                       width: isMobile ? "72px" : "96px",
+                                      background: amountColor,
                                     }}
                                   >
                                     {rawValue > 0 ? formatNumber(rawValue) : "-"}

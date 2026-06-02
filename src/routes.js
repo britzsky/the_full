@@ -41,6 +41,7 @@ import HomeSwitcher from "layouts/dashboard/HomeSwitcher";
 import Tables from "layouts/tables";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
+import Logout from "layouts/authentication/logout";
 // 본사
 import PeopleCountingManager from "layouts/headoffice/headofficetab";
 import WeekMenuManager from "layouts/weekmenusheet";
@@ -578,8 +579,8 @@ const routes = [
     name: "로그아웃",
     key: "log-out",
     icon: <Icon fontSize="small">logout</Icon>,
-    route: "components/Common/headerWithLogout",
-    component: <SignIn />,
+    route: "/logout",
+    component: <Logout />,
   },
 
   {

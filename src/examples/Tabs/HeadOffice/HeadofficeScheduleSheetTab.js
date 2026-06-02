@@ -18,7 +18,10 @@ import {
   useMediaQuery,
 } from "@mui/material";
 
-import useHeadofficeSchedulesheetData, { deptTypeToTeamCode } from "./HeadofficeScheduleSheetData";
+import useHeadofficeSchedulesheetData, {
+  deptTypeToDepartmentCode,
+  deptTypeToTeamCode,
+} from "./HeadofficeScheduleSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import "layouts/headoffice/headoffice-schedule-sheet.css";
 
@@ -72,17 +75,55 @@ const TYPE_OPTIONS_BUSINESS = [
   { value: "10", label: "오후반차" },
 ];
 
-// 팀 구분 옵션 (operate / business / catering)
+// 개발팀 일정 구분 옵션
+const TYPE_OPTIONS_DEVELOPMENT = [
+  { value: "1", label: "행사" },
+  { value: "2", label: "위생" },
+  { value: "3", label: "관리" },
+  { value: "4", label: "이슈" },
+  { value: "5", label: "미팅" },
+  { value: "6", label: "오픈" },
+  { value: "7", label: "오픈준비" },
+  { value: "8", label: "외근" },
+  { value: "9", label: "출장" },
+  { value: "10", label: "체크" },
+  { value: "11", label: "연차" },
+  { value: "12", label: "오전반차" },
+  { value: "13", label: "오후반차" },
+];
+
+// 기획팀 일정 구분 옵션
+const TYPE_OPTIONS_PLANNING = [
+  { value: "1", label: "행사" },
+  { value: "2", label: "위생" },
+  { value: "3", label: "관리" },
+  { value: "4", label: "이슈" },
+  { value: "5", label: "미팅" },
+  { value: "6", label: "오픈" },
+  { value: "7", label: "오픈준비" },
+  { value: "8", label: "외근" },
+  { value: "9", label: "출장" },
+  { value: "10", label: "체크" },
+  { value: "11", label: "연차" },
+  { value: "12", label: "오전반차" },
+  { value: "13", label: "오후반차" },
+];
+
+// 팀 구분 옵션 (operate / business / catering / development / planning)
 const DEPARTMENT_OPTIONS = [
   { value: "operate", label: "운영팀" },
   { value: "business", label: "영업팀" },
   { value: "catering", label: "급식사업부" },
+  { value: "development", label: "개발팀" },
+  { value: "planning", label: "기획팀" },
 ];
 
 // dept_type에 따른 구분 옵션 반환
 const getTypeOptions = (deptType) => {
   if (deptType === "business") return TYPE_OPTIONS_BUSINESS;
   if (deptType === "catering") return TYPE_OPTIONS_CATERING;
+  if (deptType === "development") return TYPE_OPTIONS_DEVELOPMENT;
+  if (deptType === "planning") return TYPE_OPTIONS_PLANNING;
   return TYPE_OPTIONS_OPERATE;
 };
 
@@ -127,21 +168,61 @@ const getTypeColor = (type, deptType) => {
     }
   }
 
+  // 개발팀 — 노란색 계열
+  if (deptType === "development") {
+    switch (t) {
+      case "1": return "#F9A825";   // 행사
+      case "2": return "#FBC02D";   // 위생
+      case "3": return "#c4aa3a";   // 관리
+      case "4": return "#F57F17";   // 이슈
+      case "5": return "#FFB300";   // 미팅
+      case "6": return "#FBC02D";   // 오픈
+      case "7": return "#e4bf47";   // 오픈준비
+      case "8": return "#F9A825";   // 외근
+      case "9": return "#FFA000";   // 출장
+      case "10": return "#FFCA28";  // 체크
+      case "11": return "#1A0841";  // 연차
+      case "12": return "#1A0841";  // 오전반차
+      case "13": return "#1A0841";  // 오후반차
+      default: return "#F9A825";
+    }
+  }
+
+  // 기획팀 — 보라색 계열
+  if (deptType === "planning") {
+    switch (t) {
+      case "1": return "#6A1B9A";   // 행사
+      case "2": return "#7B1FA2";   // 위생
+      case "3": return "#8E24AA";   // 관리
+      case "4": return "#9C27B0";   // 이슈
+      case "5": return "#AB47BC";   // 미팅
+      case "6": return "#BA68C8";   // 오픈
+      case "7": return "#CE93D8";   // 오픈준비
+      case "8": return "#7E57C2";   // 외근
+      case "9": return "#5E35B1";   // 출장
+      case "10": return "#512DA8";  // 체크
+      case "11": return "#1A0841";  // 연차
+      case "12": return "#1A0841";  // 오전반차
+      case "13": return "#1A0841";  // 오후반차
+      default: return "#7B1FA2";
+    }
+  }
+
   // 급식사업부 — 분홍 계열
   switch (t) {
-    case "1": return "#C2185B";
-    case "2": return "#D81B60";
-    case "3": return "#f395b5";
-    case "4": return "#c25b88";
-    case "5": return "#f079a0";
-    case "6": return "#F06292";
-    case "7": return "#F48FB1";
-    case "8": return "#880E4F";
-    case "9": return "#c55a85";
-    case "10": return "#e0336d";
-    case "11": return "#1A0841";
-    case "12": return "#1A0841";
-    case "13": return "#1A0841";
+    case "1": return "#C2185B";   // 행사
+    case "2": return "#D81B60";   // 위생
+    case "3": return "#f395b5";   // 관리
+    case "4": return "#c25b88";   // 이슈
+    case "5": return "#f079a0";   // 미팅
+    case "6": return "#F06292";   // 오픈
+    case "7": return "#F48FB1";   // 오픈준비
+    case "8": return "#880E4F";   // 외근
+    case "9": return "#c55a85";   // 출장
+    case "10": return "#e0336d";  // 체크
+    case "11": return "#1A0841";  // 연차
+    case "12": return "#1A0841";  // 오전반차
+    case "13": return "#1A0841";  // 오후반차
     default: return "#E91E63";
   }
 };
@@ -223,11 +304,22 @@ function HeadofficeScheduleSheetTab() {
     if (!deptType) return [];
     try {
       const teamCode = deptTypeToTeamCode(deptType);
+      const departmentCode = deptTypeToDepartmentCode(deptType);
       const res = await api.get(MEMBER_LIST_URL, {
-        params: { team_code: teamCode },
+        params: { team_code: teamCode, department: departmentCode },
         headers: { "Content-Type": "application/json" },
       });
-      return res.data || [];
+      const rows = res.data || [];
+      const hasDepartmentField = rows.some((member) =>
+        member?.department !== undefined || member?.dept_code !== undefined || member?.dept_id !== undefined
+      );
+      if (!departmentCode || !hasDepartmentField) return rows;
+
+      // 선택한 팀에 속한 사용자만 담당자 목록에 표시
+      return rows.filter((member) => {
+        const memberDepartment = member?.department ?? member?.dept_code ?? member?.dept_id ?? "";
+        return String(memberDepartment) === String(departmentCode);
+      });
     } catch (error) {
       console.error("담당자 목록 조회 실패:", error);
       Swal.fire("실패", "담당자 목록을 가져오지 못했습니다.", "error");
@@ -381,6 +473,7 @@ function HeadofficeScheduleSheetTab() {
       type: selectedType,
       user_id: selectedMemberId,
       account_id: savedAccountId,
+      department: deptTypeToDepartmentCode(selectedDeptType),
       reg_dt: normalizeYmd(selectedEvent?.extendedProps?.reg_dt || dayjs().format("YYYY-MM-DD")),
       del_yn,
       reg_user_id: localStorage.getItem("user_id"),

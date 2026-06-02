@@ -64,11 +64,14 @@ function FieldBoardTabs() {
     localStorage.removeItem("login_session_id");
     localStorage.removeItem("position_name");
     localStorage.removeItem("user_name");
+    localStorage.removeItem("autoLogin");
+    localStorage.removeItem("autoLoginUserId");
+    localStorage.removeItem("autoLoginPassword");
     sessionStorage.removeItem("login_session_id");
     sessionStorage.removeItem("login_user_id");
     clearSharedAuthCookies();
 
-    navigate("/authentication/sign-in");
+    navigate("/authentication/sign-in", { replace: true });
   };
 
   // ✅ 숫자 이모지 아이콘 (탭 개수에 맞게 6개로)

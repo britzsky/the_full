@@ -71,6 +71,9 @@ const TYPE_LABEL = {
   21: "공휴일",
 };
 
+const NOTELESS_TYPE_VALUES = new Set(["0", "1", "2"]);
+const shouldSendEmptyNoteForType = (type) => NOTELESS_TYPE_VALUES.has(String(type ?? ""));
+
 const FULL_TYPE_OPTIONS = [
   { value: "0", label: "-" },
   { value: "1", label: "영양사" },
@@ -365,6 +368,10 @@ const AttendanceCell = React.memo(function AttendanceCell({
       updatedValue.start_time = "";
       updatedValue.end_time = "";
       updatedValue.salary = "";
+      updatedValue.note = "";
+    }
+
+    if (field === "type" && shouldSendEmptyNoteForType(newVal)) {
       updatedValue.note = "";
     }
 
@@ -2896,7 +2903,11 @@ function RecordSheet() {
               ? Number(String(val.salary).replace(/,/g, ""))
               : 0
             : 0;
-          const normalizedNote = isNoteType ? safeTrim(val?.note ?? "", "") || null : null;
+          const normalizedNote = shouldSendEmptyNoteForType(curType)
+            ? ""
+            : isNoteType
+              ? safeTrim(val?.note ?? "", "") || null
+              : null;
 
           if (cleared) {
             const recordObj = {
@@ -2914,7 +2925,7 @@ function RecordSheet() {
               start_time: "",
               end_time: "",
               salary: 0,
-              note: null,
+              note: "",
               position: row.position || "",
               org_start_time,
               org_end_time,

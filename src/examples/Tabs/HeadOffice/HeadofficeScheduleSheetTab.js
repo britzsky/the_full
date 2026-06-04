@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
@@ -274,15 +275,15 @@ const SAVE_URL = "/Business/BusinessScheduleSave";
 // 담당자 조회 API: 모든 팀 단일 엔드포인트 (team_code로 구분)
 const MEMBER_LIST_URL = "/Business/BusinessMemberList";
 
-function HeadofficeScheduleSheetTab() {
+function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
-  const [currentYear, setCurrentYear] = useState(dayjs().year());
-  const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
+  const currentYear = year ?? dayjs().year();
+  const currentMonth = month ?? (dayjs().month() + 1);
   const { eventListRows, eventList, loading } = useHeadofficeSchedulesheetData(currentYear, currentMonth);
 
-  const [displayDate, setDisplayDate] = useState(dayjs());
+  const displayDate = dayjs(new Date(currentYear, currentMonth - 1, 1));
   const [events, setEvents] = useState([]);
   const [open, setOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
@@ -547,9 +548,8 @@ function HeadofficeScheduleSheetTab() {
           sx={{ bgcolor: "#e8a500", color: "#ffffff", "&:hover": { bgcolor: "#e8a500", color: "#ffffff" } }}
           onClick={() => {
             const newDate = displayDate.subtract(1, "month");
-            setDisplayDate(newDate);
-            setCurrentYear(newDate.year());
-            setCurrentMonth(newDate.month() + 1);
+            onYearChange(newDate.year());
+            onMonthChange(newDate.month() + 1);
           }}
         >
           ◀ 이전달
@@ -562,9 +562,8 @@ function HeadofficeScheduleSheetTab() {
           sx={{ color: "#ffffff" }}
           onClick={() => {
             const newDate = displayDate.add(1, "month");
-            setDisplayDate(newDate);
-            setCurrentYear(newDate.year());
-            setCurrentMonth(newDate.month() + 1);
+            onYearChange(newDate.year());
+            onMonthChange(newDate.month() + 1);
           }}
         >
           다음달 ▶
@@ -756,5 +755,12 @@ function HeadofficeScheduleSheetTab() {
     </>
   );
 }
+
+HeadofficeScheduleSheetTab.propTypes = {
+  year: PropTypes.number,
+  month: PropTypes.number,
+  onYearChange: PropTypes.func,
+  onMonthChange: PropTypes.func,
+};
 
 export default HeadofficeScheduleSheetTab;

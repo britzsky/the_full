@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useTransition } from "react";
 import { Tabs, Tab, Box, Card } from "@mui/material";
 import MDBox from "components/MDBox";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import dayjs from "dayjs";
 
 import HeadofficeScheduleSheetTab from "./HeadOffice/HeadofficeScheduleSheetTab";
 import HeadofficeScheduleStatTab from "./HeadOffice/headofficeScheduleStatTab";
@@ -38,6 +39,10 @@ const hasAccess = (tab, deptCode, posCode) => {
 };
 
 function HeadOfficeTab_3() {
+  // 일정관리 탭에서 현재 보고 있는 연/월 (통계 탭과 공유)
+  const [scheduleYear, setScheduleYear] = useState(dayjs().year());
+  const [scheduleMonth, setScheduleMonth] = useState(dayjs().month() + 1);
+
   // 상단 탭 선택 상태
   const [tabIndex, setTabIndex] = useState(0);
   // 실제 화면에 표시되는 탭 내용 상태
@@ -70,12 +75,19 @@ function HeadOfficeTab_3() {
     {
       key: "scheduleSheet",
       label: "📅 급식사업부 일정관리",
-      component: <HeadofficeScheduleSheetTab />,
+      component: (
+        <HeadofficeScheduleSheetTab
+          year={scheduleYear}
+          month={scheduleMonth}
+          onYearChange={setScheduleYear}
+          onMonthChange={setScheduleMonth}
+        />
+      ),
     },
     {
       key: "scheduleStat",
       label: "📊 일정 통계",
-      component: <HeadofficeScheduleStatTab />,
+      component: <HeadofficeScheduleStatTab syncYear={scheduleYear} syncMonth={scheduleMonth} />,
     },
   ];
 

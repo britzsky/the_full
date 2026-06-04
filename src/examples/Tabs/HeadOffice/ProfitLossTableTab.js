@@ -303,6 +303,95 @@ export default function ProfitLossTableTab() {
     })
     .filter((h) => h.cols.length > 0);
 
+  const totalRow = useMemo(() => {
+    if (!editRows || editRows.length === 0) return null;
+    const result = {};
+
+    // 값 필드 합산 (비율 필드 제외)
+    const allValueFields = Object.values(fieldMap)
+      .filter((f) => f?.value && f.value !== "utility_bills_note")
+      .map((f) => f.value);
+    allValueFields.forEach((field) => {
+      let sum = 0;
+      let hasAny = false;
+      editRows.forEach((row) => {
+        const n = Number(row[field]);
+        if (Number.isFinite(n)) { sum += n; hasAny = true; }
+      });
+      result[field] = hasAny ? sum : null;
+    });
+
+    // 비율 계산 (프로시저 로직 동일하게 적용)
+    const rnd = (v, d) => d ? Math.round((v / d) * 100 * 10) / 10 : 0;
+    const st = result.sales_total || 0;
+    const et = result.estimate_total || 0;
+
+    // 인원추산 (분모: estimate_total)
+    result.living_estimate_ratio = rnd(result.living_estimate || 0, et);
+    result.basic_estimate_ratio  = rnd(result.basic_estimate  || 0, et);
+    result.estimate_total_ratio  = result.living_estimate_ratio + result.basic_estimate_ratio;
+
+    // 매출 (분모: sales_total)
+    result.living_ratio      = rnd(result.living_cost      || 0, st);
+    result.basic_ratio       = rnd(result.basic_cost       || 0, st);
+    result.employ_ratio      = rnd(result.employ_cost      || 0, st);
+    result.living_ratio2     = rnd(result.living_cost2     || 0, st);
+    result.basic_ratio2      = rnd(result.basic_cost2      || 0, st);
+    result.employ_ratio2     = rnd(result.employ_cost2     || 0, st);
+    result.daycare_ratio     = rnd(result.daycare_cost     || 0, st);
+    result.daycare_emp_ratio = rnd(result.daycare_emp_cost || 0, st);
+    result.integrity_ratio   = rnd(result.integrity_cost   || 0, st);
+    result.return_ratio      = rnd(result.return_cost      || 0, st);
+    result.payback_ratio     = rnd(result.payback_price    || 0, st);
+    // sales_total_ratio: payback 포함 (프로시저와 동일)
+    result.sales_total_ratio = Math.round((
+      result.living_ratio + result.basic_ratio + result.employ_ratio +
+      result.living_ratio2 + result.basic_ratio2 + result.employ_ratio2 +
+      result.daycare_ratio + result.daycare_emp_ratio +
+      result.integrity_ratio + result.return_ratio + result.payback_ratio
+    ) * 10) / 10;
+
+    // 매입 (분모: sales_total)
+    result.food_ratio        = rnd(result.food_cost        || 0, st);
+    result.etc_ratio         = rnd(result.etc_cost         || 0, st);
+    result.food_trash_ratio  = rnd(result.food_process     || 0, st);
+    result.dishwasher_ratio  = rnd(result.dishwasher       || 0, st);
+    result.cesco_ratio       = rnd(result.cesco            || 0, st);
+    result.water_ratio       = rnd(result.water_puri       || 0, st);
+    result.event_ratio       = rnd(result.event_cost       || 0, st);
+    result.not_budget_ratio  = rnd(result.not_budget_cost  || 0, st);
+    result.purchase_total_ratio = Math.round((
+      result.food_trash_ratio + result.dishwasher_ratio + result.cesco_ratio +
+      result.water_ratio + result.food_ratio + result.etc_ratio +
+      result.event_ratio + result.not_budget_ratio
+    ) * 10) / 10;
+
+    // 인건 (분모: sales_total)
+    result.person_ratio    = rnd(result.person_cost    || 0, st);
+    result.dispatch_ratio  = rnd(result.dispatch_cost  || 0, st);
+    result.person_total_ratio = Math.round((result.person_ratio + result.dispatch_ratio) * 10) / 10;
+
+    // 간접 (분모: sales_total)
+    result.utility_ratio       = rnd(result.utility_bills      || 0, st);
+    result.duty_secure_ratio   = rnd(result.duty_secure        || 0, st);
+    result.etc_indirect_ratio  = rnd(result.etc_indirect_cost  || 0, st);
+    result.indirect_total_ratio = Math.round((
+      result.utility_ratio + result.duty_secure_ratio + result.etc_indirect_ratio
+    ) * 10) / 10;
+
+    // 예외: 빼기 방식 (프로시저와 동일)
+    result.business_profit_ratio = Math.round((
+      result.sales_total_ratio - result.payback_ratio -
+      result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
+    ) * 10) / 10;
+    result.total_business_profit_ratio = Math.round((
+      result.sales_total_ratio -
+      result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
+    ) * 10) / 10;
+
+    return result;
+  }, [editRows]);
+
   const hasUnsavedChanges = useMemo(() => {
     return (editRows || []).some((row) => {
       const numChanged = editableNumberFields.some((field) => {
@@ -1639,6 +1728,61 @@ export default function ProfitLossTableTab() {
               </thead>
 
               <tbody>
+                {totalRow && editRows.length > 0 && (
+                  <React.Fragment key="total">
+                    <tr style={{ background: "#fff9e6" }}>
+                      <td
+                        className="sticky-col"
+                        rowSpan={2}
+                        style={{ fontWeight: "bold", background: "#fff3cc" }}
+                      >
+                        합계
+                      </td>
+                      {filteredHeaders.flatMap((h) =>
+                        h.cols.map((col) => {
+                          const field = fieldMap[col]?.value;
+                          const isNote = field === noteField;
+                          return (
+                            <td key={col} style={isNote ? { textAlign: "left" } : {}}>
+                              <input
+                                type="text"
+                                value={isNote ? "" : formatNumber(totalRow[field] ?? 0)}
+                                disabled
+                                style={{
+                                  width: "80px",
+                                  height: "20px",
+                                  fontSize: "12px",
+                                  fontWeight: "bold",
+                                  textAlign: "right",
+                                  border: "none",
+                                  background: "transparent",
+                                  WebkitTextFillColor: "inherit",
+                                  opacity: 1,
+                                }}
+                              />
+                            </td>
+                          );
+                        })
+                      )}
+                    </tr>
+                    <tr style={{ background: "#fff9e6" }}>
+                      {filteredHeaders.flatMap((h) =>
+                        h.cols.map((col) => {
+                          const ratioField = fieldMap[col]?.ratio;
+                          const value = ratioField ? totalRow[ratioField] : null;
+                          return (
+                            <td
+                              key={`total_${col}_ratio`}
+                              style={{ fontSize: "11px", color: "#CD2C58" }}
+                            >
+                              {value != null && value !== 0 ? `${formatNumber(value)}%` : "-"}
+                            </td>
+                          );
+                        })
+                      )}
+                    </tr>
+                  </React.Fragment>
+                )}
                 {editRows.map((r, i) => (
                   <React.Fragment key={i}>
                     <tr>

@@ -299,7 +299,7 @@ PieSummaryCard.propTypes = {
   ).isRequired,
 };
 
-function HeadofficeScheduleStatTab() {
+function HeadofficeScheduleStatTab({ syncYear, syncMonth }) {
   const theme = useTheme();
   const isMd = useMediaQuery(theme.breakpoints.up("md"));
   // 우측 차트 영역 높이 측정 참조
@@ -341,9 +341,15 @@ function HeadofficeScheduleStatTab() {
   // 기본 조회 기준 연월
   const currentDayjs = dayjs();
   // 조회 연도 필터 상태
-  const [filterYear, setFilterYear] = useState(currentDayjs.year());
+  const [filterYear, setFilterYear] = useState(syncYear ?? currentDayjs.year());
   // 조회 월 필터 상태
-  const [filterMonth, setFilterMonth] = useState(currentDayjs.month() + 1);
+  const [filterMonth, setFilterMonth] = useState(syncMonth ?? (currentDayjs.month() + 1));
+
+  // 일정관리 탭에서 보던 연/월로 동기화
+  useEffect(() => {
+    if (syncYear != null) setFilterYear(syncYear);
+    if (syncMonth != null) setFilterMonth(syncMonth);
+  }, [syncYear, syncMonth]);
 
   // 월별 본사 일정 원본 데이터
   const { eventListRows, eventList, accountList, fetchAccountList } = useHeadofficeSchedulesheetData(
@@ -773,5 +779,10 @@ function HeadofficeScheduleStatTab() {
     </Box>
   );
 }
+
+HeadofficeScheduleStatTab.propTypes = {
+  syncYear: PropTypes.number,
+  syncMonth: PropTypes.number,
+};
 
 export default HeadofficeScheduleStatTab;

@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
   Autocomplete,
   Box,
@@ -532,6 +532,19 @@ export default function AccountIssueSheetTab() {
     [unresolvedRows, rightSortByTable.unresolved, RESULT_OPTIONS, typeLabelById]
   );
 
+  const rightSummaryScrollRef = useRef(null);
+
+  useEffect(() => {
+    if (!selectedRowId || !rightSummaryScrollRef.current) return;
+    const container = rightSummaryScrollRef.current;
+    const targetRow = container.querySelector(`tr[data-rowid="${selectedRowId}"]`);
+    if (!targetRow) return;
+    const containerRect = container.getBoundingClientRect();
+    const rowRect = targetRow.getBoundingClientRect();
+    const relativeTop = rowRect.top - containerRect.top + container.scrollTop;
+    container.scrollTop = relativeTop - containerRect.height / 3;
+  }, [selectedRowId]);
+
   const renderDetailTable = (
     dataRows,
     emptyText,
@@ -641,7 +654,7 @@ export default function AccountIssueSheetTab() {
             const deadlineColor = getDeadlineTextColor(item.endDate, item.resultCode);
             const normalizedResultCode = normalizeResultCode(item.resultCode);
             return (
-              <tr key={`${item.id}_${item.idx || "n"}_${item.subDate || ""}`}>
+              <tr key={`${item.id}_${item.idx || "n"}_${item.subDate || ""}`} data-rowid={item.id}>
                 <td
                   style={{
                     ...bodyCellStyle,
@@ -1699,6 +1712,7 @@ export default function AccountIssueSheetTab() {
           </MDBox>
 
           <Box
+            ref={rightSummaryScrollRef}
             sx={{
               border: "1px solid #dbe3eb",
               borderRadius: 1,

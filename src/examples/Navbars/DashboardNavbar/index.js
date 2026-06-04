@@ -74,7 +74,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   // ✅ 승인대기/문의답변대기/알림 뱃지 자동 갱신 주기 (화면 전체 새로고침 없이 알림만 업데이트)
   const NOTIF_POLL_MS = 30000;
   // 알림 관련 API 호출을 임시로 중단하는 스위치
-  const DISABLE_NOTIFICATION_API = true;
+  const DISABLE_NOTIFICATION_API = false;
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
   const THE_FULL_WEB_BASE_URL = resolveTheFullWebBaseUrl();
 

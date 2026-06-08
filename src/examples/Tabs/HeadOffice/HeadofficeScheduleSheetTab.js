@@ -15,6 +15,7 @@ import {
   Select,
   MenuItem,
   Autocomplete,
+  Checkbox,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -112,8 +113,8 @@ const TYPE_OPTIONS_PLANNING = [
 
 // 팀 구분 옵션 (operate / business / catering / development / planning)
 const DEPARTMENT_OPTIONS = [
-  { value: "operate", label: "운영팀" },
   { value: "business", label: "영업팀" },
+  { value: "operate", label: "운영팀" },
   { value: "catering", label: "급식사업부" },
   { value: "development", label: "개발팀" },
   { value: "planning", label: "기획팀" },
@@ -292,13 +293,15 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [isEventClicked, setIsEventClicked] = useState(false);
 
+  const loginUserId = localStorage.getItem("user_id");
+
   const [selectedType, setSelectedType] = useState("1");
   const [selectedDeptType, setSelectedDeptType] = useState(""); // "operate" | "business" | "catering"
   const [memberList, setMemberList] = useState([]);
-  const [selectedMemberId, setSelectedMemberId] = useState("");
+  const [selectedMemberIds, setSelectedMemberIds] = useState([]);
 
   const [accountList, setAccountList] = useState([]);
-  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [selectedAccounts, setSelectedAccounts] = useState([]);
 
   // team_code로 담당자 목록 조회 (단일 API)
   const fetchMemberList = async (deptType) => {
@@ -331,7 +334,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   // 팀구분 변경 시 담당자 목록 갱신, 구분/담당자 초기화
   const handleDeptTypeChange = async (deptType) => {
     setSelectedDeptType(deptType);
-    setSelectedMemberId("");
+    setSelectedMemberIds(loginUserId ? [loginUserId] : []);
     setSelectedType("1");
     setMemberList([]);
     if (!deptType) return;
@@ -390,8 +393,8 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     setSelectedType("1");
     setSelectedDeptType("");
     setMemberList([]);
-    setSelectedMemberId("");
-    setSelectedAccount(null);
+    setSelectedMemberIds(loginUserId ? [loginUserId] : []);
+    setSelectedAccounts([]);
     setSelectedEvent(null);
   };
 
@@ -434,7 +437,15 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     setSelectedEvent(clickedEvent);
     setInputValue(stripSchedulePrefix(clickedEvent.title));
     setSelectedType(clickedEvent.extendedProps?.type?.toString() || "1");
-    setSelectedMemberId(clickedEvent.extendedProps?.user_id?.toString() || "");
+
+    // user_ids가 있으면 복원, 없으면 user_id 단건으로 초기화
+    const userIdsStr = clickedEvent.extendedProps?.user_ids;
+    if (userIdsStr && userIdsStr.trim()) {
+      setSelectedMemberIds(userIdsStr.split(",").map((id) => id.trim()).filter(Boolean));
+    } else {
+      const uId = clickedEvent.extendedProps?.user_id?.toString() || "";
+      setSelectedMemberIds(uId ? [uId] : (loginUserId ? [loginUserId] : []));
+    }
 
     const deptType = clickedEvent.extendedProps?.dept_type || "";
     setSelectedDeptType(deptType);
@@ -449,53 +460,62 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     if (accId) {
       const sourceAccounts = Array.isArray(fetchedAccounts) ? fetchedAccounts : accountList;
       const found = sourceAccounts.find((a) => String(a.account_id) === String(accId));
-      setSelectedAccount(found || null);
+      setSelectedAccounts(found ? [found] : []);
     } else {
-      setSelectedAccount(null);
+      setSelectedAccounts([]);
     }
     setOpen(true);
   };
 
   const handleClose = () => { setOpen(false); setSelectedEvent(null); };
 
-  // 저장/취소/복원용 공통 payload 생성
-  const buildPayload = (del_yn) => {
+  // 저장/취소용 공통 payload 생성 (accountId 개별 전달)
+  const buildPayload = (del_yn, accountId) => {
     const cleanInputValue = stripSchedulePrefix(inputValue);
-    const savedAccountId = selectedAccount?.account_id ?? selectedEvent?.extendedProps?.account_id ?? null;
-    const savedAccountName =
-      String(selectedAccount?.account_name || "").trim()
-      || String(selectedEvent?.extendedProps?.account_name || "").trim()
-      || String((accountList || []).find((a) => String(a?.account_id) === String(savedAccountId))?.account_name || "").trim();
+    const savedAccountId = accountId ?? null;
+    const savedAccountName = String(
+      (accountList || []).find((a) => String(a?.account_id) === String(savedAccountId))?.account_name || ""
+    ).trim();
     return {
       idx: selectedEvent?.extendedProps?.idx || null,
       content: buildScheduleContent(selectedType, savedAccountName, cleanInputValue, selectedDeptType),
       start_date: normalizeYmd(selectedDate),
       end_date: normalizeYmd(selectedEndDate || selectedDate),
       type: selectedType,
-      user_id: selectedMemberId,
+      user_id: loginUserId,
+      user_ids: selectedMemberIds.join(","),
       account_id: savedAccountId,
       department: deptTypeToDepartmentCode(selectedDeptType),
       reg_dt: normalizeYmd(selectedEvent?.extendedProps?.reg_dt || dayjs().format("YYYY-MM-DD")),
       del_yn,
-      reg_user_id: localStorage.getItem("user_id"),
+      reg_user_id: loginUserId,
     };
   };
 
-  // 일정 저장
+  // 일정 저장 (신규: 선택한 거래처 수만큼 insert, 수정: 첫 번째 거래처로 update)
   const handleSave = async () => {
     const cleanInputValue = stripSchedulePrefix(inputValue);
     if (!cleanInputValue) { Swal.fire("경고", "내용을 입력하세요.", "warning"); return; }
     if (!selectedDeptType) { Swal.fire("경고", "팀구분을 선택하세요.", "warning"); return; }
-    if (!selectedMemberId) { Swal.fire("경고", "담당자를 선택하세요.", "warning"); return; }
     try {
-      const response = await api.post(SAVE_URL, { ...buildPayload("N"), team_code: deptTypeToTeamCode(selectedDeptType) }, {
-        headers: { "Content-Type": "application/json" },
-      });
-      if (response.data.code === 200) {
-        Swal.fire("저장 완료", "일정이 저장되었습니다.", "success");
-        eventList();
+      const teamCode = deptTypeToTeamCode(selectedDeptType);
+      if (selectedEvent) {
+        // 수정: 기존 row 1건 업데이트 (첫 번째 거래처 사용)
+        const accId = selectedAccounts[0]?.account_id ?? selectedEvent?.extendedProps?.account_id ?? null;
+        const response = await api.post(SAVE_URL, { ...buildPayload("N", accId), team_code: teamCode }, { headers: { "Content-Type": "application/json" } });
+        if (response.data.code === 200) { Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
+        else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       } else {
-        Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
+        // 신규: 거래처 수만큼 insert (거래처 없으면 1건)
+        const accountsToSave = selectedAccounts.length > 0 ? selectedAccounts : [{ account_id: null }];
+        const responses = await Promise.all(
+          accountsToSave.map((acc) =>
+            api.post(SAVE_URL, { ...buildPayload("N", acc.account_id ?? null), team_code: teamCode }, { headers: { "Content-Type": "application/json" } })
+          )
+        );
+        const allSuccess = responses.every((r) => r.data.code === 200);
+        if (allSuccess) { Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
+        else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       }
     } catch (error) {
       console.error(error);
@@ -514,7 +534,8 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     }).then(async (result) => {
       if (!result.isConfirmed) return;
       try {
-        const response = await api.post(SAVE_URL, { ...buildPayload("Y"), team_code: deptTypeToTeamCode(selectedDeptType) }, { headers: { "Content-Type": "application/json" } });
+        const existingAccId = selectedEvent?.extendedProps?.account_id ?? null;
+        const response = await api.post(SAVE_URL, { ...buildPayload("Y", existingAccId), team_code: deptTypeToTeamCode(selectedDeptType) }, { headers: { "Content-Type": "application/json" } });
         if (response.data.code === 200) { Swal.fire("취소 완료", "일정이 취소되었습니다.", "success"); eventList(); }
         else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       } catch (error) { console.error(error); Swal.fire("실패", "서버 연결에 실패했습니다.", "error"); }
@@ -599,7 +620,11 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
         }}
         eventContent={(arg) => {
           const isCanceled = arg.event.extendedProps?.isCanceled;
-          const userName = arg.event.extendedProps?.user_name;
+          const mainUserName = String(arg.event.extendedProps?.user_name || "").trim();
+          const userNamesStr = String(arg.event.extendedProps?.user_names || "").trim();
+          const companionNames = userNamesStr
+            ? userNamesStr.split(",").map((n) => n.trim()).filter((n) => n && n !== mainUserName)
+            : [];
           const deptType = arg.event.extendedProps?.dept_type;
           const typeLabel = getTypeLabel(arg.event.extendedProps?.type, deptType);
           const accountName = resolveAccountName(arg.event.extendedProps || {}, accountList);
@@ -614,7 +639,10 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                 {deptLabel && <span style={{ marginRight: 2, opacity: 0.85 }}>[{deptLabel}]</span>}
                 {badgeLabel && <span style={{ marginRight: 2 }}>{badgeLabel} </span>}
                 {baseTitle}
-                {userName && <span style={{ marginLeft: 2 }}>({userName})</span>}
+                {companionNames.length > 0 && (
+                  <span style={{ marginLeft: 2 }}>(동행+{companionNames.join(", ")})</span>
+                )}
+                {mainUserName && <span style={{ marginLeft: 2 }}>({mainUserName})</span>}
               </div>
             </div>
           );
@@ -653,21 +681,44 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               ))}
             </Select>
 
-            {/* 담당자 */}
+            {/* 담당자 (다중 선택, 최대 5명) */}
             <Select
+              multiple
               size="small"
-              value={selectedMemberId}
-              onChange={(e) => setSelectedMemberId(e.target.value)}
+              value={selectedMemberIds}
+              onChange={(e) => {
+                const newIds = Array.isArray(e.target.value) ? e.target.value : [e.target.value];
+                const withLogin = loginUserId && !newIds.includes(loginUserId)
+                  ? [loginUserId, ...newIds]
+                  : newIds;
+                if (withLogin.length <= 5) setSelectedMemberIds(withLogin);
+              }}
               displayEmpty
               disabled={!selectedDeptType}
+              renderValue={() => {
+                const firstId = selectedMemberIds[0];
+                if (!firstId) return "";
+                const found = memberList.find((m) => String(m.user_id) === String(firstId));
+                return found ? found.user_name : "";
+              }}
               sx={{ width: isMobile ? "100%" : 150, flexShrink: 0, ...ctrlSx }}
             >
-              <MenuItem value=""><em>{selectedDeptType ? "담당자 선택" : "팀을 선택해주세요."}</em></MenuItem>
-              {memberList.map((member) => (
-                <MenuItem key={member.user_id} value={member.user_id}>
-                  {member.user_name} [{getPositionLabel(member.position)}]
-                </MenuItem>
-              ))}
+              {memberList.map((member) => {
+                const isLoginUser = member.user_id === loginUserId;
+                const isChecked = selectedMemberIds.includes(member.user_id);
+                const isDisabled = isLoginUser || (!isChecked && selectedMemberIds.length >= 5);
+                return (
+                  <MenuItem
+                    key={member.user_id}
+                    value={member.user_id}
+                    disabled={isDisabled}
+                    sx={{ bgcolor: isLoginUser ? "#e0e0e0 !important" : "transparent", "&.Mui-disabled": { opacity: 1 } }}
+                  >
+                    <Checkbox checked={isChecked} size="small" sx={{ p: 0.5, mr: 0.5 }} />
+                    {member.user_name} [{getPositionLabel(member.position)}]
+                  </MenuItem>
+                );
+              })}
             </Select>
 
             {/* 구분 */}
@@ -688,34 +739,69 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               ))}
             </Select>
 
-            {/* 거래처 */}
-            <Autocomplete
-              size="small"
-              options={accountList}
-              value={selectedAccount}
-              onChange={(_, newValue) => setSelectedAccount(newValue)}
-              getOptionLabel={(option) => option?.account_name || ""}
-              isOptionEqualToValue={(option, value) =>
-                String(option?.account_id ?? "") === String(value?.account_id ?? "")
-              }
-              filterOptions={(options, { inputValue: kw }) => {
-                const k = String(kw || "").trim().toLowerCase();
-                if (!k) return options;
-                return options.filter((o) => String(o?.account_name || "").toLowerCase().includes(k));
-              }}
-              sx={{
-                flex: 1,
-                minWidth: isMobile ? "100%" : 160,
-                "& .MuiOutlinedInput-root": {
-                  height: CTRL_HEIGHT, minHeight: CTRL_HEIGHT,
-                  paddingTop: "0 !important", paddingBottom: "0 !important",
-                },
-                "& .MuiOutlinedInput-input": { height: `${CTRL_HEIGHT}px`, boxSizing: "border-box" },
-              }}
-              renderInput={(params) => (
-                <TextField {...params} placeholder="거래처 (선택사항)" size="small" />
-              )}
-            />
+            {/* 거래처 - 수정: 단일 선택 / 신규: 다중 선택 */}
+            {selectedEvent ? (
+              /* 수정 모달: 단일 Autocomplete */
+              <Autocomplete
+                size="small"
+                options={accountList}
+                value={selectedAccounts[0] ?? null}
+                onChange={(_, newValue) => setSelectedAccounts(newValue ? [newValue] : [])}
+                getOptionLabel={(option) => option?.account_name || ""}
+                isOptionEqualToValue={(option, value) =>
+                  String(option?.account_id ?? "") === String(value?.account_id ?? "")
+                }
+                filterOptions={(options, { inputValue: kw }) => {
+                  const k = String(kw || "").trim().toLowerCase();
+                  if (!k) return options;
+                  return options.filter((o) => String(o?.account_name || "").toLowerCase().includes(k));
+                }}
+                sx={{
+                  flex: 1,
+                  minWidth: isMobile ? "100%" : 160,
+                  "& .MuiOutlinedInput-root": { height: CTRL_HEIGHT, minHeight: CTRL_HEIGHT, paddingTop: "0 !important", paddingBottom: "0 !important" },
+                  "& .MuiOutlinedInput-input": { height: `${CTRL_HEIGHT}px`, boxSizing: "border-box" },
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder="거래처 (선택사항)" size="small" />
+                )}
+              />
+            ) : (
+              /* 신규 모달: 다중 Autocomplete (최대 5개) */
+              <Autocomplete
+                multiple
+                size="small"
+                options={accountList}
+                value={selectedAccounts}
+                onChange={(_, newValue) => { if (newValue.length <= 5) setSelectedAccounts(newValue); }}
+                getOptionLabel={(option) => option?.account_name || ""}
+                isOptionEqualToValue={(option, value) =>
+                  String(option?.account_id ?? "") === String(value?.account_id ?? "")
+                }
+                disableCloseOnSelect
+                filterOptions={(options, { inputValue: kw }) => {
+                  const k = String(kw || "").trim().toLowerCase();
+                  if (!k) return options;
+                  return options.filter((o) => String(o?.account_name || "").toLowerCase().includes(k));
+                }}
+                renderOption={(props, option, { selected }) => (
+                  <li {...props}>
+                    <Checkbox size="small" checked={selected} sx={{ mr: 1, p: 0 }} />
+                    {option.account_name}
+                  </li>
+                )}
+                sx={{
+                  flex: 1,
+                  minWidth: isMobile ? "100%" : 160,
+                  "& .MuiOutlinedInput-root": { minHeight: CTRL_HEIGHT, paddingTop: "2px !important", paddingBottom: "2px !important" },
+                  "& .MuiChip-root": { bgcolor: "#e3f2fd", color: "#1565c0", height: 22, fontSize: "0.72rem" },
+                  "& .MuiChip-deleteIcon": { color: "#1565c0", fontSize: "14px" },
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder={selectedAccounts.length === 0 ? "거래처 선택 (최대 5개)" : ""} size="small" />
+                )}
+              />
+            )}
           </Box>
 
           {/* 내용 입력 */}

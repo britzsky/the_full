@@ -3759,6 +3759,9 @@ function TallySheet() {
         }
 
         closeUseMenu();
+        if (Number(inputYn) === 1) {
+          setActiveCell({ isSecond: false, rowIndex: null, colKey: null });
+        }
         Swal.fire({
           toast: true,
           position: "top-end",

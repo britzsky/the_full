@@ -454,7 +454,7 @@ export default function ProfitLossTableTab() {
     const isPastMonth = rowYear < curYear || (rowYear === curYear && rowMonth < curMonth);
     if (!isPastMonth) return false;
     if (unlockedPersonCostMonths.has(rowMonth)) return false;  // ✅ 임시 잠금해제
-    return Number(row.person_cost ?? 0) !== 0;
+    return Number(row._original?.person_cost ?? 0) !== 0;
   }, [selectedAccountId, year, today, unlockedPersonCostMonths]);
 
   // ✅ 과거 월 인건비 여부 (전체 제외, 과거 월에서만 우클릭 메뉴 표시)
@@ -1800,7 +1800,7 @@ export default function ProfitLossTableTab() {
 
                           const isAllAccount = selectedAccountId === "ALL";  // ✅ 전체 조회 시 편집 불가
                           const isText = !isAllAccount && editableTextFields.includes(field);
-                          const isNumber = !isAllAccount && editableNumberFields.includes(field) && !(field === "person_cost" && isPersonCostLocked(r));  // ✅ 지난 달 인건비 잠금
+                          const isNumber = !isAllAccount && editableNumberFields.includes(field) && !(field === "person_cost" && isPersonCostLocked(r)) && !(field === "person_cost" && !hasPersonCostEditPermission);  // ✅ 지난 달 인건비 잠금 + 권한 없으면 편집 불가
                           const isNote = field === noteField;
 
                           const isChanged = (() => {

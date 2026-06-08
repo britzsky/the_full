@@ -410,7 +410,7 @@ function HeadofficeScheduleStatTab({ syncYear, syncMonth }) {
       const accountId = String(item.account_id || "").trim();
       const accountName =
         String(item.account_name || "").trim() || accountNameById.get(accountId) || "미지정";
-      const memberName = String(item.user_name || "").trim() || "미지정";
+      const mainName = String(item.user_name || "").trim() || "미지정";
       const deptType = String(item.dept_type || "").trim();
       const key = accountId || accountName;
 
@@ -429,14 +429,29 @@ function HeadofficeScheduleStatTab({ syncYear, syncMonth }) {
 
       const statLabel = getStatTypeLabel(deptType, item.type);
       if (!statLabel) return;
-      map[key].members.add(memberName);
-      if (!map[key].memberStats[memberName]) {
-        map[key].memberStats[memberName] = { name: memberName, total: 0, 위생: 0, 관리: 0, 이슈: 0 };
+
+      // user_id(mainName) + user_ids 동행자 이름 모두 멤버로 집계
+      const allNames = new Set([mainName]);
+      const userNamesStr = String(item.user_names || "").trim();
+      if (userNamesStr) {
+        userNamesStr.split(",").forEach((n) => {
+          const t = n.trim();
+          if (t) allNames.add(t);
+        });
       }
-      map[key].memberStats[memberName][statLabel] += 1;
-      map[key].memberStats[memberName].total += 1;
-      map[key][statLabel] += 1;
-      map[key].total += 1;
+
+      allNames.forEach((name) => {
+        map[key].members.add(name);
+        if (!map[key].memberStats[name]) {
+          map[key].memberStats[name] = { name, total: 0, 위생: 0, 관리: 0, 이슈: 0 };
+        }
+        map[key].memberStats[name][statLabel] += 1;
+        map[key].memberStats[name].total += 1;
+      });
+
+      // 인원 수만큼 카운트 (user_id + 동행자 각각 1회)
+      map[key][statLabel] += allNames.size;
+      map[key].total += allNames.size;
     });
 
     // 거래처명 기준 정렬 목록
@@ -495,15 +510,25 @@ function HeadofficeScheduleStatTab({ syncYear, syncMonth }) {
       .filter((row) => row.count > 0);
   }, [statRows]);
 
-  // 담당자별 파이 차트 데이터
+  // 담당자별 파이 차트 데이터 (user_id + user_ids 동행자 포함)
   const memberPieRows = useMemo(() => {
     const map = {};
     statRows.forEach((item) => {
       const deptType = String(item.dept_type || "").trim();
       const statLabel = getStatTypeLabel(deptType, item.type);
       if (!statLabel) return;
-      const name = String(item.user_name || "").trim() || "미지정";
-      map[name] = (map[name] || 0) + 1;
+      const mainName = String(item.user_name || "").trim() || "미지정";
+      const allNames = new Set([mainName]);
+      const userNamesStr = String(item.user_names || "").trim();
+      if (userNamesStr) {
+        userNamesStr.split(",").forEach((n) => {
+          const t = n.trim();
+          if (t) allNames.add(t);
+        });
+      }
+      allNames.forEach((name) => {
+        map[name] = (map[name] || 0) + 1;
+      });
     });
 
     const rows = Object.entries(map)

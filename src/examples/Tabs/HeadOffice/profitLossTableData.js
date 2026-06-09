@@ -66,11 +66,18 @@ export default function useProfitLossTableData(year, month, account_id) {
       .catch((err) => console.error("데이터 조회 실패 (AccountList):", err));
   }, []);
 
+  // 인건비 엑셀 업로드 데이터를 서버에 저장
+  const savePersonCostExcel = useCallback(async (rows) => {
+    const res = await api.post("/HeadOffice/PersonCostExcelSave", { rows });
+    return typeof res.data === "string" ? JSON.parse(res.data) : (res.data || {});
+  }, []);
+
   return {
     profitLossTableRows,
     setProfitLossTableRows,
     accountList,
     loading,
     fetchProfitLossTableList,
+    savePersonCostExcel,
   };
 }

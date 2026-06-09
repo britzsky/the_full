@@ -2,6 +2,14 @@
 import { useState, useEffect } from "react";
 import api from "api/api";
 
+const normalizeMemberFilePath = (value) => {
+  const path = String(value ?? "").trim();
+  if (!path) return "";
+  if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+  if (path.startsWith("/image/")) return path;
+  if (path.startsWith("image/")) return `/${path}`;
+  return path.startsWith("/") ? `/image${path}` : `/image/${path}`;
+};
 const parseNumber = (value) => {
   if (!value) return 0;
   return Number(String(value).replace(/,/g, "")) || 0;
@@ -65,9 +73,9 @@ export default function useAccountMemberRecSheetData(account_id, activeStatus) {
         // ✅ 시간 포맷 통일
         start_time: normalizeTime(item.start_time),
         end_time: normalizeTime(item.end_time),
-        employment_contract: item.employment_contract,
-        id: item.id,
-        bankbook: item.bankbook,
+        employment_contract: normalizeMemberFilePath(item.employment_contract),
+        id: normalizeMemberFilePath(item.id),
+        bankbook: normalizeMemberFilePath(item.bankbook),
         use_yn: item.use_yn,
         note: item.note,
         cor_type: item.cor_type,

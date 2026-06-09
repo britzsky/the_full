@@ -17,12 +17,26 @@ import api from "api/api";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
 import Autocomplete from "@mui/material/Autocomplete";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 import { canEditSensitiveField, maskSensitiveFieldValue } from "utils/maskingUtils";
+import PreviewOverlay from "utils/PreviewOverlay";
+import {
+  HEADOFFICE_DOCUMENT_FILE_ACCEPT,
+  getHeadOfficeDocumentPreviewKind,
+  isHeadOfficeDocumentSupportedFile,
+} from "utils/headOfficeDocumentImageUtils";
+
+const normalizeMemberFilePath = (value) => {
+  const path = String(value ?? "").trim();
+  if (!path) return "";
+  if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+  if (path.startsWith("/image/")) return path;
+  if (path.startsWith("image/")) return `/${path}`;
+  return path.startsWith("/") ? `/image${path}` : `/image/${path}`;
+};
 
 // 인사 -> 현장관리 -> 현장 직원관리
 // ✅ Autocomplete 검색어를 라벨 기준으로만 가볍게 필터링
@@ -397,11 +411,14 @@ function AccountMemberSheet() {
   // ✅ 이미지 업로드/뷰어 기능 (추가)
   // =========================
   const imageFields = ["employment_contract", "id", "bankbook"];
-  const [viewFile, setViewFile] = useState({ src: null, isPdf: false });
-  const [pdfScale, setPdfScale] = useState(1);
-  const [viewerPos, setViewerPos] = useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const dragOffsetRef = useRef({ x: 0, y: 0 });
+  const previewFieldLabels = {
+    employment_contract: "근로계약서",
+    id: "신분증",
+    bankbook: "통장사본",
+  };
+  const [previewFiles, setPreviewFiles] = useState([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const previewObjectUrlsRef = useRef([]);
   const fileIconSx = { color: "#1e88e5" };
 
   const getExt = (p = "") => {
@@ -420,100 +437,61 @@ function AccountMemberSheet() {
     }
     return `${base}${path}`;
   };
-  const isPdfFile = (p) => getExt(p) === "pdf";
-
-  const handleViewImage = async (value) => {
-    if (!value) return;
-    setPdfScale(1);
-
-    // 파일 객체는 바로 미리보기
-    if (typeof value === "object") {
-      const url = URL.createObjectURL(value);
-      const isPdf = String(value.type || "")
-        .toLowerCase()
-        .includes("pdf");
-      setViewFile({ src: url, isPdf });
-      return;
-    }
-
-    // 서버 경로는 blob으로 받아서 다운로드 대신 미리보기
-    try {
-      const absUrl = toAbsoluteUrl(value);
-      const res = await api.get(absUrl, { responseType: "blob" });
-      const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
-      const isPdf = contentType.includes("pdf") || isPdfFile(value);
-      const blobUrl = URL.createObjectURL(res.data);
-      setViewFile({ src: blobUrl, isPdf });
-    } catch (err) {
-      console.error("미리보기 로드 실패:", err);
-      const fallbackUrl = toAbsoluteUrl(value);
-      if (fallbackUrl) {
-        const isPdf = isPdfFile(value);
-        setViewFile({ src: fallbackUrl, isPdf });
-        return;
-      }
-      Swal.fire("미리보기 실패", "파일을 불러오지 못했습니다.", "error");
-    }
-  };
-  const handleCloseViewer = () => {
-    if (viewFile?.src?.startsWith("blob:")) {
-      URL.revokeObjectURL(viewFile.src);
-    }
-    setViewFile({ src: null, isPdf: false });
-    setPdfScale(1);
-  };
-
-  useEffect(() => {
-    if (!viewFile?.src) return;
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    const modalW = isMobile ? w * 0.92 : w * 0.48;
-    const modalH = isMobile ? h * 0.92 : h * 0.88;
-    setViewerPos({
-      x: Math.min(Math.max(0, w / 3 - modalW / 2), Math.max(0, w - modalW)),
-      y: Math.max(0, (h - modalH) / 2),
-    });
-  }, [viewFile?.src, isMobile]);
-
-  const handleDragStart = (e) => {
-    e.preventDefault();
-    setDragging(true);
-    dragOffsetRef.current = {
-      x: e.clientX - viewerPos.x,
-      y: e.clientY - viewerPos.y,
-    };
-  };
-
-  const handleDragMove = useCallback(
-    (e) => {
-      if (!dragging) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const modalW = isMobile ? w * 0.92 : w * 0.48;
-      const modalH = isMobile ? h * 0.92 : h * 0.88;
-      const nextX = e.clientX - dragOffsetRef.current.x;
-      const nextY = e.clientY - dragOffsetRef.current.y;
-      setViewerPos({
-        x: Math.min(Math.max(0, nextX), Math.max(0, w - modalW)),
-        y: Math.min(Math.max(0, nextY), Math.max(0, h - modalH)),
-      });
-    },
-    [dragging, isMobile]
-  );
-
-  const handleDragEnd = useCallback(() => {
-    setDragging(false);
+  const clearPreviewObjectUrls = useCallback(() => {
+    previewObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewObjectUrlsRef.current = [];
   }, []);
 
-  useEffect(() => {
-    if (!dragging) return;
-    window.addEventListener("mousemove", handleDragMove);
-    window.addEventListener("mouseup", handleDragEnd);
-    return () => {
-      window.removeEventListener("mousemove", handleDragMove);
-      window.removeEventListener("mouseup", handleDragEnd);
-    };
-  }, [dragging, handleDragMove, handleDragEnd]);
+  const getPreviewKind = useCallback(
+    (value) =>
+      typeof value === "object"
+        ? getHeadOfficeDocumentPreviewKind(value)
+        : getHeadOfficeDocumentPreviewKind({ image_path: value }),
+    []
+  );
+
+  const toPreviewUrl = useCallback((value) => {
+    if (!value) return "";
+    if (typeof value === "object") {
+      const objectUrl = URL.createObjectURL(value);
+      previewObjectUrlsRef.current.push(objectUrl);
+      return objectUrl;
+    }
+    const path = String(value || "");
+    if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+    const base = String(API_BASE_URL || "").replace(/\/+$/, "");
+    const params = new URLSearchParams();
+    params.set("file_path", path.startsWith("/") ? path : `/${path}`);
+    return `${base}/Account/AccountStoredFileView?${params.toString()}`;
+  }, []);
+
+  const handleViewImage = useCallback(
+    (rowData, field) => {
+      clearPreviewObjectUrls();
+      const files = imageFields
+        .map((key) => {
+          const value = rowData?.[key];
+          if (!value) return null;
+          return {
+            url: toPreviewUrl(value),
+            name: previewFieldLabels[key],
+            kind: getPreviewKind(value),
+          };
+        })
+        .filter(Boolean);
+
+      const targetIndex = Math.max(0, files.findIndex((file) => file.name === previewFieldLabels[field]));
+      setPreviewFiles(files);
+      setPreviewIndex(targetIndex);
+    },
+    [clearPreviewObjectUrls, getPreviewKind, imageFields, previewFieldLabels, toPreviewUrl]
+  );
+
+  const handleCloseViewer = useCallback(() => {
+    setPreviewFiles([]);
+    setPreviewIndex(0);
+    clearPreviewObjectUrls();
+  }, [clearPreviewObjectUrls]);
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
@@ -793,12 +771,12 @@ function AccountMemberSheet() {
         health_insurance: item.health_insurance,
         industrial_insurance: item.industrial_insurance,
         employment_insurance: item.employment_insurance,
-        employment_contract: item.employment_contract,
+        employment_contract: normalizeMemberFilePath(item.employment_contract),
         headoffice_note: item.headoffice_note,
         subsidy: item.subsidy,
         note: item.note,
-        id: item.id,
-        bankbook: item.bankbook,
+        id: normalizeMemberFilePath(item.id),
+        bankbook: normalizeMemberFilePath(item.bankbook),
         cor_type: item.cor_type,
       }));
       const rows = buildExcelRows(fetchedRows);
@@ -1085,25 +1063,29 @@ function AccountMemberSheet() {
   }, [relockAfterMeasure, isColumnWidthLocked, measuredColWidths]);
 
   const handleSave = async () => {
-    const changedRows = activeRows.filter((row, idx) => {
-      const original = originalRows[idx];
-      if (!original) return true;
+    handleCloseViewer();
+    const changedRowsWithIndex = activeRows
+      .map((row, idx) => ({ row, rowIndex: idx }))
+      .filter(({ row, rowIndex }) => {
+        const original = originalRows[rowIndex];
+        if (!original) return true;
 
-      return Object.keys(row).some((key) => {
-        // ✅ 이미지 필드: object(File)로 바뀌면 무조건 변경
-        if (imageFields.includes(key)) {
-          const v = row[key];
-          const o = original[key];
-          if (typeof v === "object" && v) return true;
-          return String(v ?? "") !== String(o ?? "");
-        }
+        return Object.keys(row).some((key) => {
+          // 이미지 필드는 파일 객체로 바뀌면 저장 대상에 포함한다.
+          if (imageFields.includes(key)) {
+            const v = row[key];
+            const o = original[key];
+            if (typeof v === "object" && v) return true;
+            return String(v ?? "") !== String(o ?? "");
+          }
 
-        if (numericCols.includes(key)) {
-          return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
-        }
-        return String(row[key] ?? "") !== String(original[key] ?? "");
+          if (numericCols.includes(key)) {
+            return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
+          }
+          return String(row[key] ?? "") !== String(original[key] ?? "");
+        });
       });
-    });
+    const changedRows = changedRowsWithIndex.map((item) => item.row);
 
     if (changedRows.length === 0) {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
@@ -1113,7 +1095,7 @@ function AccountMemberSheet() {
     try {
       const userId = localStorage.getItem("user_id");
 
-      // ⭐ 빈 문자열 제거 → null 값으로 변환
+      // 빈 문자열은 백엔드 저장값 기준에 맞춰 null로 변환한다.
       const cleanRow = (row) => {
         const newRow = { ...row };
         Object.keys(newRow).forEach((key) => {
@@ -1124,9 +1106,9 @@ function AccountMemberSheet() {
         return newRow;
       };
 
-      // ✅ 이미지가 File이면 업로드 후 경로 문자열로 치환
-      const processed = await Promise.all(
-        changedRows.map(async (row) => {
+      // 첨부 파일은 저장 시 업로드하고 행 값은 서버 경로로 치환한다.
+      const processedWithIndex = await Promise.all(
+        changedRowsWithIndex.map(async ({ row, rowIndex }) => {
           const newRow = cleanRow(row);
 
           for (const field of imageFields) {
@@ -1137,23 +1119,32 @@ function AccountMemberSheet() {
           }
 
           return {
-            ...newRow,
-            user_id: userId,
+            rowIndex,
+            row: {
+              ...newRow,
+              user_id: userId,
+            },
           };
         })
       );
 
-      const processedFixed = applyUtilAccountId(processed);
+      const processedFixed = applyUtilAccountId(processedWithIndex.map((item) => item.row));
 
-      // ✅ integration/util account_id 보정값을 실제 저장 payload에도 반영
+      // 통합/유틸 account_id 보정값을 실제 저장 payload에도 반영한다.
       const res = await api.post("/Operate/AccountMembersSave", {
         data: processedFixed,
       });
 
       if (res.data.code === 200) {
         Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
-        const fixedAll = applyUtilAccountId(activeRows);
-        setOriginalRows([...fixedAll]);
+        const savedRowByIndex = new Map(
+          processedWithIndex.map((item, idx) => [item.rowIndex, processedFixed[idx]])
+        );
+        const nextRows = applyUtilAccountId(
+          activeRows.map((row, idx) => (savedRowByIndex.has(idx) ? { ...row, ...savedRowByIndex.get(idx) } : row))
+        );
+        setActiveRows(nextRows);
+        setOriginalRows(nextRows.map((row) => ({ ...row })));
         await fetchAccountMembersAllList();
         setIsColumnWidthLocked(false);
       } else {
@@ -2479,13 +2470,26 @@ function AccountMemberSheet() {
                       >
                         <input
                           type="file"
-                          accept="image/*,application/pdf"
+                          accept={HEADOFFICE_DOCUMENT_FILE_ACCEPT}
                           id={inputId}
                           style={{ display: "none" }}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (!file) return;
+                            if (!file) {
+                              e.target.value = null;
+                              return;
+                            }
+                            if (!isHeadOfficeDocumentSupportedFile(file)) {
+                              Swal.fire(
+                                "지원하지 않는 파일 형식",
+                                "이미지, PDF, Excel(xls/xlsx) 파일만 첨부할 수 있습니다.",
+                                "warning"
+                              );
+                              e.target.value = null;
+                              return;
+                            }
                             handleCellChange(file);
+                            e.target.value = null;
                           }}
                         />
 
@@ -2515,8 +2519,8 @@ function AccountMemberSheet() {
                             <Tooltip title="미리보기">
                               <IconButton
                                 size="small"
-                                sx={{ ...fileIconSx, p: 0.5 }}
-                                onClick={() => handleViewImage(value)}
+                                sx={{ ...fileIconSx, color: isChanged ? "#d32f2f" : fileIconSx.color, p: 0.5 }}
+                                onClick={() => handleViewImage(row.original, colKey)}
                               >
                                 <ImageSearchIcon fontSize="small" />
                               </IconButton>
@@ -4031,219 +4035,14 @@ function AccountMemberSheet() {
         </div>
       )}
 
-      {/* =========================
-          ✅ 이미지 뷰어 (추가)
-         ========================= */}
-      {viewFile?.src && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "transparent",
-            zIndex: 9999,
-          }}
-          onClick={handleCloseViewer}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "absolute",
-              left: viewerPos.x,
-              top: viewerPos.y,
-              width: isMobile ? "92vw" : "48vw",
-              height: isMobile ? "92vh" : "88vh",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                backgroundColor: "rgba(0,0,0,0.7)",
-                borderRadius: 8,
-              }}
-            />
-
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 32,
-                cursor: "move",
-                zIndex: 1002,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "0 8px",
-                color: "#fff",
-                fontSize: 12,
-                userSelect: "none",
-              }}
-              onMouseDown={handleDragStart}
-            >
-              <span>미리보기</span>
-              <button
-                onClick={handleCloseViewer}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: 14,
-                }}
-              >
-                X
-              </button>
-            </div>
-
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                height: "100%",
-                zIndex: 1001,
-                paddingTop: 32,
-                boxSizing: "border-box",
-                overflow: "hidden",
-              }}
-            >
-              {viewFile.isPdf ? (
-                <Box
-                  sx={{
-                    width: "100%",
-                    height: "100%",
-                    bgcolor: "#111",
-                    overflow: "auto",
-                    position: "relative",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      transform: `scale(${pdfScale})`,
-                      transformOrigin: "top left",
-                    }}
-                  >
-                    <iframe
-                      title="pdf-preview"
-                      src={`${viewFile.src}#view=FitH`}
-                      style={{ width: "100%", height: "100%", border: 0 }}
-                    />
-                  </div>
-                </Box>
-              ) : (
-                <div
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    overflow: "auto",
-                    position: "relative",
-                  }}
-                >
-                  <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-                    {({ zoomIn, zoomOut, resetTransform }) => (
-                      <>
-                        <div
-                          style={{
-                            position: "absolute",
-                            top: 8,
-                            right: 8,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 4,
-                            zIndex: 1000,
-                            pointerEvents: "auto",
-                          }}
-                        >
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              zoomIn();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            +
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              zoomOut();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            -
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              resetTransform();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            ⟳
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              handleCloseViewer();
-                            }}
-                            style={{
-                              border: "none",
-                              padding: isMobile ? "2px 6px" : "4px 8px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            X
-                          </button>
-                        </div>
-
-                        <TransformComponent>
-                          <img
-                            src={encodeURI(viewFile.src)}
-                            alt="미리보기"
-                            style={{
-                              maxWidth: "100%",
-                              maxHeight: "100%",
-                              height: "auto",
-                              width: "auto",
-                              borderRadius: 8,
-                              display: "block",
-                            }}
-                          />
-                        </TransformComponent>
-                      </>
-                    )}
-                  </TransformWrapper>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 첨부파일 공통 미리보기 오버레이 */}
+      <PreviewOverlay
+        open={previewFiles.length > 0}
+        files={previewFiles}
+        currentIndex={previewIndex}
+        onChangeIndex={setPreviewIndex}
+        onClose={handleCloseViewer}
+      />
     </>
   );
 }

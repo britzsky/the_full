@@ -330,9 +330,10 @@ function uniqueTextList(list) {
 
 // 지출결의서 기본 지출명 포맷 생성
 // - 형식: YYYYMMDD_본사 비품 구매 지출결의서_법인(0000)
-function buildDefaultPaymentTitleByDraftDate(draftDateTimeText, cardTailText = "") {
-  const dateKey = dayjs(draftDateTimeText).isValid()
-    ? dayjs(draftDateTimeText).format("YYYYMMDD")
+// - 날짜는 지급요청일자(requestDateTimeText) 기준으로 생성한다.
+function buildDefaultPaymentTitle(requestDateTimeText, cardTailText = "") {
+  const dateKey = dayjs(requestDateTimeText).isValid()
+    ? dayjs(requestDateTimeText).format("YYYYMMDD")
     : dayjs().format("YYYYMMDD");
   const tail = String(cardTailText ?? "")
     .replace(/[^\d]/g, "")
@@ -770,12 +771,14 @@ export default function ElectronicPaymentSheetTab() {
           .join("\n");
 
         const nextDraftSheet = {
-          // 요구사항: 지출명은 "기안일자_본사 비품 구매 지출결의서_법인(0000)" 기본 포맷 사용
+          // 지출명은 지급요청일자(startDt) 기준으로 생성한다.
           // - 카드 뒷자리가 이미 선택되어 있으면 해당 값을 우선 반영
-          title: buildDefaultPaymentTitleByDraftDate(
-            draftDt,
+          title: buildDefaultPaymentTitle(
+            startDt,
             String(draftSheetBufferRef.current?.card_tail ?? "")
           ),
+          // 지급요청일자 기본값을 명시적으로 전달해 child가 즉시 올바른 날짜를 사용하도록 한다.
+          request_dt: dayjs(startDt).format("YYYY-MM-DD"),
           item_name: purposeText,
           content: detailText,
           qty: "",

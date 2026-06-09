@@ -13,7 +13,6 @@ import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/ma
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import Autocomplete from "@mui/material/Autocomplete";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import Swal from "sweetalert2";
 import api from "api/api";
 import useAccountMemberRecSheetData, {
@@ -26,9 +25,21 @@ import {
   canEditSensitiveField,
   maskSensitiveFieldValue,
 } from "utils/maskingUtils";
+import PreviewOverlay from "utils/PreviewOverlay";
+import {
+  HEADOFFICE_DOCUMENT_FILE_ACCEPT,
+  getHeadOfficeDocumentPreviewKind,
+  isHeadOfficeDocumentSupportedFile,
+} from "utils/headOfficeDocumentImageUtils";
 
 const NUMERIC_COLS = new Set(["salary"]);
+const PREVIEW_FILE_FIELDS = ["employment_contract", "id", "bankbook"];
 const IMAGE_FIELDS = new Set(["employment_contract", "id", "bankbook"]);
+const PREVIEW_FIELD_LABELS = {
+  employment_contract: "근로계약서",
+  id: "신분증",
+  bankbook: "통장사본",
+};
 
 const STICKY_COL_WIDTH = {
   cor_type: 90,
@@ -160,8 +171,10 @@ function AccountMemberRecSheet() {
   // ✅ 스냅샷 갱신 트리거 (재조회/저장 성공 시 올려줌)
   const [snapshotTick, setSnapshotTick] = useState(0);
 
-  // ✅ 이미지 뷰어
-  const [viewImageSrc, setViewImageSrc] = useState(null);
+  // 첨부파일 미리보기 오버레이 상태
+  const [previewFiles, setPreviewFiles] = useState([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const previewObjectUrlsRef = useRef([]);
 
   const normalizeTime = (t) => {
     if (!t) return "";
@@ -470,12 +483,61 @@ function AccountMemberRecSheet() {
     );
   };
 
-  const handleViewImage = (value) => {
-    if (!value) return;
-    if (typeof value === "object") setViewImageSrc(URL.createObjectURL(value));
-    else setViewImageSrc(`${API_BASE_URL}${value}`);
-  };
-  const handleCloseViewer = () => setViewImageSrc(null);
+  const clearPreviewObjectUrls = useCallback(() => {
+    previewObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewObjectUrlsRef.current = [];
+  }, []);
+
+  const getPreviewKind = useCallback(
+    (value) =>
+      typeof value === "object"
+        ? getHeadOfficeDocumentPreviewKind(value)
+        : getHeadOfficeDocumentPreviewKind({ image_path: value }),
+    []
+  );
+
+  const toPreviewUrl = useCallback((value) => {
+    if (!value) return "";
+    if (typeof value === "object") {
+      const objectUrl = URL.createObjectURL(value);
+      previewObjectUrlsRef.current.push(objectUrl);
+      return objectUrl;
+    }
+    const path = String(value || "");
+    if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+    const base = String(API_BASE_URL || "").replace(/\/+$/, "");
+    const params = new URLSearchParams();
+    params.set("file_path", path.startsWith("/") ? path : `/${path}`);
+    return `${base}/Account/AccountStoredFileView?${params.toString()}`;
+  }, []);
+
+  const handleViewImage = useCallback(
+    (rowData, field) => {
+      clearPreviewObjectUrls();
+      const files = PREVIEW_FILE_FIELDS
+        .map((key) => {
+          const value = rowData?.[key];
+          if (!value) return null;
+          return {
+            url: toPreviewUrl(value),
+            name: PREVIEW_FIELD_LABELS[key],
+            kind: getPreviewKind(value),
+          };
+        })
+        .filter(Boolean);
+
+      const targetIndex = Math.max(0, files.findIndex((file) => file.name === PREVIEW_FIELD_LABELS[field]));
+      setPreviewFiles(files);
+      setPreviewIndex(targetIndex);
+    },
+    [clearPreviewObjectUrls, getPreviewKind, toPreviewUrl]
+  );
+
+  const handleCloseViewer = useCallback(() => {
+    setPreviewFiles([]);
+    setPreviewIndex(0);
+    clearPreviewObjectUrls();
+  }, [clearPreviewObjectUrls]);
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
@@ -540,30 +602,33 @@ function AccountMemberRecSheet() {
   const normalizeKey = (v) => String(v ?? "").trim();
 
   const handleSave = async () => {
+    handleCloseViewer();
     if (saving) return;
 
     const originalByRid = new Map(
       (originalRows || []).map((r, idx) => [getStableRowKey(r, idx), r])
     );
 
-    const changedRows = (activeRows || []).filter((row, idx) => {
-      const rid = getStableRowKey(row, idx);
-      const original = originalByRid.get(rid);
-      if (!original) return true;
+    const changedRowsWithRid = (activeRows || [])
+      .map((row, idx) => ({ row, rid: getStableRowKey(row, idx) }))
+      .filter(({ row, rid }) => {
+        const original = originalByRid.get(rid);
+        if (!original) return true;
 
-      return Object.keys(row).some((key) => {
-        if (IMAGE_FIELDS.has(key)) {
-          const v = row[key];
-          const o = original[key];
-          if (typeof v === "object" && v) return true;
-          return String(v ?? "") !== String(o ?? "");
-        }
-        if (NUMERIC_COLS.has(key)) {
-          return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
-        }
-        return String(row[key] ?? "") !== String(original[key] ?? "");
+        return Object.keys(row).some((key) => {
+          if (IMAGE_FIELDS.has(key)) {
+            const v = row[key];
+            const o = original[key];
+            if (typeof v === "object" && v) return true;
+            return String(v ?? "") !== String(o ?? "");
+          }
+          if (NUMERIC_COLS.has(key)) {
+            return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
+          }
+          return String(row[key] ?? "") !== String(original[key] ?? "");
+        });
       });
-    });
+    const changedRows = changedRowsWithRid.map((item) => item.row);
 
     if (changedRows.length === 0) {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
@@ -662,8 +727,8 @@ function AccountMemberRecSheet() {
       // =========================================================
       // ✅ 2) 이미지 업로드 포함 저장 데이터 가공
       // =========================================================
-      const processed = await Promise.all(
-        changedRows.map(async (row) => {
+      const processedWithRid = await Promise.all(
+        changedRowsWithRid.map(async ({ row, rid }) => {
           const newRow = cleanRow(row);
 
           for (const field of IMAGE_FIELDS) {
@@ -673,13 +738,21 @@ function AccountMemberRecSheet() {
             }
           }
 
-          return { ...newRow, user_id: userId };
+          return { rid, row: { ...newRow, user_id: userId } };
         })
       );
+      const processed = processedWithRid.map((item) => item.row);
 
       const res = await api.post("/Operate/AccountRecMembersSave", { data: processed });
 
       if (res.data.code === 200) {
+        const savedRowByRid = new Map(processedWithRid.map((item) => [item.rid, item.row]));
+        const nextRows = (activeRows || []).map((row, idx) => {
+          const rid = getStableRowKey(row, idx);
+          return savedRowByRid.has(rid) ? { ...row, ...savedRowByRid.get(rid) } : row;
+        });
+        setActiveRows(nextRows);
+        setOriginalRows(nextRows.map((row) => ({ ...row })));
         // ✅ 저장 성공 후 재조회 + 스냅샷 갱신 트리거
         await fetchAccountMembersAllList();
         setSnapshotTick((t) => t + 1);
@@ -959,9 +1032,12 @@ function AccountMemberRecSheet() {
                         return;
                       }
 
-                      const sameValue = isNumeric
-                        ? Number(row.original?.[colKey] ?? 0) === Number(newValue ?? 0)
-                        : String(row.original?.[colKey] ?? "") === String(newValue ?? "");
+                      const sameValue =
+                        isImage && typeof newValue === "object" && newValue
+                          ? false
+                          : isNumeric
+                            ? Number(row.original?.[colKey] ?? 0) === Number(newValue ?? 0)
+                            : String(row.original?.[colKey] ?? "") === String(newValue ?? "");
                       if (sameValue) return;
 
                       lockColumnsForEditing();
@@ -1011,13 +1087,26 @@ function AccountMemberRecSheet() {
                         >
                           <input
                             type="file"
-                            accept="image/*"
+                            accept={HEADOFFICE_DOCUMENT_FILE_ACCEPT}
                             id={inputId}
                             style={{ display: "none" }}
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (!file) return;
+                              if (!file) {
+                                e.target.value = null;
+                                return;
+                              }
+                              if (!isHeadOfficeDocumentSupportedFile(file)) {
+                                Swal.fire(
+                                  "지원하지 않는 파일 형식",
+                                  "이미지, PDF, Excel(xls/xlsx) 파일만 첨부할 수 있습니다.",
+                                  "warning"
+                                );
+                                e.target.value = null;
+                                return;
+                              }
                               handleCellChange(file);
+                              e.target.value = null;
                             }}
                           />
 
@@ -1038,8 +1127,8 @@ function AccountMemberRecSheet() {
                               <Tooltip title="미리보기">
                                 <IconButton
                                   size="small"
-                                  sx={iconBtnSx}
-                                  onClick={() => handleViewImage(value)}
+                                  sx={{ ...iconBtnSx, color: isChanged ? "#d32f2f" : iconBtnSx.color }}
+                                  onClick={() => handleViewImage(row.original, colKey)}
                                 >
                                   <ImageSearchIcon fontSize="small" />
                                 </IconButton>
@@ -1369,99 +1458,14 @@ function AccountMemberRecSheet() {
         </Grid>
       </MDBox>
 
-      {viewImageSrc && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
-          }}
-          onClick={handleCloseViewer}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "relative",
-              maxWidth: isMobile ? "95%" : "80%",
-              maxHeight: isMobile ? "90%" : "80%",
-            }}
-          >
-            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-              {({ zoomIn, zoomOut, resetTransform }) => (
-                <>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      zIndex: 1000,
-                    }}
-                  >
-                    <button
-                      onClick={zoomIn}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={zoomOut}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      -
-                    </button>
-                    <button
-                      onClick={resetTransform}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      ⟳
-                    </button>
-                    <button
-                      onClick={handleCloseViewer}
-                      style={{
-                        border: "none",
-                        padding: isMobile ? "2px 6px" : "4px 8px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      X
-                    </button>
-                  </div>
-
-                  <TransformComponent>
-                    <img
-                      src={encodeURI(viewImageSrc)}
-                      alt="미리보기"
-                      style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8 }}
-                    />
-                  </TransformComponent>
-                </>
-              )}
-            </TransformWrapper>
-          </div>
-        </div>
-      )}
+      {/* 첨부파일 공통 미리보기 오버레이 */}
+      <PreviewOverlay
+        open={previewFiles.length > 0}
+        files={previewFiles}
+        currentIndex={previewIndex}
+        onChangeIndex={setPreviewIndex}
+        onClose={handleCloseViewer}
+      />
     </>
   );
 }

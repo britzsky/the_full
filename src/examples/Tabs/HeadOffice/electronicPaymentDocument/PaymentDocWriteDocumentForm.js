@@ -220,18 +220,32 @@ function toMaskedCardText(v) {
   return `****-****-****-${tail}`;
 }
 
+// 지급구분 코드를 자동 지출명 접미사로 변환
+function buildPaymentMethodSuffix(method, cardTailText) {
+  if (method === METHOD.CARD) {
+    const tail = cardTail(cardTailText).padStart(4, "0");
+    return `법인(${tail})`;
+  }
+  if (method === METHOD.CASH) return "현금";
+  if (method === METHOD.TRANSFER) return "계좌이체";
+  if (method === METHOD.AUTO) return "자동이체";
+  if (method === METHOD.OTHER) return "기타납부";
+  return "법인(0000)";
+}
+
 // 자동 지출명 포맷 문자열 생성
-// - 형식: YYYYMMDD_본사 비품 구매 지출결의서_법인(0000)
-function buildAutoPaymentTitle(draftDateTimeText, cardTailText) {
-  const datePart = toDate(draftDateTimeText).replace(/-/g, "") || toDate(new Date().toISOString()).replace(/-/g, "");
-  const tail = cardTail(cardTailText).padStart(4, "0");
-  return `${datePart}_본사 비품 구매 지출결의서_법인(${tail})`;
+// - 형식: YYYYMMDD_본사 비품 구매 지출결의서_지급구분~
+// - 날짜: 지급요청일자(request_dt) 기준
+function buildAutoPaymentTitle(requestDateText, paymentMethod, cardTailText) {
+  const datePart = toDate(requestDateText).replace(/-/g, "") || toDate(new Date().toISOString()).replace(/-/g, "");
+  const suffix = buildPaymentMethodSuffix(paymentMethod || METHOD.CARD, cardTailText);
+  return `${datePart}_본사 비품 구매 지출결의서_${suffix}`;
 }
 
 // 자동 지출명 패턴 여부 판정
 function isAutoPaymentTitleText(titleText) {
   const text = String(titleText ?? "").trim();
-  return /^\d{8}_본사 비품 구매 지출결의서_법인\(\d{4}\)$/.test(text);
+  return /^\d{8}_본사 비품 구매 지출결의서_.+$/.test(text);
 }
 
 // 합계 기준 공급가액/세액 분리 계산
@@ -874,18 +888,20 @@ function PaymentDocWriteDocumentForm({
     });
   }, [local.payment_method, selectedCardNumber, applyPaymentTypeMeta]);
 
-  // 자동 지출명 패턴인 경우, 기안일자/카드끝4자리 변경 시 제목을 자동 동기화한다.
+  // 자동 지출명 패턴인 경우, 지급요청일자/지급구분 변경 시 제목을 자동 동기화한다.
   // - 사용자가 수동으로 다른 형식으로 수정한 제목은 덮어쓰지 않는다.
+  const localPaymentMethod = local.payment_method;
   useEffect(() => {
     setLocal((prev) => {
       const currentTitle = String(prev?.title ?? "").trim();
       if (!isAutoPaymentTitleText(currentTitle)) return prev;
 
-      const nextTitle = buildAutoPaymentTitle(draftDt, selectedTail);
+      const reqDt = prev.request_dt || toDate(startDt) || draftDate;
+      const nextTitle = buildAutoPaymentTitle(reqDt, prev.payment_method, selectedTail);
       if (currentTitle === nextTitle) return prev;
       return { ...prev, title: nextTitle };
     });
-  }, [draftDt, selectedTail]);
+  }, [requestDate, localPaymentMethod, selectedTail, startDt, draftDate]);
 
   // 지급구분 선택 여부 판정
   const isMethodSelected = useCallback(

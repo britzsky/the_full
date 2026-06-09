@@ -2,6 +2,14 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "api/api";
 
+const normalizeMemberFilePath = (value) => {
+  const path = String(value ?? "").trim();
+  if (!path) return "";
+  if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+  if (path.startsWith("/image/")) return path;
+  if (path.startsWith("image/")) return `/${path}`;
+  return path.startsWith("/") ? `/image${path}` : `/image/${path}`;
+};
 // 인사 -> 현장관리 -> 현장 직원관리
 const parseNumber = (value) => {
   if (!value) return 0;
@@ -108,12 +116,12 @@ export default function useAccountMembersheetData(account_id, activeStatus, memb
         health_insurance: item.health_insurance,
         industrial_insurance: item.industrial_insurance,
         employment_insurance: item.employment_insurance,
-        employment_contract: item.employment_contract,
+        employment_contract: normalizeMemberFilePath(item.employment_contract),
         headoffice_note: item.headoffice_note,
         subsidy: item.subsidy,
         note: item.note,
-        id: item.id,
-        bankbook: item.bankbook,
+        id: normalizeMemberFilePath(item.id),
+        bankbook: normalizeMemberFilePath(item.bankbook),
         cor_type: item.cor_type,
       }));
 

@@ -2,6 +2,14 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "api/api";
 
+const normalizeMemberFilePath = (value) => {
+  const path = String(value ?? "").trim();
+  if (!path) return "";
+  if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+  if (path.startsWith("/image/")) return path;
+  if (path.startsWith("image/")) return `/${path}`;
+  return path.startsWith("/") ? `/image${path}` : `/image/${path}`;
+};
 const parseNumber = (value) => {
   if (!value) return 0;
   return Number(String(value).replace(/,/g, "")) || 0;
@@ -61,9 +69,9 @@ export default function useAccountMemberCardSheetData(account_id, activeStatus) 
         idx: item.idx,
         start_time: normalizeTime(item.start_time),
         end_time: normalizeTime(item.end_time),
-        employment_contract: item.employment_contract,
-        id: item.id,
-        bankbook: item.bankbook,
+        employment_contract: normalizeMemberFilePath(item.employment_contract),
+        id: normalizeMemberFilePath(item.id),
+        bankbook: normalizeMemberFilePath(item.bankbook),
         use_yn: item.use_yn,
         note: item.note,
 
@@ -76,7 +84,7 @@ export default function useAccountMemberCardSheetData(account_id, activeStatus) 
         health_insurance: item.health_insurance,
         industrial_insurance: item.industrial_insurance,
         employment_insurance: item.employment_insurance,
-        employment_contract: item.employment_contract,
+        employment_contract: normalizeMemberFilePath(item.employment_contract),
         headoffice_note: item.headoffice_note,
         subsidy: item.subsidy,
         cor_type: item.cor_type,

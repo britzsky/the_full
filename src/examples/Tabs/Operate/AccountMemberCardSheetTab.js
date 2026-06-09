@@ -13,12 +13,17 @@ import api from "api/api";
 import Modal from "@mui/material/Modal";
 import Box from "@mui/material/Box";
 import Autocomplete from "@mui/material/Autocomplete";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import useAccountMembersheetData, { parseNumber, formatNumber } from "./accountMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
 import { canEditSensitiveField, maskSensitiveFieldValue } from "utils/maskingUtils";
+import PreviewOverlay from "utils/PreviewOverlay";
+import {
+  HEADOFFICE_DOCUMENT_FILE_ACCEPT,
+  getHeadOfficeDocumentPreviewKind,
+  isHeadOfficeDocumentSupportedFile,
+} from "utils/headOfficeDocumentImageUtils";
 
 // 운영 -> 채용관리 -> 현장 직원목록
 function AccountMemberSheet() {
@@ -88,18 +93,71 @@ function AccountMemberSheet() {
   // ✅ 이미지 업로드/뷰어 기능
   // =========================
   const imageFields = ["employment_contract", "id", "bankbook"];
-  const [viewImageSrc, setViewImageSrc] = useState(null);
+  const previewFieldLabels = {
+    employment_contract: "근로계약서",
+    id: "신분증",
+    bankbook: "통장사본",
+  };
+  const [previewFiles, setPreviewFiles] = useState([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const previewObjectUrlsRef = useRef([]);
   const fileIconSx = { color: "#1e88e5" };
 
-  const handleViewImage = (value) => {
-    if (!value) return;
+  const clearPreviewObjectUrls = useCallback(() => {
+    previewObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    previewObjectUrlsRef.current = [];
+  }, []);
+
+  const getPreviewKind = useCallback(
+    (value) =>
+      typeof value === "object"
+        ? getHeadOfficeDocumentPreviewKind(value)
+        : getHeadOfficeDocumentPreviewKind({ image_path: value }),
+    []
+  );
+
+  const toPreviewUrl = useCallback((value) => {
+    if (!value) return "";
     if (typeof value === "object") {
-      setViewImageSrc(URL.createObjectURL(value));
-    } else {
-      setViewImageSrc(`${API_BASE_URL}${value}`);
+      const objectUrl = URL.createObjectURL(value);
+      previewObjectUrlsRef.current.push(objectUrl);
+      return objectUrl;
     }
-  };
-  const handleCloseViewer = () => setViewImageSrc(null);
+    const path = String(value || "");
+    if (/^(https?:\/\/|blob:|data:)/i.test(path)) return path;
+    const base = String(API_BASE_URL || "").replace(/\/+$/, "");
+    const params = new URLSearchParams();
+    params.set("file_path", path.startsWith("/") ? path : `/${path}`);
+    return `${base}/Account/AccountStoredFileView?${params.toString()}`;
+  }, []);
+
+  const handleViewImage = useCallback(
+    (rowData, field) => {
+      clearPreviewObjectUrls();
+      const files = imageFields
+        .map((key) => {
+          const value = rowData?.[key];
+          if (!value) return null;
+          return {
+            url: toPreviewUrl(value),
+            name: previewFieldLabels[key],
+            kind: getPreviewKind(value),
+          };
+        })
+        .filter(Boolean);
+
+      const targetIndex = Math.max(0, files.findIndex((file) => file.name === previewFieldLabels[field]));
+      setPreviewFiles(files);
+      setPreviewIndex(targetIndex);
+    },
+    [clearPreviewObjectUrls, getPreviewKind, imageFields, previewFieldLabels, toPreviewUrl]
+  );
+
+  const handleCloseViewer = useCallback(() => {
+    setPreviewFiles([]);
+    setPreviewIndex(0);
+    clearPreviewObjectUrls();
+  }, [clearPreviewObjectUrls]);
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
@@ -455,24 +513,28 @@ function AccountMemberSheet() {
 
   // ✅ 저장 로직: 최종 payload에서도 유틸 account_id=2 강제
   const handleSave = async () => {
-    const changedRows = activeRows.filter((row, idx) => {
-      const original = originalRows[idx];
-      if (!original) return true;
+    handleCloseViewer();
+    const changedRowsWithIndex = activeRows
+      .map((row, idx) => ({ row, rowIndex: idx }))
+      .filter(({ row, rowIndex }) => {
+        const original = originalRows[rowIndex];
+        if (!original) return true;
 
-      return Object.keys(row).some((key) => {
-        if (imageFields.includes(key)) {
-          const v = row[key];
-          const o = original[key];
-          if (typeof v === "object" && v) return true;
-          return String(v ?? "") !== String(o ?? "");
-        }
+        return Object.keys(row).some((key) => {
+          if (imageFields.includes(key)) {
+            const v = row[key];
+            const o = original[key];
+            if (typeof v === "object" && v) return true;
+            return String(v ?? "") !== String(o ?? "");
+          }
 
-        if (numericCols.includes(key)) {
-          return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
-        }
-        return String(row[key] ?? "") !== String(original[key] ?? "");
+          if (numericCols.includes(key)) {
+            return Number(row[key] ?? 0) !== Number(original[key] ?? 0);
+          }
+          return String(row[key] ?? "") !== String(original[key] ?? "");
+        });
       });
-    });
+    const changedRows = changedRowsWithIndex.map((item) => item.row);
 
     if (changedRows.length === 0) {
       Swal.fire("저장할 변경사항이 없습니다.", "", "info");
@@ -492,8 +554,8 @@ function AccountMemberSheet() {
         return newRow;
       };
 
-      const processed = await Promise.all(
-        changedRows.map(async (row) => {
+      const processedWithIndex = await Promise.all(
+        changedRowsWithIndex.map(async ({ row, rowIndex }) => {
           const newRow = cleanRow(row);
 
           for (const field of imageFields) {
@@ -504,14 +566,17 @@ function AccountMemberSheet() {
           }
 
           return {
-            ...newRow,
-            user_id: userId,
+            rowIndex,
+            row: {
+              ...newRow,
+              user_id: userId,
+            },
           };
         })
       );
 
       // ✅ 여기서 한번 더 유틸 account_id=2 강제
-      const processedFixed = applyUtilAccountId(processed);
+      const processedFixed = applyUtilAccountId(processedWithIndex.map((item) => item.row));
 
       const res = await api.post("/Operate/AccountMembersSave", {
         data: processedFixed,
@@ -521,8 +586,14 @@ function AccountMemberSheet() {
         Swal.fire("저장 완료", "변경사항이 저장되었습니다.", "success");
 
         // 원본 스냅샷도 보정된 상태로 유지
-        const fixedAll = applyUtilAccountId([...activeRows]);
-        setOriginalRows(fixedAll);
+        const savedRowByIndex = new Map(
+          processedWithIndex.map((item, idx) => [item.rowIndex, processedFixed[idx]])
+        );
+        const fixedAll = applyUtilAccountId(
+          activeRows.map((row, idx) => (savedRowByIndex.has(idx) ? { ...row, ...savedRowByIndex.get(idx) } : row))
+        );
+        setActiveRows(fixedAll);
+        setOriginalRows(fixedAll.map((row) => ({ ...row })));
 
         await fetchAccountMembersAllList();
         setIsColumnWidthLocked(false);
@@ -1168,13 +1239,26 @@ function AccountMemberSheet() {
                       >
                         <input
                           type="file"
-                          accept="image/*"
+                          accept={HEADOFFICE_DOCUMENT_FILE_ACCEPT}
                           id={inputId}
                           style={{ display: "none" }}
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (!file) return;
+                            if (!file) {
+                              e.target.value = null;
+                              return;
+                            }
+                            if (!isHeadOfficeDocumentSupportedFile(file)) {
+                              Swal.fire(
+                                "지원하지 않는 파일 형식",
+                                "이미지, PDF, Excel(xls/xlsx) 파일만 첨부할 수 있습니다.",
+                                "warning"
+                              );
+                              e.target.value = null;
+                              return;
+                            }
                             handleCellChange(file);
+                            e.target.value = null;
                           }}
                         />
 
@@ -1204,8 +1288,8 @@ function AccountMemberSheet() {
                             <Tooltip title="미리보기">
                               <IconButton
                                 size="small"
-                                sx={{ ...fileIconSx, p: 0.5 }}
-                                onClick={() => handleViewImage(value)}
+                                sx={{ ...fileIconSx, color: isChanged ? "#d32f2f" : fileIconSx.color, p: 0.5 }}
+                                onClick={() => handleViewImage(row.original, colKey)}
                               >
                                 <ImageSearchIcon fontSize="small" />
                               </IconButton>
@@ -2276,86 +2360,14 @@ function AccountMemberSheet() {
         </Box>
       </Modal>
 
-      {/* =========================
-          ✅ 이미지 뷰어
-         ========================= */}
-      {viewImageSrc && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "50vw",
-            height: "90vh",
-            backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
-          }}
-          onClick={handleCloseViewer}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "relative",
-              maxWidth: isMobile ? "95%" : "80%",
-              maxHeight: isMobile ? "90%" : "80%",
-            }}
-          >
-            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-              {({ zoomIn, zoomOut, resetTransform }) => (
-                <>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                      zIndex: 1000,
-                    }}
-                  >
-                    <button
-                      onClick={zoomIn}
-                      style={{ border: "none", padding: 6, cursor: "pointer" }}
-                    >
-                      +
-                    </button>
-                    <button
-                      onClick={zoomOut}
-                      style={{ border: "none", padding: 6, cursor: "pointer" }}
-                    >
-                      -
-                    </button>
-                    <button
-                      onClick={resetTransform}
-                      style={{ border: "none", padding: 6, cursor: "pointer" }}
-                    >
-                      ⟳
-                    </button>
-                    <button
-                      onClick={handleCloseViewer}
-                      style={{ border: "none", padding: 6, cursor: "pointer" }}
-                    >
-                      X
-                    </button>
-                  </div>
-
-                  <TransformComponent>
-                    <img
-                      src={encodeURI(viewImageSrc)}
-                      alt="미리보기"
-                      style={{ maxWidth: "70%", maxHeight: "100%", borderRadius: 8 }}
-                    />
-                  </TransformComponent>
-                </>
-              )}
-            </TransformWrapper>
-          </div>
-        </div>
-      )}
+      {/* 첨부파일 공통 미리보기 오버레이 */}
+      <PreviewOverlay
+        open={previewFiles.length > 0}
+        files={previewFiles}
+        currentIndex={previewIndex}
+        onChangeIndex={setPreviewIndex}
+        onClose={handleCloseViewer}
+      />
     </>
   );
 }

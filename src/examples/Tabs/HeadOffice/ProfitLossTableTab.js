@@ -32,6 +32,9 @@ export default function ProfitLossTableTab() {
   const [unlockedPersonCostMonths, setUnlockedPersonCostMonths] = useState(new Set());
   // ✅ 우클릭 컨텍스트 메뉴 상태
   const [ctxMenu, setCtxMenu] = useState({ open: false, mouseX: 0, mouseY: 0, month: null });
+  // ✅ 인건비 등록
+  const [personCostUploading, setPersonCostUploading] = useState(false);
+  const personCostFileInputRef = useRef(null);
 
   // ✅ 실제 조회에 사용할 month (전체면 빈값으로 넘김)
   const queryMonth = useMemo(() => {
@@ -39,7 +42,7 @@ export default function ProfitLossTableTab() {
   }, [month]);
 
   // ✅ month까지 전달되도록 수정
-  const { profitLossTableRows, accountList, loading, fetchProfitLossTableList } =
+  const { profitLossTableRows, accountList, loading, fetchProfitLossTableList, savePersonCostExcel } =
     useProfitLossTableData(year, queryMonth, selectedAccountId);
 
   const accountTypeById = useMemo(() => {
@@ -328,21 +331,21 @@ export default function ProfitLossTableTab() {
 
     // 인원추산 (분모: estimate_total)
     result.living_estimate_ratio = rnd(result.living_estimate || 0, et);
-    result.basic_estimate_ratio  = rnd(result.basic_estimate  || 0, et);
-    result.estimate_total_ratio  = result.living_estimate_ratio + result.basic_estimate_ratio;
+    result.basic_estimate_ratio = rnd(result.basic_estimate || 0, et);
+    result.estimate_total_ratio = result.living_estimate_ratio + result.basic_estimate_ratio;
 
     // 매출 (분모: sales_total)
-    result.living_ratio      = rnd(result.living_cost      || 0, st);
-    result.basic_ratio       = rnd(result.basic_cost       || 0, st);
-    result.employ_ratio      = rnd(result.employ_cost      || 0, st);
-    result.living_ratio2     = rnd(result.living_cost2     || 0, st);
-    result.basic_ratio2      = rnd(result.basic_cost2      || 0, st);
-    result.employ_ratio2     = rnd(result.employ_cost2     || 0, st);
-    result.daycare_ratio     = rnd(result.daycare_cost     || 0, st);
+    result.living_ratio = rnd(result.living_cost || 0, st);
+    result.basic_ratio = rnd(result.basic_cost || 0, st);
+    result.employ_ratio = rnd(result.employ_cost || 0, st);
+    result.living_ratio2 = rnd(result.living_cost2 || 0, st);
+    result.basic_ratio2 = rnd(result.basic_cost2 || 0, st);
+    result.employ_ratio2 = rnd(result.employ_cost2 || 0, st);
+    result.daycare_ratio = rnd(result.daycare_cost || 0, st);
     result.daycare_emp_ratio = rnd(result.daycare_emp_cost || 0, st);
-    result.integrity_ratio   = rnd(result.integrity_cost   || 0, st);
-    result.return_ratio      = rnd(result.return_cost      || 0, st);
-    result.payback_ratio     = rnd(result.payback_price    || 0, st);
+    result.integrity_ratio = rnd(result.integrity_cost || 0, st);
+    result.return_ratio = rnd(result.return_cost || 0, st);
+    result.payback_ratio = rnd(result.payback_price || 0, st);
     // sales_total_ratio: payback 포함 (프로시저와 동일)
     result.sales_total_ratio = Math.round((
       result.living_ratio + result.basic_ratio + result.employ_ratio +
@@ -352,14 +355,14 @@ export default function ProfitLossTableTab() {
     ) * 10) / 10;
 
     // 매입 (분모: sales_total)
-    result.food_ratio        = rnd(result.food_cost        || 0, st);
-    result.etc_ratio         = rnd(result.etc_cost         || 0, st);
-    result.food_trash_ratio  = rnd(result.food_process     || 0, st);
-    result.dishwasher_ratio  = rnd(result.dishwasher       || 0, st);
-    result.cesco_ratio       = rnd(result.cesco            || 0, st);
-    result.water_ratio       = rnd(result.water_puri       || 0, st);
-    result.event_ratio       = rnd(result.event_cost       || 0, st);
-    result.not_budget_ratio  = rnd(result.not_budget_cost  || 0, st);
+    result.food_ratio = rnd(result.food_cost || 0, st);
+    result.etc_ratio = rnd(result.etc_cost || 0, st);
+    result.food_trash_ratio = rnd(result.food_process || 0, st);
+    result.dishwasher_ratio = rnd(result.dishwasher || 0, st);
+    result.cesco_ratio = rnd(result.cesco || 0, st);
+    result.water_ratio = rnd(result.water_puri || 0, st);
+    result.event_ratio = rnd(result.event_cost || 0, st);
+    result.not_budget_ratio = rnd(result.not_budget_cost || 0, st);
     result.purchase_total_ratio = Math.round((
       result.food_trash_ratio + result.dishwasher_ratio + result.cesco_ratio +
       result.water_ratio + result.food_ratio + result.etc_ratio +
@@ -367,14 +370,14 @@ export default function ProfitLossTableTab() {
     ) * 10) / 10;
 
     // 인건 (분모: sales_total)
-    result.person_ratio    = rnd(result.person_cost    || 0, st);
-    result.dispatch_ratio  = rnd(result.dispatch_cost  || 0, st);
+    result.person_ratio = rnd(result.person_cost || 0, st);
+    result.dispatch_ratio = rnd(result.dispatch_cost || 0, st);
     result.person_total_ratio = Math.round((result.person_ratio + result.dispatch_ratio) * 10) / 10;
 
     // 간접 (분모: sales_total)
-    result.utility_ratio       = rnd(result.utility_bills      || 0, st);
-    result.duty_secure_ratio   = rnd(result.duty_secure        || 0, st);
-    result.etc_indirect_ratio  = rnd(result.etc_indirect_cost  || 0, st);
+    result.utility_ratio = rnd(result.utility_bills || 0, st);
+    result.duty_secure_ratio = rnd(result.duty_secure || 0, st);
+    result.etc_indirect_ratio = rnd(result.etc_indirect_cost || 0, st);
     result.indirect_total_ratio = Math.round((
       result.utility_ratio + result.duty_secure_ratio + result.etc_indirect_ratio
     ) * 10) / 10;
@@ -1492,6 +1495,175 @@ export default function ProfitLossTableTab() {
     }
   };
 
+  // 인건비 등록용 엑셀 서식 파일 다운로드
+  // 거래처 목록을 행으로 채운 뒤 인건비 금액을 입력할 수 있는 서식 생성
+  const handlePersonCostTemplateDownload = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("인건비등록");
+
+    // 컬럼 순서: A열 = 거래처명, B열 = 인건비 정보, C열 = ID(숨김 - 업로드 시 매핑용)
+    sheet.columns = [
+      { header: "거래처명", key: "account_name", width: 35 },
+      { header: "인건비 정보", key: "person_cost", width: 18 },
+      { header: "ID", key: "account_id", width: 22, hidden: true },
+    ];
+
+    // 헤더 행 스타일 적용
+    const headerRow = sheet.getRow(1);
+    headerRow.eachCell((cell) => {
+      cell.font = { bold: true };
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+      cell.fill = excelHeaderFill;
+      cell.border = excelBorderThin;
+    });
+
+    // 거래처 목록을 account_id 기준 오름차순으로 정렬 후 행 추가
+    (accountList || []).slice().sort((a, b) => String(a.account_id).localeCompare(String(b.account_id))).forEach((acc) => {
+      const row = sheet.addRow({
+        account_name: acc.account_name,
+        person_cost: "",        // 사용자가 직접 입력할 인건비 금액 칸
+        account_id: acc.account_id,
+      });
+      row.eachCell((cell) => {
+        cell.border = excelBorderThin;
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    downloadBlob(blob, "인건비등록서식.xlsx");
+  };
+
+  const handlePersonCostModalOpen = async () => {
+    const { isConfirmed, isDenied } = await Swal.fire({
+      title: "인건비 등록",
+      html: `<p style="text-align:left; margin:0; font-size:14px; line-height:2.2; color:#555;">
+        ① <b>월을 선택</b>한 후 진행해주세요.<br/>
+        ② <b>업로드 서식 다운로드</b>를 눌러 엑셀 서식 파일을 받습니다.<br/>
+        ③ 파일을 열어 각 거래처의 <b>인건비 금액</b>을 입력합니다.<br/>
+        ④ <b>업로드</b>를 눌러 작성한 파일을 등록합니다.
+      </p>`,
+      showDenyButton: true,
+      confirmButtonText: "업로드",
+      denyButtonText: "업로드 서식 다운로드",
+      showCancelButton: false,
+      reverseButtons: true,
+      confirmButtonColor: "#4CAF50",
+      denyButtonColor: "#7066e0",
+    });
+
+    if (isDenied) {
+      handlePersonCostTemplateDownload();
+    } else if (isConfirmed) {
+      if (!validatePersonCostUploadCondition()) return;
+      personCostFileInputRef.current?.click();
+    }
+  };
+
+  const validatePersonCostUploadCondition = () => {
+    if (!queryMonth) {
+      Swal.fire("월을 선택해주세요.", "인건비 등록은 특정 월을 선택해야 합니다.", "warning");
+      return false;
+    }
+    return true;
+  };
+
+  // 사용자가 작성한 인건비 등록 서식 엑셀 파일을 읽어 서버에 저장
+  const handlePersonCostUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";   // 같은 파일 재업로드 허용을 위해 input 초기화
+
+    setPersonCostUploading(true);
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(arrayBuffer);
+
+      const sheet = workbook.worksheets[0];
+      const rows = [];
+      const invalidIds = []; // 값이 비어있거나 0이어서 등록 제외할 거래처 ID
+
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return;                                    // 헤더 행 건너뜀
+        const accountId = String(row.getCell(3).value ?? "").trim();  // C열: 거래처 ID
+        const personCostVal = row.getCell(2).value;                    // B열: 인건비 금액
+        // null, undefined, "" 모두 빈값으로 처리
+        const isEmpty = personCostVal === null || personCostVal === undefined || personCostVal === "";
+        const personCost = isEmpty ? null : Number(personCostVal);
+
+        if (!accountId) return;
+
+        // 빈값·0·숫자가 아닌 경우 미등록 목록에 추가
+        if (isEmpty || !Number.isFinite(personCost) || personCost === 0) {
+          invalidIds.push(accountId);
+          return;
+        }
+
+        rows.push({
+          account_id: accountId,
+          year,
+          month: queryMonth,
+          person_cost: personCost,
+          update_id: localStorage.getItem("user_id") || "",
+        });
+      });
+
+      // account_id → account_name 매핑
+      const nameMap = {};
+      (accountList || []).forEach((acc) => { nameMap[String(acc.account_id)] = acc.account_name; });
+
+      const toNameList = (ids) =>
+        ids.map((id) => nameMap[String(id)] || id).join("<br/>");
+
+      if (rows.length === 0 && invalidIds.length === 0) {
+        Swal.fire("업로드할 데이터가 없습니다.", "인건비 금액이 입력된 행이 없습니다.", "info");
+        return;
+      }
+
+      let savedIds = [];
+      let skippedIds = [];
+
+      // 유효한 행이 있을 때만 서버에 저장 요청
+      if (rows.length > 0) {
+        const result = await savePersonCostExcel(rows);
+        savedIds = result.saved || [];
+        skippedIds = result.skipped || [];
+      }
+
+      const totalCount = savedIds.length + skippedIds.length + invalidIds.length;
+      const sectionStyle = "text-align:left; margin-bottom:12px;";
+      const listStyle = "font-size:13px; color:#555; margin-top:4px; line-height:1.8;";
+
+      let html = `<div style="text-align:left; margin-bottom:10px; font-size:13px; color:#888;">총 ${totalCount}건 처리 &nbsp;|&nbsp; 등록: ${savedIds.length}건 &nbsp;|&nbsp; 미등록: ${skippedIds.length + invalidIds.length}건</div>`;
+      html += "<div style='max-height:300px; overflow-y:auto; padding-right:4px;'>";
+      if (savedIds.length > 0) {
+        html += `<div style="${sectionStyle}"><b style="color:#4CAF50;">✔ 등록 완료 (${savedIds.length}건)</b><div style="${listStyle}">${toNameList(savedIds)}</div></div>`;
+      }
+      if (skippedIds.length > 0) {
+        html += `<div style="${sectionStyle}"><b style="color:#e67e22;">⚠ 기존 데이터 존재 - 미등록 (${skippedIds.length}건)</b><div style="${listStyle}">${toNameList(skippedIds)}</div></div>`;
+      }
+      if (invalidIds.length > 0) {
+        html += `<div style="${sectionStyle}"><b style="color:#aaa;">— 값 없음 - 미등록 (${invalidIds.length}건)</b><div style="${listStyle}">${toNameList(invalidIds)}</div></div>`;
+      }
+      html += "</div>";
+
+      Swal.fire({
+        title: "인건비 등록 결과",
+        html,
+        icon: savedIds.length > 0 ? "success" : "info",
+      });
+      if (savedIds.length > 0) fetchProfitLossTableList(queryAccountId, queryMonth, year);
+    } catch (err) {
+      Swal.fire("업로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    } finally {
+      setPersonCostUploading(false);
+    }
+  };
+
   const handleInputChange = (rowIdx, field, value) => {
     const newRows = [...editRows];
 
@@ -1611,6 +1783,16 @@ export default function ProfitLossTableTab() {
           startIcon={<RefreshIcon />}
         >
           새로고침
+        </MDButton>
+
+        <MDButton
+          variant="contained"
+          color="warning"
+          size="small"
+          disabled={personCostUploading}
+          onClick={handlePersonCostModalOpen}
+        >
+          {personCostUploading ? "업로드 중..." : "인건비 등록"}
         </MDButton>
 
         <MDButton
@@ -1938,6 +2120,14 @@ export default function ProfitLossTableTab() {
           </Box>
         </Grid>
       </Grid>
+
+      <input
+        type="file"
+        accept=".xlsx,.xls"
+        ref={personCostFileInputRef}
+        style={{ display: "none" }}
+        onChange={handlePersonCostUpload}
+      />
 
       {ctxMenu.open && (
         <div

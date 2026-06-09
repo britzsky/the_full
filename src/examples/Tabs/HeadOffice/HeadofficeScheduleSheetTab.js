@@ -296,6 +296,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   const loginUserId = localStorage.getItem("user_id");
 
   const [selectedType, setSelectedType] = useState("1");
+  const [selectedTypes, setSelectedTypes] = useState([]);
   const [selectedDeptType, setSelectedDeptType] = useState(""); // "operate" | "business" | "catering"
   const [memberList, setMemberList] = useState([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
@@ -336,6 +337,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     setSelectedDeptType(deptType);
     setSelectedMemberIds(loginUserId ? [loginUserId] : []);
     setSelectedType("1");
+    setSelectedTypes([]);
     setMemberList([]);
     if (!deptType) return;
     const rows = await fetchMemberList(deptType);
@@ -391,6 +393,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   const resetModal = () => {
     setInputValue("");
     setSelectedType("1");
+    setSelectedTypes([]);
     setSelectedDeptType("");
     setMemberList([]);
     setSelectedMemberIds(loginUserId ? [loginUserId] : []);
@@ -436,7 +439,9 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     setSelectedEndDate(end);
     setSelectedEvent(clickedEvent);
     setInputValue(stripSchedulePrefix(clickedEvent.title));
-    setSelectedType(clickedEvent.extendedProps?.type?.toString() || "1");
+    const typeStr = clickedEvent.extendedProps?.type?.toString() || "1";
+    setSelectedType(typeStr);
+    setSelectedTypes([typeStr]);
 
     // user_ids가 있으면 복원, 없으면 user_id 단건으로 초기화
     const userIdsStr = clickedEvent.extendedProps?.user_ids;
@@ -469,19 +474,20 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
 
   const handleClose = () => { setOpen(false); setSelectedEvent(null); };
 
-  // 저장/취소용 공통 payload 생성 (accountId 개별 전달)
-  const buildPayload = (del_yn, accountId) => {
+  // 저장/취소용 공통 payload 생성 (accountId, typeValue 개별 전달)
+  const buildPayload = (del_yn, accountId, typeValue) => {
     const cleanInputValue = stripSchedulePrefix(inputValue);
     const savedAccountId = accountId ?? null;
     const savedAccountName = String(
       (accountList || []).find((a) => String(a?.account_id) === String(savedAccountId))?.account_name || ""
     ).trim();
+    const resolvedType = typeValue ?? selectedType;
     return {
       idx: selectedEvent?.extendedProps?.idx || null,
-      content: buildScheduleContent(selectedType, savedAccountName, cleanInputValue, selectedDeptType),
+      content: buildScheduleContent(resolvedType, savedAccountName, cleanInputValue, selectedDeptType),
       start_date: normalizeYmd(selectedDate),
       end_date: normalizeYmd(selectedEndDate || selectedDate),
-      type: selectedType,
+      type: resolvedType,
       user_id: loginUserId,
       user_ids: selectedMemberIds.join(","),
       account_id: savedAccountId,
@@ -492,7 +498,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     };
   };
 
-  // 일정 저장 (신규: 선택한 거래처 수만큼 insert, 수정: 첫 번째 거래처로 update)
+  // 일정 저장 (신규: 거래처 × 이슈 조합 수만큼 insert, 수정: 1건 update)
   const handleSave = async () => {
     const cleanInputValue = stripSchedulePrefix(inputValue);
     if (!cleanInputValue) { Swal.fire("경고", "내용을 입력하세요.", "warning"); return; }
@@ -500,17 +506,22 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     try {
       const teamCode = deptTypeToTeamCode(selectedDeptType);
       if (selectedEvent) {
-        // 수정: 기존 row 1건 업데이트 (첫 번째 거래처 사용)
+        // 수정: 기존 row 1건 업데이트 (첫 번째 거래처, 첫 번째 이슈 사용)
         const accId = selectedAccounts[0]?.account_id ?? selectedEvent?.extendedProps?.account_id ?? null;
-        const response = await api.post(SAVE_URL, { ...buildPayload("N", accId), team_code: teamCode }, { headers: { "Content-Type": "application/json" } });
+        const typeVal = selectedTypes[0] ?? selectedType;
+        const response = await api.post(SAVE_URL, { ...buildPayload("N", accId, typeVal), team_code: teamCode }, { headers: { "Content-Type": "application/json" } });
         if (response.data.code === 200) { Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
         else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       } else {
-        // 신규: 거래처 수만큼 insert (거래처 없으면 1건)
+        // 신규: 거래처 × 이슈 조합 수만큼 insert
         const accountsToSave = selectedAccounts.length > 0 ? selectedAccounts : [{ account_id: null }];
+        const typesToSave = selectedTypes.length > 0 ? selectedTypes : ["1"];
+        const combinations = typesToSave.flatMap((typeVal) =>
+          accountsToSave.map((acc) => ({ accountId: acc.account_id ?? null, typeVal }))
+        );
         const responses = await Promise.all(
-          accountsToSave.map((acc) =>
-            api.post(SAVE_URL, { ...buildPayload("N", acc.account_id ?? null), team_code: teamCode }, { headers: { "Content-Type": "application/json" } })
+          combinations.map(({ accountId, typeVal }) =>
+            api.post(SAVE_URL, { ...buildPayload("N", accountId, typeVal), team_code: teamCode }, { headers: { "Content-Type": "application/json" } })
           )
         );
         const allSuccess = responses.every((r) => r.data.code === 200);
@@ -535,7 +546,8 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
       if (!result.isConfirmed) return;
       try {
         const existingAccId = selectedEvent?.extendedProps?.account_id ?? null;
-        const response = await api.post(SAVE_URL, { ...buildPayload("Y", existingAccId), team_code: deptTypeToTeamCode(selectedDeptType) }, { headers: { "Content-Type": "application/json" } });
+        const typeVal = selectedTypes[0] ?? selectedType;
+        const response = await api.post(SAVE_URL, { ...buildPayload("Y", existingAccId, typeVal), team_code: deptTypeToTeamCode(selectedDeptType) }, { headers: { "Content-Type": "application/json" } });
         if (response.data.code === 200) { Swal.fire("취소 완료", "일정이 취소되었습니다.", "success"); eventList(); }
         else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       } catch (error) { console.error(error); Swal.fire("실패", "서버 연결에 실패했습니다.", "error"); }
@@ -553,10 +565,37 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
       height: CTRL_HEIGHT,
       minHeight: CTRL_HEIGHT,
     },
+    "& .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(0,0,0,0.42)",
+    },
+    "&:hover .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(0,0,0,0.62)",
+    },
+    "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#1976d2",
+    },
+    "&.Mui-disabled .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(0,0,0,0.12)",
+    },
     "& .MuiSelect-select": {
       lineHeight: `${CTRL_HEIGHT}px`,
       paddingTop: "0 !important",
       paddingBottom: "0 !important",
+    },
+  };
+
+  const autocompleteBorderSx = {
+    "& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(0,0,0,0.42)",
+    },
+    "& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(0,0,0,0.62)",
+    },
+    "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
+      borderColor: "#1976d2",
+    },
+    "& .MuiOutlinedInput-root.Mui-disabled .MuiOutlinedInput-notchedOutline": {
+      borderColor: "rgba(0,0,0,0.12)",
     },
   };
 
@@ -673,7 +712,15 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               value={selectedDeptType}
               onChange={(e) => handleDeptTypeChange(e.target.value)}
               displayEmpty
-              sx={{ width: isMobile ? "100%" : 140, flexShrink: 0, ...ctrlSx }}
+              disabled={!!selectedEvent}
+              sx={{
+                width: isMobile ? "100%" : 140, flexShrink: 0, ...ctrlSx,
+                ...(selectedEvent ? {
+                  "&.Mui-disabled .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(0,0,0,0.12)" },
+                  "& .MuiSelect-select.Mui-disabled": { WebkitTextFillColor: "rgba(0,0,0,0.87)" },
+                  "& .MuiSvgIcon-root.Mui-disabled": { display: "none" },
+                } : {}),
+              }}
             >
               <MenuItem value=""><em>팀 구분</em></MenuItem>
               {DEPARTMENT_OPTIONS.map((dept) => (
@@ -694,12 +741,13 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                 if (withLogin.length <= 5) setSelectedMemberIds(withLogin);
               }}
               displayEmpty
-              disabled={!selectedDeptType}
+              disabled={memberList.length === 0}
               renderValue={() => {
+                if (memberList.length === 0) return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
                 const firstId = selectedMemberIds[0];
-                if (!firstId) return "";
+                if (!firstId) return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
                 const found = memberList.find((m) => String(m.user_id) === String(firstId));
-                return found ? found.user_name : "";
+                return found ? found.user_name : <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
               }}
               sx={{ width: isMobile ? "100%" : 150, flexShrink: 0, ...ctrlSx }}
             >
@@ -721,23 +769,58 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               })}
             </Select>
 
-            {/* 구분 */}
-            <Select
-              size="small"
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              disabled={!selectedDeptType}
-              sx={{ width: isMobile ? "100%" : 120, flexShrink: 0, ...ctrlSx }}
-            >
-              {currentTypeOptions.map((type) => (
-                <MenuItem key={type.value} value={type.value}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                    <Box sx={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, bgcolor: getTypeColor(type.value, selectedDeptType) }} />
-                    {type.label}
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
+            {/* 이슈(구분) - 수정: 단일 Select / 신규: 다중 Autocomplete (최대 3개) */}
+            {selectedEvent ? (
+              <Select
+                size="small"
+                value={selectedTypes[0] || selectedType}
+                onChange={(e) => { setSelectedType(e.target.value); setSelectedTypes([e.target.value]); }}
+                disabled={!selectedDeptType}
+                sx={{ width: isMobile ? "100%" : 120, flexShrink: 0, ...ctrlSx }}
+              >
+                {currentTypeOptions.map((type) => (
+                  <MenuItem key={type.value} value={type.value}>
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      <Box sx={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, bgcolor: getTypeColor(type.value, selectedDeptType) }} />
+                      {type.label}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            ) : (
+              <Autocomplete
+                multiple
+                size="small"
+                disabled={!selectedDeptType}
+                options={currentTypeOptions}
+                value={currentTypeOptions.filter((opt) => selectedTypes.includes(opt.value))}
+                onChange={(_, newValue) => {
+                  if (newValue.length <= 3) setSelectedTypes(newValue.map((v) => v.value));
+                }}
+                getOptionLabel={(option) => option?.label || ""}
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                disableCloseOnSelect
+                renderOption={(props, option, { selected }) => (
+                  <li {...props}>
+                    <Checkbox size="small" checked={selected} sx={{ mr: 1, p: 0 }} />
+                    <Box sx={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, bgcolor: getTypeColor(option.value, selectedDeptType), mr: 0.5 }} />
+                    {option.label}
+                  </li>
+                )}
+                sx={{
+                  width: isMobile ? "100%" : 160,
+                  flexShrink: 0,
+                  ...autocompleteBorderSx,
+                  "& .MuiOutlinedInput-root": { minHeight: CTRL_HEIGHT, paddingTop: "2px !important", paddingBottom: "2px !important" },
+                  "& .MuiAutocomplete-input": { height: "0 !important", minWidth: "0 !important", padding: "0 !important", flex: "0 0 0px", overflow: "hidden" },
+                  "& .MuiChip-root": { bgcolor: "#e3f2fd", color: "#1565c0", height: 22, fontSize: "0.72rem" },
+                  "& .MuiChip-deleteIcon": { color: "#1565c0", fontSize: "14px" },
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} placeholder={selectedTypes.length === 0 ? "이슈 선택" : ""} size="small" />
+                )}
+              />
+            )}
 
             {/* 거래처 - 수정: 단일 선택 / 신규: 다중 선택 */}
             {selectedEvent ? (
@@ -759,8 +842,9 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                 sx={{
                   flex: 1,
                   minWidth: isMobile ? "100%" : 160,
+                  ...autocompleteBorderSx,
                   "& .MuiOutlinedInput-root": { height: CTRL_HEIGHT, minHeight: CTRL_HEIGHT, paddingTop: "0 !important", paddingBottom: "0 !important" },
-                  "& .MuiOutlinedInput-input": { height: `${CTRL_HEIGHT}px`, boxSizing: "border-box" },
+                  "& .MuiOutlinedInput-input": { height: `${CTRL_HEIGHT}px`, boxSizing: "border-box", caretColor: "transparent" },
                 }}
                 renderInput={(params) => (
                   <TextField {...params} placeholder="거래처 (선택사항)" size="small" />
@@ -793,7 +877,9 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                 sx={{
                   flex: 1,
                   minWidth: isMobile ? "100%" : 160,
+                  ...autocompleteBorderSx,
                   "& .MuiOutlinedInput-root": { minHeight: CTRL_HEIGHT, paddingTop: "2px !important", paddingBottom: "2px !important" },
+                  "& .MuiAutocomplete-input": { height: "0 !important", minWidth: "0 !important", padding: "0 !important", flex: "0 0 0px", overflow: "hidden" },
                   "& .MuiChip-root": { bgcolor: "#e3f2fd", color: "#1565c0", height: 22, fontSize: "0.72rem" },
                   "& .MuiChip-deleteIcon": { color: "#1565c0", fontSize: "14px" },
                 }}

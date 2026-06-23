@@ -68,9 +68,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   // 실장 권한 여부
   const isHpLeader = useMemo(() => (isAdmin || loginPosition === 1) && loginDepartment === HP_DEPARTMENT_CODE, [isAdmin, loginPosition, loginDepartment]);
   const isCeoLeader = useMemo(() => loginUserId === "ceo" || loginPosition === 0, [loginUserId, loginPosition]);
-  // 파트장·매니저(position 2~3): 조회만 가능
-  const isViewOnly = useMemo(() => !isAdmin && loginPosition >= 2, [isAdmin, loginPosition]);
-
   // 평가문서 목록, 상세, 결재 처리 데이터 훅
   const {
     rows, loading, detail, detailLoading, saving, evaluationFiles,
@@ -98,14 +95,13 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const [previewIndex, setPreviewIndex] = useState(0);
 
   // 목록 조회 파라미터
-  // 실장은 모든 팀의 평가문서 조회, position 2~3은 같은 부서 전체 조회(읽기 전용)
+  // 실장은 모든 팀의 평가문서 조회, position 1(팀장)은 같은 부서 전체 조회, position 2~3은 자신의 문서만 조회
   const listParams = useMemo(() => {
     if (isAdmin) return {};
     if (isHpLeader) return {};
     if (isTeamLeader) return { department: loginDepartment };
-    if (isViewOnly) return { department: loginDepartment };
     return { user_id: loginUserId };
-  }, [isAdmin, isHpLeader, isTeamLeader, isViewOnly, loginDepartment, loginUserId]);
+  }, [isAdmin, isHpLeader, isTeamLeader, loginDepartment, loginUserId]);
 
   // 권한별 조회 조건에 따른 목록 초기 조회
   useEffect(() => { loadList(listParams); }, [loadList, listParams]);

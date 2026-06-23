@@ -6249,8 +6249,8 @@ function TallySheet() {
 
                         const rawUpload = uploadRes.data;
                         const saved = typeof rawUpload === "string" ? JSON.parse(rawUpload) : rawUpload;
-                        const savedSaleId = String(saved?.sale_id || saleId || "");
-                        const savedReceiptImage = String(saved?.receipt_image || receiptImage || "");
+                        const savedSaleId = String(saved?.main?.sale_id || saved?.sale_id || saleId || "");
+                        const savedReceiptImage = String(saved?.main?.receipt_image || saved?.receipt_image || receiptImage || "");
 
                         // OCR 저장 후에도 목록에서 수정한 날짜와 사용처를 현재 셀 기준으로 맞춤
                         const alignRes = await api.post("/Account/HeadOfficeCorporateCardPaymentAllSave", {

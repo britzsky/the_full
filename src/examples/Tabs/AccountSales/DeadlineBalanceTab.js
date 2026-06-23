@@ -53,6 +53,21 @@ export default function DeadlineBalanceTab() {
   // 입금 저장 중 이중 저장 방지 플래그
   const [isSaving, setIsSaving] = useState(false);
 
+  // ✅ 입금내역 우클릭 수정 메뉴 상태
+  const [depositCtxMenu, setDepositCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    row: null,
+    field: null, // 'input_dt' | 'note'
+  });
+  const [depositEditModal, setDepositEditModal] = useState({
+    open: false,
+    row: null,
+    field: null,
+    value: "",
+  });
+
   // ✅ 왼쪽 테이블 스크롤 유지용 ref
   const leftTableScrollRef = useRef(null);
   const leftScrollTopRef = useRef(0);
@@ -137,52 +152,36 @@ export default function DeadlineBalanceTab() {
     fetchDeadlineBalanceList();
   }, [year, month]);
 
-  // ✅ 미납 품목 전용 집계 범위(조회 연월과 무관하게 최근 기준으로 고정)
-  const getUnpaidSummaryYearCandidates = () =>
-    Array.from({ length: UNPAID_LOOKBACK_YEARS + 1 }, (_, idx) => today.year() - idx).sort(
-      (a, b) => a - b
-    );
-
-  // ✅ 올해는 현재 월까지만, 이전 연도는 12월까지 미납 품목 비교 범위로 사용
-  const getUnpaidSummaryMonthsByYear = (targetYear) => {
-    const maxMonth = Number(targetYear) === Number(today.year()) ? today.month() + 1 : 12;
-    return Array.from({ length: maxMonth }, (_, idx) => idx + 1);
-  };
-
-  // ✅ 미납 품목 전용 원본 목록을 조회 연월과 분리해서 다시 가져온다
+  // ✅ 미납 품목 전용 원본 목록을 2번 API 호출로 조회 (기존 수십 번 → 2번)
   const fetchAllUnpaidSummarySourceList = async () => {
-    const summaryYears = getUnpaidSummaryYearCandidates();
+    const yearFrom = today.year() - UNPAID_LOOKBACK_YEARS;
+    const yearTo = today.year();
+    const monthTo = today.month() + 1;
 
     try {
-      const deadlineResponses = await Promise.all(
-        summaryYears.flatMap((targetYear) =>
-          getUnpaidSummaryMonthsByYear(targetYear).map((targetMonth) =>
-            api
-              .get("/Account/AccountDeadlineBalanceList", {
-                params: { year: targetYear, month: targetMonth },
-              })
-              .then((res) => ({ year: targetYear, month: targetMonth, rows: res.data || [] }))
-              .catch(() => ({ year: targetYear, month: targetMonth, rows: [] }))
-          )
-        )
-      );
+      const [deadlineRes, depositRes] = await Promise.all([
+        api.get("/Account/AccountDeadlineBalanceListBulk", {
+          params: { yearFrom, yearTo, monthTo },
+        }).catch(() => ({ data: [] })),
+        api.get("/Account/AccountDepositHistoryListBulk", {
+          params: { yearFrom, yearTo, monthTo },
+        }).catch(() => ({ data: [] })),
+      ]);
 
-      const unpaidBaseRows = deadlineResponses
-        .flatMap(({ year: targetYear, month: targetMonth, rows }) =>
-          (rows || []).map((item) => ({
-            account_id: normalizeAccountId(item.account_id),
-            account_name: item.account_name,
-            year: Number(item.year || targetYear),
-            month: Number(item.month || targetMonth),
-            living_cost: parseNumber(item.living_cost),
-            basic_cost: parseNumber(item.basic_cost),
-            employ_cost: parseNumber(item.employ_cost),
-            integrity_cost: parseNumber(item.integrity_cost),
-            balance_price: parseNumber(item.balance_price),
-            before_price2: parseNumber(item.before_price2),
-          }))
-        )
-        .filter((item) => item.account_id);
+      const unpaidBaseRows = (deadlineRes.data || [])
+        .map((item) => ({
+          account_id: normalizeAccountId(item.account_id),
+          account_name: item.account_name,
+          year: Number(item.year || 0),
+          month: Number(item.month || 0),
+          living_cost: parseNumber(item.living_cost),
+          basic_cost: parseNumber(item.basic_cost),
+          employ_cost: parseNumber(item.employ_cost),
+          integrity_cost: parseNumber(item.integrity_cost),
+          balance_price: parseNumber(item.balance_price),
+          before_price2: parseNumber(item.before_price2),
+        }))
+        .filter((item) => item.account_id && item.year > 0 && item.month > 0);
 
       const unpaidBaseMap = new Map();
       unpaidBaseRows.forEach((item) => {
@@ -191,64 +190,30 @@ export default function DeadlineBalanceTab() {
       });
       const finalizedUnpaidBaseRows = Array.from(unpaidBaseMap.values());
 
-      const accountIds = Array.from(
-        new Set(finalizedUnpaidBaseRows.map((item) => normalizeAccountId(item.account_id)).filter(Boolean))
-      );
-
-      let finalizedDepositColorRows = [];
-
-      if (accountIds.length > 0) {
-        const depositResponses = await Promise.all(
-          accountIds.flatMap((accountId) =>
-            summaryYears.map((targetYear) =>
-              api
-                .get("/Account/AccountDepositHistoryList", {
-                  params: {
-                    account_id: accountId,
-                    year: targetYear,
-                    month: Number(targetYear) === Number(today.year()) ? today.month() + 1 : 12,
-                  },
-                })
-                .then((res) => res.data || [])
-                .catch(() => [])
-            )
-          )
-        );
-
-        const depositMap = new Map();
-        depositResponses.flat().forEach((item) => {
-          const note = item.note || "";
-          const rawType = String(item.type || "").trim();
-          const isRefund = rawType === "6" || rawType === "환불" || note.includes("[환불]");
-          const row = {
-            account_id: normalizeAccountId(item.account_id),
-            year: Number(item.year || 0),
-            month: Number(item.month || 0),
-            type: isRefund ? "환불" : rawType,
-            input_dt: item.input_dt,
-            deposit_amount: parseNumber(item.deposit_amount),
-            input_price: parseNumber(item.input_price),
-          };
-
-          const depositKey = [
-            row.account_id,
-            row.year,
-            row.month,
-            row.type,
-            row.input_dt,
-            row.deposit_amount,
-            row.input_price,
-          ].join("_");
-          depositMap.set(depositKey, row);
-        });
-
-        finalizedDepositColorRows = Array.from(depositMap.values());
-      }
+      const depositMap = new Map();
+      (depositRes.data || []).forEach((item) => {
+        const note = item.note || "";
+        const rawType = String(item.type || "").trim();
+        const isRefund = rawType === "6" || rawType === "환불" || note.includes("[환불]");
+        const row = {
+          account_id: normalizeAccountId(item.account_id),
+          year: Number(item.year || 0),
+          month: Number(item.month || 0),
+          type: isRefund ? "환불" : rawType,
+          input_dt: item.input_dt,
+          deposit_amount: parseNumber(item.deposit_amount),
+          input_price: parseNumber(item.input_price),
+        };
+        const depositKey = [
+          row.account_id, row.year, row.month, row.type,
+          row.input_dt, row.deposit_amount, row.input_price,
+        ].join("_");
+        depositMap.set(depositKey, row);
+      });
 
       setAllUnpaidBaseRows(finalizedUnpaidBaseRows);
-      setAllDepositColorRows(finalizedDepositColorRows);
+      setAllDepositColorRows(Array.from(depositMap.values()));
     } catch (err) {
-      // ✅ 미납 품목 보조 조회 실패 시 기본 표시로 되돌린다
       console.error("미납 품목 전용 원본 목록 조회 실패:", err);
       setAllUnpaidBaseRows([]);
       setAllDepositColorRows([]);
@@ -1485,6 +1450,74 @@ export default function DeadlineBalanceTab() {
     }
   };
 
+  // ✅ 입금내역 셀 우클릭 핸들러
+  const handleDepositCellContextMenu = (e, row, field) => {
+    if (!canEdit) return;
+    e.preventDefault();
+    setDepositCtxMenu({ open: true, mouseX: e.clientX, mouseY: e.clientY, row, field });
+  };
+
+  const closeDepositCtxMenu = () => {
+    setDepositCtxMenu((prev) => ({ ...prev, open: false }));
+  };
+
+  const openDepositEditModal = () => {
+    const { row, field } = depositCtxMenu;
+    if (!row || !field) return;
+    closeDepositCtxMenu();
+    setDepositEditModal({
+      open: true,
+      row,
+      field,
+      value: field === "note"
+        ? String(row.note || "").replace(/^\[환불\]\s*/u, "")
+        : String(row.input_dt || ""),
+    });
+  };
+
+  const closeDepositEditModal = () => {
+    setDepositEditModal({ open: false, row: null, field: null, value: "" });
+  };
+
+  const handleDepositEditSave = async () => {
+    const { row, field, value } = depositEditModal;
+    if (!row || !field) return;
+
+    const isRefund = String(row.note || "").startsWith("[환불]");
+    const noteToSave = field === "note"
+      ? (isRefund ? `[환불] ${value}` : value)
+      : row.note;
+    const newInputDt = field === "input_dt" ? value : row.input_dt;
+
+    try {
+      const res = await api.post("/Account/AccountDepositHistoryUpdate", {
+        account_id: row.account_id,
+        year: row.year,
+        month: row.month,
+        type: row.type,
+        input_dt: row.input_dt,
+        balance_dt: row.balance_dt || null,
+        deposit_amount: row.deposit_amount,
+        input_price: row.input_price,
+        new_input_dt: newInputDt,
+        note: noteToSave,
+      });
+
+      if (res.data?.code !== 200) {
+        Swal.fire("저장 실패", res.data?.message || "오류가 발생했습니다.", "error");
+        return;
+      }
+
+      await Swal.fire("저장되었습니다.", "", "success");
+      closeDepositEditModal();
+      if (selectedCustomer?.account_id) {
+        await fetchDepositHistoryList(selectedCustomer.account_id, year);
+      }
+    } catch (err) {
+      Swal.fire("저장 실패", err.message, "error");
+    }
+  };
+
   // 🔹 변경사항 저장
   const handleSaveChanges = async () => {
     // ✅ 권한 없으면 저장 차단
@@ -2154,8 +2187,29 @@ export default function DeadlineBalanceTab() {
                         if (key === "note") {
                           const viewNote = String(value || "").replace(/^\[환불\]\s*/u, "");
                           return (
-                            <td key={key} style={getDepositHistoryColumnStyle(key)}>
+                            <td
+                              key={key}
+                              style={{
+                                ...getDepositHistoryColumnStyle(key),
+                                cursor: canEdit ? "context-menu" : "default",
+                              }}
+                              onContextMenu={(e) => handleDepositCellContextMenu(e, row, "note")}
+                            >
                               {viewNote}
+                            </td>
+                          );
+                        }
+                        if (key === "input_dt") {
+                          return (
+                            <td
+                              key={key}
+                              style={{
+                                ...getDepositHistoryColumnStyle(key),
+                                cursor: canEdit ? "context-menu" : "default",
+                              }}
+                              onContextMenu={(e) => handleDepositCellContextMenu(e, row, "input_dt")}
+                            >
+                              {value}
                             </td>
                           );
                         }
@@ -2172,6 +2226,94 @@ export default function DeadlineBalanceTab() {
           </Box>
         </Grid>
       </Grid>
+
+      {/* 입금내역 셀 우클릭 컨텍스트 메뉴 */}
+      {depositCtxMenu.open && (
+        <div
+          onClick={closeDepositCtxMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeDepositCtxMenu(); }}
+          style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 10000 }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: depositCtxMenu.mouseY,
+              left: depositCtxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={openDepositEditModal}
+            >
+              ✏️ {depositCtxMenu.field === "input_dt" ? "입금일자 수정" : "비고 수정"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 입금내역 셀 편집 모달 */}
+      <Modal open={depositEditModal.open} onClose={closeDepositEditModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 360,
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}
+        >
+          <MDTypography variant="h6" mb={2}>
+            {depositEditModal.field === "input_dt" ? "입금일자 수정" : "비고 수정"}
+          </MDTypography>
+          {depositEditModal.field === "input_dt" ? (
+            <TextField
+              type="date"
+              fullWidth
+              size="small"
+              value={depositEditModal.value}
+              onChange={(e) => setDepositEditModal((prev) => ({ ...prev, value: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+            />
+          ) : (
+            <TextField
+              fullWidth
+              size="small"
+              multiline
+              minRows={2}
+              value={depositEditModal.value}
+              onChange={(e) => setDepositEditModal((prev) => ({ ...prev, value: e.target.value }))}
+              placeholder="비고를 입력하세요"
+            />
+          )}
+          <MDBox display="flex" justifyContent="flex-end" gap={1} mt={2}>
+            <MDButton variant="outlined" color="secondary" onClick={closeDepositEditModal}>
+              취소
+            </MDButton>
+            <MDButton variant="gradient" color="info" onClick={handleDepositEditSave}>
+              저장
+            </MDButton>
+          </MDBox>
+        </Box>
+      </Modal>
 
       {/* 장기미수 상세 모달 */}
       <Modal open={longTermModalOpen} onClose={handleCloseLongTermDetail}>

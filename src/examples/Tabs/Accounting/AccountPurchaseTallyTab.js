@@ -46,6 +46,10 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { koKR } from "@mui/x-date-pickers/locales";
 
+// ---------------------------------------
+// 회계 -> 매입마감
+// ---------------------------------------
+
 const MONEY_REFORMAT_MAX_ROWS = 700;
 const WELLSTORY_TYPES = new Set(["1", "2", "3", "4"]);
 const TAX_TOTAL_KEY_TO_PREFIX = {
@@ -988,53 +992,53 @@ function AccountPurchaseTallyTab() {
   const renderSummaryTable = useCallback(
     (extraTableStyle = {}) => {
       return (
-      <table className="summary-table" style={extraTableStyle}>
-        {renderColGroup()}
-        <tbody>
-          <tr>
-            <td
-              colSpan={3}
-              style={{
-                width: 430, minWidth: 430, maxWidth: 430,
-                textAlign: "center", fontWeight: 700, background: "#f7f7f7",
-                height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
-                position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
-                borderRight: "2px solid #686D76",
-              }}
-            >
-              소계
-            </td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.taxTotal)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.vat)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.expen.total)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.taxTotal)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.vat)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.food.total)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.scenic.taxTotal)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(Number(summary.scenic.vat ?? 0))}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.scenic.total)}</td>
-            <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.total.total)}</td>
-          </tr>
+        <table className="summary-table" style={extraTableStyle}>
+          {renderColGroup()}
+          <tbody>
+            <tr>
+              <td
+                colSpan={3}
+                style={{
+                  width: 430, minWidth: 430, maxWidth: 430,
+                  textAlign: "center", fontWeight: 700, background: "#f7f7f7",
+                  height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
+                  position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                  borderRight: "2px solid #686D76",
+                }}
+              >
+                소계
+              </td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.taxTotal)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.expen.vat)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.expen.total)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.taxTotal)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.food.vat)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.food.total)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(summary.scenic.taxTotal)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px" }}>{formatSummaryNumber(Number(summary.scenic.vat ?? 0))}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.scenic.total)}</td>
+              <td style={{ textAlign: "right", fontWeight: 700, background: "#f7f7f7", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 6px", borderRight: "2px solid #686D76" }}>{formatSummaryNumber(summary.total.total)}</td>
+            </tr>
 
-          <tr>
-            <td
-              colSpan={3}
-              style={{
-                width: 430, minWidth: 430, maxWidth: 430,
-                textAlign: "center", fontWeight: 700, background: "#ececec",
-                height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
-                position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
-                borderRight: "2px solid #686D76",
-              }}
-            >
-              총합계
-            </td>
-            <td colSpan={10} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
-              {formatSummaryNumber(summary.total.total)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            <tr>
+              <td
+                colSpan={3}
+                style={{
+                  width: 430, minWidth: 430, maxWidth: 430,
+                  textAlign: "center", fontWeight: 700, background: "#ececec",
+                  height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 8px",
+                  position: "sticky", left: STICKY_LEFT_ACCOUNT, zIndex: 5,
+                  borderRight: "2px solid #686D76",
+                }}
+              >
+                총합계
+              </td>
+              <td colSpan={10} style={{ textAlign: "right", fontWeight: 700, background: "#ececec", height: FOOTER_ROW_HEIGHT, lineHeight: `${FOOTER_ROW_HEIGHT - 2}px`, padding: "0 12px" }}>
+                {formatSummaryNumber(summary.total.total)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
       );
     },
     [

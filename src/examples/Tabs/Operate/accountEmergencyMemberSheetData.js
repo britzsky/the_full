@@ -23,12 +23,22 @@ const normalizeYn = (value) => {
   return v === "Y" ? "Y" : "N";
 };
 
+const formatPhone = (value) => {
+  if (value === null || value === undefined) return "";
+  const digits = String(value).replace(/\D/g, "").slice(0, 11);
+  if (!digits) return "";
+  if (digits.length > 7) return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  if (digits.length > 3) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return digits;
+};
+
 const normalizeRow = (item, index = 0) => ({
   _rid: item?.idx ? `ROW_${item.idx}` : `ROW_NEW_${Date.now()}_${index}`,
   _isNew: false,
   idx: item?.idx ?? null,
   name: item?.name ?? "",
   position_type: String(item?.position_type ?? "4"),
+  phone: formatPhone(item?.phone),
   salary: parseNumber(item?.salary),
   car_yn: normalizeYn(item?.car_yn),
   note: item?.note ?? "",
@@ -73,6 +83,7 @@ export default function useAccountEmergencyMemberSheetData() {
       idx: row?.idx ?? null,
       name: String(row?.name ?? "").trim(),
       position_type: String(row?.position_type ?? "4"),
+      phone: String(row?.phone ?? "").trim() || null,
       salary: parseNumber(row?.salary),
       car_yn: normalizeYn(row?.car_yn),
       note: String(row?.note ?? ""),

@@ -773,11 +773,13 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
             {selectedEvent ? (
               <Select
                 size="small"
-                value={selectedTypes[0] || selectedType}
+                value={selectedDeptType ? (selectedTypes[0] || selectedType) : ""}
                 onChange={(e) => { setSelectedType(e.target.value); setSelectedTypes([e.target.value]); }}
                 disabled={!selectedDeptType}
+                displayEmpty
                 sx={{ width: isMobile ? "100%" : 120, flexShrink: 0, ...ctrlSx }}
               >
+                <MenuItem value=""><em>일정 선택</em></MenuItem>
                 {currentTypeOptions.map((type) => (
                   <MenuItem key={type.value} value={type.value}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -800,6 +802,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                 getOptionLabel={(option) => option?.label || ""}
                 isOptionEqualToValue={(option, value) => option.value === value.value}
                 disableCloseOnSelect
+                disablePortal
                 renderOption={(props, option, { selected }) => (
                   <li {...props}>
                     <Checkbox size="small" checked={selected} sx={{ mr: 1, p: 0 }} />
@@ -812,12 +815,11 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                   flexShrink: 0,
                   ...autocompleteBorderSx,
                   "& .MuiOutlinedInput-root": { minHeight: CTRL_HEIGHT, paddingTop: "2px !important", paddingBottom: "2px !important" },
-                  "& .MuiAutocomplete-input": { height: "0 !important", minWidth: "0 !important", padding: "0 !important", flex: "0 0 0px", overflow: "hidden" },
                   "& .MuiChip-root": { bgcolor: "#e3f2fd", color: "#1565c0", height: 22, fontSize: "0.72rem" },
                   "& .MuiChip-deleteIcon": { color: "#1565c0", fontSize: "14px" },
                 }}
                 renderInput={(params) => (
-                  <TextField {...params} placeholder={selectedTypes.length === 0 ? "이슈 선택" : ""} size="small" />
+                  <TextField {...params} placeholder={selectedTypes.length === 0 ? "일정 선택" : ""} size="small" />
                 )}
               />
             )}
@@ -839,12 +841,13 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                   if (!k) return options;
                   return options.filter((o) => String(o?.account_name || "").toLowerCase().includes(k));
                 }}
+                disablePortal
                 sx={{
                   flex: 1,
                   minWidth: isMobile ? "100%" : 160,
                   ...autocompleteBorderSx,
                   "& .MuiOutlinedInput-root": { height: CTRL_HEIGHT, minHeight: CTRL_HEIGHT, paddingTop: "0 !important", paddingBottom: "0 !important" },
-                  "& .MuiOutlinedInput-input": { height: `${CTRL_HEIGHT}px`, boxSizing: "border-box", caretColor: "transparent" },
+                  "& .MuiOutlinedInput-input": { height: `${CTRL_HEIGHT}px`, boxSizing: "border-box" },
                 }}
                 renderInput={(params) => (
                   <TextField {...params} placeholder="거래처 (선택사항)" size="small" />
@@ -863,6 +866,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                   String(option?.account_id ?? "") === String(value?.account_id ?? "")
                 }
                 disableCloseOnSelect
+                disablePortal
                 filterOptions={(options, { inputValue: kw }) => {
                   const k = String(kw || "").trim().toLowerCase();
                   if (!k) return options;
@@ -879,7 +883,6 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                   minWidth: isMobile ? "100%" : 160,
                   ...autocompleteBorderSx,
                   "& .MuiOutlinedInput-root": { minHeight: CTRL_HEIGHT, paddingTop: "2px !important", paddingBottom: "2px !important" },
-                  "& .MuiAutocomplete-input": { height: "0 !important", minWidth: "0 !important", padding: "0 !important", flex: "0 0 0px", overflow: "hidden" },
                   "& .MuiChip-root": { bgcolor: "#e3f2fd", color: "#1565c0", height: 22, fontSize: "0.72rem" },
                   "& .MuiChip-deleteIcon": { color: "#1565c0", fontSize: "14px" },
                 }}

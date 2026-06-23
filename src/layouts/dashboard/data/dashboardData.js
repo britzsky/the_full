@@ -27,6 +27,28 @@ const dedupeSchedulesByIdx = (rows) => {
   });
 };
 
+// 일정 목록을 거래처명 순으로 묶고, 같은 거래처 안에서는 일정 종류 순으로 정렬
+const sortSchedulesByAccountAndType = (rows) => {
+  const list = Array.isArray(rows) ? rows : [];
+  const collator = new Intl.Collator("ko", { numeric: true, sensitivity: "base" });
+
+  return [...list].sort((a, b) => {
+    const accountCompare = collator.compare(
+      String(a?.account_name || ""),
+      String(b?.account_name || "")
+    );
+    if (accountCompare !== 0) return accountCompare;
+
+    const typeA = Number(a?.type);
+    const typeB = Number(b?.type);
+    if (Number.isFinite(typeA) && Number.isFinite(typeB) && typeA !== typeB) {
+      return typeA - typeB;
+    }
+
+    return collator.compare(String(a?.type || ""), String(b?.type || ""));
+  });
+};
+
 // DB 문자셋에서 저장 가능한 북마크 제목으로 정리하는 함수
 const normalizeBookmarkTitle = (title) =>
   String(title || "")
@@ -109,7 +131,7 @@ export default function useDashBoardData() {
   };
 
   const fetchEducations = () =>
-    api.get("/Education/EducationList").then((res) =>
+    api.get("/HeadOffice/EducationList").then((res) =>
       (res.data || []).slice(0, 5).map((x) => ({
         idx: x.idx ?? null,
         content: x.title || "",
@@ -133,7 +155,7 @@ export default function useDashBoardData() {
     return api
       .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 2 } })
       .then((res) =>
-        dedupeSchedulesByIdx(
+        sortSchedulesByAccountAndType(dedupeSchedulesByIdx(
           (res.data || [])
             .filter((x) => String(x?.del_yn || "N") !== "Y")
             .map((x) => ({
@@ -146,7 +168,7 @@ export default function useDashBoardData() {
               account_name: x.account_name || "",
               department: x.department || "",
             }))
-        )
+        ))
       );
   };
 
@@ -156,7 +178,7 @@ export default function useDashBoardData() {
     return api
       .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 1 } })
       .then((res) =>
-        dedupeSchedulesByIdx(
+        sortSchedulesByAccountAndType(dedupeSchedulesByIdx(
           (res.data || [])
             .filter((x) => String(x?.del_yn || "N") !== "Y")
             .map((x) => ({
@@ -169,7 +191,7 @@ export default function useDashBoardData() {
               account_name: x.account_name || "",
               department: x.department || "",
             }))
-        )
+        ))
       );
   };
 

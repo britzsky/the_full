@@ -39,8 +39,10 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useAccountCorporateCardData from "./data/AccountCorporateCardData";
 
-
+// -------------------------------------------------------------
 // 회계 -> 현장법인카드
+// -------------------------------------------------------------
+
 // ========================= 상수/유틸 =========================
 const DEFAULT_CARD_BRAND = "IBK기업은행";
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+﻿import { useCallback, useState } from "react";
 import api from "api/api";
 
 // 인사 -> 교육 데이터 관리 커스텀 훅
@@ -15,7 +15,7 @@ export default function useEducationData() {
   const loadList = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/Education/EducationList");
+      const res = await api.get("/HeadOffice/EducationList");
       setRows(Array.isArray(res.data) ? res.data : []);
     } catch (e) {
       console.error("교육 목록 조회 실패:", e);
@@ -32,8 +32,8 @@ export default function useEducationData() {
     setDetailLoading(true);
     try {
       const [detailRes, filesRes] = await Promise.all([
-        api.get("/Education/EducationDetail", { params: { idx } }),
-        api.get("/Education/EducationFileList", { params: { education_idx: idx } }),
+        api.get("/HeadOffice/EducationDetail", { params: { idx } }),
+        api.get("/HeadOffice/EducationFileList", { params: { education_idx: idx } }),
       ]);
       setDetail(detailRes.data || null);
       setEducationFiles(Array.isArray(filesRes.data) ? filesRes.data : []);
@@ -54,7 +54,7 @@ export default function useEducationData() {
   const saveEducation = useCallback(async ({ editIdx, title, content, largeType, userId }) => {
     setSaving(true);
     try {
-      const res = await api.post("/Education/EducationSave", {
+      const res = await api.post("/HeadOffice/EducationSave", {
         idx: editIdx || null,
         title,
         content,
@@ -77,7 +77,7 @@ export default function useEducationData() {
   const deleteEducation = useCallback(async ({ idx, userId }) => {
     setLoading(true);
     try {
-      await api.post("/Education/EducationDelete", { idx, user_id: userId });
+      await api.post("/HeadOffice/EducationDelete", { idx, user_id: userId });
       return true;
     } catch (e) {
       console.error("교육 삭제 실패:", e);
@@ -98,7 +98,7 @@ export default function useEducationData() {
     const toDelete = (existingFiles || []).filter((f) => deletedFileOrders.has(Number(f.image_order)));
     for (const f of toDelete) {
       try {
-        await api.delete("/Education/EducationFileDelete", {
+        await api.delete("/HeadOffice/EducationFileDelete", {
           params: { education_idx: educationIdx, image_order: f.image_order, image_path: f.image_path || "" },
         });
       } catch (e) {
@@ -112,7 +112,7 @@ export default function useEducationData() {
       formData.append("education_idx", String(educationIdx));
       pendingFiles.forEach((pf) => formData.append("files", pf.file));
       try {
-        await api.post("/Education/EducationFilesUpload", formData, {
+        await api.post("/HeadOffice/EducationFilesUpload", formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       } catch (e) {

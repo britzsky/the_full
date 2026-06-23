@@ -343,6 +343,7 @@ export default function HandoverSheetTab() {
     // 6. 내용 채우기
     addSection("1. 업무 현황");
     addRowBlock("▶ 급식 대상자 수", cleanedForm.meal_number);
+    addRowBlock("▶ 급식 운영 시간", cleanedForm.meal_time);
     addRowBlock("▶ 식수 운영 방식 및 배식방식", cleanedForm.catering_ration);
     addRowBlock("▶ 일일 식단 운영 방식", cleanedForm.normal_diet);
     addRowBlock("▶ 주방 인력 구성 (이름, 연락처)", cleanedForm.kitchen_member);
@@ -517,6 +518,12 @@ export default function HandoverSheetTab() {
             <tr>
               <td>▶ 급식 대상자 수</td>
               <td colSpan={5}>{renderInput("meal_number")}</td>
+            </tr>
+            <tr>
+              <td>▶ 급식 운영 시간
+                <br />
+                (예 : 조식: 7:15, 중식: 11:15, 석식:16:30 등 / 주간보호 업장일 시 함께 작성 필요)
+              </td>
             </tr>
             <tr>
               <td>

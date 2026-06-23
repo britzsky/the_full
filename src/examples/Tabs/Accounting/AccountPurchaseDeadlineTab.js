@@ -34,6 +34,10 @@ import ExcelJS from "exceljs";
 import PreviewOverlay from "utils/PreviewOverlay";
 import useAccountPurchaseDeadlineData from "./accountPurchaseDeadlineData";
 
+// ---------------------------------------
+// 회계 -> 거래처 자료 입력
+// ---------------------------------------
+
 // ✅ 하단(상세) 훅 추가
 import useAccountPurchaseDeadlineDetailData from "./accountPurchaseDeadlineDetailData";
 

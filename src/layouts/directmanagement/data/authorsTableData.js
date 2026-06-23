@@ -56,17 +56,6 @@ export default function useTableData() {
               상세보기
             </MDTypography>
           ),
-          tally: (
-            <MDTypography
-              component="a"
-              onClick={() => navigate(`/tallysheet/${item.account_id}?name=${item.account_name}`)}
-              variant="caption"
-              sx={{ color: "#C62E2E", cursor: "pointer" }}
-              fontWeight="medium"
-            >
-              확인
-            </MDTypography>
-          ),
           members: (
             <MDTypography
               component="a"
@@ -149,7 +138,6 @@ export default function useTableData() {
       { Header: "필요인원", accessor: "account_rqd_member", align: "center" },
       { Header: "현재인원", accessor: "account_headcount", align: "center" },
       { Header: "상세보기", accessor: "info", align: "center" },
-      { Header: "집계표", accessor: "tally", align: "center" },
       { Header: "인사기록카드", accessor: "members", align: "center" },
       { Header: "출근부", accessor: "record", align: "center" },
       { Header: "경관식", accessor: "ceremony", align: "center" },

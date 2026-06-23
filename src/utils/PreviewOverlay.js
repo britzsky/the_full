@@ -180,6 +180,7 @@ function PreviewOverlay({
     error: "",
   });
   const pdfBlobUrlRef = useRef("");
+  const iframeRef = useRef(null);
 
   const previewFiles = Array.isArray(files) ? files : [];
   const maxIndex = Math.max(previewFiles.length - 1, 0);
@@ -268,12 +269,19 @@ function PreviewOverlay({
 
     const prevBodyOverflow = document.body.style.overflow;
     const prevHtmlOverflow = document.documentElement.style.overflow;
+    const prevBodyPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+
     document.body.style.overflow = "hidden";
     document.documentElement.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
 
     return () => {
       document.body.style.overflow = prevBodyOverflow;
       document.documentElement.style.overflow = prevHtmlOverflow;
+      document.body.style.paddingRight = prevBodyPaddingRight;
     };
   }, [open]);
 
@@ -293,6 +301,43 @@ function PreviewOverlay({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [open, onClose]);
+
+  // PDF iframe 내부 클릭 시 포커스가 contentWindow로 이동해 window keydown이 끊긴다.
+  // blob URL은 same-origin이므로 iframe.contentWindow에 직접 Esc 리스너를 붙인다.
+  useEffect(() => {
+    if (!open || currentFile?.kind !== "pdf") return undefined;
+
+    const handleIframeKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (typeof onClose === "function") onClose();
+    };
+
+    const attachKeyDown = () => {
+      try {
+        iframeRef.current?.contentWindow?.addEventListener("keydown", handleIframeKeyDown);
+      } catch {
+        // cross-origin 환경에서는 무시
+      }
+    };
+
+    const iframe = iframeRef.current;
+    if (iframe) {
+      iframe.addEventListener("load", attachKeyDown);
+      attachKeyDown();
+    }
+
+    return () => {
+      if (iframe) {
+        iframe.removeEventListener("load", attachKeyDown);
+      }
+      try {
+        iframeRef.current?.contentWindow?.removeEventListener("keydown", handleIframeKeyDown);
+      } catch {
+        // cross-origin 환경에서는 무시
+      }
+    };
+  }, [open, currentFile?.kind, onClose]);
 
   const handleDragStart = useCallback(
     (e) => {
@@ -779,6 +824,7 @@ function PreviewOverlay({
                   }}
                 >
                   <iframe
+                    ref={iframeRef}
                     title="pdf-preview"
                     src={buildPdfViewerUrl(pdfPreview.blobUrl || pdfPreview.directUrl)}
                     style={{ width: "100%", height: "100%", border: 0 }}

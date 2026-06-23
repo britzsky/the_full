@@ -733,9 +733,7 @@ export default function Tables() {
   );
 
   const tableColumns = useMemo(() => {
-    // ✅ 집계표(tally) 컬럼은 index.js 화면에서 제외
     return (columns || [])
-      .filter((col) => col?.accessor !== "tally")
       .map((col) => {
         const accessorKey = col.accessor;
 

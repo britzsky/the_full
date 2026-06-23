@@ -604,6 +604,7 @@ function TallySheet() {
     const base = String(API_BASE_URL || "").replace(/\/$/, "");
     const params = new URLSearchParams();
     params.set("file_path", raw.startsWith("/") ? raw : `/${raw}`);
+    params.set("_ts", String(Date.now()));
     return `${base}/Account/AccountStoredFileView?${params.toString()}`;
   }, []);
 
@@ -3457,6 +3458,7 @@ function TallySheet() {
               URL.revokeObjectURL(v.previewUrl);
           });
           setCardRowFiles({});
+          closeFloatingPreview();
           setCardListOpen(false);
         }}
       >
@@ -3863,6 +3865,7 @@ function TallySheet() {
                       URL.revokeObjectURL(v.previewUrl);
                   });
                   setCardRowFiles({});
+                  closeFloatingPreview();
                   setCardListOpen(false);
                 } catch (e) {
                   Swal.close();
@@ -3882,6 +3885,7 @@ function TallySheet() {
                     URL.revokeObjectURL(v.previewUrl);
                 });
                 setCardRowFiles({});
+                closeFloatingPreview();
                 setCardListOpen(false);
               }}
             >
@@ -3904,6 +3908,7 @@ function TallySheet() {
               URL.revokeObjectURL(v.previewUrl);
           });
           setCashRowFiles({});
+          closeFloatingPreview();
           setCashListOpen(false);
         }}
       >
@@ -4256,6 +4261,7 @@ function TallySheet() {
                       URL.revokeObjectURL(v.previewUrl);
                   });
                   setCashRowFiles({});
+                  closeFloatingPreview();
                   setCashListOpen(false);
                 } catch (e) {
                   Swal.close();
@@ -4275,6 +4281,7 @@ function TallySheet() {
                     URL.revokeObjectURL(v.previewUrl);
                 });
                 setCashRowFiles({});
+                closeFloatingPreview();
                 setCashListOpen(false);
               }}
             >
@@ -4298,6 +4305,7 @@ function TallySheet() {
               URL.revokeObjectURL(v.previewUrl);
           });
           setOtherRowFiles({});
+          closeFloatingPreview();
           setOtherListOpen(false);
         }}
       >
@@ -4575,6 +4583,7 @@ function TallySheet() {
                       URL.revokeObjectURL(v.previewUrl);
                   });
                   setOtherRowFiles({});
+                  closeFloatingPreview();
                   setOtherListOpen(false);
                 } catch (e) {
                   Swal.close();
@@ -4594,6 +4603,7 @@ function TallySheet() {
                     URL.revokeObjectURL(v.previewUrl);
                 });
                 setOtherRowFiles({});
+                closeFloatingPreview();
                 setOtherListOpen(false);
               }}
             >

@@ -1955,7 +1955,7 @@ function AccountInfoSheet() {
         }}
       >
         {/* 요양원/주간보호 탭 (daycare 거래처인 경우만) */}
-        {hasDaycare && (
+        {/* {hasDaycare && (
           <Box sx={{ flexBasis: "100%", mb: 0.5 }}>
             <Tabs
               value={daycareTab}
@@ -1972,7 +1972,7 @@ function AccountInfoSheet() {
               <Tab label="주간보호" />
             </Tabs>
           </Box>
-        )}
+        )} */}
 
         {/* 첨부파일 업로드 및 미리보기 영역 */}
         <MDBox

@@ -33,6 +33,7 @@ export default function useHandOversheetData() {
         check_name: item.check_name,
         handover_location: item.handover_location,
         meal_number: item.meal_number,
+        meal_time: item.meal_time,
         catering_ration: item.catering_ration,
         normal_diet: item.normal_diet,
         kitchen_member: item.kitchen_member,

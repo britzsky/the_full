@@ -240,13 +240,6 @@ export default function useTableData(accountType, refreshKey = 0) {
               text="확인"
             />
           ),
-          tally: (
-            <NavLink
-              to={`/tallysheet/${item.account_id}?name=${item.account_name}`}
-              color="#0D92F4"
-              text="확인"
-            />
-          ),
         }));
 
         if (!active) return;
@@ -280,7 +273,6 @@ export default function useTableData(accountType, refreshKey = 0) {
     { Header: "현재인력", accessor: "account_headcount", size: "3%", align: "center" },
     { Header: "삭제여부", accessor: "del_yn", size: "3%", align: "center" },
     { Header: "상세정보", accessor: "info", size: "3%", align: "center" },
-    { Header: "집계표", accessor: "tally", size: "3%", align: "center" },
     // { Header: "인사기록카드", accessor: "members", size: "3%", align: "center" },
     // { Header: "출근부", accessor: "record", size: "3%", align: "center" },
     // { Header: "경관식", accessor: "ceremony", align: "center" },

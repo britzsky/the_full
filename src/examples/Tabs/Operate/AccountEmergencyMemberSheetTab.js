@@ -25,6 +25,7 @@ function AccountEmergencyMemberSheet() {
     saveData,
   } = useAccountEmergencyMemberSheetData();
 
+  // 응급 인력 이름 검색 조건
   const [searchName, setSearchName] = useState("");
 
   useEffect(() => {
@@ -65,6 +66,7 @@ function AccountEmergencyMemberSheet() {
     []
   );
 
+  // 원본 행 비교를 위한 행 고유값 기준 맵
   const originalMap = useMemo(() => {
     const map = new Map();
     (originalRows || []).forEach((row) => {
@@ -73,6 +75,7 @@ function AccountEmergencyMemberSheet() {
     return map;
   }, [originalRows]);
 
+  // 저장 대상 선별을 위한 행 단위 변경 여부
   const isRowChanged = useCallback(
     (row) => {
       if (!row) return false;
@@ -84,6 +87,7 @@ function AccountEmergencyMemberSheet() {
       return (
         String(row.name ?? "") !== String(original.name ?? "") ||
         String(row.position_type ?? "") !== String(original.position_type ?? "") ||
+        String(row.phone ?? "") !== String(original.phone ?? "") ||
         Number(row.salary ?? 0) !== Number(original.salary ?? 0) ||
         String(row.car_yn ?? "") !== String(original.car_yn ?? "") ||
         String(row.note ?? "") !== String(original.note ?? "") ||
@@ -94,6 +98,7 @@ function AccountEmergencyMemberSheet() {
     [originalMap]
   );
 
+  // 변경된 입력값 강조 표시를 위한 셀 단위 변경 여부
   const isCellChanged = useCallback(
     (row, key) => {
       if (!row) return false;
@@ -110,6 +115,7 @@ function AccountEmergencyMemberSheet() {
     [originalMap]
   );
 
+  // 테이블 입력값 변경 및 필드별 값 정규화 처리
   const updateRow = useCallback(
     (rid, key, value) => {
       setActiveRows((prev) =>
@@ -124,6 +130,15 @@ function AccountEmergencyMemberSheet() {
             return { ...row, car_yn: String(value ?? "").toUpperCase() === "Y" ? "Y" : "N" };
           }
 
+          // 연락처 포맷 변환 (000-0000-0000)
+          if (key === "phone") {
+            const digits = String(value ?? "").replace(/\D/g, "").slice(0, 11);
+            let formatted = digits;
+            if (digits.length > 7) formatted = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+            else if (digits.length > 3) formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+            return { ...row, phone: formatted };
+          }
+
           return { ...row, [key]: value };
         })
       );
@@ -131,10 +146,12 @@ function AccountEmergencyMemberSheet() {
     [setActiveRows]
   );
 
+  // 이름 검색 조건으로 응급 인력 목록을 다시 조회하는 함수
   const handleSearch = useCallback(() => {
     fetchAccountMembersAllList({ name: searchName });
   }, [fetchAccountMembersAllList, searchName]);
 
+  // 신규 응급 인력 입력 행을 목록 상단에 추가하는 함수
   const handleAddRow = useCallback(() => {
     const newRow = {
       _rid: `NEW_${Date.now()}_${Math.random().toString(16).slice(2)}`,
@@ -142,6 +159,7 @@ function AccountEmergencyMemberSheet() {
       idx: null,
       name: "",
       position_type: "4",
+      phone: "",
       salary: 0,
       car_yn: "N",
       note: "",
@@ -152,6 +170,7 @@ function AccountEmergencyMemberSheet() {
     setActiveRows((prev) => [newRow, ...(prev || [])]);
   }, [setActiveRows]);
 
+  // 변경된 응급 인력 행만 검증 후 저장하는 함수
   const handleSave = useCallback(async () => {
     const changedRows = (activeRows || []).filter((row) => isRowChanged(row));
 
@@ -184,6 +203,7 @@ function AccountEmergencyMemberSheet() {
     }
   }, [activeRows, fetchAccountMembersAllList, isRowChanged, saveData, searchName, setOriginalRows]);
 
+  // 변경된 셀을 빨간색으로 표시하기 위한 글자색 계산 함수
   const getTextColor = useCallback(
     (row, key) => {
       if (isCellChanged(row, key)) return "#d32f2f";
@@ -192,12 +212,14 @@ function AccountEmergencyMemberSheet() {
     [isCellChanged]
   );
 
+  // 응급 인력 상태값에 따른 배경색 계산 함수
   const getStatusBackgroundColor = useCallback((status) => {
     if (String(status ?? "") === "1") return "#AACDDC";
     if (String(status ?? "") === "2") return "#FFB2B2";
     return "transparent";
   }, []);
 
+  // 응급 인력 입력 테이블 공통 스타일
   const tableSx = {
     flex: 1,
     minHeight: 0,
@@ -209,7 +231,7 @@ function AccountEmergencyMemberSheet() {
     "& table": {
       borderCollapse: "separate",
       width: "100%",
-      minWidth: 900,
+      minWidth: 1030,
       borderSpacing: 0,
       tableLayout: "fixed",
     },
@@ -245,6 +267,7 @@ function AccountEmergencyMemberSheet() {
 
   return (
     <>
+      {/* 이름 검색 및 응급 인력 행 관리 버튼 영역 */}
       <MDBox
         pt={1}
         pb={1}
@@ -283,16 +306,19 @@ function AccountEmergencyMemberSheet() {
         </MDButton>
       </MDBox>
 
+      {/* 응급 인력 기본 정보 입력 테이블 영역 */}
       <MDBox pt={1} pb={3}>
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <MDBox sx={tableSx}>
               <table>
+                {/* 응급 인력 관리 항목 헤더 */}
                 <thead>
                   <tr>
                     <th style={{ width: 70 }}>순번</th>
                     <th style={{ width: 140 }}>이름</th>
                     <th style={{ width: 120 }}>직책</th>
+                    <th style={{ width: 130 }}>연락처</th>
                     <th style={{ width: 120 }}>급여</th>
                     <th style={{ width: 90 }}>차량여부</th>
                     <th style={{ width: 140 }}>상태</th>
@@ -301,6 +327,7 @@ function AccountEmergencyMemberSheet() {
                   </tr>
                 </thead>
 
+                {/* 응급 인력별 상세 입력 행 목록 */}
                 <tbody>
                   {(activeRows || []).map((row) => (
                     <tr key={row._rid}>
@@ -342,6 +369,21 @@ function AccountEmergencyMemberSheet() {
                             </option>
                           ))}
                         </select>
+                      </td>
+
+                      {/* 응급 인력 연락처 입력 칸 */}
+                      <td>
+                        <input
+                          value={row.phone ?? ""}
+                          onChange={(e) => updateRow(row._rid, "phone", e.target.value)}
+                          style={{
+                            color: getTextColor(row, "phone"),
+                            fontWeight: isCellChanged(row, "phone") ? 600 : 400,
+                            textAlign: "center",
+                            backgroundColor: "transparent",
+                          }}
+                          placeholder="000-0000-0000"
+                        />
                       </td>
 
                       <td>

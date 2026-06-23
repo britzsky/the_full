@@ -57,7 +57,6 @@ import brandWhite from "assets/images/logo-ct.png";
 import brandDark from "assets/images/logo-ct-dark.png";
 
 // 화면등록 (커스텀 라우트들)
-import TallySheet from "layouts/tallysheet";
 import RecordSheet from "layouts/recordsheet";
 import MemberSheet from "layouts/membersheet";
 import DinersNumberSheet from "layouts/dinersnumbersheet";
@@ -510,7 +509,6 @@ export default function App() {
       />
 
       {/* ✅ 커스텀 라우트들 */}
-      <Route path="/tallysheet/:account_id" element={<TallySheet />} />
       <Route path="/recordsheet/:account_id" element={<RecordSheet />} />
       <Route path="/membersheet/:account_id" element={<MemberSheet />} />
       <Route path="/dinersnumbersheet/:account_id" element={<DinersNumberSheet />} />

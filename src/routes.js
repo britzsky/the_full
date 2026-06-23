@@ -65,6 +65,7 @@ import BudgetManager from "layouts/operate/budgettablesheet";
 // 회계
 import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseDeadLineTally from "examples/Tabs/Accounting/AccountPurchaseDeadlineTab";
+import AccountingTab_2 from "examples/Tabs/AccountingTab_2";
 import PurchaseTally from "examples/Tabs/Accounting/AccountPurchaseTallyTab";
 import HeadOfficeCorporateCardManager from "layouts/accounting/corporatecardsheet";
 import AccountCorporateCardManager from "layouts/accounting/accountcorporatecardsheet";
@@ -73,6 +74,7 @@ import AccountPersonPurchaseManager from "layouts/accounting/accountpersonpurcha
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
 import Education from "layouts/humanresource/education";
+import HumanResourceEvaluation from "layouts/humanresource/humanresourcetab_2";
 // 사용자 관리
 import UserManagement from "layouts/humanresource/usermanagement";
 // 현장
@@ -281,7 +283,7 @@ const routes = [
   },
   {
     // 직책 -> (0: 대표, 1:팀장, 2:파트장, 3:매니저)
-    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀,  6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
+    // 부서 -> (0:대표, 1: 신사업팀, 2: 회계팀, 3: 인사팀, 4: 영업팀, 5: 운영팀, 6: 개발팀, 7:현장, 8: 급식사업부, 9:기획팀)
     type: "collapse",
     name: "운영",
     key: "operate",
@@ -441,6 +443,16 @@ const routes = [
         allowUserIds: ["yh2"], // 이윤희 실장님
         accessMode: "OR",
       },
+      {
+        type: "collapse",
+        name: "🧾 거래처 마감 자료",
+        key: "accountReceiptSheet",
+        route: "/accountReceiptSheet/account-receipts",
+        component: <AccountingTab_2 />,
+        allowedDepartments: [0, 2, 6, 9], // 부서권한
+        allowUserIds: ["yh2"], // 이윤희 실장님
+        accessMode: "OR",
+      },
     ],
   },
   {
@@ -476,6 +488,16 @@ const routes = [
         key: "education",
         route: "/humanresource/education",
         component: <Education />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
+        allowedPositions: [0, 1, 2, 3],
+        accessMode: "AND",
+      },
+      {
+        type: "collapse",
+        name: "📊 평가",
+        key: "humanresource_evaluation",
+        route: "/humanresource/evaluation",
+        component: <HumanResourceEvaluation />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
         allowedPositions: [0, 1, 2, 3],
         accessMode: "AND",

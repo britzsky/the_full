@@ -202,7 +202,7 @@ function OperateTabs_2() {
       >
         {/* 🔹 공통 헤더 사용 */}
         {/* <HeaderWithLogout showMenuButton title="📁고객사 관리" /> */}
-        <DashboardNavbar title="🧑‍🔧채용관리" />
+        <DashboardNavbar title="🧑‍🔧현장관리" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}

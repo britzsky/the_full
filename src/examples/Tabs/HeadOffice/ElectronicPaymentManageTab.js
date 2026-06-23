@@ -837,7 +837,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
             sx={{ minWidth: isMobile ? 112 : 130 }}
           >
             <option value="all">전체</option>
-            <option value="progress">결제 중</option>
+            <option value="progress">결재 중</option>
             <option value="done">완료</option>
           </TextField>
           <MDButton

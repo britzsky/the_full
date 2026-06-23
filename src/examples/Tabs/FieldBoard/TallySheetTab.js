@@ -195,25 +195,27 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
           gap: 0,
         }}
       >
-        {items.map((it) => (
-          <Box
-            key={it.label}
-            sx={{
-              px: 0.5,
-              py: 0.5,
-              borderRight: "1px solid #111",
-              "&:last-of-type": { borderRight: "none" },
-              bgcolor: "#fff",
-            }}
-          >
-            <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#444" }}>
-              {it.label} :{" "}
-              <span style={{ color: it.label === "예산대비" ? ratioColor : undefined }}>
-                {it.value}
-              </span>
-            </Typography>
-          </Box>
-        ))}
+        {items.map((it) => {
+          const isBudgetRatio = it.label === "예산대비";
+          const cellBg = isBudgetRatio && ratioColor ? ratioColor : "#fff";
+          const textColor = isBudgetRatio && ratioColor ? "#fff" : "#444";
+          return (
+            <Box
+              key={it.label}
+              sx={{
+                px: 0.5,
+                py: 0.5,
+                borderRight: "1px solid #111",
+                "&:last-of-type": { borderRight: "none" },
+                bgcolor: cellBg,
+              }}
+            >
+              <Typography sx={{ fontSize: 12, fontWeight: 800, color: textColor }}>
+                {it.label} : {it.value}
+              </Typography>
+            </Box>
+          );
+        })}
       </Box>
     </Box>
   );
@@ -730,6 +732,7 @@ function TallySheet() {
     const base = String(API_BASE_URL || "").replace(/\/$/, "");
     const params = new URLSearchParams();
     params.set("file_path", raw.startsWith("/") ? raw : `/${raw}`);
+    params.set("_ts", String(Date.now()));
     return `${base}/Account/AccountStoredFileView?${params.toString()}`;
   }, []);
 
@@ -894,7 +897,7 @@ function TallySheet() {
   const handleCardRowFileChange = (rowIndex, file) => {
     if (!file) return;
 
-    // 기존 previewUrl 있으면 revoke
+    closeFloatingPreview();
     setCardEditRows((prev) =>
       prev.map((r, i) => {
         if (i !== rowIndex) return r;
@@ -991,6 +994,11 @@ function TallySheet() {
     const file = e.target.files?.[0];
     if (!file) return;
     e.currentTarget.value = "";
+
+    closeFloatingPreview();
+    if (cardReceiptPreview && String(cardReceiptPreview).startsWith("blob:")) {
+      URL.revokeObjectURL(cardReceiptPreview);
+    }
 
     setCardForm((p) => ({ ...p, receipt_image: file }));
     const url = URL.createObjectURL(file);
@@ -1400,6 +1408,11 @@ function TallySheet() {
     if (!file) return;
     e.currentTarget.value = "";
 
+    closeFloatingPreview();
+    if (cashReceiptPreview && String(cashReceiptPreview).startsWith("blob:")) {
+      URL.revokeObjectURL(cashReceiptPreview);
+    }
+
     setCashForm((p) => ({ ...p, receipt_image: file }));
     const url = URL.createObjectURL(file);
     setCashReceiptPreview(url);
@@ -1794,6 +1807,11 @@ function TallySheet() {
       .slice(0, isCorpCard ? 1 : 3);
     if (!files.length) return;
     e.currentTarget.value = "";
+
+    closeFloatingPreview();
+    (otherReceiptPreviewList || []).forEach((url) => {
+      if (url && String(url).startsWith("blob:")) URL.revokeObjectURL(url);
+    });
 
     const previewList = files.map((file) => URL.createObjectURL(file));
     setOtherForm((p) => ({
@@ -5084,6 +5102,7 @@ function TallySheet() {
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
+                                closeFloatingPreview();
                                 setCashRowFiles((prev) => {
                                   const old = prev?.[rowKey];
                                   if (
@@ -5502,6 +5521,7 @@ function TallySheet() {
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (!file) return;
+                                closeFloatingPreview();
                                 setOtherRowFiles((prev) => {
                                   const old = prev?.[rowKey];
                                   if (

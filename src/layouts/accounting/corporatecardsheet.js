@@ -28,8 +28,10 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import useCorporateCardData from "./data/CorporateCardData";
-
+// -------------------------------------------------------------
 // 회계 - 본사 법인카드 시트
+// -------------------------------------------------------------
+
 // ========================= 상수/유틸 =========================
 // 기본 카드사 상수
 const DEFAULT_CARD_BRAND = "IBK기업은행";
@@ -1310,9 +1312,9 @@ function CorporateCardSheet() {
       if (Number(res?.data?.code) === 200) {
         await Swal.fire("알림", "성공적으로 삭제되었습니다.", "success");
         const fetchRes = await fetchHeadOfficeCorporateCardPaymentDetailRaw({
-            sale_id: selectedSaleId,
-            account_id: selectedAccountId,
-            payment_dt: selectedMaster?.payment_dt ?? "",
+          sale_id: selectedSaleId,
+          account_id: selectedAccountId,
+          payment_dt: selectedMaster?.payment_dt ?? "",
         });
         const refreshed = (fetchRes.data || []).map((r) => ({ ...r, isForcedRed: false, isNew: false }));
         setDetailRows(refreshed);
@@ -1747,10 +1749,10 @@ function CorporateCardSheet() {
       detailFetchSeqRef.current = fetchSeq;
 
       fetchHeadOfficeCorporateCardPaymentDetailRaw({
-            sale_id: nextSaleId,
-            account_id: row.account_id,
-            payment_dt: row.payment_dt,
-        })
+        sale_id: nextSaleId,
+        account_id: row.account_id,
+        payment_dt: row.payment_dt,
+      })
         .then((res) => {
           if (detailFetchSeqRef.current !== fetchSeq) return;
           const rows = (res.data || []).map((r) => ({

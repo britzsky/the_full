@@ -72,6 +72,8 @@ export default function BudgetTableTab() {
     "utility_bills",
     "food_budget",
     "budget_total",
+    "prev_budget_grant",
+    "new_diff",
     "day_budget",
     "day_use_amount",
     "use_ratio",
@@ -93,18 +95,74 @@ export default function BudgetTableTab() {
     // { key: "total",             label: "식수",              width: 50  },
     // { key: "diet_price",        label: "식비",              width: 80 },
     // { key: "utility_bills",     label: "수도광열비",        width: 90 },
-    { key: "food_budget", label: "1식 기준 식재비", width: 90 },
+    // { key: "food_budget",       label: "1식 기준 식재비",   width: 90 },
     { key: "budget_total", label: "예상 부여금액", width: 120 },
+    { key: "prev_budget_grant", label: "전월 예산부여금액", width: 110 },
+    { key: "new_diff", label: "차액", width: 90 },
     { key: "day_budget", label: "현기준 적정예산", width: 90 },
     { key: "day_use_amount", label: "현기준 사용금액", width: 90 },
     { key: "day_use_ratio", label: "현기준 적정금액 비율(%)", width: 115 },
     // { key: "existing_budget",   label: "기존예산",        width: 90 },
-    { key: "diff_amount", label: "차액", width: 90 },
+    // { key: "diff_amount", label: "차액", width: 90 },
     { key: "use_ratio", label: "총 예산대비 사용비율(%)", width: 115 },
     { key: "budget_grant", label: "예산부여", width: 90 }, // editable
     { key: "note", label: "비고", width: 185 }, // editable
   ];
   const stickyAccountColumnKey = "account_name";
+
+  const getNextMonth = (targetYear, targetMonth) => {
+    if (targetMonth === 12) {
+      return { year: targetYear + 1, month: 1 };
+    }
+
+    return { year: targetYear, month: targetMonth + 1 };
+  };
+
+  const getBudgetRowKey = (row) =>
+    [
+      row.account_id ?? "",
+      row.account_type_name ?? "",
+      row.meal_type_name ?? "",
+    ].join("__");
+
+  const hasNoteText = (note) => String(note ?? "").trim() !== "";
+
+  // 비고가 수정된 행은 다음 달 비고 기본값으로 저장할 행을 함께 만든다.
+  const buildNextMonthNoteRows = async (noteChangedRows) => {
+    if (noteChangedRows.length === 0) return [];
+
+    const nextMonth = getNextMonth(year, month);
+    const res = await api.get("/Operate/BudgetManageMentList", {
+      params: {
+        year: nextMonth.year,
+        month: nextMonth.month,
+      },
+    });
+    const nextRows = Array.isArray(res.data) ? res.data : [];
+    const nextRowMap = new Map(
+      nextRows.map((row) => [getBudgetRowKey(row), row])
+    );
+
+    return noteChangedRows
+      .map((row) => {
+        const nextRow = nextRowMap.get(getBudgetRowKey(row));
+
+        // 다음 달에 이미 비고가 있으면 현재 달 저장으로 덮어쓰지 않는다.
+        if (nextRow && hasNoteText(nextRow.note)) return null;
+
+        return {
+          account_id: row.account_id,
+          year: nextMonth.year,
+          month: nextRow?.month ?? nextMonth.month,
+          note: row.note,
+          status_yn: "N",
+          diff_amount:
+            (Number(nextRow?.budget_total) || 0) -
+            (Number(nextRow?.prev_budget_grant) || 0),
+        };
+      })
+      .filter((row) => row !== null);
+  };
 
   // ✅ 저장 (예산부여, 비고만 변경 체크)
   const handleSave = async () => {
@@ -149,6 +207,8 @@ export default function BudgetTableTab() {
             //    - budget_grant 변경 있음: "Y"
             //    - note만 변경/미변경: "N"
             status_yn: budgetGrantChanged ? "Y" : "N",
+            // 당월 예상부여금액 - 전월 예산부여금액
+            diff_amount: (Number(row.budget_total) || 0) - (Number(row.prev_budget_grant) || 0),
           };
         }
         return null;
@@ -163,8 +223,16 @@ export default function BudgetTableTab() {
     }
 
     try {
+      const noteChangedRows = editRows.filter(
+        (row) =>
+          row._original &&
+          (row._original.note ?? "") !== (row.note ?? "") &&
+          hasNoteText(row.note)
+      );
+      const nextMonthNoteRows = await buildNextMonthNoteRows(noteChangedRows);
+      const saveRows = [...modifiedRows, ...nextMonthNoteRows];
       // 👉 백엔드 경로는 실제 구현에 맞게 수정
-      await api.post("/Operate/BudgetTableSave", { rows: modifiedRows });
+      await api.post("/Operate/BudgetTableSave", { rows: saveRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
       fetchBudgetTableList(); // ✅ 다시 조회
     } catch (err) {
@@ -497,6 +565,31 @@ export default function BudgetTableTab() {
                               if (num >= 90) return "#ff9800";
                               return undefined;
                             };
+
+                            // new_diff 셀: 당월 예상부여금액 - 전월 예산부여금액
+                            if (field === "new_diff") {
+                              const diff =
+                                (Number(row.budget_total) || 0) -
+                                (Number(row.prev_budget_grant) || 0);
+                              const bgColor =
+                                diff > 0
+                                  ? "#ffebee"   // 양수: 연한 빨강
+                                  : diff < 0
+                                  ? "#e8f5e9"   // 음수: 연한 초록
+                                  : undefined;
+                              return (
+                                <td
+                                  key={field}
+                                  style={{
+                                    ...baseCellStyle,
+                                    textAlign: "right",
+                                    backgroundColor: bgColor,
+                                  }}
+                                >
+                                  {diff === 0 ? "" : formatNumber(diff)}
+                                </td>
+                              );
+                            }
 
                             const originalNorm = isNumeric
                               ? Number(original ?? 0)

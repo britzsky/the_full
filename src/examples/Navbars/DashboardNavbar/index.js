@@ -73,8 +73,11 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const NAVBAR_H = 48;
   // ✅ 승인대기/문의답변대기/알림 뱃지 자동 갱신 주기 (화면 전체 새로고침 없이 알림만 업데이트)
   const NOTIF_POLL_MS = 30000;
+  // ------------------------------------------
   // 알림 관련 API 호출을 임시로 중단하는 스위치
   const DISABLE_NOTIFICATION_API = false;
+  // ------------------------------------------
+
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
   const THE_FULL_WEB_BASE_URL = resolveTheFullWebBaseUrl();
 
@@ -101,6 +104,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   // 계약 만료 알림
   const [notifications, setNotifications] = useState([]);
   const [electronicPaymentNotifications, setElectronicPaymentNotifications] = useState([]);
+  // KPI 평가 알림 (팀장확인요청 / 인사팀장확인요청 / 확인완료)
+  const [evaluationNotifications, setEvaluationNotifications] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
 
   const [userName, setUserName] = useState("");
@@ -141,6 +146,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const inquiryPendingCount = (inquiryPendingRows || []).filter((row) => row?.answer_yn !== "Y").length;
   const birthdayMemberCount = birthdayMemberRows.length;
   const electronicPaymentNotifCount = electronicPaymentNotifications.length;
+  const evaluationNotifCount = evaluationNotifications.length;
   const currentMonthText = `${new Date().getMonth() + 1}월`;
   const inquiryMenuSectionTitle = inquiryPendingCount > 0 ? "문의 답변 대기" : "문의 목록";
   const inquiryMenuItemTitle =
@@ -830,7 +836,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   useEffect(() => {
     fetchNotifications();
     fetchElectronicPaymentNotifications();
-    if (isAdmin) fetchApprovePendingList(false); // ✅ 관리자면 초기부터 승인대기 카운트 확보
+    fetchEvaluationNotifications();
+    if (isAdmin) fetchApprovePendingList(false);
     fetchInquiryPendingList(false);
     fetchBirthdayMemberList(false);
   }, [canViewInquiryAlert]);
@@ -841,6 +848,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
       if (document.visibilityState !== "visible") return;
       fetchNotifications();
       fetchElectronicPaymentNotifications();
+      fetchEvaluationNotifications();
       if (isAdmin) fetchApprovePendingList(false);
       fetchInquiryPendingList(false);
       fetchBirthdayMemberList(false);
@@ -948,6 +956,50 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     };
   }, []);
 
+  // KPI 평가 알림 조회 (팀장확인요청 / 인사팀장확인요청 / 확인완료)
+  const fetchEvaluationNotifications = async () => {
+    if (DISABLE_NOTIFICATION_API || !userId) {
+      setEvaluationNotifications([]);
+      return;
+    }
+    try {
+      const res = await api.get("/HeadOffice/EvaluationNotificationList", {
+        params: { user_id: userId },
+      });
+      setEvaluationNotifications(Array.isArray(res.data) ? res.data : []);
+    } catch (e) {
+      console.error("KPI 평가 알림 조회 실패:", e);
+      setEvaluationNotifications([]);
+    }
+  };
+
+  // KPI 평가 알림 읽음 처리 ('확인완료' 타입만 user_read_dt 갱신 → 목록에서 제거)
+  const markEvaluationNotificationRead = async (idx, notifyType) => {
+    if (notifyType !== "확인완료") return;
+    const idxText = String(idx ?? "").trim();
+    const loginUserId = String(userId ?? "").trim();
+    if (!idxText || !loginUserId) return;
+    try {
+      await api.post("/HeadOffice/EvaluationNotificationReadSave", {
+        idx: idxText,
+        user_id: loginUserId,
+        notify_type: notifyType,
+      });
+      setEvaluationNotifications((prev) =>
+        (prev || []).filter((row) => !(String(row?.idx) === idxText && row?.notify_type === notifyType))
+      );
+    } catch (e) {
+      console.error("KPI 평가 알림 읽음 처리 실패:", e);
+    }
+  };
+
+  // KPI 평가 관리 탭으로 이동 (idx가 있으면 해당 문서 자동 오픈)
+  const goEvaluationManage = (idx) => {
+    navigate("/humanresource/evaluation", {
+      state: { activeTab: 1, openEvalIdx: idx ?? null },
+    });
+  };
+
   const markElectronicPaymentNotificationRead = async (paymentId, notifyType) => {
     const paymentIdText = String(paymentId ?? "").trim();
     const notifyTypeText = String(notifyType ?? "").trim();
@@ -990,8 +1042,9 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     setOpenMenu(event.currentTarget);
     fetchNotifications();
     fetchElectronicPaymentNotifications();
-    if (isAdmin) fetchApprovePendingList(false); // ✅ 메뉴 열 때도 최신화
-    fetchInquiryPendingList(false); // ✅ 메뉴 열 때 문의답변대기도 최신화
+    fetchEvaluationNotifications();
+    if (isAdmin) fetchApprovePendingList(false);
+    fetchInquiryPendingList(false);
     fetchBirthdayMemberList(false);
   };
 
@@ -1003,24 +1056,27 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
   const iconsStyle = { color: "#fff" };
 
-  // ✅ 뱃지 카운트: 전자결재 + 계약만료 + (관리자면) 승인대기 + 문의답변대기
+  // ✅ 뱃지 카운트: 전자결재 + KPI평가 + 계약만료 + (관리자면) 승인대기 + 문의답변대기
   const totalBadgeCount =
     electronicPaymentNotifCount +
+    evaluationNotifCount +
     notifications.length +
     inquiryPendingCount +
     birthdayMemberCount +
     (isAdmin ? pendingCount : 0);
 
-  // 사용자 승인대기 / 문의 답변대기 / 전자결재 알림이 있으면 네비 알림 뱃지를 강조한다.
+  // 사용자 승인대기 / 문의 답변대기 / 전자결재 / KPI평가 알림이 있으면 뱃지를 강조한다.
   const shouldBlinkNotificationBadge =
     (isAdmin && pendingCount > 0) ||
     inquiryPendingCount > 0 ||
-    electronicPaymentNotifCount > 0;
+    electronicPaymentNotifCount > 0 ||
+    evaluationNotifCount > 0;
 
   const renderMenu = () => {
     const showPromotionSection = canViewPromotionAlert;
     const showInquirySection = canViewInquiryAlert && (shouldAlwaysShowInquirySection || inquiryPendingCount > 0);
     const showElectronicPaymentSection = electronicPaymentNotifCount > 0;
+    const showEvaluationSection = evaluationNotifCount > 0;
     const showApprovalSection = isAdmin && pendingCount > 0;
     const showBirthdaySection = birthdayMemberCount > 0;
     const showContractSection = notifLoading || notifications.length > 0;
@@ -1028,6 +1084,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
       showPromotionSection ||
       showInquirySection ||
       showElectronicPaymentSection ||
+      showEvaluationSection ||
       showApprovalSection ||
       showBirthdaySection ||
       showContractSection;
@@ -1077,6 +1134,35 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                 title={inquiryMenuItemTitle}
               />
             </MDBox>
+
+            <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
+          </>
+        )}
+
+        {showEvaluationSection && (
+          <>
+            <MDBox px={2} pt={1} pb={0.5}>
+              <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+                KPI 평가 알림
+              </MDTypography>
+            </MDBox>
+
+            {evaluationNotifications.map((n, nIdx) => (
+              <MDBox
+                key={`eval-${n.idx || "eval"}-${nIdx}`}
+                sx={{ "&:hover": { backgroundColor: "rgba(255,255,255,0.10)" }, borderRadius: "10px" }}
+              >
+                <NotificationItem
+                  icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                  title={n.notify_message || "KPI 평가 알림"}
+                  onClick={async () => {
+                    handleCloseMenu();
+                    await markEvaluationNotificationRead(n.idx, n.notify_type);
+                    goEvaluationManage(n.idx);
+                  }}
+                />
+              </MDBox>
+            ))}
 
             <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
           </>

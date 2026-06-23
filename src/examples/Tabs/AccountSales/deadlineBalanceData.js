@@ -74,6 +74,7 @@ export default function useDeadlineBalanceData(year, month) {
           // ✅ 미수기준일 계산용 history year/month 원본값 유지
           year: item.year,
           month: item.month,
+          type_code: item.type_code, // ✅ UPDATE 식별용 숫자 코드
           // ✅ 백엔드 라벨이 '미수잔액'으로 내려와도 환불 태그가 있으면 환불로 표기
           type: isRefund ? "환불" : rawType,
           input_dt: item.input_dt,

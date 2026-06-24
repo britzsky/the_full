@@ -52,7 +52,7 @@ const formatNumber = (value) => {
 // =====================================================================
 // 본사 법인카드 영수증 마감 자료 조회 훅
 // - /Account/HeadOfficeCorporateCardPaymentListAll 1회 호출
-// - filters: { year, month, receiptType }
+// - filters: { year, month, receiptType, accountId }
 // =====================================================================
 export default function useCorpCardReceiptArchiveData() {
   const [rows, setRows] = useState([]);
@@ -63,8 +63,9 @@ export default function useCorpCardReceiptArchiveData() {
     try {
       const res = await api.get("/Account/HeadOfficeCorporateCardPaymentListAll", {
         params: {
-          year:  filters?.year  || "",
-          month: filters?.month || "",
+          account_id: filters?.accountId || "",
+          year:       filters?.year      || "",
+          month:      filters?.month     || "",
         },
         validateStatus: () => true,
       });

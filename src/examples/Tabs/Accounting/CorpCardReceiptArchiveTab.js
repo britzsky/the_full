@@ -24,6 +24,7 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { fetchAccountListByName } from "api/accountQueryApi";
 import useCorpCardReceiptArchiveData, {
   buildCorpCardFilePreviewUrl,
   isCorpCardPdfFile,
@@ -89,21 +90,39 @@ function CorpCardReceiptArchiveTab() {
   const { rows, loading, fetchRows } = useCorpCardReceiptArchiveData();
 
   const [filters, setFilters] = useState({
+    accountId:   "",
     year:        String(now.getFullYear()),
     month:       String(now.getMonth() + 1),
     receiptType: "0",
   });
 
+  const [accountOptions, setAccountOptions] = useState([]);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [viewerFiles, setViewerFiles] = useState([]);
 
   const yearOptions = useMemo(() => getYearOptions(), []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetchAccountListByName({
+      useV2: true,
+      params: { del_yn: "ALL" },
+    })
+      .then((list) => {
+        if (!cancelled) setAccountOptions(Array.isArray(list) ? list : []);
+      })
+      .catch((error) => {
+        console.error("거래처 목록 조회 실패:", error);
+        if (!cancelled) setAccountOptions([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // 필터 변경 시 자동 재조회
   useEffect(() => {
     fetchRows(filters);
-  }, [fetchRows, filters.year, filters.month, filters.receiptType]);
+  }, [fetchRows, filters.accountId, filters.year, filters.month, filters.receiptType]);
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -252,6 +271,21 @@ function CorpCardReceiptArchiveTab() {
                 <InputLabel>월</InputLabel>
                 <Select name="month" label="월" value={filters.month} onChange={handleFilterChange} sx={SELECT_SX}>
                   {MONTH_OPTIONS.map((m) => <MenuItem key={m} value={m}>{m}월</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+
+            {/* 거래처 */}
+            <Grid item xs={12} md={2.4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>거래처</InputLabel>
+                <Select name="accountId" label="거래처" value={filters.accountId} onChange={handleFilterChange} sx={SELECT_SX}>
+                  <MenuItem value="">전체 거래처</MenuItem>
+                  {accountOptions.map((account) => (
+                    <MenuItem key={account.account_id} value={account.account_id}>
+                      {account.account_name || account.name || account.account_id}
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             </Grid>

@@ -264,22 +264,35 @@ function AccountReceiptTab() {
     return response.blob();
   };
 
-  // 브라우저 기본 다운로드 실행 (fallback)
-  const downloadReceiptFile = (item) => {
+  const triggerBrowserDownload = (url, fileName) => {
     const a = document.createElement("a");
-    a.href = item.previewUrl;
+    a.href = url;
     a.rel = "noopener noreferrer";
-    a.download = getReceiptDownloadFileName(item);
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  // 브라우저 기본 다운로드 실행 (fallback)
+  const downloadReceiptFile = async (item) => {
+    const fileName = getReceiptDownloadFileName(item);
+    try {
+      const blob = await fetchReceiptBlob(item);
+      const objectUrl = URL.createObjectURL(blob);
+      triggerBrowserDownload(objectUrl, fileName);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      console.error("영수증 파일 다운로드 실패:", error);
+      triggerBrowserDownload(item.previewUrl, fileName);
+    }
   };
 
   // File System Access API 활용 단일 파일 저장 (미지원 시 기본 다운로드 폴백)
   const saveReceiptFile = async (item) => {
     if (!item?.previewUrl) return;
     if (!window.showSaveFilePicker) {
-      downloadReceiptFile(item);
+      await downloadReceiptFile(item);
       return;
     }
     try {
@@ -294,7 +307,7 @@ function AccountReceiptTab() {
       if (error?.name === "AbortError") return;
       console.error("영수증 파일 저장 실패:", error);
       alert("영수증 파일 저장에 실패했습니다. 브라우저 기본 다운로드로 다시 시도합니다.");
-      downloadReceiptFile(item);
+      await downloadReceiptFile(item);
     }
   };
 
@@ -318,9 +331,9 @@ function AccountReceiptTab() {
   const handleDownloadAll = async () => {
     if (downloadableImageItems.length === 0) return;
     if (!window.showDirectoryPicker) {
-      downloadableImageItems.forEach((item) => {
-        if (item?.previewUrl) downloadReceiptFile(item);
-      });
+      for (const item of downloadableImageItems) {
+        if (item?.previewUrl) await downloadReceiptFile(item);
+      }
       return;
     }
     try {
@@ -330,9 +343,9 @@ function AccountReceiptTab() {
       if (error?.name === "AbortError") return;
       console.error("영수증 이미지 전체 저장 실패:", error);
       alert("이미지 전체 저장에 실패했습니다. 브라우저 기본 다운로드로 다시 시도합니다.");
-      downloadableImageItems.forEach((item) => {
-        if (item?.previewUrl) downloadReceiptFile(item);
-      });
+      for (const item of downloadableImageItems) {
+        if (item?.previewUrl) await downloadReceiptFile(item);
+      }
     }
   };
 

@@ -269,14 +269,25 @@ function AccountReceiptTab() {
     setViewerOpen(true);
   };
 
-  // 영수증 파일 Blob 다운로드 — 정적 리소스 경로로 직접 접근
+  // 영수증 파일 Blob 다운로드 — 경로 인코딩 후 정적 URL로 시도, 실패 시 AccountStoredFileView로 재시도
   const fetchReceiptBlob = async (item) => {
     const rawPath = String(item.path || "").trim();
-    const staticUrl = `${API_BASE_URL}${rawPath.startsWith("/") ? rawPath : `/${rawPath}`}`;
-    const response = await api.get(staticUrl, { responseType: "blob" });
-    const blob = response?.data;
-    if (!(blob instanceof Blob) || blob.size === 0) throw new Error("영수증 파일을 불러오지 못했습니다.");
-    return blob;
+    const encodedPath = rawPath.split("/").map((seg) => (seg ? encodeURIComponent(seg) : "")).join("/");
+    const normalizedPath = encodedPath.startsWith("/") ? encodedPath : `/${encodedPath}`;
+    const staticUrl = `${API_BASE_URL}${normalizedPath}`;
+
+    try {
+      const res = await api.get(staticUrl, { responseType: "blob" });
+      const blob = res?.data;
+      if (blob instanceof Blob && blob.size > 0) return blob;
+    } catch {
+      // 정적 URL 실패 시 AccountStoredFileView로 재시도
+    }
+
+    const res2 = await api.get(item.previewUrl, { responseType: "blob", withCredentials: true });
+    const blob2 = res2?.data;
+    if (!(blob2 instanceof Blob) || blob2.size === 0) throw new Error("영수증 파일을 불러오지 못했습니다.");
+    return blob2;
   };
 
   const triggerBrowserDownload = (url, fileName) => {

@@ -5,6 +5,7 @@
 // =====================================================================
 import React, { useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
+import Swal from "sweetalert2";
 import {
   Autocomplete,
   Box,
@@ -324,23 +325,54 @@ function AccountReceiptTab() {
   const handleDownloadAll = async () => {
     if (downloadableImageItems.length === 0) return;
 
+    const total = downloadableImageItems.length;
+    let done = 0;
+
+    const updateProgress = () => {
+      done += 1;
+      Swal.update({ text: `${done} / ${total} 처리 중...` });
+    };
+
+    Swal.fire({
+      title: "다운로드 중...",
+      text: `0 / ${total} 처리 중...`,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
+    const CONCURRENCY = 8;
     const zip = new JSZip();
+    const results = [];
+
+    for (let i = 0; i < downloadableImageItems.length; i += CONCURRENCY) {
+      const chunk = downloadableImageItems.slice(i, i + CONCURRENCY);
+      const chunkResults = await Promise.allSettled(
+        chunk.map(async (item) => {
+          const blob = await fetchReceiptBlob(item);
+          updateProgress();
+          return { item, blob };
+        })
+      );
+      results.push(...chunkResults);
+    }
+
     const usedFileNameMap = new Map();
     let addedCount = 0;
 
-    for (const item of downloadableImageItems) {
-      try {
-        const blob = await fetchReceiptBlob(item);
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        const { item, blob } = result.value;
         const fileName = getUniqueDownloadFileName(getReceiptDownloadFileName(item), usedFileNameMap);
         zip.file(fileName, blob);
         addedCount += 1;
-      } catch (error) {
-        console.warn("영수증 이미지 추가 실패 (건너뜀):", item?.path, error);
+      } else {
+        console.warn("영수증 이미지 추가 실패 (건너뜀):", result.reason);
       }
     }
 
     if (addedCount === 0) {
-      alert("저장할 수 있는 이미지가 없습니다.");
+      Swal.fire("안내", "저장할 수 있는 이미지가 없습니다.", "info");
       return;
     }
 
@@ -349,6 +381,7 @@ function AccountReceiptTab() {
 
     if (window.showSaveFilePicker) {
       try {
+        Swal.close();
         const fileHandle = await window.showSaveFilePicker({
           suggestedName: defaultName,
           types: [{ description: "ZIP 파일", accept: { "application/zip": [".zip"] } }],
@@ -356,9 +389,10 @@ function AccountReceiptTab() {
         const writable = await fileHandle.createWritable();
         await writable.write(zipBlob);
         await writable.close();
+        Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
         return;
       } catch (error) {
-        if (error?.name === "AbortError") return;
+        if (error?.name === "AbortError") { Swal.close(); return; }
         console.error("zip 저장 실패:", error);
       }
     }
@@ -366,6 +400,7 @@ function AccountReceiptTab() {
     const objectUrl = URL.createObjectURL(zipBlob);
     triggerBrowserDownload(objectUrl, defaultName);
     setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
   };
 
   return (

@@ -202,11 +202,19 @@ function AccountReceiptTab() {
       );
   }, [rows]);
 
-  // 전체 이미지 다운로드 대상 (PDF 제외)
-  const downloadableImageItems = useMemo(
-    () => receiptItems.filter((item) => item.kind === "image" && item.previewUrl),
-    [receiptItems]
-  );
+  // 전체 이미지 다운로드 대상 — 현재 타입 필터 기준으로 필터링 (PDF 제외)
+  const downloadableImageItems = useMemo(() => {
+    const selectedType = String(filters.type ?? "0");
+    let base;
+    if (selectedType === "0") {
+      base = receiptItems;
+    } else if (selectedType === SAMSUNG_WELSTORY_TYPE_GROUP_VALUE) {
+      base = receiptItems.filter((item) => SAMSUNG_WELSTORY_TYPE_VALUES.has(String(item.type ?? "")));
+    } else {
+      base = receiptItems.filter((item) => String(item.type ?? "") === selectedType);
+    }
+    return base.filter((item) => item.kind === "image" && item.previewUrl);
+  }, [receiptItems, filters.type]);
 
   // 타입별 그룹화 처리
   const groupedReceiptItems = useMemo(() => {

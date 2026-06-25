@@ -202,7 +202,7 @@ function AccountReceiptTab() {
       );
   }, [rows]);
 
-  // 전체 이미지 다운로드 대상 — 현재 타입 필터 기준으로 필터링 (PDF 제외)
+  // 전체 다운로드 대상 — 현재 타입 필터 기준, PDF 포함
   const downloadableImageItems = useMemo(() => {
     const selectedType = String(filters.type ?? "0");
     let base;
@@ -213,7 +213,7 @@ function AccountReceiptTab() {
     } else {
       base = receiptItems.filter((item) => String(item.type ?? "") === selectedType);
     }
-    return base.filter((item) => item.kind === "image" && item.previewUrl);
+    return base.filter((item) => item.previewUrl);
   }, [receiptItems, filters.type]);
 
   // 타입별 그룹화 처리

@@ -29,7 +29,10 @@ import useEvaluationData from "./EvaluationManageTabData";
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8080";
 
-const ADMIN_USER_IDS = ["bh4", "britzsky", "ceo"];
+const ADMIN_USER_IDS =
+  ["bh4",       // 정병화 팀장님
+    "britzsky",  // 손경원 팀장님
+    "ceo"];      // 대표님
 const HR_DEPARTMENT_CODE = "3";   // 인사팀
 const HP_DEPARTMENT_CODE = "8";   // 실장 부서
 

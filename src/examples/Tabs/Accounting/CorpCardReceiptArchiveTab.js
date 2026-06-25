@@ -6,6 +6,7 @@
 // =====================================================================
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  Autocomplete,
   Box,
   FormControl,
   Grid,
@@ -13,6 +14,7 @@ import {
   InputLabel,
   MenuItem,
   Select,
+  TextField,
   Tooltip,
 } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
@@ -57,15 +59,15 @@ const SELECT_SX = {
 };
 
 const RECEIPT_TYPE_COLORS = {
-  coupang:       "#f87c4f",
-  gmarket:       "#4f7ef8",
-  "11post":      "#e74c3c",
-  naver:         "#2ecc71",
-  homeplus:      "#3498db",
-  auction:       "#9b59b6",
-  daiso:         "#e67e22",
+  coupang: "#f87c4f",
+  gmarket: "#4f7ef8",
+  "11post": "#e74c3c",
+  naver: "#2ecc71",
+  homeplus: "#3498db",
+  auction: "#9b59b6",
+  daiso: "#e67e22",
   MART_ITEMIZED: "#1abc9c",
-  CONVENIENCE:   "#34495e",
+  CONVENIENCE: "#34495e",
 };
 const FALLBACK_COLOR = "#9ca3af";
 
@@ -90,13 +92,14 @@ function CorpCardReceiptArchiveTab() {
   const { rows, loading, fetchRows } = useCorpCardReceiptArchiveData();
 
   const [filters, setFilters] = useState({
-    accountId:   "",
-    year:        String(now.getFullYear()),
-    month:       String(now.getMonth() + 1),
+    accountId: "",
+    year: String(now.getFullYear()),
+    month: String(now.getMonth() + 1),
     receiptType: "0",
   });
 
   const [accountOptions, setAccountOptions] = useState([]);
+  const [selectedAccountOption, setSelectedAccountOption] = useState({ value: "", label: "전체" });
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [viewerFiles, setViewerFiles] = useState([]);
@@ -127,6 +130,22 @@ function CorpCardReceiptArchiveTab() {
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // 거래처 Autocomplete 옵션 목록
+  const accountAutocompleteOptions = useMemo(() => {
+    const list = accountOptions.map((acc) => ({
+      value: acc.account_id,
+      label: acc.account_name || acc.name || acc.account_id,
+    }));
+    list.sort((a, b) => String(a.label).localeCompare(String(b.label), "ko"));
+    return [{ value: "", label: "전체" }, ...list];
+  }, [accountOptions]);
+
+  const handleAccountChange = (_, option) => {
+    const next = option || { value: "", label: "전체" };
+    setSelectedAccountOption(next);
+    setFilters((prev) => ({ ...prev, accountId: next.value }));
   };
 
   // receipt_image 있는 항목 → previewUrl 추가
@@ -172,7 +191,7 @@ function CorpCardReceiptArchiveTab() {
   const handleOpenViewer = (targetItem) => {
     const files = receiptItems.map((item) => ({
       path: item.receipt_image,
-      url:  item.previewUrl,
+      url: item.previewUrl,
       name: `${item.account_name || ""} ${item.use_name || ""} ${item.saleDate || ""}`.trim(),
       kind: item.kind,
     }));
@@ -228,113 +247,117 @@ function CorpCardReceiptArchiveTab() {
         </MDBox>
       )}
 
-        {/* 조회 조건 영역 */}
-        <MDBox
-          sx={{
-            flexShrink: 0,
-            mb: 2,
-            p: 1.5,
-            border: "1px solid #e5e7eb",
-            borderRadius: 2,
-            backgroundColor: "#fff",
-            boxShadow: "0 1px 4px 0 rgba(0,0,0,0.06)",
-          }}
-        >
-          <Grid container spacing={1.2} alignItems="center">
-            {/* 조회 건수 */}
-            <Grid item xs={12} md>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
-                <ReceiptLongIcon sx={{ fontSize: 16, color: "#6b7280" }} />
-                <Box sx={{ fontSize: 12, color: "#374151" }}>
-                  영수증{" "}
-                  <Box component="span" sx={{ fontWeight: 700, color: "#111827" }}>
-                    {receiptItems.length.toLocaleString("ko-KR")}
-                  </Box>
-                  건
+      {/* 조회 조건 영역 */}
+      <MDBox
+        sx={{
+          flexShrink: 0,
+          mb: 2,
+          p: 1.5,
+          border: "1px solid #e5e7eb",
+          borderRadius: 2,
+          backgroundColor: "#fff",
+          boxShadow: "0 1px 4px 0 rgba(0,0,0,0.06)",
+        }}
+      >
+        <Grid container spacing={1.2} alignItems="center">
+          {/* 조회 건수 */}
+          <Grid item xs={12} md>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+              <ReceiptLongIcon sx={{ fontSize: 16, color: "#6b7280" }} />
+              <Box sx={{ fontSize: 12, color: "#374151" }}>
+                영수증{" "}
+                <Box component="span" sx={{ fontWeight: 700, color: "#111827" }}>
+                  {receiptItems.length.toLocaleString("ko-KR")}
                 </Box>
+                건
               </Box>
-            </Grid>
-
-            {/* 연도 */}
-            <Grid item xs={6} md={1.2}>
-              <FormControl fullWidth size="small">
-                <InputLabel>연도</InputLabel>
-                <Select name="year" label="연도" value={filters.year} onChange={handleFilterChange} sx={SELECT_SX}>
-                  {yearOptions.map((y) => <MenuItem key={y} value={y}>{y}년</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* 월 */}
-            <Grid item xs={6} md={1}>
-              <FormControl fullWidth size="small">
-                <InputLabel>월</InputLabel>
-                <Select name="month" label="월" value={filters.month} onChange={handleFilterChange} sx={SELECT_SX}>
-                  {MONTH_OPTIONS.map((m) => <MenuItem key={m} value={m}>{m}월</MenuItem>)}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* 거래처 */}
-            <Grid item xs={12} md={2.4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>거래처</InputLabel>
-                <Select name="accountId" label="거래처" value={filters.accountId} onChange={handleFilterChange} sx={SELECT_SX}>
-                  <MenuItem value="">전체 거래처</MenuItem>
-                  {accountOptions.map((account) => (
-                    <MenuItem key={account.account_id} value={account.account_id}>
-                      {account.account_name || account.name || account.account_id}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* 영수증 타입 */}
-            <Grid item xs={12} md={2.2}>
-              <FormControl fullWidth size="small">
-                <InputLabel>영수증 타입</InputLabel>
-                <Select name="receiptType" label="영수증 타입" value={filters.receiptType} onChange={handleFilterChange} sx={SELECT_SX}>
-                  <MenuItem value="0">전체</MenuItem>
-                  {CORP_CARD_RECEIPT_TYPES.map((rt) => (
-                    <MenuItem key={rt.value} value={rt.value}>{rt.label}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* 버튼 */}
-            <Grid item xs={12} md="auto">
-              <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", md: "flex-end" }, gap: 0.8 }}>
-                <MDButton
-                  size="small"
-                  color="success"
-                  onClick={handleDownloadAll}
-                  disabled={!downloadableItems.length}
-                  sx={{
-                    width: 190, height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT,
-                    whiteSpace: "nowrap",
-                    "& .MuiSvgIcon-root": { width: 20, height: 20, fontSize: "24px !important" },
-                  }}
-                >
-                  <DownloadIcon sx={{ mr: 0.6 }} />
-                  이미지 전체 다운로드
-                </MDButton>
-                <MDButton
-                  size="small"
-                  color="info"
-                  onClick={() => fetchRows(filters)}
-                  sx={{ width: 72, height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT }}
-                >
-                  조회
-                </MDButton>
-              </Box>
-            </Grid>
+            </Box>
           </Grid>
-        </MDBox>
 
-        {/* 영수증 타입별 그룹 목록 — 스크롤 영역 */}
-        <MDBox sx={{ flex: 1, overflowY: "auto", pb: 3 }}>
+          {/* 연도 */}
+          <Grid item xs={6} md={1.2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>연도</InputLabel>
+              <Select name="year" label="연도" value={filters.year} onChange={handleFilterChange} sx={SELECT_SX}>
+                {yearOptions.map((y) => <MenuItem key={y} value={y}>{y}년</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 월 */}
+          <Grid item xs={6} md={1}>
+            <FormControl fullWidth size="small">
+              <InputLabel>월</InputLabel>
+              <Select name="month" label="월" value={filters.month} onChange={handleFilterChange} sx={SELECT_SX}>
+                {MONTH_OPTIONS.map((m) => <MenuItem key={m} value={m}>{m}월</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 영수증 타입 */}
+          <Grid item xs={12} md={1.4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>영수증 타입</InputLabel>
+              <Select name="receiptType" label="영수증 타입" value={filters.receiptType} onChange={handleFilterChange} sx={SELECT_SX}>
+                <MenuItem value="0">전체</MenuItem>
+                {CORP_CARD_RECEIPT_TYPES.map((rt) => (
+                  <MenuItem key={rt.value} value={rt.value}>{rt.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 거래처 */}
+          <Grid item xs={12} md={1.8}>
+            <Autocomplete
+              size="small"
+              options={accountAutocompleteOptions}
+              value={selectedAccountOption}
+              onChange={handleAccountChange}
+              getOptionLabel={(option) =>
+                typeof option === "string" ? option : option?.label || option?.value || ""
+              }
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              renderInput={(params) => <TextField {...params} label="거래처 검색" />}
+              sx={{
+                "& .MuiInputBase-root": { height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT, alignItems: "center" },
+                "& .MuiInputBase-input": { height: "auto", py: 0 },
+              }}
+            />
+          </Grid>
+
+          {/* 버튼 */}
+          <Grid item xs={12} md="auto">
+            <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", md: "flex-end" }, gap: 0.8 }}>
+              <MDButton
+                size="small"
+                color="success"
+                onClick={handleDownloadAll}
+                disabled={!downloadableItems.length}
+                sx={{
+                  width: 190, height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT,
+                  whiteSpace: "nowrap",
+                  "& .MuiSvgIcon-root": { width: 20, height: 20, fontSize: "24px !important" },
+                }}
+              >
+                <DownloadIcon sx={{ mr: 0.6 }} />
+                이미지 전체 다운로드
+              </MDButton>
+              <MDButton
+                size="small"
+                color="info"
+                onClick={() => fetchRows(filters)}
+                sx={{ width: 72, height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT }}
+              >
+                조회
+              </MDButton>
+            </Box>
+          </Grid>
+        </Grid>
+      </MDBox>
+
+      {/* 영수증 타입별 그룹 목록 — 스크롤 영역 */}
+      <MDBox sx={{ flex: 1, overflowY: "auto", pb: 3 }}>
         <MDBox sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {groupedItems.length === 0 ? (
             <MDBox sx={{ p: 4, border: "1px solid #e5e7eb", borderRadius: 2, backgroundColor: "#fff", textAlign: "center", fontSize: 13, color: "#9ca3af", boxShadow: "0 1px 4px 0 rgba(0,0,0,0.06)" }}>
@@ -428,7 +451,7 @@ function CorpCardReceiptArchiveTab() {
             ))
           )}
         </MDBox>
-        </MDBox>
+      </MDBox>
 
       <PreviewOverlay
         open={viewerOpen}

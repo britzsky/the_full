@@ -4,6 +4,7 @@
 // - 데이터 훅은 AccountReceiptTabData.js에서 import
 // =====================================================================
 import React, { useEffect, useMemo, useState } from "react";
+import JSZip from "jszip";
 import {
   Autocomplete,
   Box,
@@ -25,6 +26,8 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
+import api from "api/api";
+import { API_BASE_URL } from "config";
 import useAccountReceiptTabData, {
   buildFilePreviewUrl,
   getReceiptImagePaths,
@@ -257,11 +260,14 @@ function AccountReceiptTab() {
     setViewerOpen(true);
   };
 
-  // 영수증 파일 Blob 다운로드 (인증 포함)
+  // 영수증 파일 Blob 다운로드 — 정적 리소스 경로로 직접 접근
   const fetchReceiptBlob = async (item) => {
-    const response = await fetch(item.previewUrl, { credentials: "include" });
-    if (!response.ok) throw new Error("영수증 파일을 불러오지 못했습니다.");
-    return response.blob();
+    const rawPath = String(item.path || "").trim();
+    const staticUrl = `${API_BASE_URL}${rawPath.startsWith("/") ? rawPath : `/${rawPath}`}`;
+    const response = await api.get(staticUrl, { responseType: "blob" });
+    const blob = response?.data;
+    if (!(blob instanceof Blob) || blob.size === 0) throw new Error("영수증 파일을 불러오지 못했습니다.");
+    return blob;
   };
 
   const triggerBrowserDownload = (url, fileName) => {
@@ -314,39 +320,52 @@ function AccountReceiptTab() {
   // 단일 영수증 다운로드 핸들러
   const handleDownload = (item) => saveReceiptFile(item);
 
-  // 디렉터리에 이미지 파일 일괄 저장 (중복 파일명 처리 포함)
-  const saveImageItemsToDirectory = async (directoryHandle) => {
-    const usedFileNameMap = new Map();
-    for (const item of downloadableImageItems) {
-      const blob = await fetchReceiptBlob(item);
-      const fileName = getUniqueDownloadFileName(getReceiptDownloadFileName(item), usedFileNameMap);
-      const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-    }
-  };
-
-  // 이미지 전체 다운로드 핸들러 (디렉터리 선택 후 일괄 저장)
+  // 이미지 전체를 zip으로 묶어 저장 경로 지정 후 다운로드
   const handleDownloadAll = async () => {
     if (downloadableImageItems.length === 0) return;
-    if (!window.showDirectoryPicker) {
-      for (const item of downloadableImageItems) {
-        if (item?.previewUrl) await downloadReceiptFile(item);
+
+    const zip = new JSZip();
+    const usedFileNameMap = new Map();
+    let addedCount = 0;
+
+    for (const item of downloadableImageItems) {
+      try {
+        const blob = await fetchReceiptBlob(item);
+        const fileName = getUniqueDownloadFileName(getReceiptDownloadFileName(item), usedFileNameMap);
+        zip.file(fileName, blob);
+        addedCount += 1;
+      } catch (error) {
+        console.warn("영수증 이미지 추가 실패 (건너뜀):", item?.path, error);
       }
+    }
+
+    if (addedCount === 0) {
+      alert("저장할 수 있는 이미지가 없습니다.");
       return;
     }
-    try {
-      const directoryHandle = await window.showDirectoryPicker();
-      await saveImageItemsToDirectory(directoryHandle);
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-      console.error("영수증 이미지 전체 저장 실패:", error);
-      alert("이미지 전체 저장에 실패했습니다. 브라우저 기본 다운로드로 다시 시도합니다.");
-      for (const item of downloadableImageItems) {
-        if (item?.previewUrl) await downloadReceiptFile(item);
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const defaultName = `영수증_${filters.year}${String(filters.month).padStart(2, "0")}.zip`;
+
+    if (window.showSaveFilePicker) {
+      try {
+        const fileHandle = await window.showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [{ description: "ZIP 파일", accept: { "application/zip": [".zip"] } }],
+        });
+        const writable = await fileHandle.createWritable();
+        await writable.write(zipBlob);
+        await writable.close();
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        console.error("zip 저장 실패:", error);
       }
     }
+
+    const objectUrl = URL.createObjectURL(zipBlob);
+    triggerBrowserDownload(objectUrl, defaultName);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   };
 
   return (

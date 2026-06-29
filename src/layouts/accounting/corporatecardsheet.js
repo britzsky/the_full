@@ -23,6 +23,7 @@ import Autocomplete from "@mui/material/Autocomplete";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import PreviewOverlay from "utils/PreviewOverlay";
+import useAccountingMonthLock from "utils/useAccountingMonthLock";
 
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
@@ -264,7 +265,7 @@ const toDateInputValue = (v) => {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
-// contentEditable 숫자 셀 전체 선택(클릭 시 덮어쓰기 입력)
+// contentEditable={!isLocked} 숫자 셀 전체 선택(클릭 시 덮어쓰기 입력)
 const selectAllContent = (el) => {
   if (!el) return;
   const range = document.createRange();
@@ -469,6 +470,10 @@ function CorporateCardSheet() {
 
   // 거래처 검색 조건 상태
   const [selectedAccountId, setSelectedAccountId] = useState("");
+
+  const { isLocked, isAutoLocked, isOverride, canOverride, toggleOverride, overrideLoading, revokeOverride } =
+    useAccountingMonthLock({ accountId: selectedAccountId, year, month, type: 2 }); // 2: 본사 법인카드
+
   // 상품구분 필터 상태
   const [itemTypeFilter, setItemTypeFilter] = useState("0");
   // 상품구분 필터 조회 로딩 상태
@@ -620,7 +625,7 @@ function CorporateCardSheet() {
   );
 
   // ============================================================
-  // 행 잔상 및 contentEditable DOM 잔상 제거 관련 ref/state
+  // 행 잔상 및 contentEditable={!isLocked} DOM 잔상 제거 관련 ref/state
   // ============================================================
   // 신규 행 병합 건너뜀 플래그 ref
   const skipPendingNewMergeRef = useRef(false);
@@ -1127,6 +1132,7 @@ function CorporateCardSheet() {
   // ========================= 변경 핸들러 =========================
   // 상단 셀 값 변경 처리
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
+    if (isLocked) return;
     setMasterRows((prev) =>
       prev.map((r, i) =>
         i === rowIndex
@@ -1145,6 +1151,7 @@ function CorporateCardSheet() {
   // 하단 셀 값 변경 처리
   const handleDetailCellChange = useCallback(
     (rowIndex, key, value) => {
+      if (isLocked) return;
       const nextRaw = typeof value === "string" ? value.replace(/\u00A0/g, " ").trim() : value;
 
       setDetailRows((prev) => {
@@ -1189,6 +1196,7 @@ function CorporateCardSheet() {
   }, []);
 
   const handleDeleteMasterRowData = useCallback(async () => {
+    if (isLocked) return;
     const rowIndex = masterCtxMenu.rowIndex;
     if (rowIndex == null) return;
 
@@ -1252,6 +1260,7 @@ function CorporateCardSheet() {
 
   // 신규 상세행 선택 삭제 처리
   const handleDeleteNewDetailRow = useCallback((rowIndex) => {
+    if (isLocked) return;
     if (rowIndex == null) return;
     setDetailRows((prev) => {
       const checkedIndexes = prev
@@ -1294,6 +1303,7 @@ function CorporateCardSheet() {
 
   // 저장된 상세행 DB 삭제
   const handleDeleteSavedDetailRow = useCallback(async () => {
+    if (isLocked) return;
     const rowIndex = detailCtxMenu.rowIndex;
     if (rowIndex == null) return;
     const row = detailRows?.[rowIndex];
@@ -1447,6 +1457,7 @@ function CorporateCardSheet() {
   const handleImageUpload = useCallback(
     async (file, rowIndex) => {
       if (!file) return;
+      if (isLocked) return;
 
       // 업로드 순간 최신 row 참조(stale 방지)
       const row = masterRowsRef.current?.[rowIndex] || {};
@@ -1983,6 +1994,7 @@ function CorporateCardSheet() {
 
       Swal.close();
       await Swal.fire("성공", "저장되었습니다.", "success");
+      revokeOverride();
 
       // 저장 후 서버 정렬 기준으로 다시 조회한 뒤 저장 직전 선택한 상단행을 다시 선택한다.
       forceServerSyncRef.current = true;
@@ -2263,6 +2275,7 @@ function CorporateCardSheet() {
 
   // ========================= ✅ 하단 수정 → 상단 자동 반영(과세/면세 분해 포함) =========================
   useEffect(() => {
+    if (isLocked) return;
     const selectedMaster = selectedMasterRef.current;
     if (!selectedMaster) return;
 
@@ -2358,7 +2371,17 @@ function CorporateCardSheet() {
         taxFree: nextTaxFree,
       };
     });
-  }, [detailRows]);
+  }, [detailRows, isLocked]);
+
+  // 잠금 상태 변경 시 contentEditable DOM 직접 제어 (React 재조정 우회)
+  useEffect(() => {
+    const val = isLocked ? "false" : "true";
+    [masterWrapRef, detailWrapRef].forEach(ref => {
+      ref.current?.querySelectorAll("[contenteditable]").forEach(el => {
+        el.setAttribute("contenteditable", val);
+      });
+    });
+  }, [isLocked]);
 
   if ((loading && !suppressFullLoadingRef.current) || !selectedAccountId || masterRows === null) {
     return <LoadingScreen />;
@@ -2383,10 +2406,7 @@ function CorporateCardSheet() {
         pb={1}
         sx={{
           display: "flex",
-          flexWrap: isMobile ? "wrap" : "nowrap",
-          justifyContent: isMobile ? "flex-start" : "flex-end",
-          alignItems: "center",
-          gap: 1,
+          flexDirection: "column",
           // 모바일에서는 상단 툴바를 고정하지 않음
           position: isMobile ? "static" : "sticky",
           zIndex: isMobile ? "auto" : 10,
@@ -2397,11 +2417,10 @@ function CorporateCardSheet() {
       >
         <Box
           sx={{
+            display: "flex",
             flexWrap: isMobile ? "wrap" : "nowrap",
             justifyContent: isMobile ? "flex-start" : "flex-end",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "right",
+            alignItems: "stretch",
             gap: 1,
           }}
         >
@@ -2494,23 +2513,60 @@ function CorporateCardSheet() {
             {masterFilterLoading ? "조회중..." : "조회"}
           </MDButton>
 
-          <MDButton color="info" onClick={addMasterRow} sx={{ minWidth: 90 }}>
+          <MDButton color="info" onClick={addMasterRow} disabled={isLocked} sx={{ minWidth: 90 }}>
             행추가
           </MDButton>
 
-          <MDButton color="info" onClick={saveAll} sx={{ minWidth: 80 }}>
+          <MDButton color="info" onClick={saveAll} disabled={isLocked} sx={{ minWidth: 80 }}>
             저장
           </MDButton>
+
+          {canOverride && isAutoLocked && (
+            <Box sx={{ width: 140, flexShrink: 0, display: "flex" }}>
+              <MDButton
+                fullWidth
+                disabled={overrideLoading}
+                onClick={toggleOverride}
+                sx={{
+                  backgroundColor: isOverride ? "#9e9e9e" : "#ff9800",
+                  color: "#fff",
+                  "&:hover": { backgroundColor: isOverride ? "#757575" : "#f57c00" },
+                }}
+              >
+                {overrideLoading ? "처리중..." : isOverride ? "수정권한 해제" : "수정권한 부여"}
+              </MDButton>
+            </Box>
+          )}
 
           <MDButton
             variant="gradient"
             color="info"
+            disabled={isLocked}
             onClick={openCardModal}
             sx={{ minWidth: 120 }}
           >
             법인카드관리
           </MDButton>
         </Box>
+
+        {isAutoLocked && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              mt: 0.75,
+              px: 1.5,
+              py: 0.75,
+              backgroundColor: isOverride ? "#fff3e0" : "#E4E4E4",
+              border: isOverride ? "1px solid #ff9800" : "1px solid #bbb",
+              borderRadius: 1,
+            }}
+          >
+            <Typography sx={{ fontSize: 13, color: isOverride ? "#e65100" : "#555", fontWeight: 700 }}>
+              🔒 {year}년 {month}월은 마감되어 편집이 제한됩니다.{isOverride ? "  (수정권한 부여됨)" : ""}
+            </Typography>
+          </Box>
+        )}
       </MDBox>
 
       {/* ====== 상단/하단 50:50 영역 ====== */}
@@ -2527,12 +2583,33 @@ function CorporateCardSheet() {
         {/* ========================= 상단(50%) 결제내역 ========================= */}
         <MDBox
           ref={masterWrapRef}
+          onKeyDown={isLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+          onMouseDown={isLocked ? (e) => {
+            const t = e.target;
+            if (
+              t.tagName === "INPUT" ||
+              t.tagName === "TEXTAREA" ||
+              t.tagName === "SELECT" ||
+              t.isContentEditable ||
+              t.closest(".MuiSelect-root") ||
+              t.closest(".MuiInputBase-root")
+            ) {
+              e.preventDefault();
+            }
+          } : undefined}
           sx={{
             flex: 1,
             minHeight: isMobileTablet ? splitPanelMinHeight : 0,
             overflow: "auto",
+            position: "relative",
             border: "1px solid #ddd",
             borderRadius: 1,
+            ...(isLocked && {
+              "& input, & textarea, & .MuiSelect-select, & .MuiInputBase-root, & .MuiCheckbox-root": {
+                pointerEvents: "none",
+                cursor: "default",
+              },
+            }),
             "& table": {
               borderCollapse: "separate",
               width: "max-content",
@@ -2572,7 +2649,7 @@ function CorporateCardSheet() {
             "& td[contenteditable]::-webkit-scrollbar": { display: "none" },
           }}
         >
-          <table key={`master-${selectedAccountId}-${year}-${month}-${itemTypeFilter}-${masterRenderKey}`}>
+                    <table key={`master-${selectedAccountId}-${year}-${month}-${itemTypeFilter}-${masterRenderKey}`}>
             <thead>
               <tr>
                 {masterColumns.map((c) => (
@@ -2765,6 +2842,7 @@ function CorporateCardSheet() {
                               type="file"
                               accept="image/*"
                               id={inputId}
+                              disabled={isLocked}
                               style={{ display: "none" }}
                               ref={(el) => {
                                 if (el) fileInputRefs.current[inputId] = el;
@@ -2827,6 +2905,7 @@ function CorporateCardSheet() {
                                   type="button"
                                   size="small"
                                   color="info"
+                                  disabled={isLocked}
                                   sx={{
                                     minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
                                     width: RECEIPT_UPLOAD_BTN_WIDTH,
@@ -2858,6 +2937,7 @@ function CorporateCardSheet() {
                                 type="button"
                                 size="small"
                                 color="info"
+                                disabled={isLocked}
                                 sx={{
                                   minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
                                   width: RECEIPT_UPLOAD_BTN_WIDTH,
@@ -2887,7 +2967,7 @@ function CorporateCardSheet() {
                       return (
                         <td
                           key={key}
-                          contentEditable
+                          contentEditable={!isLocked}
                           suppressContentEditableWarning
                           style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
                           onFocus={(ev) => keepEditableTailVisible(ev.currentTarget)}
@@ -2961,16 +3041,37 @@ function CorporateCardSheet() {
               backgroundColor: "#fff",
             }}
           >
-            <MDButton color="info" size="small" onClick={addDetailRow} sx={{ minWidth: 90 }}>
+            <MDButton color="info" size="small" onClick={addDetailRow} disabled={isLocked} sx={{ minWidth: 90 }}>
               행추가
             </MDButton>
           </MDBox>
 
           <MDBox
             ref={detailWrapRef}
+            onKeyDown={isLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+          onMouseDown={isLocked ? (e) => {
+            const t = e.target;
+            if (
+              t.tagName === "INPUT" ||
+              t.tagName === "TEXTAREA" ||
+              t.tagName === "SELECT" ||
+              t.isContentEditable ||
+              t.closest(".MuiSelect-root") ||
+              t.closest(".MuiInputBase-root")
+            ) {
+              e.preventDefault();
+            }
+          } : undefined}
             sx={{
               flex: 1,
               overflow: "auto",
+              position: "relative",
+              ...(isLocked && {
+                "& input, & textarea, & .MuiSelect-select, & .MuiInputBase-root, & .MuiCheckbox-root": {
+                  pointerEvents: "none",
+                  cursor: "default",
+                },
+              }),
               "& table": {
                 borderCollapse: "separate",
                 width: "max-content",
@@ -3136,7 +3237,7 @@ function CorporateCardSheet() {
                           return (
                             <td
                               key={key}
-                              contentEditable
+                              contentEditable={!isLocked}
                               suppressContentEditableWarning
                               style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
                               onMouseDown={(ev) => {
@@ -3412,7 +3513,7 @@ function CorporateCardSheet() {
             <Box
               sx={{ display: "flex", justifyContent: "space-between", alignItems: "right", gap: 1 }}
             >
-              <MDButton color="info" size="small" onClick={addCardRow}>
+              <MDButton color="info" size="small" onClick={addCardRow} disabled={isLocked}>
                 행추가
               </MDButton>
             </Box>
@@ -3522,7 +3623,7 @@ function CorporateCardSheet() {
             >
               취소
             </Button>
-            <Button variant="contained" onClick={saveCardModal} sx={{ color: "#ffffff" }}>
+            <Button variant="contained" disabled={isLocked} onClick={saveCardModal} sx={{ color: "#ffffff" }}>
               저장
             </Button>
           </Box>

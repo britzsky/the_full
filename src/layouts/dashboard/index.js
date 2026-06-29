@@ -1111,6 +1111,8 @@ function MiniCalendar({ todos }) {
   const [popover, setPopover] = useState({ anchor: null, date: null });
   // ✅ 본사행사(type=2) 목록 상태
   const [headOfficeEvents, setHeadOfficeEvents] = useState([]);
+  // ✅ 공휴일 날짜 Map ("YYYY-MM-DD" → 공휴일명)
+  const [holidayDates, setHolidayDates] = useState(new Map());
 
   // ✅ 달력 월 이동 시 해당 연/월 본사행사 재조회
   const cursorYM = cursor.format("YYYY-MM");
@@ -1128,6 +1130,20 @@ function MiniCalendar({ todos }) {
         setHeadOfficeEvents(events);
       })
       .catch(() => setHeadOfficeEvents([]));
+  }, [cursorYM]);
+
+  useEffect(() => {
+    const year = cursor.year();
+    const month = cursor.month() + 1;
+    api
+      .get("/Operate/HolidayList", { params: { year, month } })
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        const map = new Map();
+        list.forEach((h) => map.set(String(h.holiday_date), String(h.holiday_name || "공휴일")));
+        setHolidayDates(map);
+      })
+      .catch(() => setHolidayDates(new Map()));
   }, [cursorYM]);
 
   const start = useMemo(() => cursor.startOf("month").startOf("week"), [cursor]);
@@ -1235,7 +1251,11 @@ function MiniCalendar({ todos }) {
             <MDTypography
               key={w}
               variant="caption"
-              sx={{ fontWeight: 800, textAlign: "center", color: w === "SUN" ? "error.main" : "text.secondary" }}
+              sx={{
+                fontWeight: 800,
+                textAlign: "center",
+                color: w === "SUN" ? "error.main" : w === "SAT" ? "#1565c0" : "text.secondary",
+              }}
             >
               {w}
             </MDTypography>
@@ -1250,7 +1270,11 @@ function MiniCalendar({ todos }) {
             const hasTodo = todoDates.has(key);
             // ✅ 본사행사 존재 여부 — 파란 점 표시 판별
             const hasEvent = headOfficeDates.has(key);
-            const hasAny = hasTodo || hasEvent;
+            const isSun = d.day() === 0;
+            const isSat = d.day() === 6;
+            const isHoliday = holidayDates.has(key);
+            const hasAny = hasTodo || hasEvent || isHoliday;
+            const dateColor = isSun || isHoliday ? "#c62828" : isSat ? "#1565c0" : undefined;
             return (
               <MDBox
                 key={key}
@@ -1268,7 +1292,11 @@ function MiniCalendar({ todos }) {
                   "&:hover": hasAny ? { backgroundColor: "rgba(0,0,0,0.04)" } : {},
                 }}
               >
-                <MDTypography variant="caption" color="dark" sx={{ fontWeight: isToday ? 800 : 600, lineHeight: 1 }}>
+                <MDTypography
+                  variant="caption"
+                  color="dark"
+                  sx={{ fontWeight: isToday ? 800 : 600, lineHeight: 1, ...(dateColor ? { color: dateColor } : {}) }}
+                >
                   {d.date()}
                 </MDTypography>
                 <MDBox sx={{ height: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: "2px" }}>
@@ -1297,6 +1325,13 @@ function MiniCalendar({ todos }) {
           {popover.date}
         </MDTypography>
         <MDBox display="flex" flexDirection="column" gap={0.5}>
+          {/* ✅ 공휴일 */}
+          {popover.date && holidayDates.has(popover.date) && (
+            <MDTypography variant="caption" color="dark" sx={{ fontWeight: 500 }}>
+              • <span style={{ color: "#c62828", fontWeight: 600 }}>[공휴일]</span>{" "}
+              {holidayDates.get(popover.date)}
+            </MDTypography>
+          )}
           {/* ✅ 본사행사(type=2): [본사행사]만 파란색, 내용은 일반 글씨 */}
           {popoverHeadOfficeEvents.map((ev, i) => (
             <MDTypography key={`ev-${i}`} variant="caption" color="dark" sx={{ fontWeight: 500, whiteSpace: "pre-line", wordBreak: "break-word" }}>

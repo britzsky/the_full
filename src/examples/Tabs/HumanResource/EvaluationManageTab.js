@@ -20,7 +20,6 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
-import { toHeadOfficeDocumentViewUrl } from "utils/headOfficeDocumentImageUtils";
 import logo from "assets/images/the-full-logo4.png";
 import useEvaluationData from "./EvaluationManageTabData";
 
@@ -651,13 +650,14 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                 </thead>
                 <tbody>
                   {detailItems.map((item, idx) => {
-                    // KPI 순번과 같은 순서의 첨부파일 표시 정보
-                    const rowFile = evaluationFiles.find((f) => Number(f.image_order) === idx + 1);
-                    const previewKey = rowFile ? `saved-${rowFile.image_order}` : null;
-                    const fileUrl = rowFile ? `${API_BASE_URL}${rowFile.image_path}` : null;
-                    const fileViewUrl = rowFile ? toHeadOfficeDocumentViewUrl(fileUrl) : null;
-                    const kind = rowFile ? getFileKind(rowFile.image_name) : null;
-                    const canPreview = rowFile && (kind === "image" || kind === "pdf" || kind === "excel");
+                    // KPI 순번과 같은 순서의 첨부파일 목록 (다중 파일 지원)
+                    // 새 방식: image_order = kpiRow * 100 + 파일인덱스 (>= 100)
+                    // 레거시: image_order = kpiRow (< 100)
+                    const kpiOrder = idx + 1;
+                    const rowFiles = evaluationFiles.filter((f) => {
+                      const order = Number(f.image_order);
+                      return (order < 100 ? order : Math.floor(order / 100)) === kpiOrder;
+                    });
                     return (
                       <tr key={item.idx || idx}>
                         <td style={{ ...roTdCellCenter, fontWeight: 700 }}>{idx + 1}</td>
@@ -682,44 +682,50 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                           )}
                         </td>
                         <td style={roTdCellTop}>{item.content || "-"}</td>
-                        {/* KPI 첨부파일 썸네일 및 다운로드 */}
-                        <td style={{ ...roTdCellTop, padding: "6px 4px", textAlign: "center", verticalAlign: "middle" }}>
-                          {rowFile ? (
-                            <MDBox sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                              <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                <MDBox sx={roThumbSx}>
-                                  {kind === "image" ? (
-                                    canPreview ? (
-                                      <MDBox
-                                        component="button" type="button"
-                                        onClick={() => openPreview(previewKey)}
-                                        sx={{ border: "none", background: "none", p: 0, width: "100%", height: "100%", cursor: "pointer" }}
-                                      >
-                                        <MDBox component="img" src={fileViewUrl} alt={rowFile.image_name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        {/* KPI 첨부파일 썸네일 및 다운로드 (다중 파일 지원) */}
+                        <td style={{ ...roTdCellTop, padding: "6px 4px", textAlign: "center", verticalAlign: "top", overflow: "hidden" }}>
+                          {rowFiles.length > 0 ? (
+                            <MDBox sx={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "center", width: "100%", overflow: "hidden" }}>
+                              {rowFiles.map((rf) => {
+                                const rfUrl = `${API_BASE_URL}${rf.image_path}`;
+                                const rfKind = getFileKind(rf.image_name);
+                                const rfCanPreview = rfKind === "image" || rfKind === "pdf" || rfKind === "excel";
+                                const rfPreviewKey = `saved-${rf.image_order}`;
+                                return (
+                                  <MDBox key={rf.image_order} sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", width: "100%", minWidth: 0 }}>
+                                    <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                      <MDBox sx={roThumbSx}>
+                                        {rfKind === "image" ? (
+                                          rfCanPreview ? (
+                                            <MDBox component="button" type="button" onClick={() => openPreview(rfPreviewKey)} sx={{ border: "none", background: "none", p: 0, width: "100%", height: "100%", cursor: "pointer" }}>
+                                              <MDBox component="img" src={rfUrl} alt={rf.image_name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                            </MDBox>
+                                          ) : (
+                                            <MDBox component="img" src={rfUrl} alt={rf.image_name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                          )
+                                        ) : rfKind === "pdf" ? (
+                                          <MDBox component={rfCanPreview ? "button" : "span"} type={rfCanPreview ? "button" : undefined} onClick={rfCanPreview ? () => openPreview(rfPreviewKey) : undefined} sx={{ ...pdfThumbBtnSx, cursor: rfCanPreview ? "pointer" : "default" }}>
+                                            <MDBox component="iframe" title={`pdf-${rf.image_order}`} src={toPdfThumbSrc(rfUrl)} loading="lazy" sx={pdfThumbFrameSx} />
+                                            <MDBox component="span" sx={pdfThumbLabelSx}>PDF</MDBox>
+                                          </MDBox>
+                                        ) : (
+                                          <MDBox sx={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#1f4e79", backgroundColor: "#edf4ff" }}>
+                                            {getFileExtLabel(rf.image_name)}
+                                          </MDBox>
+                                        )}
                                       </MDBox>
+                                      <IconButton size="small" component="a" href={rfUrl} download target="_blank" rel="noopener noreferrer" sx={{ ...iconBtnSx, width: 24, height: 24 }}>
+                                        <Download size={13} />
+                                      </IconButton>
+                                    </MDBox>
+                                    {rfCanPreview ? (
+                                      <button type="button" onClick={() => openPreview(rfPreviewKey)} style={roFileNameSx}>{rf.image_name}</button>
                                     ) : (
-                                      <MDBox component="img" src={fileViewUrl} alt={rowFile.image_name} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                    )
-                                  ) : kind === "pdf" ? (
-                                    <MDBox component={canPreview ? "button" : "span"} type={canPreview ? "button" : undefined} onClick={canPreview ? () => openPreview(previewKey) : undefined} sx={{ ...pdfThumbBtnSx, cursor: canPreview ? "pointer" : "default" }}>
-                                      <MDBox component="iframe" title={`pdf-row-${idx}`} src={toPdfThumbSrc(fileViewUrl)} loading="lazy" sx={pdfThumbFrameSx} />
-                                      <MDBox component="span" sx={pdfThumbLabelSx}>PDF</MDBox>
-                                    </MDBox>
-                                  ) : (
-                                    <MDBox sx={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#1f4e79", backgroundColor: "#edf4ff" }}>
-                                      {getFileExtLabel(rowFile.image_name)}
-                                    </MDBox>
-                                  )}
-                                </MDBox>
-                                <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ ...iconBtnSx, width: 24, height: 24 }}>
-                                  <Download size={13} />
-                                </IconButton>
-                              </MDBox>
-                              {canPreview ? (
-                                <button type="button" onClick={() => openPreview(previewKey)} style={roFileNameSx}>{rowFile.image_name}</button>
-                              ) : (
-                                <span style={{ ...roFileNameSx, textDecoration: "none", cursor: "default" }}>{rowFile.image_name}</span>
-                              )}
+                                      <span style={{ ...roFileNameSx, textDecoration: "none", cursor: "default" }}>{rf.image_name}</span>
+                                    )}
+                                  </MDBox>
+                                );
+                              })}
                             </MDBox>
                           ) : (
                             <span style={{ fontSize: 10, color: "#ccc" }}>-</span>
@@ -925,12 +931,6 @@ const td2CellCenter = {
   height: 50, boxSizing: "border-box",
 };
 const listRowSx = { cursor: "pointer", height: 50 };
-const thumbBoxSx = {
-  width: 56, height: 72, borderRadius: "6px", overflow: "hidden", flexShrink: 0,
-  border: "1px solid #d0d7e2", backgroundColor: "#f1f4f8",
-  display: "flex", alignItems: "center", justifyContent: "center",
-};
-
 // 도장 제목 셀
 const stampLabelCell = {
   border: "1px solid #e8ecf0", background: "#f3f6fb",
@@ -961,13 +961,6 @@ const roFileNameSx = {
 const iconBtnSx = {
   width: 28, height: 28, borderRadius: "6px",
   border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79",
-};
-
-// 첨부파일명 링크형 버튼
-const fileLinkStyle = {
-  border: "none", background: "none", padding: 0, fontSize: "12px", color: "#1f4e79",
-  textDecoration: "underline", overflow: "hidden", textOverflow: "ellipsis",
-  whiteSpace: "nowrap", flex: 1, textAlign: "left", cursor: "pointer",
 };
 
 // 목록 결재 상태 셀 내부 정렬

@@ -830,6 +830,7 @@ function RecordSheet() {
   const [dispatchDelFilter, setDispatchDelFilter] = useState("N");
   const [dispatchMappingRows, setDispatchMappingRows] = useState([]);
   const dispatchMappingReqSeqRef = useRef(0);
+  const [holidayDays, setHolidayDays] = useState(new Set());
 
   const location = useLocation();
   const queryParams = new URLSearchParams(location.search);
@@ -927,6 +928,17 @@ function RecordSheet() {
       accountInputRef.current = partial.account_name || q;
     }
   }, [accountList]);
+
+  useEffect(() => {
+    if (!year || !month) return;
+    api
+      .get("/Operate/HolidayList", { params: { year, month } })
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setHolidayDays(new Set(list.map((h) => Number(h.holiday_day))));
+      })
+      .catch(() => setHolidayDays(new Set()));
+  }, [year, month]);
 
   // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
   const [employeeRowsView, setEmployeeRowsView] = useState([]);
@@ -3800,10 +3812,15 @@ function RecordSheet() {
       Array.from({ length: daysInMonth }, (_, i) => {
         const date = dayjs(`${year}-${month}-${i + 1}`);
         const weekday = ["일", "월", "화", "수", "목", "금", "토"][date.day()];
+        const dayNum = i + 1;
+        const isSat = date.day() === 6;
+        const isSunOrHoliday = date.day() === 0 || holidayDays.has(dayNum);
+        const headerBg = isSunOrHoliday ? "#ffe5e5" : isSat ? "#ddf0ff" : undefined;
 
         return {
-          header: `${i + 1}일(${weekday})`,
-          accessorKey: `day_${i + 1}`,
+          header: `${dayNum}일(${weekday})`,
+          accessorKey: `day_${dayNum}`,
+          meta: { headerBg },
           cell: (props) => {
             const memberId = safeTrim(
               props.row.original?.member_id ?? props.row.original?.memberId ?? "",
@@ -3830,7 +3847,7 @@ function RecordSheet() {
           size: isMobile ? 52 : 80,
         };
       }),
-    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap]
+    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap, holidayDays]
   );
 
   // 회원 퇴사 메타 맵
@@ -4908,11 +4925,14 @@ function RecordSheet() {
                 <thead>
                   {attendanceTable.getHeaderGroups().map((hg) => (
                     <tr key={hg.id}>
-                      {hg.headers.map((header) => (
-                        <th key={header.id}>
-                          {flexRender(header.column.columnDef.header, header.getContext())}
-                        </th>
-                      ))}
+                      {hg.headers.map((header) => {
+                        const hBg = header.column.columnDef.meta?.headerBg;
+                        return (
+                          <th key={header.id} style={hBg ? { backgroundColor: hBg } : undefined}>
+                            {flexRender(header.column.columnDef.header, header.getContext())}
+                          </th>
+                        );
+                      })}
                     </tr>
                   ))}
                 </thead>

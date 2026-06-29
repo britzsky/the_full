@@ -11,6 +11,7 @@ import {
   Menu,
   MenuItem,
   Tooltip,
+  Typography,
 } from "@mui/material";
 
 import Autocomplete from "@mui/material/Autocomplete";
@@ -33,6 +34,7 @@ import { API_BASE_URL } from "config";
 import ExcelJS from "exceljs";
 import PreviewOverlay from "utils/PreviewOverlay";
 import useAccountPurchaseDeadlineData from "./accountPurchaseDeadlineData";
+import useAccountingMonthLock from "utils/useAccountingMonthLock";
 
 // ---------------------------------------
 // 회계 -> 거래처 자료 입력
@@ -127,7 +129,7 @@ const onNumInput = (e) => {
   try { el.setSelectionRange(pos, pos); } catch (_) { }
 };
 
-// ✅ contentEditable: 입력 중 커서를 오른쪽에 고정 (글씨는 왼쪽으로 밀림)
+// ✅ contentEditable={!isLocked}: 입력 중 커서를 오른쪽에 고정 (글씨는 왼쪽으로 밀림)
 const keepEditableTailVisible = (el) => {
   if (!el) return;
   requestAnimationFrame(() => {
@@ -136,7 +138,7 @@ const keepEditableTailVisible = (el) => {
   });
 };
 
-// ✅ contentEditable: 클릭 시 전체선택 (바로 덮어쓰기 가능)
+// ✅ contentEditable={!isLocked}: 클릭 시 전체선택 (바로 덮어쓰기 가능)
 const selectAllContent = (el) => {
   if (!el) return;
   const range = document.createRange();
@@ -210,6 +212,14 @@ function AccountPurchaseDeadlineTab() {
     payType: "0", // 조회구분
   });
   const latestFiltersRef = useRef(filters);
+
+  const { isLocked, isAutoLocked, isOverride, canOverride, toggleOverride, overrideLoading, revokeOverride } =
+    useAccountingMonthLock({
+      accountId: filters.account_id,
+      year: Number(filters.year),
+      month: Number(filters.month),
+      type: 1, // 1: 거래처 자료 입력
+    });
 
   useEffect(() => {
     latestFiltersRef.current = filters;
@@ -696,6 +706,7 @@ function AccountPurchaseDeadlineTab() {
       showDeletedAccountReadonlyAlert();
       return;
     }
+    if (isLocked) return;
 
     setRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value, __dirty: true } : r)));
 
@@ -1025,6 +1036,7 @@ function AccountPurchaseDeadlineTab() {
         showDeletedAccountReadonlyAlert();
         return;
       }
+      if (isLocked) return;
 
       const selectedFiles = (Array.isArray(files) ? files : [files])
         .filter(Boolean)
@@ -1596,6 +1608,7 @@ function AccountPurchaseDeadlineTab() {
   }, []);
 
   const handleDeleteMasterRowData = useCallback(async () => {
+    if (isLocked) return;
     const rowIndex = masterCtxMenu.rowIndex;
     if (rowIndex == null) return;
 
@@ -1655,6 +1668,7 @@ function AccountPurchaseDeadlineTab() {
   // 신규 상세행 선택 삭제 처리
   const handleDeleteNewDetailRow = useCallback(
     (rowIndex) => {
+      if (isLocked) return;
       if (rowIndex == null) return;
       setDetailRows((prev) => {
         const checkedIndexes = prev
@@ -1689,6 +1703,7 @@ function AccountPurchaseDeadlineTab() {
 
   // 저장된 상세행 DB 삭제
   const handleDeleteSavedDetailRow = useCallback(async () => {
+    if (isLocked) return;
     const rowIndex = detailCtxMenu.rowIndex;
     if (rowIndex == null) return;
     const row = detailRows?.[rowIndex];
@@ -1945,6 +1960,7 @@ function AccountPurchaseDeadlineTab() {
       const savedSaleId = String(selectedSaleId ?? "").trim(); // 재조회 시점의 sale_id 고정
       Swal.close();
       await Swal.fire("성공", "저장되었습니다.", "success");
+      revokeOverride();
 
       // 성공 팝업 확인 후 DB 기준 재조회
       setDetailRows([]);
@@ -2491,6 +2507,7 @@ function AccountPurchaseDeadlineTab() {
         showDeletedAccountReadonlyAlert();
         return;
       }
+      if (isLocked) return;
 
       const nextRows = (detailRowsRef.current || []).map((x, idx) => {
         if (idx !== rowIndex) return x;
@@ -2669,6 +2686,7 @@ function AccountPurchaseDeadlineTab() {
 
   // 하단 상세 변경 시 해당 상단 행의 과세/부가세/면세/합계 자동 동기화
   useEffect(() => {
+    if (isLocked) return;
     if (!selectedSaleId) return;
     if (isDeletedAccount) return;
     if (detailLoading) return;
@@ -2708,6 +2726,7 @@ function AccountPurchaseDeadlineTab() {
       });
     });
   }, [
+    isLocked,
     selectedSaleId,
     isDeletedAccount,
     detailLoading,
@@ -2762,6 +2781,15 @@ function AccountPurchaseDeadlineTab() {
     }
   }, [accountOptions, handleAccountChange]);
 
+  useEffect(() => {
+    const val = isLocked ? "false" : "true";
+    [masterWrapRef, detailWrapRef].forEach(ref => {
+      ref.current?.querySelectorAll("[contenteditable]").forEach(el => {
+        el.setAttribute("contenteditable", val);
+      });
+    });
+  }, [isLocked]);
+
   if (loading || rows === null) return <LoadingScreen />;
 
   return (
@@ -2787,10 +2815,7 @@ function AccountPurchaseDeadlineTab() {
           pb={1}
           sx={{
             display: "flex",
-            flexWrap: isMobile ? "wrap" : "nowrap",
-            justifyContent: isMobile ? "flex-start" : "flex-end",
-            alignItems: "center",
-            gap: 1,
+            flexDirection: "column",
             position: isMobile ? "static" : "sticky",
             zIndex: isMobile ? "auto" : 10,
             top: isMobile ? "auto" : 78,
@@ -2798,6 +2823,15 @@ function AccountPurchaseDeadlineTab() {
             borderBottom: "1px solid #eee",
           }}
         >
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: isMobile ? "wrap" : "nowrap",
+              justifyContent: isMobile ? "flex-start" : "flex-end",
+              alignItems: "center",
+              gap: 1,
+            }}
+          >
           <TextField
             select
             label="타입"
@@ -2937,12 +2971,12 @@ function AccountPurchaseDeadlineTab() {
           <MDButton
             variant="gradient"
             color="info"
-            disabled={isDeletedAccount}
+            disabled={isDeletedAccount || isLocked}
             onClick={handleSave}
             sx={{
               minWidth: isMobile ? 90 : 100,
               fontSize: isMobile ? "11px" : "13px",
-              cursor: isDeletedAccount ? "not-allowed" : "pointer",
+              cursor: isDeletedAccount || isLocked ? "not-allowed" : "pointer",
               "&.Mui-disabled": {
                 cursor: "not-allowed",
                 pointerEvents: "auto",
@@ -2951,6 +2985,24 @@ function AccountPurchaseDeadlineTab() {
           >
             저장
           </MDButton>
+
+          {canOverride && isAutoLocked && (
+            <Box sx={{ width: 140, flexShrink: 0, display: "flex" }}>
+              <MDButton
+                fullWidth
+                disabled={overrideLoading}
+                onClick={toggleOverride}
+                sx={{
+                  fontSize: isMobile ? "11px" : "13px",
+                  backgroundColor: isOverride ? "#9e9e9e" : "#ff9800",
+                  color: "#fff",
+                  "&:hover": { backgroundColor: isOverride ? "#757575" : "#f57c00" },
+                }}
+              >
+                {overrideLoading ? "처리중..." : isOverride ? "수정권한 해제" : "수정권한 부여"}
+              </MDButton>
+            </Box>
+          )}
 
           <MDButton
             variant="gradient"
@@ -2977,7 +3029,28 @@ function AccountPurchaseDeadlineTab() {
           >
             인쇄
           </MDButton>
+          </Box>
+
+          {isAutoLocked && (
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                mt: 0.75,
+                px: 1.5,
+                py: 0.75,
+                backgroundColor: isOverride ? "#fff3e0" : "#E4E4E4",
+                border: isOverride ? "1px solid #ff9800" : "1px solid #bbb",
+                borderRadius: 1,
+              }}
+            >
+              <Typography sx={{ fontSize: 13, color: isOverride ? "#e65100" : "#555", fontWeight: 700 }}>
+                🔒 {filters.year}년 {filters.month}월은 마감되어 편집이 제한됩니다.{isOverride ? "  (수정권한 부여됨)" : ""}
+              </Typography>
+            </Box>
+          )}
         </MDBox>
+
         <MDBox
           sx={{
             height: isMobileTablet ? "auto" : "calc(100vh - 170px)",
@@ -2993,13 +3066,34 @@ function AccountPurchaseDeadlineTab() {
            ========================= */}
           <MDBox
             ref={masterWrapRef}
+            onKeyDown={isLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+          onMouseDown={isLocked ? (e) => {
+            const t = e.target;
+            if (
+              t.tagName === "INPUT" ||
+              t.tagName === "TEXTAREA" ||
+              t.tagName === "SELECT" ||
+              t.isContentEditable ||
+              t.closest(".MuiSelect-root") ||
+              t.closest(".MuiInputBase-root")
+            ) {
+              e.preventDefault();
+            }
+          } : undefined}
             sx={{
               ...tableSx,
               flex: 1,
+              position: "relative",
               minHeight: isMobileTablet ? splitPanelMinHeight : 0,
+              ...(isLocked && {
+                "& input, & textarea, & .MuiSelect-select, & .MuiInputBase-root, & .MuiCheckbox-root": {
+                  pointerEvents: "none",
+                  cursor: "default",
+                },
+              }),
             }}
           >
-            <table key={`master-${masterTableKey}`}>
+                    <table key={`master-${masterTableKey}`}>
               <thead>
                 <tr>
                   {masterColumns.map((col) => (
@@ -3231,7 +3325,7 @@ function AccountPurchaseDeadlineTab() {
                                     type="file"
                                     accept="image/*"
                                     multiple
-                                    disabled={isDeletedAccount}
+                                    disabled={isDeletedAccount || isLocked}
                                     id={inputId}
                                     style={{ display: "none" }}
                                     ref={(el) => { if (el) fileInputRefs.current[inputId] = el; }}
@@ -3299,13 +3393,13 @@ function AccountPurchaseDeadlineTab() {
                                         type="button"
                                         size="small"
                                         color="info"
-                                        disabled={isDeletedAccount}
+                                        disabled={isDeletedAccount || isLocked}
                                         sx={{
                                           minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
                                           width: RECEIPT_UPLOAD_BTN_WIDTH,
                                           px: 0.5,
                                           whiteSpace: "nowrap",
-                                          cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                                          cursor: isDeletedAccount || isLocked ? "not-allowed" : "pointer",
                                           "&.Mui-disabled": {
                                             cursor: "not-allowed",
                                             pointerEvents: "auto",
@@ -3326,13 +3420,13 @@ function AccountPurchaseDeadlineTab() {
                                       type="button"
                                       size="small"
                                       color="info"
-                                      disabled={isDeletedAccount}
+                                      disabled={isDeletedAccount || isLocked}
                                       sx={{
                                         minWidth: RECEIPT_UPLOAD_BTN_WIDTH,
                                         width: RECEIPT_UPLOAD_BTN_WIDTH,
                                         px: 0.5,
                                         whiteSpace: "nowrap",
-                                        cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                                        cursor: isDeletedAccount || isLocked ? "not-allowed" : "pointer",
                                         "&.Mui-disabled": {
                                           cursor: "not-allowed",
                                           pointerEvents: "auto",
@@ -3463,12 +3557,12 @@ function AccountPurchaseDeadlineTab() {
               <MDButton
                 variant="gradient"
                 color="success"
-                disabled={isDeletedAccount}
+                disabled={isDeletedAccount || isLocked}
                 onClick={handleDetailAddRow}
                 sx={{
                   minWidth: isMobile ? 110 : 130,
                   fontSize: isMobile ? "11px" : "13px",
-                  cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                  cursor: isDeletedAccount || isLocked ? "not-allowed" : "pointer",
                   "&.Mui-disabled": {
                     cursor: "not-allowed",
                     pointerEvents: "auto",
@@ -3479,7 +3573,32 @@ function AccountPurchaseDeadlineTab() {
               </MDButton>
             </MDBox>
 
-            <MDBox ref={detailWrapRef} sx={detailTableSx}>
+            <MDBox
+              ref={detailWrapRef}
+              onKeyDown={isLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
+          onMouseDown={isLocked ? (e) => {
+            const t = e.target;
+            if (
+              t.tagName === "INPUT" ||
+              t.tagName === "TEXTAREA" ||
+              t.tagName === "SELECT" ||
+              t.isContentEditable ||
+              t.closest(".MuiSelect-root") ||
+              t.closest(".MuiInputBase-root")
+            ) {
+              e.preventDefault();
+            }
+          } : undefined}
+              sx={{
+              ...detailTableSx,
+              position: "relative",
+              ...(isLocked && {
+                "& input, & textarea, & .MuiSelect-select, & .MuiInputBase-root, & .MuiCheckbox-root": {
+                  pointerEvents: "none",
+                  cursor: "default",
+                },
+              }),
+            }}>
               <table key={`detail-${selectedSaleId || "none"}-${detailTableKey}`}>
                 <thead>
                   <tr>

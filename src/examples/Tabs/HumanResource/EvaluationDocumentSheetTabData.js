@@ -56,7 +56,10 @@ export default function useEvaluationDocumentSheetData() {
     if (pendingFiles && pendingFiles.length > 0) {
       const formData = new FormData();
       formData.append("evaluation_idx", String(evaluationIdx));
-      pendingFiles.forEach((pf) => formData.append("files", pf.file));
+      pendingFiles.forEach((pf) => {
+        formData.append("files", pf.file);
+        formData.append("kpi_rows", String(pf.kpiRowIndex));
+      });
       try {
         await api.post("/HeadOffice/EvaluationFilesUpload", formData, {
           headers: { "Content-Type": "multipart/form-data" },

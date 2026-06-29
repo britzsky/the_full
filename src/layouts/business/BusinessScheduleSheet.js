@@ -144,6 +144,20 @@ function BusinessScheduleSheet() {
     }
   };
 
+  const [holidayMap, setHolidayMap] = useState(new Map());
+  useEffect(() => {
+    if (!currentYear || !currentMonth) return;
+    api.get("/Operate/HolidayList", { params: { year: currentYear, month: currentMonth } })
+      .then((res) => {
+        const map = new Map();
+        (Array.isArray(res.data) ? res.data : []).forEach((h) =>
+          map.set(String(h.holiday_date), String(h.holiday_name || "공휴일"))
+        );
+        setHolidayMap(map);
+      })
+      .catch(() => setHolidayMap(new Map()));
+  }, [currentYear, currentMonth]);
+
   useEffect(() => { eventList(); }, []);
   useEffect(() => { if (currentYear && currentMonth) eventList(); }, [currentYear, currentMonth]);
   // 달력 배지에 거래처명을 안정적으로 표시하기 위해 거래처 목록을 미리 로딩
@@ -416,6 +430,28 @@ function BusinessScheduleSheet() {
             const allOther = cells.length === 7 && [...cells].every((td) => td.classList.contains("fc-day-other"));
             row.style.display = allOther ? "none" : "";
           });
+        }}
+        dayHeaderContent={(arg) => {
+          const dow = arg.date.getDay();
+          const color = dow === 0 ? "#c62828" : dow === 6 ? "#1565c0" : undefined;
+          return <span style={color ? { color, fontWeight: 700 } : {}}>{arg.text}</span>;
+        }}
+        dayCellContent={(arg) => {
+          const d = dayjs(arg.date);
+          const key = d.format("YYYY-MM-DD");
+          const isSat = d.day() === 6;
+          const isSun = d.day() === 0;
+          const holidayName = holidayMap.get(key);
+          const isHoliday = !!holidayName;
+          const color = isSun || isHoliday ? "#c62828" : isSat ? "#1565c0" : undefined;
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+              {holidayName && (
+                <span style={{ fontSize: "10px", color: "#c62828", fontWeight: 600 }}>{holidayName}</span>
+              )}
+              <span style={color ? { color, fontWeight: 700 } : {}}>{arg.dayNumberText}</span>
+            </div>
+          );
         }}
         eventContent={(arg) => {
           const isCanceled = arg.event.extendedProps?.isCanceled;

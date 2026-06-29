@@ -208,8 +208,8 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
   const [kpiRows, setKpiRows] = useState(createDefaultRows);
 
   // ── 행별 첨부파일 상태 ────────────────────────────────────────────────────
-  // rowPendingFiles: { [rowId]: { file, name, previewUrl } } — 새로 선택한 파일
-  // rowDeletedOrders: { [rowId]: imageOrder } — 기존 파일 삭제 예약
+  // rowPendingFiles: { [rowId]: Array<{ file, name, previewUrl }> } — 새로 선택한 파일(행당 최대 10개)
+  // rowDeletedOrders: { [rowId]: number[] } — 기존 파일 삭제 예약(image_order 목록)
   const [rowPendingFiles, setRowPendingFiles] = useState({});
   const [rowDeletedOrders, setRowDeletedOrders] = useState({});
   const pendingFilesRef = useRef({});
@@ -226,8 +226,8 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
 
   // 언마운트 시 생성된 blob URL 해제 (메모리 누수 방지)
   useEffect(() => () => {
-    Object.values(pendingFilesRef.current).forEach((pf) => {
-      if (pf?.previewUrl) URL.revokeObjectURL(pf.previewUrl);
+    Object.values(pendingFilesRef.current).forEach((arr) => {
+      (arr || []).forEach((pf) => { if (pf?.previewUrl) URL.revokeObjectURL(pf.previewUrl); });
     });
   }, []);
 
@@ -336,7 +336,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     // 해당 행의 파일도 정리
     setRowPendingFiles((prev) => {
       const next = { ...prev };
-      if (next[id]?.previewUrl) URL.revokeObjectURL(next[id].previewUrl);
+      (next[id] || []).forEach((pf) => { if (pf?.previewUrl) URL.revokeObjectURL(pf.previewUrl); });
       delete next[id];
       return next;
     });
@@ -348,28 +348,34 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
   }, []);
 
   // ── 행별 첨부파일 처리 ────────────────────────────────────────────────────
-  // 파일 선택 (행 하나에 파일 하나)
+  // 파일 선택 (행 하나에 최대 10개까지 추가)
   const handleSelectRowFile = useCallback((rowId, fileList) => {
-    const file = fileList?.[0];
-    if (!file) return;
+    if (!fileList?.length) return;
+    const newFiles = Array.from(fileList).map((file) => ({
+      file, name: file.name, previewUrl: URL.createObjectURL(file),
+    }));
     setRowPendingFiles((prev) => {
-      if (prev[rowId]?.previewUrl) URL.revokeObjectURL(prev[rowId].previewUrl);
-      return { ...prev, [rowId]: { file, name: file.name, previewUrl: URL.createObjectURL(file) } };
-    });
-    // 기존 파일 삭제 예약 해제 (새 파일로 교체)
-    setRowDeletedOrders((prev) => {
-      const next = { ...prev };
-      delete next[rowId];
-      return next;
+      const existing = prev[rowId] || [];
+      const combined = [...existing, ...newFiles];
+      if (combined.length > 10) {
+        combined.slice(10).forEach((pf) => URL.revokeObjectURL(pf.previewUrl));
+        return { ...prev, [rowId]: combined.slice(0, 10) };
+      }
+      return { ...prev, [rowId]: combined };
     });
   }, []);
 
-  // 신규 선택 파일 제거
-  const handleRemoveRowPendingFile = useCallback((rowId) => {
+  // 신규 선택 파일 제거 (인덱스 지정)
+  const handleRemoveRowPendingFile = useCallback((rowId, fileIdx) => {
     setRowPendingFiles((prev) => {
+      const arr = [...(prev[rowId] || [])];
+      if (fileIdx >= 0 && fileIdx < arr.length) {
+        if (arr[fileIdx]?.previewUrl) URL.revokeObjectURL(arr[fileIdx].previewUrl);
+        arr.splice(fileIdx, 1);
+      }
       const next = { ...prev };
-      if (next[rowId]?.previewUrl) URL.revokeObjectURL(next[rowId].previewUrl);
-      delete next[rowId];
+      if (arr.length === 0) delete next[rowId];
+      else next[rowId] = arr;
       return next;
     });
   }, []);
@@ -377,24 +383,28 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
   // 기존 파일 삭제 예약 토글 (재클릭 시 복원)
   const handleDeleteRowSavedFile = useCallback((rowId, imageOrder) => {
     setRowDeletedOrders((prev) => {
-      const next = { ...prev };
-      if (next[rowId] === imageOrder) {
-        delete next[rowId]; // 복원
-      } else {
-        next[rowId] = imageOrder;
-      }
-      return next;
+      const existing = prev[rowId] || [];
+      const hasIt = existing.includes(imageOrder);
+      const next = hasIt
+        ? existing.filter((o) => o !== imageOrder)
+        : [...existing, imageOrder];
+      return { ...prev, [rowId]: next };
     });
   }, []);
 
-  // 수정 모드: image_order 값 = KPI 행 번호(1-based)로 매핑
-  // 예) evaluationFiles에서 image_order=3인 파일 → kpiRows[2]에 연결
+  // 수정 모드: image_order 인코딩으로 KPI 행별 파일 배열 매핑
+  // 새 방식: image_order = kpiRowIndex * 100 + 행내파일인덱스 (>= 100)
+  // 레거시: image_order = kpiRowIndex (< 100)
   const rowSavedFileMap = useMemo(() => {
     const map = {};
     kpiRows.forEach((row, idx) => {
       const kpiOrder = idx + 1;
-      const matched = evaluationFiles.find((f) => Number(f.image_order) === kpiOrder);
-      if (matched) map[row.id] = matched;
+      const matched = evaluationFiles.filter((f) => {
+        const order = Number(f.image_order);
+        const decodedKpiRow = order < 100 ? order : Math.floor(order / 100);
+        return decodedKpiRow === kpiOrder;
+      });
+      if (matched.length > 0) map[row.id] = matched;
     });
     return map;
   }, [kpiRows, evaluationFiles]);
@@ -413,7 +423,12 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     setSelectedMiddleType("");
     setDocType("");
     setKpiRows(createDefaultRows());
-    setRowPendingFiles({});
+    setRowPendingFiles((prev) => {
+      Object.values(prev).forEach((arr) =>
+        (arr || []).forEach((pf) => { if (pf?.previewUrl) URL.revokeObjectURL(pf.previewUrl); })
+      );
+      return {};
+    });
     setRowDeletedOrders({});
   }, []);
 
@@ -450,6 +465,14 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     if (incompleteRowIndex >= 0) {
       Swal.fire({ title: "확인", text: `${incompleteRowIndex + 1}번 KPI 행의 모든 내용을 입력해주세요.`, icon: "warning" }); return;
     }
+    const totalWeight = kpiRows.reduce((sum, r) => sum + (Number(r.weight) || 0), 0);
+    if (totalWeight !== 100) {
+      Swal.fire({
+        title: "확인",
+        text: `가중치 합계가 ${totalWeight}%입니다.\n가중치 합계는 100%여야 합니다.`,
+        icon: "warning",
+      }); return;
+    }
 
     const confirm = await Swal.fire({
       title: "저장하시겠습니까?",
@@ -485,15 +508,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
       Swal.fire({ title: "실패", text: "저장 중 오류가 발생했습니다.", icon: "error" }); return;
     }
 
-    // KPI 행 순서대로 파일을 flatten → image_order가 KPI 행 번호(1-based)와 일치
-    // kpiRowIndex를 함께 전달해 syncEvaluationFiles에서 image_order 지정에 활용 가능
-    const pendingFilesFlat = kpiRows
-      .map((row, idx) => rowPendingFiles[row.id]
-        ? { ...rowPendingFiles[row.id], kpiRowIndex: idx + 1 }
-        : null
-      )
-      .filter(Boolean);
-    const deletedOrdersFlat = new Set(Object.values(rowDeletedOrders).filter((o) => o != null));
+    // KPI 행별 파일을 flatten → 각 파일에 kpiRowIndex 포함
+    const pendingFilesFlat = kpiRows.flatMap((row, idx) =>
+      (rowPendingFiles[row.id] || []).map((pf) => ({ ...pf, kpiRowIndex: idx + 1 }))
+    );
+    const deletedOrdersFlat = new Set(
+      Object.values(rowDeletedOrders).flatMap((orders) => orders || [])
+    );
     if ((pendingFilesFlat.length > 0 || deletedOrdersFlat.size > 0) && result.idx) {
       await syncEvaluationFiles({
         evaluationIdx: result.idx,
@@ -532,10 +553,11 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
         userSelect: "text", "& *": { userSelect: "text" },
       }}
     >
-      {/* 숨겨진 파일 입력 (행별 공유 — activeRowIdRef로 대상 행 추적) */}
+      {/* 숨겨진 파일 입력 (행별 공유 — activeRowIdRef로 대상 행 추적, multiple) */}
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         style={{ display: "none" }}
         onChange={(e) => {
           if (activeRowIdRef.current != null) {
@@ -730,9 +752,10 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                   </thead>
                   <tbody>
                     {kpiRows.map((row, idx) => {
-                      const savedFile = rowSavedFileMap[row.id];
-                      const isFileDeleted = rowDeletedOrders[row.id] != null;
-                      const pendingFile = rowPendingFiles[row.id];
+                      const pendingArr = rowPendingFiles[row.id] || [];
+                      const savedArr = rowSavedFileMap[row.id] || [];
+                      const deletedOrders = rowDeletedOrders[row.id] || [];
+                      const totalCount = pendingArr.length + savedArr.length;
 
                       return (
                         <tr key={row.id}>
@@ -768,13 +791,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                             />
                           </td>
 
-                          {/* 측정방법 */}
-                          <td style={tdCellTop}>
+                          {/* 측정방법 — height:1px 트릭으로 행 높이에 맞춰 textarea 자동 확장 */}
+                          <td style={{ ...tdCellTop, height: "1px" }}>
                             <TextField
                               multiline minRows={4} size="small" fullWidth
                               value={row.measurement}
                               onChange={(e) => onChangeRow(row.id, "measurement", e.target.value)}
-                              sx={textareaSx}
+                              sx={textareaStretchSx}
                               placeholder="측정방법"
                             />
                           </td>
@@ -805,78 +828,76 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                             />
                           </td>
 
-                          {/* 내용 */}
-                          <td style={tdCellTop}>
+                          {/* 내용 — height:1px 트릭으로 행 높이에 맞춰 textarea 자동 확장 */}
+                          <td style={{ ...tdCellTop, height: "1px" }}>
                             <TextField
                               multiline minRows={4} size="small" fullWidth
                               value={row.content}
                               onChange={(e) => onChangeRow(row.id, "content", e.target.value)}
-                              sx={textareaSx}
+                              sx={textareaStretchSx}
                               placeholder="내용"
                             />
                           </td>
 
-                          {/* 첨부파일 (행별 1개) */}
-                          <td style={{ ...tdCellTop, padding: "4px 4px", verticalAlign: "middle", textAlign: "center" }}>
-                            {pendingFile ? (
-                              /* 신규 선택 파일 */
-                              <MDBox sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                                <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                  <MDBox sx={rowThumbSx}>
-                                    {renderFileThumbnail({
-                                      kind: getFileKind(pendingFile.name),
-                                      fileViewUrl: pendingFile.previewUrl,
-                                      fileName: pendingFile.name,
-                                      canPreview: ["image", "pdf", "excel"].includes(getFileKind(pendingFile.name)),
-                                      onPreview: () => openPreview(pendingFile.previewUrl, pendingFile.name),
-                                    })}
+                          {/* 첨부파일 (행별 최대 10개) */}
+                          <td style={{ ...tdCellTop, padding: "4px 4px", textAlign: "center", verticalAlign: totalCount === 0 ? "middle" : "top", overflow: "hidden" }}>
+                            <MDBox sx={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "center", width: "100%", overflow: "hidden" }}>
+                              {/* 신규 선택 파일 목록 */}
+                              {pendingArr.map((pf, pfIdx) => (
+                                <MDBox key={pfIdx} sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", width: "100%", minWidth: 0 }}>
+                                  <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                    <MDBox sx={rowThumbSx}>
+                                      {renderFileThumbnail({
+                                        kind: getFileKind(pf.name),
+                                        fileViewUrl: pf.previewUrl,
+                                        fileName: pf.name,
+                                        canPreview: ["image", "pdf", "excel"].includes(getFileKind(pf.name)),
+                                        onPreview: () => openPreview(pf.previewUrl, pf.name),
+                                      })}
+                                    </MDBox>
+                                    <IconButton size="small" color="error" onClick={() => handleRemoveRowPendingFile(row.id, pfIdx)} sx={rowIconBtnSx}>
+                                      <Trash2 size={14} />
+                                    </IconButton>
                                   </MDBox>
-                                  <IconButton size="small" color="error" onClick={() => handleRemoveRowPendingFile(row.id)} sx={rowIconBtnSx}>
-                                    <Trash2 size={14} />
-                                  </IconButton>
+                                  <span style={rowFileNameSx}>{pf.name}</span>
                                 </MDBox>
-                                <span style={rowFileNameSx}>{pendingFile.name}</span>
-                              </MDBox>
-                            ) : savedFile && !isFileDeleted ? (
-                              /* 저장된 파일 */
-                              <MDBox sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px" }}>
-                                <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                  <MDBox sx={rowThumbSx}>
-                                    {renderFileThumbnail({
-                                      kind: getFileKind(savedFile.image_name),
-                                      fileViewUrl: `${API_BASE_URL}${savedFile.image_path}`,
-                                      fileName: savedFile.image_name,
-                                      canPreview: ["image", "pdf", "excel"].includes(getFileKind(savedFile.image_name)),
-                                      onPreview: () => openPreview(`${API_BASE_URL}${savedFile.image_path}`, savedFile.image_name),
-                                    })}
+                              ))}
+                              {/* 저장된 파일 목록 */}
+                              {savedArr.map((sf) => {
+                                const sfDeleted = deletedOrders.includes(Number(sf.image_order));
+                                return (
+                                  <MDBox key={sf.image_order} sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "2px", width: "100%", minWidth: 0, opacity: sfDeleted ? 0.4 : 1 }}>
+                                    <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                      <MDBox sx={rowThumbSx}>
+                                        {sfDeleted ? null : renderFileThumbnail({
+                                          kind: getFileKind(sf.image_name),
+                                          fileViewUrl: `${API_BASE_URL}${sf.image_path}`,
+                                          fileName: sf.image_name,
+                                          canPreview: ["image", "pdf", "excel"].includes(getFileKind(sf.image_name)),
+                                          onPreview: () => openPreview(`${API_BASE_URL}${sf.image_path}`, sf.image_name),
+                                        })}
+                                      </MDBox>
+                                      <IconButton size="small" color={sfDeleted ? "warning" : "error"} onClick={() => handleDeleteRowSavedFile(row.id, Number(sf.image_order))} sx={rowIconBtnSx}>
+                                        {sfDeleted ? <RotateCcw size={14} /> : <Trash2 size={14} />}
+                                      </IconButton>
+                                    </MDBox>
+                                    <span style={{ ...rowFileNameSx, color: sfDeleted ? "#888" : "#444" }}>
+                                      {sfDeleted ? "삭제예정" : (sf.image_name || "")}
+                                    </span>
                                   </MDBox>
-                                  <IconButton size="small" color="error" onClick={() => handleDeleteRowSavedFile(row.id, Number(savedFile.image_order))} sx={rowIconBtnSx}>
-                                    <Trash2 size={14} />
-                                  </IconButton>
-                                </MDBox>
-                                <span style={rowFileNameSx}>{savedFile.image_name || ""}</span>
-                              </MDBox>
-                            ) : savedFile && isFileDeleted ? (
-                              /* 삭제 예약된 파일 */
-                              <MDBox sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "3px", opacity: 0.4 }}>
-                                <MDBox sx={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                  <MDBox sx={rowThumbSx} />
-                                  <IconButton size="small" color="warning" onClick={() => handleDeleteRowSavedFile(row.id, Number(savedFile.image_order))} sx={rowIconBtnSx}>
-                                    <RotateCcw size={14} />
-                                  </IconButton>
-                                </MDBox>
-                                <span style={{ ...rowFileNameSx, color: "#888" }}>삭제예정</span>
-                              </MDBox>
-                            ) : (
-                              /* 파일 없음 */
-                              <MDButton
-                                variant="outlined" size="small"
-                                onClick={() => { activeRowIdRef.current = row.id; fileInputRef.current?.click(); }}
-                                sx={{ fontSize: 10, py: 0.3, px: 0.8, minWidth: 0, color: "#1f4e79", borderColor: "#cfd8e3" }}
-                              >
-                                첨부
-                              </MDButton>
-                            )}
+                                );
+                              })}
+                              {/* 첨부 추가 버튼 (10개 미만일 때) */}
+                              {totalCount < 10 && (
+                                <MDButton
+                                  variant="outlined" size="small"
+                                  onClick={() => { activeRowIdRef.current = row.id; fileInputRef.current?.click(); }}
+                                  sx={{ fontSize: 10, py: 0.3, px: 0.8, minWidth: 0, color: "#1f4e79", borderColor: "#cfd8e3" }}
+                                >
+                                  {totalCount === 0 ? "첨부" : "+ 추가"}
+                                </MDButton>
+                              )}
+                            </MDBox>
                           </td>
 
                           {/* 행 삭제 버튼 */}
@@ -1119,6 +1140,24 @@ const textareaSx = {
   "& .MuiOutlinedInput-notchedOutline": { borderColor: "transparent" },
   "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#cfd8e3" },
   "& .Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#1f4e79" },
+};
+
+// 테이블 행 높이에 맞춰 자동으로 늘어나는 textarea 스타일
+// td에 height:"1px" 설정 시 height:100%가 실제 행 높이를 채움
+const textareaStretchSx = {
+  ...textareaSx,
+  height: "100%",
+  "& .MuiInputBase-root": {
+    height: "100%",
+    alignItems: "flex-start",
+  },
+  "& .MuiInputBase-inputMultiline": {
+    fontSize: 12,
+    height: "100% !important",
+    overflowY: "auto !important",
+    resize: "none",
+    boxSizing: "border-box",
+  },
 };
 
 const percentInputSx = {

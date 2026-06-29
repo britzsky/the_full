@@ -96,6 +96,9 @@ const TYPE_OPTIONS_BY_DEPT = {
   // ],
 };
 
+// 통계 집계 대상 팀 (개발팀·기획팀은 준비 완료 시 추가)
+const STAT_DEPT_TYPES = ["operate", "catering", "business"];
+
 const TOP_FILTER_CONTROL_HEIGHT = 38;
 // 거래처별 집계 표 컬럼 너비
 const ACCOUNT_COL_WIDTHS = ["30%", "24%", "12%", "12%", "12%", "10%"];
@@ -378,9 +381,11 @@ function HeadofficeScheduleStatTab({ syncYear, syncMonth }) {
     return map;
   }, [accountList]);
 
-  // 취소 일정 제외 통계 대상 목록
+  // 취소 일정 제외 + 통계 대상 팀(운영팀·급식사업부·영업팀)만 필터링
   const statRows = useMemo(
-    () => eventListRows.filter((item) => item.del_yn !== "Y"),
+    () => eventListRows.filter(
+      (item) => item.del_yn !== "Y" && STAT_DEPT_TYPES.includes(item.dept_type)
+    ),
     [eventListRows]
   );
 

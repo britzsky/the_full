@@ -304,6 +304,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   const [accountList, setAccountList] = useState([]);
   const [selectedAccounts, setSelectedAccounts] = useState([]);
 
+
   // team_code로 담당자 목록 조회 (단일 API)
   const fetchMemberList = async (deptType) => {
     if (!deptType) return [];
@@ -332,12 +333,10 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     }
   };
 
-  // 팀구분 변경 시 담당자 목록 갱신, 구분/담당자 초기화
+  // 팀구분 변경 시 담당자만 loginUserId로 초기화, 이슈구분/거래처는 유지
   const handleDeptTypeChange = async (deptType) => {
     setSelectedDeptType(deptType);
     setSelectedMemberIds(loginUserId ? [loginUserId] : []);
-    setSelectedType("1");
-    setSelectedTypes([]);
     setMemberList([]);
     if (!deptType) return;
     const rows = await fetchMemberList(deptType);
@@ -357,6 +356,20 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
       return [];
     }
   };
+
+  const [holidayMap, setHolidayMap] = useState(new Map());
+  useEffect(() => {
+    if (!currentYear || !currentMonth) return;
+    api.get("/Operate/HolidayList", { params: { year: currentYear, month: currentMonth } })
+      .then((res) => {
+        const map = new Map();
+        (Array.isArray(res.data) ? res.data : []).forEach((h) =>
+          map.set(String(h.holiday_date), String(h.holiday_name || "공휴일"))
+        );
+        setHolidayMap(map);
+      })
+      .catch(() => setHolidayMap(new Map()));
+  }, [currentYear, currentMonth]);
 
   // 연/월 변경 시 일정 재조회
   useEffect(() => { eventList(); }, []);
@@ -482,6 +495,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
       (accountList || []).find((a) => String(a?.account_id) === String(savedAccountId))?.account_name || ""
     ).trim();
     const resolvedType = typeValue ?? selectedType;
+
     return {
       idx: selectedEvent?.extendedProps?.idx || null,
       content: buildScheduleContent(resolvedType, savedAccountName, cleanInputValue, selectedDeptType),
@@ -510,7 +524,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
         const accId = selectedAccounts[0]?.account_id ?? selectedEvent?.extendedProps?.account_id ?? null;
         const typeVal = selectedTypes[0] ?? selectedType;
         const response = await api.post(SAVE_URL, { ...buildPayload("N", accId, typeVal), team_code: teamCode }, { headers: { "Content-Type": "application/json" } });
-        if (response.data.code === 200) { Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
+        if (response.data.code === 200) { await Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
         else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       } else {
         // 신규: 거래처 × 이슈 조합 수만큼 insert
@@ -525,7 +539,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
           )
         );
         const allSuccess = responses.every((r) => r.data.code === 200);
-        if (allSuccess) { Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
+        if (allSuccess) { await Swal.fire("저장 완료", "일정이 저장되었습니다.", "success"); eventList(); }
         else Swal.fire("실패", "서버에서 오류가 발생했습니다.", "error");
       }
     } catch (error) {
@@ -656,6 +670,28 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
             const allOther = cells.length === 7 && [...cells].every((td) => td.classList.contains("fc-day-other"));
             row.style.display = allOther ? "none" : "";
           });
+        }}
+        dayHeaderContent={(arg) => {
+          const dow = arg.date.getDay();
+          const color = dow === 0 ? "#c62828" : dow === 6 ? "#1565c0" : undefined;
+          return <span style={color ? { color, fontWeight: 700 } : {}}>{arg.text}</span>;
+        }}
+        dayCellContent={(arg) => {
+          const d = dayjs(arg.date);
+          const key = d.format("YYYY-MM-DD");
+          const isSat = d.day() === 6;
+          const isSun = d.day() === 0;
+          const holidayName = holidayMap.get(key);
+          const isHoliday = !!holidayName;
+          const color = isSun || isHoliday ? "#c62828" : isSat ? "#1565c0" : undefined;
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+              {holidayName && (
+                <span style={{ fontSize: "10px", color: "#c62828", fontWeight: 600 }}>{holidayName}</span>
+              )}
+              <span style={color ? { color, fontWeight: 700 } : {}}>{arg.dayNumberText}</span>
+            </div>
+          );
         }}
         eventContent={(arg) => {
           const isCanceled = arg.event.extendedProps?.isCanceled;

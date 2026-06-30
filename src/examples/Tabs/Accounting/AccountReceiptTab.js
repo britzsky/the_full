@@ -334,77 +334,48 @@ function AccountReceiptTab() {
     return blob2;
   };
 
-  const triggerBrowserDownload = (url, fileName) => {
-    const a = document.createElement("a");
-    a.href = url;
-    a.rel = "noopener noreferrer";
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  const canChooseDownloadPath = () =>
+    Boolean(window.isSecureContext && window.showSaveFilePicker);
+
+  const showDownloadPathRequiredAlert = () => {
+    Swal.fire(
+      "저장 경로 지정 불가",
+      "이미지 다운로드는 저장 경로 지정이 가능한 보안 환경(HTTPS 또는 localhost)에서만 가능합니다. 운영서버 주소가 HTTPS인지 확인해주세요.",
+      "warning"
+    );
   };
 
-  // 브라우저 기본 다운로드 실행 (fallback)
-  const downloadReceiptFile = async (item) => {
-    const fileName = getReceiptDownloadFileName(item);
-    try {
-      const blob = await fetchReceiptBlob(item);
-      const objectUrl = URL.createObjectURL(blob);
-      triggerBrowserDownload(objectUrl, fileName);
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    } catch (error) {
-      console.error("영수증 파일 다운로드 실패:", error);
-      triggerBrowserDownload(item.previewUrl, fileName);
-    }
-  };
-
-  // File System Access API 활용 단일 파일 저장 (미지원 시 기본 다운로드 폴백)
+  // File System Access API 활용 단일 파일 저장
   const saveReceiptFile = async (item) => {
     if (!item?.previewUrl) return;
     const fileName = getReceiptDownloadFileName(item);
 
-    if (window.showSaveFilePicker) {
-      let fileHandle;
-      try {
-        fileHandle = await window.showSaveFilePicker({
-          suggestedName: fileName,
-        });
-      } catch (error) {
-        if (error?.name === "AbortError") return;
-        console.error("영수증 파일 저장 위치 선택 실패:", error);
-        alert("저장 위치를 선택하지 못했습니다. 다시 시도해주세요.");
-        return;
-      }
-
-      try {
-        const blob = await fetchReceiptBlob(item);
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-      } catch (error) {
-        console.error("영수증 파일 저장 실패:", error);
-        alert("영수증 파일 저장에 실패했습니다.");
-      }
+    if (!canChooseDownloadPath()) {
+      showDownloadPathRequiredAlert();
       return;
     }
 
-    if (window.showDirectoryPicker) {
-      try {
-        const dirHandle = await window.showDirectoryPicker();
-        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
-        const blob = await fetchReceiptBlob(item);
-        const writable = await fileHandle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-      } catch (error) {
-        if (error?.name === "AbortError") return;
-        console.error("영수증 파일 저장 실패:", error);
-        alert("영수증 파일 저장에 실패했습니다.");
-      }
+    let fileHandle;
+    try {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error("영수증 파일 저장 위치 선택 실패:", error);
+      Swal.fire("오류", "저장 위치를 선택하지 못했습니다. 다시 시도해주세요.", "error");
       return;
     }
 
-    await downloadReceiptFile(item);
+    try {
+      const blob = await fetchReceiptBlob(item);
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (error) {
+      console.error("영수증 파일 저장 실패:", error);
+      Swal.fire("오류", "영수증 파일 저장에 실패했습니다.", "error");
+    }
   };
 
   // 단일 영수증 다운로드 핸들러
@@ -413,6 +384,10 @@ function AccountReceiptTab() {
   // 이미지 전체를 zip으로 묶어 저장 경로 지정 후 다운로드
   const handleDownloadAll = async () => {
     if (downloadableImageItems.length === 0) return;
+    if (!canChooseDownloadPath()) {
+      showDownloadPathRequiredAlert();
+      return;
+    }
 
     const total = downloadableImageItems.length;
     let done = 0;
@@ -468,28 +443,22 @@ function AccountReceiptTab() {
     const zipBlob = await zip.generateAsync({ type: "blob" });
     const defaultName = `영수증_${filters.year}${String(filters.month).padStart(2, "0")}.zip`;
 
-    if (window.showSaveFilePicker) {
-      try {
-        Swal.close();
-        const fileHandle = await window.showSaveFilePicker({
-          suggestedName: defaultName,
-          types: [{ description: "ZIP 파일", accept: { "application/zip": [".zip"] } }],
-        });
-        const writable = await fileHandle.createWritable();
-        await writable.write(zipBlob);
-        await writable.close();
-        Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
-        return;
-      } catch (error) {
-        if (error?.name === "AbortError") { Swal.close(); return; }
-        console.error("zip 저장 실패:", error);
-      }
+    try {
+      Swal.close();
+      const fileHandle = await window.showSaveFilePicker({
+        suggestedName: defaultName,
+        types: [{ description: "ZIP 파일", accept: { "application/zip": [".zip"] } }],
+      });
+      const writable = await fileHandle.createWritable();
+      await writable.write(zipBlob);
+      await writable.close();
+      Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") { Swal.close(); return; }
+      console.error("zip 저장 실패:", error);
+      Swal.fire("오류", "영수증 이미지 저장에 실패했습니다.", "error");
     }
-
-    const objectUrl = URL.createObjectURL(zipBlob);
-    triggerBrowserDownload(objectUrl, defaultName);
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
   };
 
   return (

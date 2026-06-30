@@ -361,36 +361,50 @@ function AccountReceiptTab() {
   // File System Access API 활용 단일 파일 저장 (미지원 시 기본 다운로드 폴백)
   const saveReceiptFile = async (item) => {
     if (!item?.previewUrl) return;
-    try {
-      const blob = await fetchReceiptBlob(item);
-      const fileName = getReceiptDownloadFileName(item);
+    const fileName = getReceiptDownloadFileName(item);
 
-      if (window.showDirectoryPicker) {
-        const dirHandle = await window.showDirectoryPicker();
-        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+    if (window.showSaveFilePicker) {
+      let fileHandle;
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        console.error("영수증 파일 저장 위치 선택 실패:", error);
+        alert("저장 위치를 선택하지 못했습니다. 다시 시도해주세요.");
+        return;
+      }
+
+      try {
+        const blob = await fetchReceiptBlob(item);
         const writable = await fileHandle.createWritable();
         await writable.write(blob);
         await writable.close();
-        return;
+      } catch (error) {
+        console.error("영수증 파일 저장 실패:", error);
+        alert("영수증 파일 저장에 실패했습니다.");
       }
-
-      if (!window.showSaveFilePicker) {
-        await downloadReceiptFile(item);
-        return;
-      }
-
-      const fileHandle = await window.showSaveFilePicker({
-        suggestedName: fileName,
-      });
-      const writable = await fileHandle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-      console.error("영수증 파일 저장 실패:", error);
-      alert("영수증 파일 저장에 실패했습니다. 브라우저 기본 다운로드로 다시 시도합니다.");
-      await downloadReceiptFile(item);
+      return;
     }
+
+    if (window.showDirectoryPicker) {
+      try {
+        const dirHandle = await window.showDirectoryPicker();
+        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+        const blob = await fetchReceiptBlob(item);
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        console.error("영수증 파일 저장 실패:", error);
+        alert("영수증 파일 저장에 실패했습니다.");
+      }
+      return;
+    }
+
+    await downloadReceiptFile(item);
   };
 
   // 단일 영수증 다운로드 핸들러

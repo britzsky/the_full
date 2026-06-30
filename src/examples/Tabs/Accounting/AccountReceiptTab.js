@@ -106,6 +106,7 @@ function AccountReceiptTab() {
   const [filters, setFilters] = useState({
     year: String(now.getFullYear()),
     month: String(now.getMonth() + 1),
+    accountId: "0",
     type: "0",
     payType: "0",
   });
@@ -117,6 +118,8 @@ function AccountReceiptTab() {
 
   // 타입 필터 옵션 전용 목록 (전체 타입 조회 결과)
   const [typeOptionRows, setTypeOptionRows] = useState([]);
+  const [accountInput, setAccountInput] = useState("");
+  const [accountOptionRows, setAccountOptionRows] = useState([]);
 
   const yearOptions = useMemo(() => getYearOptions(), []);
 
@@ -138,13 +141,24 @@ function AccountReceiptTab() {
   // 필터 변경 시 영수증 목록 재조회
   useEffect(() => {
     fetchReceiptRows(filters);
-  }, [fetchReceiptRows, filters.month, filters.payType, filters.type, filters.year]);
+  }, [fetchReceiptRows, filters.accountId, filters.month, filters.payType, filters.type, filters.year]);
 
   // 타입 드롭다운 옵션용 전체 목록 별도 조회 (타입 변경해도 드롭다운 옵션은 유지)
   useEffect(() => {
     let cancelled = false;
     fetchReceiptRows({ ...filters, type: "0" }, { updateRows: false, silent: true }).then((nextRows) => {
       if (!cancelled) setTypeOptionRows(nextRows);
+    });
+    return () => { cancelled = true; };
+  }, [fetchReceiptRows, filters.accountId, filters.month, filters.payType, filters.year]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchReceiptRows(
+      { ...filters, accountId: "0", type: "0" },
+      { updateRows: false, silent: true }
+    ).then((nextRows) => {
+      if (!cancelled) setAccountOptionRows(nextRows);
     });
     return () => { cancelled = true; };
   }, [fetchReceiptRows, filters.month, filters.payType, filters.year]);
@@ -176,6 +190,30 @@ function AccountReceiptTab() {
     () => [{ value: "0", label: "전체 타입" }, ...typeOptions],
     [typeOptions]
   );
+
+  const accountOptions = useMemo(() => {
+    const map = new Map();
+    accountOptionRows.forEach((row) => {
+      const value = String(row.account_id ?? "").trim();
+      const label = String(row.account_name ?? "").trim();
+      if (!value || !label || map.has(value)) return;
+      map.set(value, { value, label });
+    });
+    return [{ value: "0", label: "전체 거래처" }, ...Array.from(map.values())];
+  }, [accountOptionRows]);
+
+  const selectedAccountOption = useMemo(
+    () =>
+      accountOptions.find((opt) => opt.value === String(filters.accountId ?? "0")) || {
+        value: "0",
+        label: "전체 거래처",
+      },
+    [accountOptions, filters.accountId]
+  );
+
+  useEffect(() => {
+    setAccountInput(selectedAccountOption?.label || "");
+  }, [selectedAccountOption]);
 
   // 현재 선택된 타입 옵션 객체
   const selectedTypeOption = useMemo(
@@ -253,6 +291,12 @@ function AccountReceiptTab() {
     setFilters((prev) => ({ ...prev, type: nextValue || "0" }));
   };
 
+  const handleAccountChange = (_, option) => {
+    const nextValue = typeof option === "string" ? option : option?.value ?? "0";
+    setFilters((prev) => ({ ...prev, accountId: nextValue || "0" }));
+    setAccountInput(option?.label || "");
+  };
+
   // 미리보기 오버레이 열기 (클릭한 아이템 기준 인덱스 계산)
   const handleOpenViewer = (targetItem) => {
     const files = receiptItems.map((item) => ({
@@ -317,14 +361,26 @@ function AccountReceiptTab() {
   // File System Access API 활용 단일 파일 저장 (미지원 시 기본 다운로드 폴백)
   const saveReceiptFile = async (item) => {
     if (!item?.previewUrl) return;
-    if (!window.showSaveFilePicker) {
-      await downloadReceiptFile(item);
-      return;
-    }
     try {
       const blob = await fetchReceiptBlob(item);
+      const fileName = getReceiptDownloadFileName(item);
+
+      if (window.showDirectoryPicker) {
+        const dirHandle = await window.showDirectoryPicker();
+        const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      }
+
+      if (!window.showSaveFilePicker) {
+        await downloadReceiptFile(item);
+        return;
+      }
+
       const fileHandle = await window.showSaveFilePicker({
-        suggestedName: getReceiptDownloadFileName(item),
+        suggestedName: fileName,
       });
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
@@ -479,6 +535,28 @@ function AccountReceiptTab() {
                   ))}
                 </Select>
               </FormControl>
+            </Grid>
+
+            {/* 거래처 Autocomplete 선택 */}
+            <Grid item xs={12} md={2.4}>
+              <Autocomplete
+                size="small"
+                options={accountOptions}
+                value={selectedAccountOption}
+                inputValue={accountInput}
+                onInputChange={(_, value) => setAccountInput(value)}
+                onChange={handleAccountChange}
+                getOptionLabel={(option) =>
+                  typeof option === "string" ? option : option?.label || option?.value || ""
+                }
+                isOptionEqualToValue={(option, value) => option.value === value.value}
+                disableClearable
+                renderInput={(params) => <TextField {...params} label="거래처" />}
+                sx={{
+                  "& .MuiInputBase-root": { height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT, alignItems: "center" },
+                  "& .MuiInputBase-input": { height: "auto", py: 0 },
+                }}
+              />
             </Grid>
 
             {/* 타입 Autocomplete 선택 */}

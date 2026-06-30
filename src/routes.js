@@ -81,6 +81,7 @@ import UserManagement from "layouts/humanresource/usermanagement";
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
 import DinersManager from "layouts/dinersnumbersheet";
+import MenuManagement from "layouts/menumanagement";
 
 // 개발팀 전용
 import TallyDevelopManager from "layouts/tallysheet_develop";
@@ -128,7 +129,7 @@ const routes = [
           "sy7", // 이수연 매니저(운영)
           "mh3", // 이미희 매니저
           "dh2", // 민다희 매니저
-          "ys",  // 박이슬 매니저
+          "ys", // 박이슬 매니저
           "db1", // 송다빈 매니저
           "ww1", // 이원우 매니저
           "iy1", // 최인영 매니저
@@ -576,6 +577,13 @@ const routes = [
         route: "/diners/dinersnumber",
         component: <DinersManager />,
       },
+      // {
+      //   type: "collapse",
+      //   name: "📅 식단표 관리",
+      //   key: "menu_management",
+      //   route: "/field/menu-management",
+      //   component: <MenuManagement />,
+      // },
       {
         type: "collapse",
         name: "📋 집계표-개발팀",

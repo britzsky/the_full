@@ -81,7 +81,7 @@ export default function useAccountReceiptTabData() {
     try {
       const res = await api.get("/Account/AccountPurchaseTallyList", {
         params: {
-          account_id: "",             // 전체 거래처 조회
+          account_id: toParam(filters?.accountId),
           type: toParam(filters?.type),
           year: toParam(filters?.year),
           month: toParam(filters?.month),

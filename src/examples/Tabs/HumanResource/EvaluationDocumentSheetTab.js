@@ -155,11 +155,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     }).map((u) => ({ department: u.department, dept_name: u.dept_name }));
   }, [allUsers]);
 
-  // 작성자 목록: 선택된 부서로 allUsers 필터링
+  // 작성자 목록: 선택된 부서에서 로그인 사용자만 표시
   const writerList = useMemo(() => {
     if (!department) return [];
-    return (allUsers || []).filter((u) => String(u.department) === String(department));
-  }, [allUsers, department]);
+    return (allUsers || []).filter(
+      (u) => String(u.department) === String(department) && String(u.user_id) === loginUserId
+    );
+  }, [allUsers, department, loginUserId]);
 
   // 인사팀 사용자: department=3으로 필터링
   const hrTeamUsers = useMemo(() => {
@@ -674,6 +676,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                           value={department}
                           onChange={(e) => setDepartment(e.target.value)}
                           SelectProps={{ native: true }}
+                          disabled={!!loginDepartment}
                           sx={inputStyle}
                         >
                           <option value="" disabled>선택</option>
@@ -690,7 +693,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                           value={writerId}
                           onChange={(e) => setWriterId(e.target.value)}
                           SelectProps={{ native: true }}
-                          disabled={!department}
+                          disabled
                           sx={inputStyle}
                         >
                           <option value="" disabled>선택</option>

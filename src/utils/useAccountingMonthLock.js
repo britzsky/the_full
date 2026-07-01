@@ -20,7 +20,6 @@ const OVERRIDE_USERS = ["hh2", "mh3", "ww1", "britzsky", "ceo"];
  * - isLocked = isAutoLocked && !isOverride
  * - OVERRIDE_USERS에 속한 user_id만 toggleOverride 가능 (canOverride)
  *
- * 필요한 API (백엔드 구현 필요):
  *   GET  /Accounting/MonthLockOverride?account_id=&year=&month=&type=
  *        → { is_override: 0 | 1 }
  *   POST /Accounting/MonthLockOverride
@@ -44,8 +43,10 @@ export default function useAccountingMonthLock({ accountId, year, month, type })
   // 자동 마감: 현재 날짜가 선택 연월의 말일을 지났는가
   const isAutoLocked = useMemo(() => {
     if (!year || !month) return false;
-    const endOfMonth = dayjs(`${year}-${String(month).padStart(2, "0")}-01`).endOf("month");
-    return dayjs().isAfter(endOfMonth);
+    const lockDate = dayjs(`${year}-${String(month).padStart(2, "0")}-01`)
+      .add(1, "month")
+      .date(3);
+    return dayjs().isAfter(lockDate, "day");
   }, [year, month]);
 
   const [isOverride, setIsOverride] = useState(false);

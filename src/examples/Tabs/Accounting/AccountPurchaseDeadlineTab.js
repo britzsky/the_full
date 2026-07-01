@@ -1598,6 +1598,7 @@ function AccountPurchaseDeadlineTab() {
   }, []);
 
   const handleMasterRowContextMenu = useCallback((e, rowIndex) => {
+    if (isLocked) return;
     e.preventDefault();
     setMasterCtxMenu({
       open: true,
@@ -1605,7 +1606,7 @@ function AccountPurchaseDeadlineTab() {
       mouseY: e.clientY,
       rowIndex,
     });
-  }, []);
+  }, [isLocked]);
 
   const handleDeleteMasterRowData = useCallback(async () => {
     if (isLocked) return;
@@ -1651,6 +1652,7 @@ function AccountPurchaseDeadlineTab() {
   // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback(
     (e, row, rowIndex) => {
+      if (isLocked) return;
       const isNew = canDeleteNewDetailRow(row);
       const isSaved = !row?.isNew && String(row?.item_id ?? "").trim() !== "";
       if (!isNew && !isSaved) return;
@@ -1662,7 +1664,7 @@ function AccountPurchaseDeadlineTab() {
         rowIndex,
       });
     },
-    [canDeleteNewDetailRow]
+    [isLocked, canDeleteNewDetailRow]
   );
 
   // 신규 상세행 선택 삭제 처리
@@ -3466,7 +3468,7 @@ function AccountPurchaseDeadlineTab() {
                           return (
                             <td
                               key={key}
-                              contentEditable={!isDeletedAccount}
+                              contentEditable={!isDeletedAccount && !isLocked}
                               suppressContentEditableWarning
                               onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
                               onKeyDown={(e) => e.stopPropagation()}
@@ -3660,7 +3662,7 @@ function AccountPurchaseDeadlineTab() {
                             )}
                           </td>
                           <td
-                            contentEditable={!isDeletedAccount}
+                            contentEditable={!isDeletedAccount && !isLocked}
                             suppressContentEditableWarning
                             onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
                             onKeyDown={(e) => e.stopPropagation()}

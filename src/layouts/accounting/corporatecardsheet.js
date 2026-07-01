@@ -1186,6 +1186,7 @@ function CorporateCardSheet() {
   }, []);
 
   const handleMasterRowContextMenu = useCallback((e, rowIndex) => {
+    if (isLocked) return;
     e.preventDefault();
     setMasterCtxMenu({
       open: true,
@@ -1193,7 +1194,7 @@ function CorporateCardSheet() {
       mouseY: e.clientY,
       rowIndex,
     });
-  }, []);
+  }, [isLocked]);
 
   const handleDeleteMasterRowData = useCallback(async () => {
     if (isLocked) return;
@@ -1246,6 +1247,7 @@ function CorporateCardSheet() {
 
   // 상세행 우클릭 메뉴 열기 (신규행 + 저장된 행 모두)
   const handleDetailRowContextMenu = useCallback((e, row, rowIndex) => {
+    if (isLocked) return;
     const isNew = canDeleteNewDetailRow(row);
     const isSaved = !row?.isNew && row?.idx != null;
     if (!isNew && !isSaved) return;
@@ -1256,7 +1258,7 @@ function CorporateCardSheet() {
       mouseY: e.clientY,
       rowIndex,
     });
-  }, []);
+  }, [isLocked]);
 
   // 신규 상세행 선택 삭제 처리
   const handleDeleteNewDetailRow = useCallback((rowIndex) => {

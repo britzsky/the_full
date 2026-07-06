@@ -41,6 +41,9 @@ export default function useAccountingMonthLock({ accountId, year, month, type })
   const canOverride = useMemo(() => OVERRIDE_USERS.includes(userId), [userId]);
 
   // 자동 마감: 현재 날짜가 선택 연월의 말일을 지났는가
+  // ⚠️ [잠금 임시 해제] 아래 블록 주석을 해제하면 다음 달 4일부터 자동 잠금 재활성화됨
+  const isAutoLocked = false;
+  /* === 잠금 로직 (복원 시 아래 주석 해제 + 위 isAutoLocked = false 줄 삭제) ===
   const isAutoLocked = useMemo(() => {
     if (!year || !month) return false;
     const lockDate = dayjs(`${year}-${String(month).padStart(2, "0")}-01`)
@@ -48,6 +51,7 @@ export default function useAccountingMonthLock({ accountId, year, month, type })
       .date(3);
     return dayjs().isAfter(lockDate, "day");
   }, [year, month]);
+  === 잠금 로직 끝 === */
 
   const [isOverride, setIsOverride] = useState(false);
   const [overrideLoading, setOverrideLoading] = useState(false);

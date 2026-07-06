@@ -13,6 +13,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import { sortAccountRows } from "utils/accountSort";
 
+
 export default function BudgetTableTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
@@ -110,60 +111,6 @@ export default function BudgetTableTab() {
   ];
   const stickyAccountColumnKey = "account_name";
 
-  const getNextMonth = (targetYear, targetMonth) => {
-    if (targetMonth === 12) {
-      return { year: targetYear + 1, month: 1 };
-    }
-
-    return { year: targetYear, month: targetMonth + 1 };
-  };
-
-  const getBudgetRowKey = (row) =>
-    [
-      row.account_id ?? "",
-      row.account_type_name ?? "",
-      row.meal_type_name ?? "",
-    ].join("__");
-
-  const hasNoteText = (note) => String(note ?? "").trim() !== "";
-
-  // 비고가 수정된 행은 다음 달 비고 기본값으로 저장할 행을 함께 만든다.
-  const buildNextMonthNoteRows = async (noteChangedRows) => {
-    if (noteChangedRows.length === 0) return [];
-
-    const nextMonth = getNextMonth(year, month);
-    const res = await api.get("/Operate/BudgetManageMentList", {
-      params: {
-        year: nextMonth.year,
-        month: nextMonth.month,
-      },
-    });
-    const nextRows = Array.isArray(res.data) ? res.data : [];
-    const nextRowMap = new Map(
-      nextRows.map((row) => [getBudgetRowKey(row), row])
-    );
-
-    return noteChangedRows
-      .map((row) => {
-        const nextRow = nextRowMap.get(getBudgetRowKey(row));
-
-        // 다음 달에 이미 비고가 있으면 현재 달 저장으로 덮어쓰지 않는다.
-        if (nextRow && hasNoteText(nextRow.note)) return null;
-
-        return {
-          account_id: row.account_id,
-          year: nextMonth.year,
-          month: nextRow?.month ?? nextMonth.month,
-          note: row.note,
-          status_yn: "N",
-          diff_amount:
-            (Number(nextRow?.budget_total) || 0) -
-            (Number(nextRow?.prev_budget_grant) || 0),
-        };
-      })
-      .filter((row) => row !== null);
-  };
-
   // ✅ 저장 (예산부여, 비고만 변경 체크)
   const handleSave = async () => {
     const modifiedRows = editRows
@@ -201,7 +148,7 @@ export default function BudgetTableTab() {
           return {
             account_id: row.account_id,
             year,
-            month: row.month, // DB에서 가져온 month 사용
+            month: row.month ?? month,
             ...changedFields,
             // ✅ "status_yn"로 분기할 수 있도록 전달
             //    - budget_grant 변경 있음: "Y"
@@ -223,18 +170,9 @@ export default function BudgetTableTab() {
     }
 
     try {
-      const noteChangedRows = editRows.filter(
-        (row) =>
-          row._original &&
-          (row._original.note ?? "") !== (row.note ?? "") &&
-          hasNoteText(row.note)
-      );
-      const nextMonthNoteRows = await buildNextMonthNoteRows(noteChangedRows);
-      const saveRows = [...modifiedRows, ...nextMonthNoteRows];
-      // 👉 백엔드 경로는 실제 구현에 맞게 수정
-      await api.post("/Operate/BudgetTableSave", { rows: saveRows });
+      await api.post("/Operate/BudgetTableSave", { rows: modifiedRows });
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
-      fetchBudgetTableList(); // ✅ 다시 조회
+      fetchBudgetTableList();
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
     }

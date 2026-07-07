@@ -374,7 +374,40 @@ const formatPhone = (value) => {
 };
 
 // ======================== 선택 테이블 컴포넌트 ========================
-function YourSelectableTable({ data, selected, setSelected }) {
+function YourSelectableTable({ data, selected, setSelected, enableSorting = false }) {
+  // 거래처 연결 후보 목록의 정렬 기준과 방향을 관리한다.
+  const [sortConfig, setSortConfig] = useState({ key: "type", direction: "asc" });
+
+  const sortedData = useMemo(() => {
+    const source = Array.isArray(data) ? data : [];
+    if (!enableSorting) return source;
+
+    return source
+      .map((row, index) => ({ row, index }))
+      .sort((a, b) => {
+        const left = String(a.row?.[sortConfig.key] ?? "");
+        const right = String(b.row?.[sortConfig.key] ?? "");
+        const compared = left.localeCompare(right, "ko", { numeric: true, sensitivity: "base" });
+        if (compared === 0) return a.index - b.index;
+        return sortConfig.direction === "asc" ? compared : -compared;
+      })
+      .map(({ row }) => row);
+  }, [data, enableSorting, sortConfig]);
+
+  const getSortDirectionMark = (key) => {
+    if (!enableSorting || sortConfig.key !== key) return "";
+    return sortConfig.direction === "asc" ? " ▲" : " ▼";
+  };
+
+  const toggleSort = (key) => {
+    setSortConfig((prev) => {
+      if (prev.key === key) {
+        return { ...prev, direction: prev.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key, direction: "asc" };
+    });
+  };
+
   const toggleSelect = (item) => {
     const index = selected.findIndex((i) => JSON.stringify(i) === JSON.stringify(item));
     if (index !== -1) setSelected(selected.filter((_, idx) => idx !== index));
@@ -403,12 +436,22 @@ function YourSelectableTable({ data, selected, setSelected }) {
         <thead>
           <tr>
             <th>선택</th>
-            <th>이름</th>
-            <th>타입</th>
+            <th
+              style={enableSorting ? { cursor: "pointer", userSelect: "none" } : undefined}
+              onClick={() => enableSorting && toggleSort("name")}
+            >
+              {`이름${getSortDirectionMark("name")}`}
+            </th>
+            <th
+              style={enableSorting ? { cursor: "pointer", userSelect: "none" } : undefined}
+              onClick={() => enableSorting && toggleSort("type")}
+            >
+              {`타입${getSortDirectionMark("type")}`}
+            </th>
           </tr>
         </thead>
         <tbody>
-          {(data || []).map((row, idx) => (
+          {sortedData.map((row, idx) => (
             <tr
               key={idx}
               style={{
@@ -436,6 +479,7 @@ YourSelectableTable.propTypes = {
   data: PropTypes.array.isRequired,
   selected: PropTypes.array.isRequired,
   setSelected: PropTypes.func.isRequired,
+  enableSorting: PropTypes.bool,
 };
 
 // ======================== 메인 집계표 컴포넌트 ========================
@@ -4457,8 +4501,8 @@ function TallySheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: isMobileOrTablet ? "92vw" : 800,
-            maxWidth: 800,
+            width: isMobileOrTablet ? "92vw" : 1000,
+            maxWidth: 1000,
             maxHeight: isMobileOrTablet ? "88vh" : "none",
             overflowY: isMobileOrTablet ? "auto" : "visible",
             bgcolor: "background.paper",
@@ -4482,17 +4526,18 @@ function TallySheet() {
           </MDBox>
 
           <Grid container spacing={2}>
-            <Grid item xs={12} lg={5}>
+            <Grid item xs={12} lg={6}>
               <YourSelectableTable
                 data={leftItems}
                 selected={selectedLeft}
                 setSelected={setSelectedLeft}
+                enableSorting
               />
             </Grid>
             <Grid
               item
               xs={12}
-              lg={2}
+              lg={1}
               display="flex"
               flexDirection="column"
               justifyContent="center"

@@ -9,6 +9,8 @@ import {
   TextField,
   MenuItem,
   Select,
+  Checkbox,
+  FormControlLabel,
   Typography,
   useTheme,
   useMediaQuery,
@@ -31,6 +33,8 @@ export default function DeadlineBalanceTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
+  // 삭제 처리된 거래처를 목록에 함께 표시할지 관리하는 상태
+  const [includeDeletedAccount, setIncludeDeletedAccount] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editableRows, setEditableRows] = useState([]);
   // ✅ 거래처 선택 전에도 전체 거래처 색상 계산을 위해 사용하는 입금 이력
@@ -40,7 +44,7 @@ export default function DeadlineBalanceTab() {
   // ✅ 초기 진입 시 미납 품목 보조 집계가 끝난 뒤 화면을 표시하기 위한 상태
   const [isUnpaidSummaryInitialized, setIsUnpaidSummaryInitialized] = useState(false);
   // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
-  const [accountSortKey, setAccountSortKey] = useState("account_name");
+  const [accountSortKey] = useState("account_name");
 
   // ✅ 반응형용 훅
   const theme = useTheme();
@@ -79,7 +83,7 @@ export default function DeadlineBalanceTab() {
     fetchDeadlineBalanceList,
     fetchDepositHistoryList,
     fetchAccountDeadlineDifferencePriceSearch, // ✅ 추가
-  } = useDeadlineBalanceData(year, month);
+  } = useDeadlineBalanceData(year, month, includeDeletedAccount ? "ALL" : "N");
 
   // =========================================================
   // ✅ 권한(특정 user_id만 편집/저장/입금 가능)
@@ -150,7 +154,7 @@ export default function DeadlineBalanceTab() {
   // 🔹 초기 조회
   useEffect(() => {
     fetchDeadlineBalanceList();
-  }, [year, month]);
+  }, [year, month, includeDeletedAccount]);
 
   // ✅ 미납 품목 전용 원본 목록을 2번 API 호출로 조회 (기존 수십 번 → 2번)
   const fetchAllUnpaidSummarySourceList = async () => {
@@ -1835,7 +1839,7 @@ export default function DeadlineBalanceTab() {
             size="small"
             value={year}
             onChange={(e) => setYear(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }} // ← 거래처와 동일
+            sx={{ minWidth: isMobile ? 90 : 100 }}
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -1850,7 +1854,7 @@ export default function DeadlineBalanceTab() {
             size="small"
             value={month}
             onChange={(e) => setMonth(Number(e.target.value))}
-            sx={{ minWidth: isMobile ? 140 : 150 }} // ← 거래처와 동일
+            sx={{ minWidth: isMobile ? 80 : 90 }}
             SelectProps={{ native: true }}
           >
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -1860,6 +1864,7 @@ export default function DeadlineBalanceTab() {
             ))}
           </TextField>
 
+          {/* 거래처명 정렬 필터
           <TextField
             select
             size="small"
@@ -1871,6 +1876,36 @@ export default function DeadlineBalanceTab() {
             <option value="account_name">거래처명 정렬</option>
             <option value="account_id">거래처ID 정렬</option>
           </TextField>
+          */}
+
+          <FormControlLabel
+            control={(
+              <Checkbox
+                checked={includeDeletedAccount}
+                onChange={(e) => setIncludeDeletedAccount(e.target.checked)}
+                size="small"
+              />
+            )}
+            label="삭제거래처 포함"
+            sx={{
+              height: 40,
+              minWidth: 112,
+              m: 0,
+              ml: -0.5,
+              mt: -0.25,
+              px: 0.5,
+              border: "1px solid rgba(0, 0, 0, 0.23)",
+              borderRadius: "4px",
+              boxSizing: "border-box",
+              "& .MuiCheckbox-root": { p: 0.5 },
+              "& .MuiFormControlLabel-label": {
+                position: "relative",
+                left: -2,
+                top: -2,
+                fontSize: "0.75rem",
+              },
+            }}
+          />
         </MDBox>
 
         <MDBox

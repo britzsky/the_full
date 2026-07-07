@@ -5,6 +5,7 @@
 // - 영수증 OCR 파서가 날짜를 인식하면 집계표 해당 날짜에 자동 저장됨
 // =====================================================================
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import JSZip from "jszip";
 import {
   Autocomplete,
   Box,
@@ -22,6 +23,7 @@ import {
 } from "@mui/material";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import DeleteIcon from "@mui/icons-material/Delete";
+import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import MDBox from "components/MDBox";
@@ -65,6 +67,24 @@ const SAVE_ENDPOINT = "/Corporate/receipt-scan";
 // =====================================================================
 const isValidFile = (file) =>
   file && (file.type.startsWith("image/") || file.type === "application/pdf");
+
+// =====================================================================
+// 유틸: ZIP 다운로드 헬퍼
+// =====================================================================
+const sanitizeDownloadFileName = (fileName) => {
+  const safeName = String(fileName || "receipt").replace(/[\\/:*?"<>|]/g, "_").trim();
+  return safeName || "receipt";
+};
+
+const getUniqueDownloadFileName = (fileName, usedFileNameMap) => {
+  const safeName = sanitizeDownloadFileName(fileName);
+  const usedCount = usedFileNameMap.get(safeName) || 0;
+  usedFileNameMap.set(safeName, usedCount + 1);
+  if (usedCount === 0) return safeName;
+  const dotIndex = safeName.lastIndexOf(".");
+  if (dotIndex <= 0) return `${safeName} (${usedCount + 1})`;
+  return `${safeName.slice(0, dotIndex)} (${usedCount + 1})${safeName.slice(dotIndex)}`;
+};
 
 // =====================================================================
 // 카테고리별 드래그앤드롭 업로드 섹션 컴포넌트
@@ -373,28 +393,26 @@ function CoupangReceiptTab() {
     })();
   }, [localAccountId, fetchAccountList, fetchCardList]);
 
-  // 거래처 Autocomplete 옵션 목록 (id → label 매핑)
-  const accountOptions = useMemo(
-    () => (accountList || []).map((a) => ({ value: String(a.account_id), label: a.account_name || "" })),
-    [accountList]
-  );
-
   // 현재 선택된 거래처 옵션 객체
   const selectedAccountOption = useMemo(
-    () => accountOptions.find((o) => o.value === String(selectedAccountId)) || null,
-    [accountOptions, selectedAccountId]
+    () => (accountList || []).find((a) => String(a.account_id) === String(selectedAccountId)) || null,
+    [accountList, selectedAccountId]
   );
 
-  // 거래처 선택 변경 핸들러
-  const handleAccountChange = useCallback((_, option) => {
-    if (!option) {
-      setSelectedAccountId("");
-      setAccountInput("");
-      return;
+  // 거래처 엔터 선택 핸들러 (tallysheet 동일 방식)
+  const selectAccountByInput = useCallback(() => {
+    if (isAccountLocked) return;
+    const q = String(accountInput || "").trim();
+    if (!q) return;
+    const list = accountList || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+    const partial = exact || list.find((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (partial) {
+      setSelectedAccountId(String(partial.account_id));
+      setAccountInput(partial.account_name || q);
     }
-    setSelectedAccountId(option.value);
-    setAccountInput(option.label);
-  }, []);
+  }, [isAccountLocked, accountInput, accountList]);
 
   // =====================================================================
   // 파일 추가 핸들러 (클릭 선택 및 드래그앤드롭 공통)
@@ -664,6 +682,108 @@ function CoupangReceiptTab() {
   // 전체 첨부 파일 수 (등록 버튼 비활성화 조건용)
   const totalFileCount = Object.values(categoryFiles).flat().length;
 
+  const handleDownloadAll = async () => {
+    const allItems = RECEIPT_CATEGORIES.flatMap((c) =>
+      (categoryFiles[c.type] || []).map((file) => ({ file }))
+    );
+    if (allItems.length === 0) return;
+
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const defaultName = `쿠팡영수증_${dateStr}.zip`;
+
+    let fileHandle = null;
+    if (Boolean(window.isSecureContext && window.showSaveFilePicker)) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [{ description: "ZIP 파일", accept: { "application/zip": [".zip"] } }],
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+    }
+
+    const total = allItems.length;
+    let done = 0;
+
+    Swal.fire({
+      title: "ZIP 생성 중...",
+      text: `0 / ${total} 처리 중...`,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
+    const CONCURRENCY = 8;
+    const zip = new JSZip();
+    const results = [];
+
+    for (let i = 0; i < allItems.length; i += CONCURRENCY) {
+      const chunk = allItems.slice(i, i + CONCURRENCY);
+      const chunkResults = await Promise.allSettled(
+        chunk.map(
+          (item) =>
+            new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                done += 1;
+                Swal.update({ text: `${done} / ${total} 처리 중...` });
+                resolve({ item, blob: e.target.result });
+              };
+              reader.onerror = () => reject(new Error(`파일 읽기 실패: ${item.file.name}`));
+              reader.readAsArrayBuffer(item.file);
+            })
+        )
+      );
+      results.push(...chunkResults);
+    }
+
+    const usedFileNameMap = new Map();
+    let addedCount = 0;
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        const { item, blob } = result.value;
+        const fileName = getUniqueDownloadFileName(item.file.name, usedFileNameMap);
+        zip.file(fileName, blob);
+        addedCount += 1;
+      } else {
+        console.warn("영수증 이미지 추가 실패 (건너뜀):", result.reason);
+      }
+    }
+
+    if (addedCount === 0) {
+      Swal.fire("안내", "저장할 수 있는 이미지가 없습니다.", "info");
+      return;
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    Swal.close();
+
+    if (fileHandle) {
+      try {
+        const writable = await fileHandle.createWritable();
+        await writable.write(zipBlob);
+        await writable.close();
+        Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
+        return;
+      } catch (error) {
+        console.error("zip 파일 저장 실패:", error);
+      }
+    }
+
+    const objectUrl = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = defaultName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
+    Swal.fire("완료", "영수증 이미지 다운로드를 시작했습니다.", "success");
+  };
+
   return (
     <MDBox sx={{ position: "relative", display: "flex", flexDirection: "column", height: "calc(100vh - 143px)", overflow: "hidden" }}>
       {(loadingAccounts || saving) && (
@@ -689,32 +809,32 @@ function CoupangReceiptTab() {
             <Grid item xs={12} md={5}>
               <Autocomplete
                 size="small"
-                options={accountOptions}
+                options={accountList || []}
                 value={selectedAccountOption}
-                onChange={handleAccountChange}
-                inputValue={accountInput}
-                onInputChange={(_, v, reason) => {
-                  // 옵션 선택에 의한 리셋은 무시하고 직접 타이핑만 반영
-                  if (reason !== "reset") setAccountInput(v);
+                onChange={(_, newValue) => {
+                  if (isAccountLocked) return;
+                  if (!newValue) return;
+                  setSelectedAccountId(String(newValue.account_id));
+                  setAccountInput(newValue?.account_name || "");
                 }}
-                getOptionLabel={(option) =>
-                  typeof option === "string" ? option : option?.label || ""
-                }
-                isOptionEqualToValue={(option, value) => option.value === value?.value}
-                disabled={isAccountLocked} // 현장 계정은 거래처 변경 불가
+                inputValue={accountInput}
+                onInputChange={(_, newValue) => {
+                  if (isAccountLocked) return;
+                  setAccountInput(newValue);
+                }}
+                getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
+                isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
+                disableClearable={isAccountLocked}
+                disabled={isAccountLocked}
                 renderInput={(params) => (
                   <TextField
                     {...params}
                     label="거래처 검색"
-                    placeholder="거래처명을 입력하세요"
+                    placeholder="거래처명을 입력"
                     onKeyDown={(e) => {
-                      // 엔터키로 부분 일치 거래처 선택
                       if (e.key === "Enter") {
-                        const q = accountInput.trim().toLowerCase();
-                        const found = accountOptions.find((o) =>
-                          (o.label || "").toLowerCase().includes(q)
-                        );
-                        if (found) handleAccountChange(null, found);
+                        e.preventDefault();
+                        selectAccountByInput();
                       }
                     }}
                   />
@@ -773,17 +893,29 @@ function CoupangReceiptTab() {
               </Select>
             </Grid>
 
-            {/* 등록 버튼 (파일 없거나 거래처 미선택 시 비활성) */}
+            {/* ZIP 다운로드 + 등록 버튼 */}
             <Grid item xs={12} md="auto" sx={{ ml: "auto" }}>
-              <MDButton
-                color="warning"
-                size="small"
-                onClick={handleSave}
-                disabled={saving || totalFileCount === 0 || !selectedAccountId}
-                sx={{ height: 40, minWidth: 110 }}
-              >
-                등록 ({totalFileCount}건)
-              </MDButton>
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <MDButton
+                  color="success"
+                  size="small"
+                  onClick={handleDownloadAll}
+                  disabled={totalFileCount === 0}
+                  sx={{ height: 40, minWidth: 130, whiteSpace: "nowrap" }}
+                >
+                  <DownloadIcon sx={{ fontSize: 16, mr: 0.5 }} />
+                  ZIP 다운로드
+                </MDButton>
+                <MDButton
+                  color="warning"
+                  size="small"
+                  onClick={handleSave}
+                  disabled={saving || totalFileCount === 0 || !selectedAccountId}
+                  sx={{ height: 40, minWidth: 110 }}
+                >
+                  등록 ({totalFileCount}건)
+                </MDButton>
+              </Box>
             </Grid>
           </Grid>
         </MDBox>

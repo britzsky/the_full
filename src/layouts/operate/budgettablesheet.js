@@ -12,6 +12,8 @@ import useBudgetTableData, { formatNumber } from "./data/BudgetTableData";
 import Swal from "sweetalert2";
 import api from "api/api";
 import { sortAccountRows } from "utils/accountSort";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 
 
 export default function BudgetTableTab() {
@@ -92,22 +94,22 @@ export default function BudgetTableTab() {
     { key: "month", label: "월", width: 50 },
     { key: "account_type_name", label: "구분", width: 60 },
     { key: "meal_type_name", label: "예산기준", width: 90 },
-    { key: "account_name", label: "거래처명", width: 135 },
+    { key: "account_name", label: "거래처명", width: 185 },
     // { key: "total",             label: "식수",              width: 50  },
     // { key: "diet_price",        label: "식비",              width: 80 },
     // { key: "utility_bills",     label: "수도광열비",        width: 90 },
     // { key: "food_budget",       label: "1식 기준 식재비",   width: 90 },
     { key: "budget_total", label: "예상 부여금액", width: 120 },
-    { key: "prev_budget_grant", label: "전월 예산부여금액", width: 110 },
+    { key: "prev_budget_grant", label: "전월 예산부여금액", width: 120 },
     { key: "new_diff", label: "차액", width: 90 },
-    { key: "day_budget", label: "현기준 적정예산", width: 90 },
-    { key: "day_use_amount", label: "현기준 사용금액", width: 90 },
-    { key: "day_use_ratio", label: "현기준 적정금액 비율(%)", width: 115 },
+    { key: "day_budget", label: "현기준 적정예산", width: 110 },
+    { key: "day_use_amount", label: "현기준 사용금액", width: 110 },
+    { key: "day_use_ratio", label: "현기준 적정금액 비율(%)", width: 135, excelWidth: 28 },
     // { key: "existing_budget",   label: "기존예산",        width: 90 },
     // { key: "diff_amount", label: "차액", width: 90 },
-    { key: "use_ratio", label: "총 예산대비 사용비율(%)", width: 115 },
+    { key: "use_ratio", label: "총 예산대비 사용비율(%)", width: 135, excelWidth: 28 },
     { key: "budget_grant", label: "예산부여", width: 90 }, // editable
-    { key: "note", label: "비고", width: 185 }, // editable
+    { key: "note", label: "비고", width: 250 }, // editable
   ];
   const stickyAccountColumnKey = "account_name";
 
@@ -229,6 +231,86 @@ export default function BudgetTableTab() {
 
   const handleYearChange = (e) => setYear(Number(e.target.value));
   const handleMonthChange = (e) => setMonth(Number(e.target.value));
+
+  const handleExcelDownload = async () => {
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("예산관리");
+
+      ws.columns = columns.map((col) => ({
+        header: col.label,
+        key: col.key,
+        width: col.excelWidth ?? Math.round(col.width / 7),
+      }));
+
+      // 헤더 스타일
+      const headerRow = ws.getRow(1);
+      headerRow.font = { bold: true };
+      headerRow.alignment = { vertical: "middle", horizontal: "center" };
+      headerRow.height = 20;
+      headerRow.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9D9D9" } };
+        cell.border = {
+          top: { style: "thin" }, bottom: { style: "thin" },
+          left: { style: "thin" }, right: { style: "thin" },
+        };
+      });
+
+      sortedEditRows.forEach((row) => {
+        const rowData = {};
+        const newDiff = (Number(row.budget_total) || 0) - (Number(row.prev_budget_grant) || 0);
+        columns.forEach((col) => {
+          if (col.key === "new_diff") {
+            rowData[col.key] = newDiff;
+          } else if (numericFields.includes(col.key)) {
+            rowData[col.key] = row[col.key] != null ? Number(row[col.key]) : "";
+          } else {
+            rowData[col.key] = row[col.key] ?? "";
+          }
+        });
+        const excelRow = ws.addRow(rowData);
+        excelRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+          const col = columns[colNum - 1];
+          if (!col) return;
+          cell.border = {
+            top: { style: "thin" }, bottom: { style: "thin" },
+            left: { style: "thin" }, right: { style: "thin" },
+          };
+          if (numericFields.includes(col.key)) {
+            cell.alignment = { horizontal: "right" };
+            cell.numFmt = percentFields.includes(col.key) ? "#,##0.00" : "#,##0";
+          } else {
+            cell.alignment = { horizontal: "center" };
+          }
+          // 차액 배경색: 양수=연빨강, 음수=연초록
+          if (col.key === "new_diff" && newDiff !== 0) {
+            cell.fill = {
+              type: "pattern", pattern: "solid",
+              fgColor: { argb: newDiff > 0 ? "FFFFEBEE" : "FFE8F5E9" },
+            };
+          }
+          // 비율 폰트색: >=100 빨강, >=90 주황
+          if (col.key === "day_use_ratio" || col.key === "use_ratio") {
+            const num = Number(row[col.key]);
+            if (!Number.isNaN(num) && num >= 100) {
+              cell.font = { bold: true, color: { argb: "FFF44336" } };
+            } else if (!Number.isNaN(num) && num >= 90) {
+              cell.font = { bold: true, color: { argb: "FFFF9800" } };
+            }
+          }
+        });
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      saveAs(blob, `예산관리_${year}년_${month}월.xlsx`);
+    } catch (e) {
+      console.error(e);
+      Swal.fire("실패", "엑셀 생성 중 오류가 발생했습니다.", "error");
+    }
+  };
 
   if (loading) return <LoadingScreen />;
 
@@ -360,7 +442,7 @@ export default function BudgetTableTab() {
                   size="small"
                   value={year}
                   onChange={handleYearChange}
-                  sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+                  sx={{ minWidth: isMobile ? 90 : 100 }}
                   SelectProps={{ native: true }}
                 >
                   {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
@@ -374,7 +456,7 @@ export default function BudgetTableTab() {
                   size="small"
                   value={month}
                   onChange={handleMonthChange}
-                  sx={{ minWidth: isMobile ? 140 : 150 }}   // ← 거래처와 동일
+                  sx={{ minWidth: isMobile ? 80 : 85 }}
                   SelectProps={{ native: true }}
                 >
                   {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -383,18 +465,15 @@ export default function BudgetTableTab() {
                     </option>
                   ))}
                 </TextField>
-                <TextField
-                  select
-                  size="small"
-                  value={accountSortKey}
-                  onChange={(e) => setAccountSortKey(String(e.target.value))}
-                  sx={{ minWidth: isMobile ? 140 : 150 }}
-                  SelectProps={{ native: true }}
-                >
-                  <option value="account_name">거래처명 정렬</option>
-                  <option value="account_id">거래처ID 정렬</option>
-                </TextField>
 
+                <MDButton
+                  variant="contained"
+                  color="success"
+                  size="small"
+                  onClick={handleExcelDownload}
+                >
+                  엑셀 다운로드
+                </MDButton>
                 <MDButton
                   variant="contained"
                   color="info"

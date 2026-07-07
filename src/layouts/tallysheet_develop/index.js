@@ -47,7 +47,7 @@ import PreviewOverlay from "utils/PreviewOverlay";
  */
 
 // ======================== ✅ type=1008 전용 endpoint (프로젝트에 맞게 교체) ========================
-const ENDPOINT_CASH_SAVE = "/receipt-scanV4"; // TODO: 실제 저장 endpoint로 변경
+const ENDPOINT_CASH_SAVE = "/receipt-scan-develop"; // develop 집계표 전용: 사용자 입력값 우선
 const ENDPOINT_CASH_LIST = "/Account/AccountPurchaseTallyPaymentList"; // TODO: 실제 목록 조회 endpoint로 변경
 
 // ======================== ✅ 기타 type(1000/1008/1 제외) 공통 endpoint ========================
@@ -835,6 +835,7 @@ function TallySheet() {
     fd.append("card_brand", brand);
     fd.append("card_no", no);
     fd.append("total", parseNumber(cardForm.total));
+    fd.append("use_name", cardForm.use_name || "");
 
     if (cardForm.receipt_image) fd.append("file", cardForm.receipt_image);
 
@@ -853,8 +854,7 @@ function TallySheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      // ✅ "등록할 때 endpoint" 그대로 사용
-      const res = await api.post("/receipt-scanV3", fd, {
+      const res = await api.post("/receipt-scan-develop", fd, {
         headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
         validateStatus: () => true,
       });
@@ -966,7 +966,7 @@ function TallySheet() {
         if (row.sale_id) fd.append("sale_id", String(row.sale_id));
         fd.append("row_account_id", submitAccountId);
 
-        const res = await api.post("/receipt-scanV3", fd, {
+        const res = await api.post("/receipt-scan-develop", fd, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
           validateStatus: () => true,
         });
@@ -3794,9 +3794,10 @@ function TallySheet() {
                       fd.append("use_name", r.use_name || "");
                       fd.append("receipt_type", r.receipt_type || "UNKNOWN");
                       fd.append("total", parseNumber(r.total));
+                      fd.append("use_name", r.use_name || "");
                       fd.append("file", file);
 
-                      const res = await api.post("/receipt-scanV3", fd, {
+                      const res = await api.post("/receipt-scan-develop", fd, {
                         headers: {
                           "Content-Type": "multipart/form-data",
                           Accept: "application/json",

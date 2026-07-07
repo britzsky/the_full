@@ -5,6 +5,8 @@
 // - 필터 영역은 스크롤 시 탭 바 아래에 고정 (top: 111)
 // =====================================================================
 import React, { useEffect, useMemo, useState } from "react";
+import JSZip from "jszip";
+import Swal from "sweetalert2";
 import {
   Autocomplete,
   Box,
@@ -100,6 +102,7 @@ function CorpCardReceiptArchiveTab() {
 
   const [accountOptions, setAccountOptions] = useState([]);
   const [selectedAccountOption, setSelectedAccountOption] = useState({ value: "", label: "전체" });
+  const [accountInput, setAccountInput] = useState("전체");
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [viewerFiles, setViewerFiles] = useState([]);
@@ -145,6 +148,7 @@ function CorpCardReceiptArchiveTab() {
   const handleAccountChange = (_, option) => {
     const next = option || { value: "", label: "전체" };
     setSelectedAccountOption(next);
+    setAccountInput(next.label);
     setFilters((prev) => ({ ...prev, accountId: next.value }));
   };
 
@@ -219,24 +223,96 @@ function CorpCardReceiptArchiveTab() {
 
   const handleDownloadAll = async () => {
     if (!downloadableItems.length) return;
-    if (!window.showDirectoryPicker) { downloadableItems.forEach(downloadItem); return; }
-    try {
-      const dir = await window.showDirectoryPicker();
-      const usedMap = new Map();
-      for (const item of downloadableItems) {
-        const blob = await fetchBlob(item);
-        const fh = await dir.getFileHandle(
-          getUniqueFileName(item.receipt_image?.split("/").pop() || "receipt.jpg", usedMap),
-          { create: true }
-        );
-        const w = await fh.createWritable();
-        await w.write(blob);
-        await w.close();
+
+    const defaultName = `영수증_${filters.year}${String(filters.month).padStart(2, "0")}.zip`;
+
+    // user activation이 살아있는 동안 먼저 저장 위치 선택
+    let fileHandle = null;
+    if (Boolean(window.isSecureContext && window.showSaveFilePicker)) {
+      try {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: defaultName,
+          types: [{ description: "ZIP 파일", accept: { "application/zip": [".zip"] } }],
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") return;
       }
-    } catch (err) {
-      if (err?.name === "AbortError") return;
-      downloadableItems.forEach(downloadItem);
     }
+
+    const total = downloadableItems.length;
+    let done = 0;
+
+    Swal.fire({
+      title: "다운로드 중...",
+      text: `0 / ${total} 처리 중...`,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
+    const CONCURRENCY = 8;
+    const zip = new JSZip();
+    const results = [];
+
+    for (let i = 0; i < downloadableItems.length; i += CONCURRENCY) {
+      const chunk = downloadableItems.slice(i, i + CONCURRENCY);
+      const chunkResults = await Promise.allSettled(
+        chunk.map(async (item) => {
+          const blob = await fetchBlob(item);
+          done += 1;
+          Swal.update({ text: `${done} / ${total} 처리 중...` });
+          return { item, blob };
+        })
+      );
+      results.push(...chunkResults);
+    }
+
+    const usedMap = new Map();
+    let addedCount = 0;
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        const { item, blob } = result.value;
+        const fileName = getUniqueFileName(
+          sanitizeFileName(item.receipt_image?.split("/").pop() || "receipt"),
+          usedMap
+        );
+        zip.file(fileName, blob);
+        addedCount += 1;
+      } else {
+        console.warn("영수증 이미지 추가 실패 (건너뜀):", result.reason);
+      }
+    }
+
+    if (addedCount === 0) {
+      Swal.fire("안내", "저장할 수 있는 이미지가 없습니다.", "info");
+      return;
+    }
+
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    Swal.close();
+
+    if (fileHandle) {
+      try {
+        const writable = await fileHandle.createWritable();
+        await writable.write(zipBlob);
+        await writable.close();
+        Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
+        return;
+      } catch (error) {
+        console.error("zip 파일 저장 실패:", error);
+      }
+    }
+
+    const objectUrl = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = defaultName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 3000);
+    Swal.fire("완료", "영수증 이미지 다운로드를 시작했습니다.", "success");
   };
 
   return (
@@ -313,6 +389,8 @@ function CorpCardReceiptArchiveTab() {
               size="small"
               options={accountAutocompleteOptions}
               value={selectedAccountOption}
+              inputValue={accountInput}
+              onInputChange={(_, value) => setAccountInput(value)}
               onChange={handleAccountChange}
               getOptionLabel={(option) =>
                 typeof option === "string" ? option : option?.label || option?.value || ""

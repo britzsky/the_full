@@ -16,7 +16,7 @@ const formatNumber = (value) => {
   return Number(value).toLocaleString();
 };
 
-export default function useDeadlineBalanceData(year, month) {
+export default function useDeadlineBalanceData(year, month, delYn) {
   const [balanceRows, setBalanceRows] = useState([]);
   const [depositRows, setDepositRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
@@ -27,7 +27,7 @@ export default function useDeadlineBalanceData(year, month) {
     setLoading(true);
     try {
       const res = await api.get("/Account/AccountDeadlineBalanceList", {
-        params: { year, month },
+        params: { year, month, del_yn: delYn },
       });
 
       const rows = (res.data || []).map((item) => ({

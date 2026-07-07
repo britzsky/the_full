@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -294,6 +294,9 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   const [isEventClicked, setIsEventClicked] = useState(false);
 
   const loginUserId = localStorage.getItem("user_id");
+  const loginUserName = localStorage.getItem("user_name") || "나";
+  // 본인 이름 캐시 (어느 팀이든 목록 로드 시 최초 1회 저장)
+  const loginUserNameRef = useRef(null);
 
   const [selectedType, setSelectedType] = useState("1");
   const [selectedTypes, setSelectedTypes] = useState([]);
@@ -333,14 +336,20 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     }
   };
 
-  // 팀구분 변경 시 담당자만 loginUserId로 초기화, 이슈구분/거래처는 유지
+  // 팀구분 변경 시 이슈구분 초기화, selectedMemberIds는 누적 유지 (cross-team 동행 지원)
   const handleDeptTypeChange = async (deptType) => {
     setSelectedDeptType(deptType);
-    setSelectedMemberIds(loginUserId ? [loginUserId] : []);
+    setSelectedType("1");
+    setSelectedTypes([]);
     setMemberList([]);
     if (!deptType) return;
     const rows = await fetchMemberList(deptType);
     setMemberList(rows);
+    // 본인 이름 최초 1회 캐싱
+    if (!loginUserNameRef.current && loginUserId) {
+      const me = rows.find((m) => String(m.user_id) === String(loginUserId));
+      if (me?.user_name) loginUserNameRef.current = me.user_name;
+    }
   };
 
   // 거래처 목록 조회 (최초 1회만 fetch, 이후 캐시 사용)
@@ -748,15 +757,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               value={selectedDeptType}
               onChange={(e) => handleDeptTypeChange(e.target.value)}
               displayEmpty
-              disabled={!!selectedEvent}
-              sx={{
-                width: isMobile ? "100%" : 140, flexShrink: 0, ...ctrlSx,
-                ...(selectedEvent ? {
-                  "&.Mui-disabled .MuiOutlinedInput-notchedOutline": { borderColor: "rgba(0,0,0,0.12)" },
-                  "& .MuiSelect-select.Mui-disabled": { WebkitTextFillColor: "rgba(0,0,0,0.87)" },
-                  "& .MuiSvgIcon-root.Mui-disabled": { display: "none" },
-                } : {}),
-              }}
+              sx={{ width: isMobile ? "100%" : 140, flexShrink: 0, ...ctrlSx }}
             >
               <MenuItem value=""><em>팀 구분</em></MenuItem>
               {DEPARTMENT_OPTIONS.map((dept) => (
@@ -764,32 +765,44 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               ))}
             </Select>
 
-            {/* 담당자 (다중 선택, 최대 5명) */}
+            {/* 담당자 (다중 선택, 최대 5명, 팀 전환 시 선택 누적) */}
             <Select
               multiple
               size="small"
-              value={selectedMemberIds}
+              value={selectedMemberIds.filter((id) =>
+                memberList.some((m) => String(m.user_id) === String(id))
+              )}
               onChange={(e) => {
-                const newIds = Array.isArray(e.target.value) ? e.target.value : [e.target.value];
-                const withLogin = loginUserId && !newIds.includes(loginUserId)
-                  ? [loginUserId, ...newIds]
-                  : newIds;
+                const newCurrentIds = Array.isArray(e.target.value) ? e.target.value : [e.target.value];
+                const currentIdSet = new Set(memberList.map((m) => String(m.user_id)));
+                // 다른 팀에서 선택된 ID는 그대로 유지
+                const otherTeamIds = selectedMemberIds.filter((id) => !currentIdSet.has(String(id)));
+                const merged = [...new Set([...otherTeamIds, ...newCurrentIds.map(String)])];
+                // loginUserId는 항상 포함
+                const withLogin =
+                  loginUserId && !merged.includes(String(loginUserId))
+                    ? [String(loginUserId), ...merged.filter((id) => id !== String(loginUserId))]
+                    : merged;
                 if (withLogin.length <= 5) setSelectedMemberIds(withLogin);
               }}
               displayEmpty
               disabled={memberList.length === 0}
               renderValue={() => {
-                if (memberList.length === 0) return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
-                const firstId = selectedMemberIds[0];
-                if (!firstId) return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
-                const found = memberList.find((m) => String(m.user_id) === String(firstId));
-                return found ? found.user_name : <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
+                if (memberList.length === 0)
+                  return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
+                const total = selectedMemberIds.length;
+                if (total === 0)
+                  return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
+                // 항상 본인 이름을 앞에 표시 (현재 팀에 없어도 캐시 사용)
+                const meInList = memberList.find((m) => String(m.user_id) === String(loginUserId));
+                const myName = meInList?.user_name || loginUserNameRef.current || loginUserName;
+                return total > 1 ? `${myName} 외 ${total - 1}명` : myName;
               }}
               sx={{ width: isMobile ? "100%" : 150, flexShrink: 0, ...ctrlSx }}
             >
               {memberList.map((member) => {
-                const isLoginUser = member.user_id === loginUserId;
-                const isChecked = selectedMemberIds.includes(member.user_id);
+                const isLoginUser = String(member.user_id) === String(loginUserId);
+                const isChecked = selectedMemberIds.some((id) => String(id) === String(member.user_id));
                 const isDisabled = isLoginUser || (!isChecked && selectedMemberIds.length >= 5);
                 return (
                   <MenuItem

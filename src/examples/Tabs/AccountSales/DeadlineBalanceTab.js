@@ -56,6 +56,8 @@ export default function DeadlineBalanceTab() {
 
   // 입금 저장 중 이중 저장 방지 플래그
   const [isSaving, setIsSaving] = useState(false);
+  // 마감잔액 저장 중 이중 저장 방지 플래그
+  const [isBalanceSaving, setIsBalanceSaving] = useState(false);
 
   // ✅ 입금내역 우클릭 수정 메뉴 상태
   const [depositCtxMenu, setDepositCtxMenu] = useState({
@@ -1031,7 +1033,8 @@ export default function DeadlineBalanceTab() {
             balancePrice: Math.max(0, parseNumber(monthInfo.balancePrice)),
           };
         })
-        .filter((item) => item.totalExpected > 0 || item.typeOnlyPaid > 0 || item.totalOutstandingBeforeBalance > 0);
+        // balancePaid > 0인 달도 포함해야 총합이 정확히 집계됨 (마감잔액 미입력 달 입금 유실 방지)
+        .filter((item) => item.totalExpected > 0 || item.typeOnlyPaid > 0 || item.totalOutstandingBeforeBalance > 0 || item.balancePaid > 0);
 
       monthDetails.sort((a, b) => (a.year !== b.year ? a.year - b.year : a.month - b.month));
 
@@ -1069,6 +1072,7 @@ export default function DeadlineBalanceTab() {
       if (
         detailMonths.length > 0
         && currentMonthDetail
+        && currentMonthDetail.totalOutstanding > 0
         && !detailMonths.some((item) => item.ymKey === currentSummaryYmKey)
       ) {
         detailMonths.push(currentMonthDetail);
@@ -1221,6 +1225,15 @@ export default function DeadlineBalanceTab() {
       return;
     }
 
+    // 환불 제외 항목은 실 입금액이 입금금액을 초과할 수 없음
+    if (name === "input_price" && String(updated.type || "") !== "6") {
+      const maxAmount = parseNumber(updated.deposit_amount);
+      if (parseNumber(updated.input_price) > maxAmount) {
+        Swal.fire("실 입금액 확인", `실 입금액은 입금금액(${formatNumber(maxAmount)}원)을 초과할 수 없습니다.`, "warning");
+        updated.input_price = formatNumber(maxAmount);
+      }
+    }
+
     // ✅ 타입 변경 시 기본값 정리
     if (name === "type") {
       updated.type = value;
@@ -1350,6 +1363,12 @@ export default function DeadlineBalanceTab() {
     // ✅ 일반 입금은 실입금액 입력이 없으면 저장 차단
     if (!isRefundType && parseNumber(depositForm.input_price) <= 0) {
       Swal.fire("실입금액 확인", "실입금액을 입력하세요.", "warning");
+      return;
+    }
+
+    // 환불 제외 항목은 실 입금액이 입금금액을 초과할 수 없음
+    if (!isRefundType && parseNumber(depositForm.input_price) > parseNumber(depositForm.deposit_amount)) {
+      Swal.fire("실 입금액 확인", `실 입금액은 입금금액(${formatNumber(parseNumber(depositForm.deposit_amount))}원)을 초과할 수 없습니다.`, "warning");
       return;
     }
 
@@ -1524,11 +1543,13 @@ export default function DeadlineBalanceTab() {
 
   // 🔹 변경사항 저장
   const handleSaveChanges = async () => {
-    // ✅ 권한 없으면 저장 차단
     if (!canEdit) {
       Swal.fire("권한 없음", "저장 권한이 없습니다.", "warning");
       return;
     }
+
+    // 새 월 신규 insert 시 지연 구간에 중복 저장 방지
+    if (isBalanceSaving) return;
 
     const modifiedRows = editableRows
       .map((r) => {
@@ -1563,9 +1584,22 @@ export default function DeadlineBalanceTab() {
       return;
     }
 
+    setIsBalanceSaving(true);
+    Swal.fire({
+      title: "저장 중...",
+      text: "잠시만 기다려 주세요.",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      showConfirmButton: false,
+      didOpen: () => {
+        Swal.showLoading();
+        const container = Swal.getContainer();
+        if (container) container.style.zIndex = "9999";
+      },
+    });
+
     try {
       await api.post("/Account/AccountDeadlineBalanceSave", { rows: modifiedRows });
-      Swal.fire("변경 사항이 저장되었습니다.", "", "success");
       const targetAccountId = modifiedRows[0]?.account_id;
       if (targetAccountId) {
         lastSelectedAccountId.current = targetAccountId;
@@ -1575,8 +1609,11 @@ export default function DeadlineBalanceTab() {
       if (targetAccountId) {
         setRefetchTrigger(true);
       }
+      Swal.fire("변경 사항이 저장되었습니다.", "", "success");
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
+    } finally {
+      setIsBalanceSaving(false);
     }
   };
 

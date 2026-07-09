@@ -96,7 +96,7 @@ const avgOfExisting = (...vals) => {
 };
 
 // ✅ 합계 계산 (account_id 별 분기 포함)
-const calculateTotal = (row, accountType, extraDietCols, accountId) => {
+const calculateTotal = (row, accountType, extraDietCols, accountId, year, month) => {
   const extras = Array.isArray(extraDietCols) ? extraDietCols : [];
 
   // =========================================================
@@ -119,11 +119,12 @@ const calculateTotal = (row, accountType, extraDietCols, accountId) => {
     return Math.round(avgMeals + ceremony);
   }
 
-  // ✅ 20250819193630: 평균값 + 2,3층 경관식 + 7층 경관식
+  // ✅ 20250819193630: 평균값 + 2,3층 경관식 + 7층 경관식 (7층은 2026년 6월까지만)
   if (accountId === "20250819193630") {
     const avg23 = avgOfExisting(row.breakfast, row.lunch, row.dinner);
     const ceremony23 = parseNumber(row.ceremony);
-    const ceremony7 = parseNumber(row.ceremony2);
+    const show7F = !year || !month || year < 2026 || (year === 2026 && month <= 6);
+    const ceremony7 = show7F ? parseNumber(row.ceremony2) : 0;
     return Math.round(avg23 + ceremony23 + ceremony7);
   }
 
@@ -311,7 +312,9 @@ const getTableStructure = (
   selectedAccountId,
   isDaycareVisible,
   extraDietCols,
-  selectedAccountType
+  selectedAccountType,
+  year,
+  month
 ) => {
   const isSchoolOrIndustry = selectedAccountType === "학교" || selectedAccountType === "산업체";
 
@@ -659,13 +662,60 @@ const getTableStructure = (
 
   // 강남(20250819193630)
   if (selectedAccountId === "20250819193630") {
+    const show7F = !year || !month || year < 2026 || (year === 2026 && month <= 6);
+    if (show7F) {
+      return {
+        headerRows: [
+          [
+            { label: "구분", rowSpan: 2 },
+            { label: "2,3층", colSpan: 3 },
+            { label: "7층", colSpan: 3 },
+            { label: "경관식", colSpan: 2 },
+            { label: "직원", colSpan: 2 },
+            { label: "계", rowSpan: 2 },
+            { label: "비고", rowSpan: 2 },
+            { label: "조식취소", rowSpan: 2 },
+            { label: "중식취소", rowSpan: 2 },
+            { label: "석식취소", rowSpan: 2 },
+          ],
+          [
+            { label: "조식" },
+            { label: "중식" },
+            { label: "석식" },
+            { label: "조식" },
+            { label: "중식" },
+            { label: "석식" },
+            { label: "2,3층" },
+            { label: "7층" },
+            { label: "조식" },
+            { label: "중식" },
+          ],
+        ],
+        visibleColumns: [
+          "breakfast",
+          "lunch",
+          "dinner",
+          "breakfast2",
+          "lunch2",
+          "dinner2",
+          "ceremony",
+          "ceremony2",
+          "employ_breakfast",
+          "employ_lunch",
+          "total",
+          "note",
+          "breakcancel",
+          "lunchcancel",
+          "dinnercancel",
+        ],
+      };
+    }
     return {
       headerRows: [
         [
           { label: "구분", rowSpan: 2 },
           { label: "2,3층", colSpan: 3 },
-          { label: "7층", colSpan: 3 },
-          { label: "경관식", colSpan: 2 },
+          { label: "경관식", rowSpan: 2 },
           { label: "직원", colSpan: 2 },
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },
@@ -679,22 +729,13 @@ const getTableStructure = (
           { label: "석식" },
           { label: "조식" },
           { label: "중식" },
-          { label: "석식" },
-          { label: "2,3층" },
-          { label: "7층" },
-          { label: "조식" },
-          { label: "중식" },
         ],
       ],
       visibleColumns: [
         "breakfast",
         "lunch",
         "dinner",
-        "breakfast2",
-        "lunch2",
-        "dinner2",
         "ceremony",
-        "ceremony2",
         "employ_breakfast",
         "employ_lunch",
         "total",
@@ -994,7 +1035,9 @@ function DinersNumberSheet() {
             rowCopy,
             selectedAccountType,
             stableExtraDietCols,
-            selectedAccountId
+            selectedAccountId,
+            year,
+            month
           );
           next[r] = rowCopy;
         }
@@ -1127,7 +1170,9 @@ function DinersNumberSheet() {
           mergedRow,
           selectedAccountType,
           stableExtraDietCols,
-          selectedAccountId
+          selectedAccountId,
+          year,
+          month
         ),
       };
     });
@@ -1162,7 +1207,9 @@ function DinersNumberSheet() {
               { ...row, [key]: value },
               selectedAccountType,
               stableExtraDietCols,
-              selectedAccountId
+              selectedAccountId,
+              year,
+              month
             ),
           }
           : row
@@ -1182,7 +1229,9 @@ function DinersNumberSheet() {
     selectedAccountId,
     isDaycareVisible,
     stableExtraDietCols,
-    selectedAccountType
+    selectedAccountType,
+    year,
+    month
   );
 
   const summaryRows = useMemo(() => {

@@ -115,6 +115,8 @@ export default function BudgetTableTab() {
 
   // ✅ 저장 (예산부여, 비고만 변경 체크)
   const handleSave = async () => {
+    const user_id = localStorage.getItem("user_id") || "";
+
     const modifiedRows = editRows
       .map((row) => {
         if (!row._original) return null;
@@ -158,6 +160,7 @@ export default function BudgetTableTab() {
             status_yn: budgetGrantChanged ? "Y" : "N",
             // 당월 예상부여금액 - 전월 예산부여금액
             diff_amount: (Number(row.budget_total) || 0) - (Number(row.prev_budget_grant) || 0),
+            user_id,
           };
         }
         return null;

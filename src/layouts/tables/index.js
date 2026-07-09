@@ -531,13 +531,16 @@ export default function Tables() {
       // ✅ 여기서 edited 우선
       const del_yn = normalizeDelYn(edited.del_yn ?? row.del_yn_value ?? row.del_yn ?? "N");
 
+      const user_id = localStorage.getItem("user_id") || "";
+
       const fd = new FormData();
       fd.append("account_id", String(account_id));
       fd.append("account_rqd_member", String(account_rqd_member));
       fd.append("account_headcount", String(account_headcount));
       fd.append("account_type", String(account_type));
       fd.append("meal_type", String(meal_type));
-      fd.append("del_yn", String(del_yn)); // ✅ 추가
+      fd.append("del_yn", String(del_yn));
+      fd.append("user_id", user_id);
 
       try {
         const res = await api.post("/Account/AccountSave", fd, {
@@ -874,6 +877,18 @@ export default function Tables() {
               <MDButton
                 variant="gradient"
                 color="info"
+                onClick={handleModalOpen}
+                sx={{
+                  minWidth: isMobile ? 100 : 110,
+                  fontSize: isMobile ? "11px" : "13px",
+                }}
+              >
+                거래처 추가
+              </MDButton>
+
+              <MDButton
+                variant="gradient"
+                color="info"
                 onClick={handleSaveAll}
                 sx={{
                   minWidth: isMobile ? 100 : 110,
@@ -883,17 +898,6 @@ export default function Tables() {
                 변경 저장
               </MDButton>
 
-              <MDButton
-                variant="gradient"
-                color="info"
-                onClick={handleModalOpen}
-                sx={{
-                  minWidth: isMobile ? 100 : 110,
-                  fontSize: isMobile ? "11px" : "13px",
-                }}
-              >
-                거래처 추가
-              </MDButton>
             </MDBox>
 
             {/* 테이블 */}

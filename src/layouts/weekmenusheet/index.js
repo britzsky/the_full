@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import FullCalendar from "@fullcalendar/react";
@@ -22,7 +23,7 @@ import "./fullcalendar-custom.css";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
 
-function WeekMenuSheetTab() {
+function WeekMenuSheetTab({ embedded = false }) {
   const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   const [currentYear, setCurrentYear] = useState(dayjs().year());
   const [currentMonth, setCurrentMonth] = useState(dayjs().month() + 1);
@@ -176,11 +177,11 @@ function WeekMenuSheetTab() {
 
   if (loading) return <LoadingScreen />;
 
-  return (
-    <DashboardLayout>
+  const content = (
+    <>
       {/* 🔹 공통 헤더 사용 */}
       {/* <HeaderWithLogout title="🍚 사내 식단 달력 (내부 관리용)" /> */}
-      <DashboardNavbar title="🍚 사내 식단 달력 (내부 관리용)" />
+      {!embedded && <DashboardNavbar title="🍚 사내 식단 달력 (내부 관리용)" />}
       {loading && <Typography sx={{ mt: 2 }}>⏳ 데이터 불러오는 중...</Typography>}
 
       {/* ✅ 커스텀 헤더 */}
@@ -189,7 +190,7 @@ function WeekMenuSheetTab() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          mt: 2,
+          mt: embedded ? 0.5 : 2,
           mb: 1,
         }}
       >
@@ -243,7 +244,7 @@ function WeekMenuSheetTab() {
         }}
         eventColor="#F2921D"
         eventTextColor="#fff"
-        height="80vh"
+        height={embedded ? "calc(100vh - 190px)" : "80vh"}
         dayMaxEventRows={5}
         dayHeaderContent={(arg) => {
           const dow = arg.date.getDay();
@@ -362,8 +363,14 @@ function WeekMenuSheetTab() {
           </Box>
         </Box>
       </Modal>
-    </DashboardLayout>
+    </>
   );
+
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 }
+
+WeekMenuSheetTab.propTypes = {
+  embedded: PropTypes.bool,
+};
 
 export default WeekMenuSheetTab;

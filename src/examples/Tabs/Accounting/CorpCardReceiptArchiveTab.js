@@ -211,14 +211,60 @@ function CorpCardReceiptArchiveTab() {
     return res.blob();
   };
 
-  const downloadItem = (item) => {
+  const canChooseDownloadPath = () => Boolean(window.isSecureContext && window.showSaveFilePicker);
+
+  const triggerBrowserDownload = (url, fileName) => {
     const a = document.createElement("a");
-    a.href = item.previewUrl;
+    a.href = url;
     a.rel = "noopener noreferrer";
-    a.download = sanitizeFileName(item.receipt_image?.split("/").pop());
+    a.download = fileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+  };
+
+  const saveItem = async (item) => {
+    if (!item?.previewUrl) return;
+    const fileName = sanitizeFileName(item.receipt_image?.split("/").pop());
+
+    if (!canChooseDownloadPath()) {
+      try {
+        const blob = await fetchBlob(item);
+        const objectUrl = URL.createObjectURL(blob);
+        triggerBrowserDownload(objectUrl, fileName);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      } catch {
+        triggerBrowserDownload(item.previewUrl, fileName);
+      }
+      return;
+    }
+
+    let fileHandle;
+    try {
+      fileHandle = await window.showSaveFilePicker({ suggestedName: fileName });
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      console.error("저장 위치 선택 실패:", error);
+      Swal.fire("오류", "저장 위치를 선택하지 못했습니다. 다시 시도해주세요.", "error");
+      return;
+    }
+
+    try {
+      const blob = await fetchBlob(item);
+      const writable = await fileHandle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (error) {
+      console.error("파일 저장 실패:", error);
+      try {
+        const blob = await fetchBlob(item);
+        const objectUrl = URL.createObjectURL(blob);
+        triggerBrowserDownload(objectUrl, fileName);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      } catch {
+        triggerBrowserDownload(item.previewUrl, fileName);
+      }
+    }
   };
 
   const handleDownloadAll = async () => {
@@ -509,14 +555,14 @@ function CorpCardReceiptArchiveTab() {
                       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, flexShrink: 0 }}>
                         {item.previewUrl && (
                           <>
+                            <Tooltip title="다운로드">
+                              <IconButton size="small" onClick={() => saveItem(item)} sx={{ color: "#6b7280", "&:hover": { color: "#059669" } }}>
+                                <DownloadIcon sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            </Tooltip>
                             <Tooltip title="미리보기">
                               <IconButton size="small" onClick={() => handleOpenViewer(item)} sx={{ color: "#6b7280", "&:hover": { color: "#0891b2" } }}>
                                 <ImageSearchIcon sx={{ fontSize: 18 }} />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="다운로드">
-                              <IconButton size="small" onClick={() => downloadItem(item)} sx={{ color: "#6b7280", "&:hover": { color: "#059669" } }}>
-                                <DownloadIcon sx={{ fontSize: 18 }} />
                               </IconButton>
                             </Tooltip>
                           </>

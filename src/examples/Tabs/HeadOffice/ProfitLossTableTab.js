@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { Box, Grid, Select, MenuItem, TextField, Autocomplete } from "@mui/material";
+import { Box, Grid, Select, MenuItem, TextField, Autocomplete, Radio, RadioGroup, FormControlLabel } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -21,6 +21,7 @@ export default function ProfitLossTableTab() {
   const [month, setMonth] = useState("ALL");
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
+  const [radioFilter, setRadioFilter] = useState("전체");
   const didSetDefaultAccountRef = useRef(false);
   const tableBoxRef = useRef(null);
   const noteMeasureCanvasRef = useRef(null);
@@ -65,6 +66,46 @@ export default function ProfitLossTableTab() {
     return [allOption, ...normalized];
   }, [accountList, accountTypeById]);
 
+  const DOSOMAE_ACCOUNT_IDS = new Set([
+    "20260126093618",
+    "20260126093730",
+    "20260126093808",
+    "20260127025350",
+    "20260127025437",
+    "20260127025657",
+  ]);
+
+  const filteredAccountOptions = useMemo(() => {
+    if (radioFilter === "전체") return accountOptions;
+    if (radioFilter === "도소매") {
+      return accountOptions.filter(
+        (a) => a.account_id === "ALL" || DOSOMAE_ACCOUNT_IDS.has(String(a.account_id))
+      );
+    }
+    // 요양원/산업체: 해당 타입이면서 도소매 업장은 제외
+    return accountOptions.filter(
+      (a) =>
+        a.account_id === "ALL" ||
+        (String(a.account_type ?? "").trim() === radioFilter &&
+          !DOSOMAE_ACCOUNT_IDS.has(String(a.account_id)))
+    );
+  }, [accountOptions, radioFilter]);
+
+  const handleRadioChange = useCallback((e) => {
+    setRadioFilter(e.target.value);
+    setSelectedAccountId("ALL");
+    setAccountInput("");
+  }, []);
+
+  // 라디오 필터 활성화 시 해당 account_ids 목록 (백엔드 집계용)
+  const filterAccountIds = useMemo(() => {
+    if (radioFilter === "전체" || selectedAccountId !== "ALL") return "";
+    return filteredAccountOptions
+      .filter((a) => a.account_id !== "ALL")
+      .map((a) => a.account_id)
+      .join(",");
+  }, [radioFilter, selectedAccountId, filteredAccountOptions]);
+
   // ✅ 실제 조회에 사용할 account_id (전체면 빈값으로 넘김)
   const queryAccountId = useMemo(() => {
     return selectedAccountId === "ALL" ? "" : selectedAccountId;
@@ -73,9 +114,9 @@ export default function ProfitLossTableTab() {
   // ✅ 데이터 조회 (전체 포함, 월 포함)
   useEffect(() => {
     if (selectedAccountId) {
-      fetchProfitLossTableList(queryAccountId, queryMonth, year);
+      fetchProfitLossTableList(queryAccountId, queryMonth, year, filterAccountIds);
     }
-  }, [year, queryMonth, queryAccountId, selectedAccountId, fetchProfitLossTableList]);
+  }, [year, queryMonth, queryAccountId, selectedAccountId, fetchProfitLossTableList, filterAccountIds]);
 
   // ✅ 거래처·연도·월 변경 시 인건비 임시 잠금해제 초기화
   useEffect(() => {
@@ -429,7 +470,7 @@ export default function ProfitLossTableTab() {
       if (!result.isConfirmed) return;
     }
 
-    fetchProfitLossTableList(queryAccountId, queryMonth, year);
+    fetchProfitLossTableList(queryAccountId, queryMonth, year, filterAccountIds);
   };
 
   const getNoteInputWidth = (value) => {
@@ -1489,7 +1530,7 @@ export default function ProfitLossTableTab() {
       Swal.fire("변경 사항이 저장되었습니다.", "", "success");
       setLockedNoteColumnWidth(null);
       setUnlockedPersonCostMonths(new Set());  // ✅ 임시 잠금해제 초기화
-      fetchProfitLossTableList(queryAccountId, queryMonth, year);
+      fetchProfitLossTableList(queryAccountId, queryMonth, year, filterAccountIds);
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
     }
@@ -1656,7 +1697,7 @@ export default function ProfitLossTableTab() {
         html,
         icon: savedIds.length > 0 ? "success" : "info",
       });
-      if (savedIds.length > 0) fetchProfitLossTableList(queryAccountId, queryMonth, year);
+      if (savedIds.length > 0) fetchProfitLossTableList(queryAccountId, queryMonth, year, filterAccountIds);
     } catch (err) {
       Swal.fire("업로드 실패", err?.message || "오류가 발생했습니다.", "error");
     } finally {
@@ -1723,40 +1764,56 @@ export default function ProfitLossTableTab() {
   return (
     <>
       <MDBox
-        pt={1}
-        pb={1}
-        sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap" }}
+        sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap", pt: 0.5, pb: 1, pr: 1 }}
       >
-        <Autocomplete
-          size="small"
-          sx={{ minWidth: 200 }}
-          options={accountOptions}
-          value={selectedAccount}
-          onChange={(_, newValue) => {
-            // 입력 비움 시 거래처 선택 유지
-            if (!newValue) return;
-            setSelectedAccountId(newValue.account_id);
-          }}
-          inputValue={accountInput}
-          onInputChange={(_, newValue) => setAccountInput(newValue)}
-          getOptionLabel={(option) => option?.account_name ?? ""}
-          isOptionEqualToValue={(option, value) =>
-            String(option.account_id) === String(value.account_id)
-          }
-          renderInput={(params) => (
-            <TextField
-              {...params}
-              label="거래처 검색"
-              placeholder="거래처명을 입력"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  selectAccountByInput();
-                }
-              }}
-            />
-          )}
-        />
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <RadioGroup
+            row
+            value={radioFilter}
+            onChange={handleRadioChange}
+            sx={{ flexWrap: "nowrap" }}
+          >
+            {["전체", "요양원", "산업체", "도소매"].map((label) => (
+              <FormControlLabel
+                key={label}
+                value={label}
+                control={<Radio size="small" />}
+                label={label}
+                sx={{ mr: 0.5, "& .MuiFormControlLabel-label": { fontSize: "13px", position: "relative", top: "-1px", left: "-9px" } }}
+              />
+            ))}
+          </RadioGroup>
+          <Autocomplete
+            size="small"
+            sx={{ minWidth: 200 }}
+            options={filteredAccountOptions}
+            value={selectedAccount}
+            onChange={(_, newValue) => {
+              // 입력 비움 시 거래처 선택 유지
+              if (!newValue) return;
+              setSelectedAccountId(newValue.account_id);
+            }}
+            inputValue={accountInput}
+            onInputChange={(_, newValue) => setAccountInput(newValue)}
+            getOptionLabel={(option) => option?.account_name ?? ""}
+            isOptionEqualToValue={(option, value) =>
+              String(option.account_id) === String(value.account_id)
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="거래처 검색"
+                placeholder="거래처명을 입력"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    selectAccountByInput();
+                  }
+                }}
+              />
+            )}
+          />
+        </Box>
 
         <Select value={year} onChange={(e) => setYear(Number(e.target.value))} size="small">
           {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (

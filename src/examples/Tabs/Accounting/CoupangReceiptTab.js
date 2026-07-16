@@ -896,7 +896,7 @@ function CoupangReceiptTab() {
             {/* ZIP 다운로드 + 등록 버튼 */}
             <Grid item xs={12} md="auto" sx={{ ml: "auto" }}>
               <Box sx={{ display: "flex", gap: 1 }}>
-                <MDButton
+                {/* <MDButton
                   color="success"
                   size="small"
                   onClick={handleDownloadAll}
@@ -905,7 +905,7 @@ function CoupangReceiptTab() {
                 >
                   <DownloadIcon sx={{ fontSize: 16, mr: 0.5 }} />
                   ZIP 다운로드
-                </MDButton>
+                </MDButton> */}
                 <MDButton
                   color="warning"
                   size="small"

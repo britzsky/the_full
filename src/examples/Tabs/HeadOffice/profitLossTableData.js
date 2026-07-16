@@ -20,7 +20,7 @@ export default function useProfitLossTableData(year, month, account_id) {
 
   // ✅ 전달받은 인자를 우선 사용하고, 없으면 현재 state 값 사용
   const fetchProfitLossTableList = useCallback(
-    async (accountIdParam = account_id, monthParam = month, yearParam = year) => {
+    async (accountIdParam = account_id, monthParam = month, yearParam = year, accountIdsParam = "") => {
       setLoading(true);
       try {
         const normalizedMonth =
@@ -31,6 +31,7 @@ export default function useProfitLossTableData(year, month, account_id) {
             year: yearParam,
             account_id: account_id,
             month: normalizedMonth,
+            ...(accountIdsParam ? { account_ids: accountIdsParam } : {}),
           },
         });
 

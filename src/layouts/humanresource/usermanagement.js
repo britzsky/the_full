@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import Card from "@mui/material/Card";
 import Grid from "@mui/material/Grid";
 import Select from "@mui/material/Select";
@@ -143,7 +144,7 @@ const TABLE_FONT_SIZE = 12;
 const CELL_HEIGHT = 33;
 const CELL_INNER_HEIGHT = 23;
 const MIN_LOADING_MODAL_MS = 420;
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 19;
 // 저장 전 변경 셀 강조 색상(accountissuesheettab과 동일)
 const CHANGED_ACCENT_COLOR = "#d32f2f";
 // 신규 본사 사용자 행 식별 접두어
@@ -282,7 +283,7 @@ const buildSearchBlob = (row) => {
     .join(" ");
 };
 
-function UserManagement() {
+function UserManagement({ embedded = false }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
@@ -1645,8 +1646,8 @@ function UserManagement() {
     }
   }, [currentPage, totalPages]);
 
-  return (
-    <DashboardLayout>
+  const content = (
+    <>
       {/* 스크롤 시 상단 네비가 화면 위에 유지되도록 고정 */}
       <MDBox
         sx={{
@@ -1656,11 +1657,11 @@ function UserManagement() {
           backgroundColor: "#ffffff",
         }}
       >
-        <DashboardNavbar title="🧑‍🔧사용자 관리" />
+        {!embedded && <DashboardNavbar title="🧑‍🔧사용자 관리" />}
       </MDBox>
       <Grid container spacing={2}>
         <Grid item xs={12}>
-          <Card sx={{ mt: 1 }}>
+          <Card sx={{ mt: embedded ? 0 : 1 }}>
             <MDBox
               sx={{
                 // 모바일에서는 검색/버튼 영역도 본문과 함께 스크롤되도록 고정 해제
@@ -1672,7 +1673,7 @@ function UserManagement() {
               }}
             >
               <MDBox
-                pt={1}
+                pt={embedded ? 0.25 : 1}
                 pb={1}
                 sx={{
                   display: "flex",
@@ -1862,8 +1863,14 @@ function UserManagement() {
           </Card>
         </Grid>
       </Grid>
-    </DashboardLayout>
+    </>
   );
+
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 }
+
+UserManagement.propTypes = {
+  embedded: PropTypes.bool,
+};
 
 export default UserManagement;

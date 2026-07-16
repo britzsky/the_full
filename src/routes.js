@@ -44,12 +44,11 @@ import SignUp from "layouts/authentication/sign-up";
 import Logout from "layouts/authentication/logout";
 // 본사
 import PeopleCountingManager from "layouts/headoffice/headofficetab";
-import WeekMenuManager from "layouts/weekmenusheet";
 import EventManager from "layouts/eventsheet";
-import CarManager from "examples/Tabs/Business/CorCarTab";
 import ElectronicPaymentManager from "layouts/headoffice/headofficetab_2";
 import HeadofficeNotice from "layouts/HeadofficeNotice";
 import HeadofficeScheduleSheet from "layouts/headoffice/headofficetab_3";
+import HeadofficeManagement from "layouts/headoffice/headofficetab_4";
 
 // 영업
 import BusinessSchedule from "layouts/business/BusinessScheduleSheet";
@@ -75,8 +74,6 @@ import AccountPersonPurchaseManager from "layouts/accounting/accountpersonpurcha
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
 import Education from "layouts/humanresource/education";
 import HumanResourceEvaluation from "layouts/humanresource/humanresourcetab_2";
-// 사용자 관리
-import UserManagement from "layouts/humanresource/usermanagement";
 // 현장
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
@@ -175,40 +172,13 @@ const routes = [
       },
       {
         type: "collapse",
-        name: "🍚 본사 식단표",
-        key: "weekmenu",
-        //icon: <Icon fontSize="small">*</Icon>,
-        route: "/weekmenu",
-        component: <WeekMenuManager />,
+        name: "🏢 본사 관리",
+        key: "headoffice_management",
+        route: "/headoffice/management",
+        component: <HeadofficeManagement />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
-      },
-      {
-        type: "collapse",
-        name: "🚙 법인차량 관리",
-        key: "weekmenu",
-        //icon: <Icon fontSize="small">*</Icon>,
-        route: "/carManager",
-        component: <CarManager />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
-        accessMode: "AND",
-      },
-      {
-        type: "collapse",
-        name: "👥 사용자 관리",
-        key: "user_management",
-        // icon: <Icon fontSize="small">*</Icon>,
-        route: "/headoffice/user-management",
-        component: <UserManagement />,
-        allowedDepartments: [0, 6], // 🔹 부서권한 (대표님 / 개발팀)
-        allowedPositions: [0, 1], // 🔹 직책권한 (대표님 / 팀장님)
-        accessMode: "OR",
-        allowUserIds: [
-          "db1", // 송다빈 매니저
-          "si1", // 김세인 매니저
-        ], //
       },
       {
         type: "collapse",

@@ -2622,7 +2622,7 @@ function AccountInfoSheet() {
                   </TextField>
                 </Grid>
 
-                {/* 마감 담당자 */}
+                {/* 마감 담당자 및 유입 경로 */}
                 <Grid
                   item
                   xs={12}
@@ -2682,6 +2682,51 @@ function AccountInfoSheet() {
                     inputProps={{ readOnly: isDeletedAccount }}
                     onChange={(e) => handleChange("closing_tel", e.target.value)}
                   />
+                  <MDTypography
+                    sx={{
+                      minWidth: { xs: "86px", sm: "auto" },
+                      fontSize: { xs: "12px", sm: "13px" },
+                      textAlign: "right",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    유입경로
+                  </MDTypography>
+                  <TextField
+                    select
+                    size="small"
+                    disabled={isDeletedAccount}
+                    sx={{
+                      flex: { xs: "1 1 calc(100% - 94px)", sm: 1 },
+                      minWidth: 0,
+                      "& .MuiInputBase-root": {
+                        height: 29,
+                        fontSize: { xs: "12px", sm: "13px" },
+                      },
+                      "& .MuiSelect-select": {
+                        minHeight: "0 !important",
+                        height: "20px",
+                        py: "4px",
+                        px: "6px",
+                        display: "flex",
+                        alignItems: "center",
+                        color: getColor("source", formData.source),
+                      },
+                    }}
+                    value={formData.source ?? ""}
+                    onChange={(e) => handleChange("source", Number(e.target.value))}
+                  >
+                    <MenuItem value={1}>기술 영업</MenuItem>
+                    <MenuItem value={2}>우편 영업</MenuItem>
+                    <MenuItem value={3}>방문 영업</MenuItem>
+                    <MenuItem value={4}>카페 영업</MenuItem>
+                    <MenuItem value={5}>TM</MenuItem>
+                    <MenuItem value={6}>입찰</MenuItem>
+                    <MenuItem value={7}>소개</MenuItem>
+                    <MenuItem value={8}>홈페이지</MenuItem>
+                    <MenuItem value={9}>인스타그램</MenuItem>
+                    <MenuItem value={10}>블로그</MenuItem>
+                  </TextField>
                 </Grid>
 
                 {/* 시설기기 */}

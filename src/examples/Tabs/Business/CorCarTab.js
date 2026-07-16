@@ -1,5 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useMemo, useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -28,7 +29,7 @@ import { Download, Trash2, RotateCcw, ChevronLeft, ChevronRight } from "lucide-r
 
 const MAX_FILES = 5;
 
-function CorCarTabStyled() {
+function CorCarTabStyled({ embedded = false }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -235,17 +236,17 @@ function CorCarTabStyled() {
 
         return exists
           ? {
-              ...row,
-              deletedImages: row.deletedImages.filter((d) =>
-                d.image_id && target.image_id
-                  ? d.image_id !== target.image_id
-                  : d.image_path !== target.image_path
-              ),
-            }
+            ...row,
+            deletedImages: row.deletedImages.filter((d) =>
+              d.image_id && target.image_id
+                ? d.image_id !== target.image_id
+                : d.image_path !== target.image_path
+            ),
+          }
           : {
-              ...row,
-              deletedImages: [...row.deletedImages, target],
-            };
+            ...row,
+            deletedImages: [...row.deletedImages, target],
+          };
       })
     );
   };
@@ -497,8 +498,8 @@ function CorCarTabStyled() {
 
   if (loading) return <LoadingScreen />;
 
-  return (
-    <DashboardLayout>
+  const content = (
+    <>
       <MDBox
         sx={{
           // 스크롤 시 상단 네비가 화면 위에 유지되도록 고정
@@ -509,7 +510,7 @@ function CorCarTabStyled() {
         }}
       >
         {/* <HeaderWithLogout showMenuButton title="🚌 출근부" /> */}
-        <DashboardNavbar title="🚙 법인차량 관리" />
+        {!embedded && <DashboardNavbar title="🚙 법인차량 관리" />}
       </MDBox>
       {/* 상단 차량 선택 + 버튼 영역 - 모바일에서 줄바꿈 */}
       <MDBox
@@ -520,7 +521,7 @@ function CorCarTabStyled() {
           alignItems: "center",
           flexWrap: isMobile ? "wrap" : "nowrap",
           pt: 0.25,
-          pb: 2.5,
+          pb: embedded ? "5px" : 2.5,
           // 모바일에서는 상단 툴바를 본문 스크롤에 포함
           position: isMobile ? "static" : "sticky",
           zIndex: isMobile ? "auto" : 10,
@@ -529,61 +530,61 @@ function CorCarTabStyled() {
           borderBottom: "1px solid #eee",
         }}
       >
-          {carSelectList.length > 0 && (
-            <TextField
-              select
-              size="small"
-              value={selectedCar}
-              onChange={(e) => setSelectedCar(e.target.value)}
-              sx={{ minWidth: isMobile ? 140 : 150 }}
-              SelectProps={{ native: true }}
-              disabled={saving}
-            >
-              {carSelectList.map((car) => (
-                <option key={car.car_number} value={car.car_number}>
-                  {car.full_name}
-                </option>
-              ))}
-            </TextField>
-          )}
-
-          <Box
-            sx={{
-              display: "flex",
-              gap: 1,
-              flexWrap: isMobile ? "wrap" : "nowrap",
-            }}
+        {carSelectList.length > 0 && (
+          <TextField
+            select
+            size="small"
+            value={selectedCar}
+            onChange={(e) => setSelectedCar(e.target.value)}
+            sx={{ minWidth: isMobile ? 140 : 150 }}
+            SelectProps={{ native: true }}
+            disabled={saving}
           >
-            <MDButton
-              variant="gradient"
-              color="info"
-              onClick={handleAddRow}
-              disabled={saving}
-              sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
-            >
-              행 추가
-            </MDButton>
-            <MDButton
-              variant="gradient"
-              color="info"
-              onClick={handleModalOpen}
-              disabled={saving}
-              sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
-            >
-              차량등록
-            </MDButton>
-            <MDButton
-              variant="gradient"
-              color="info"
-              onClick={handleSave}
-              disabled={saving}
-              sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
-            >
-              저장
-            </MDButton>
-          </Box>
+            {carSelectList.map((car) => (
+              <option key={car.car_number} value={car.car_number}>
+                {car.full_name}
+              </option>
+            ))}
+          </TextField>
+        )}
+
+        <Box
+          sx={{
+            display: "flex",
+            gap: 1,
+            flexWrap: isMobile ? "wrap" : "nowrap",
+          }}
+        >
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleAddRow}
+            disabled={saving}
+            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
+          >
+            행 추가
+          </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleModalOpen}
+            disabled={saving}
+            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
+          >
+            차량등록
+          </MDButton>
+          <MDButton
+            variant="gradient"
+            color="info"
+            onClick={handleSave}
+            disabled={saving}
+            sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
+          >
+            저장
+          </MDButton>
+        </Box>
       </MDBox>
-      <MDBox pb={5} sx={{ ...tableSx, mt: 2 }}>
+      <MDBox pb={embedded ? 0 : 5} sx={{ ...tableSx, mt: embedded ? 0 : 2 }}>
         <Grid container spacing={3}>
           <Grid item xs={12}>
             <table>
@@ -1043,8 +1044,14 @@ function CorCarTabStyled() {
           {savingText || "이미지 등록중..."}
         </Typography>
       </Backdrop>
-    </DashboardLayout>
+    </>
   );
+
+  return embedded ? content : <DashboardLayout>{content}</DashboardLayout>;
 }
+
+CorCarTabStyled.propTypes = {
+  embedded: PropTypes.bool,
+};
 
 export default CorCarTabStyled;

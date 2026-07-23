@@ -33,7 +33,6 @@ const ADMIN_USER_IDS =
     "britzsky",  // 손경원 팀장님
     "ceo"];      // 대표님
 const HR_DEPARTMENT_CODE = "3";   // 인사팀
-const HP_DEPARTMENT_CODE = "8";   // 실장 부서
 
 const TYPE_LABELS = { 1: "총괄", 2: "인사", 3: "영업", 4: "개발", 5: "회계", 6: "운영", 7: "기획" };
 const POSITION_LABELS = { 0: "대표이사", 1: "팀장", 2: "파트장", 3: "매니저" };
@@ -67,14 +66,12 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const isAdmin = useMemo(() => ADMIN_USER_IDS.includes(loginUserId), [loginUserId]);
   const isTeamLeader = useMemo(() => isAdmin || loginPosition === 1, [isAdmin, loginPosition]);
   const isHrLeader = useMemo(() => isTeamLeader && loginDepartment === HR_DEPARTMENT_CODE, [isTeamLeader, loginDepartment]);
-  // 실장 권한 여부
-  const isHpLeader = useMemo(() => (isAdmin || loginPosition === 1) && loginDepartment === HP_DEPARTMENT_CODE, [isAdmin, loginPosition, loginDepartment]);
   const isCeoLeader = useMemo(() => loginUserId === "ceo" || loginPosition === 0, [loginUserId, loginPosition]);
   // 평가문서 목록, 상세, 결재 처리 데이터 훅
   const {
     rows, loading, detail, detailLoading, saving, evaluationFiles,
     loadList, loadDetail, deleteEvaluation,
-    confirmTeamLeader, confirmHpLeader, confirmHrLeader, confirmCeoLeader,
+    confirmTeamLeader, confirmHrLeader, confirmCeoLeader,
     updatePerformance, clearEvaluationFiles,
   } = useEvaluationData();
 
@@ -89,7 +86,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
 
   // 결재 의견 입력 상태
   const [tmOpinionText, setTmOpinionText] = useState("");
-  const [hpOpinionText, setHpOpinionText] = useState("");
 
   // 첨부파일 미리보기 상태
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -97,13 +93,11 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const [previewIndex, setPreviewIndex] = useState(0);
 
   // 목록 조회 파라미터
-  // 실장은 모든 팀의 평가문서 조회, position 1(팀장)은 같은 부서 전체 조회, position 2~3은 자신의 문서만 조회
   const listParams = useMemo(() => {
     if (isAdmin) return {};
-    if (isHpLeader) return {};
     if (isTeamLeader) return { department: loginDepartment };
     return { user_id: loginUserId };
-  }, [isAdmin, isHpLeader, isTeamLeader, loginDepartment, loginUserId]);
+  }, [isAdmin, isTeamLeader, loginDepartment, loginUserId]);
 
   // 권한별 조회 조건에 따른 목록 초기 조회
   useEffect(() => { loadList(listParams); }, [loadList, listParams]);
@@ -147,7 +141,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
     setPerformanceEditMode(false);
     setPerfValues({});
     setTmOpinionText("");
-    setHpOpinionText("");
     loadList(listParams);
   }, [clearEvaluationFiles, loadList, listParams]);
 
@@ -224,23 +217,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
     await loadDetail(selectedIdx);
     setTmOpinionText("");
     Swal.fire({ title: "완료", text: "팀장 확인이 완료되었습니다.", icon: "success", confirmButtonText: "확인" });
-  };
-
-  // 실장 의견 저장 및 확인
-  const handleHpLeaderConfirm = async () => {
-    if (!selectedIdx) return;
-    const res = await Swal.fire({
-      title: "실장 의견을 저장하시겠습니까?",
-      text: "확인 처리 후에는 취소할 수 없습니다.",
-      icon: "question", showCancelButton: true,
-      confirmButtonText: "확인", cancelButtonText: "취소", confirmButtonColor: "#6a1b9a",
-    });
-    if (!res.isConfirmed) return;
-    const ok = await confirmHpLeader({ idx: selectedIdx, userName: loginUserName || loginUserId, opinion: hpOpinionText });
-    if (!ok) { Swal.fire({ title: "실패", text: "확인 처리 중 오류가 발생했습니다.", icon: "error" }); return; }
-    await loadDetail(selectedIdx);
-    setHpOpinionText("");
-    Swal.fire({ title: "완료", text: "실장 확인이 완료되었습니다.", icon: "success", confirmButtonText: "확인" });
   };
 
   // 인사팀장 확인
@@ -329,7 +305,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                   <col style={{ width: isMobile ? 110 : 140 }} />
                   <col style={{ width: isMobile ? 110 : 140 }} />
                   <col style={{ width: isMobile ? 110 : 140 }} />
-                  <col style={{ width: isMobile ? 110 : 140 }} />
                   <col style={{ width: isMobile ? 120 : 150 }} />
                 </colgroup>
                 <thead>
@@ -341,7 +316,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                     <th style={{ ...th2Cell, height: 36 }}>평가기간</th>
                     <th style={{ ...th2Cell, height: 36 }}>KPI 수</th>
                     <th style={{ ...th2Cell, height: 36 }}>팀장</th>
-                    <th style={{ ...th2Cell, height: 36 }}>실장</th>
                     <th style={{ ...th2Cell, height: 36 }}>인사팀장</th>
                     <th style={{ ...th2Cell, height: 36 }}>대표이사</th>
                     <th style={{ ...th2Cell, height: 36 }}>등록일시</th>
@@ -350,14 +324,12 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr>
-                      <td style={{ ...td2CellCenter, padding: 16 }} colSpan={11}>평가 데이터가 없습니다.</td>
+                      <td style={{ ...td2CellCenter, padding: 16 }} colSpan={10}>평가 데이터가 없습니다.</td>
                     </tr>
                   ) : filteredRows.map((row, i) => {
                     // 목록 행별 결재범위 표시 여부
-                    const rowDept = String(row.department || row.writer_department || "");
                     const rowApprovalPosition = getApprovalPosition(row.approval_position);
-                    const needsTeam = rowApprovalPosition <= 3 && rowDept !== "8";
-                    const needsHp = rowApprovalPosition <= 2;
+                    const needsTeam = rowApprovalPosition <= 3;
                     const needsHr = rowApprovalPosition <= 1;
                     const needsCeo = rowApprovalPosition <= 0;
                     return (
@@ -387,15 +359,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                             <div style={String(row.tm_sign || "") === "4" ? confirmCellConfirmedSx : confirmCellInnerSx}>
                               <ConfirmBadge confirmed={String(row.tm_sign || "") === "4"} />
                               {row.tm_dt && <div style={confirmDtSx}>{row.tm_dt}</div>}
-                            </div>
-                          )}
-                        </td>
-                        {/* 실장 확인 상태 */}
-                        <td style={td2CellCenter}>
-                          {!needsHp ? <span style={{ fontSize: 11, color: "#ccc" }}>-</span> : (
-                            <div style={String(row.hp_sign || "") === "4" ? confirmCellConfirmedSx : confirmCellInnerSx}>
-                              <ConfirmBadge confirmed={String(row.hp_sign || "") === "4"} />
-                              {row.hp_dt && <div style={confirmDtSx}>{row.hp_dt}</div>}
                             </div>
                           )}
                         </td>
@@ -436,15 +399,12 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const firstItem = detailItems[0] || {};
 
   // 상세 평가문서 결재범위 계산값
-  const writerDept = String(firstItem.writer_department || "");
   const approvalPosition = getApprovalPosition(firstItem.approval_position);
-  const needsTeamLeaderConfirm = approvalPosition <= 3 && writerDept !== "8";
-  const needsHpConfirm = approvalPosition <= 2;
+  const needsTeamLeaderConfirm = approvalPosition <= 3;
   const needsHrConfirm = approvalPosition <= 1;
   const needsCeoConfirm = approvalPosition <= 0;
 
   const tmAlreadyConfirmed = String(firstItem.tm_sign || "") === "4";
-  const hpAlreadyConfirmed = String(firstItem.hp_sign || "") === "4";
   const hrAlreadyConfirmed = String(firstItem.hr_sign || "") === "4";
   const ceoAlreadyConfirmed = String(firstItem.ceo_sign || "") === "4";
 
@@ -452,16 +412,11 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const canTeamLeaderConfirm = needsTeamLeaderConfirm && !tmAlreadyConfirmed &&
     (isAdmin || (loginPosition === 1 && String(firstItem.writer_department) === loginDepartment));
 
-  const canHpLeaderConfirm = needsHpConfirm && !hpAlreadyConfirmed && isHpLeader &&
-    (!needsTeamLeaderConfirm || tmAlreadyConfirmed);
-
   const canHrLeaderConfirm = needsHrConfirm && !hrAlreadyConfirmed && isHrLeader &&
-    (!needsTeamLeaderConfirm || tmAlreadyConfirmed) &&
-    (!needsHpConfirm || hpAlreadyConfirmed);
+    (!needsTeamLeaderConfirm || tmAlreadyConfirmed);
 
   const canCeoLeaderConfirm = needsCeoConfirm && !ceoAlreadyConfirmed && isCeoLeader &&
     (!needsTeamLeaderConfirm || tmAlreadyConfirmed) &&
-    (!needsHpConfirm || hpAlreadyConfirmed) &&
     (!needsHrConfirm || hrAlreadyConfirmed);
 
 
@@ -484,14 +439,12 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                 <tr>
                   <td style={stampLabelCell}>본인</td>
                   {needsTeamLeaderConfirm && <td style={stampLabelCell}>팀장</td>}
-                  {needsHpConfirm && <td style={stampLabelCell}>실장</td>}
                   {needsHrConfirm && <td style={stampLabelCell}>인사팀장</td>}
                   {needsCeoConfirm && <td style={stampLabelCell}>대표이사</td>}
                 </tr>
                 <tr>
                   <td style={stampCell}>{String(firstItem.charge_sign || "") === "4" ? <Stamp name={firstItem.user_name} small /> : null}</td>
                   {needsTeamLeaderConfirm && <td style={stampCell}>{tmAlreadyConfirmed ? <Stamp name={firstItem.tm_user_name} small /> : null}</td>}
-                  {needsHpConfirm && <td style={stampCell}>{hpAlreadyConfirmed ? <Stamp name={firstItem.hp_user_name} small /> : null}</td>}
                   {needsHrConfirm && <td style={stampCell}>{hrAlreadyConfirmed ? <Stamp name={firstItem.hr_user_name} small /> : null}</td>}
                   {needsCeoConfirm && <td style={stampCell}>{ceoAlreadyConfirmed ? <Stamp name={firstItem.ceo_user_name} small /> : null}</td>}
                 </tr>
@@ -503,13 +456,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
           {canTeamLeaderConfirm && (
             <MDButton variant="gradient" color="info" onClick={handleTeamLeaderConfirm} sx={{ fontSize: isMobile ? 11 : 13 }}>
               팀장 의견 저장 및 확인
-            </MDButton>
-          )}
-
-          {/* 실장 의견 저장 및 확인 버튼 */}
-          {canHpLeaderConfirm && (
-            <MDButton variant="gradient" color="info" onClick={handleHpLeaderConfirm} sx={{ fontSize: isMobile ? 11 : 13 }}>
-              실장 의견 저장 및 확인
             </MDButton>
           )}
 
@@ -752,7 +698,7 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
             <MDBox sx={sectionTitleSx}>의견</MDBox>
             <MDBox sx={{ p: "12px 14px", display: "flex", flexDirection: "column", gap: 2 }}>
               {/* 팀장 의견 영역 */}
-              {writerDept !== "8" && (
+              {needsTeamLeaderConfirm && (
                 <MDBox>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 6 }}>
                     팀장 의견{firstItem.tm_user_name ? ` (${firstItem.tm_user_name})` : ""}
@@ -764,23 +710,6 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                       {!tmAlreadyConfirmed
                         ? <span style={{ color: "#aaa" }}>팀장 확인 전입니다</span>
                         : firstItem.tm_opinion || <span style={{ color: "#bbb" }}>(의견 없음)</span>}
-                    </div>
-                  )}
-                </MDBox>
-              )}
-              {/* 실장 의견 영역 */}
-              {needsHpConfirm && (
-                <MDBox>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 6 }}>
-                    실장 의견{firstItem.hp_user_name ? ` (${firstItem.hp_user_name})` : ""}
-                  </div>
-                  {canHpLeaderConfirm ? (
-                    <textarea value={hpOpinionText} onChange={(e) => setHpOpinionText(e.target.value)} placeholder="실장 의견을 입력하세요. (선택)" style={opinionTextareaSx} />
-                  ) : (
-                    <div style={opinionReadOnlySx}>
-                      {!hpAlreadyConfirmed
-                        ? <span style={{ color: "#aaa" }}>실장 확인 전입니다</span>
-                        : firstItem.hp_opinion || <span style={{ color: "#bbb" }}>(의견 없음)</span>}
                     </div>
                   )}
                 </MDBox>

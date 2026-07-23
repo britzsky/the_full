@@ -69,21 +69,6 @@ export default function useEvaluationManageData() {
     }
   }, []);
 
-  const confirmHpLeader = useCallback(async ({ idx, userName, opinion }) => {
-    setSaving(true);
-    try {
-      await api.post("/HeadOffice/EvaluationHpLeaderConfirm", {
-        idx, user_name: userName, opinion: opinion || "",
-      });
-      return true;
-    } catch (e) {
-      console.error("실장 확인 처리 실패:", e);
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  }, []);
-
   const confirmHrLeader = useCallback(async ({ idx, userName }) => {
     setSaving(true);
     try {
@@ -155,7 +140,7 @@ export default function useEvaluationManageData() {
   return {
     rows, loading, detail, detailLoading, saving, evaluationFiles,
     loadList, loadDetail, deleteEvaluation,
-    confirmTeamLeader, confirmHpLeader, confirmHrLeader, confirmCeoLeader,
+    confirmTeamLeader, confirmHrLeader, confirmCeoLeader,
     updatePerformance, clearEvaluationFiles,
     fetchEvaluationNotifications, markEvaluationNotificationRead,
   };

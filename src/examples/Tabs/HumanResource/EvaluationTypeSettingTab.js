@@ -26,7 +26,6 @@ const emptyForm = {
 const APPROVAL_OPTIONS = [
   { value: 0, label: "대표이사" },
   { value: 1, label: "인사팀장" },
-  { value: 2, label: "실장" },
   { value: 3, label: "팀장" },
   { value: 4, label: "팀원 확인만" },
 ];

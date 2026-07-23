@@ -5,7 +5,7 @@ export default function useEvaluationDocumentSheetData() {
   const [saving, setSaving]               = useState(false);
   const [evaluationFiles, setEvaluationFiles] = useState([]);
 
-  const saveEvaluation = useCallback(async ({ userId, startTime, endTime, items, docType, chargeSign, tmUser, hrUser, hpUser, ceoUser, editIdx }) => {
+  const saveEvaluation = useCallback(async ({ userId, startTime, endTime, items, docType, chargeSign, tmUser, hrUser, ceoUser, editIdx }) => {
     setSaving(true);
     try {
       const res = await api.post("/HeadOffice/EvaluationSave", {
@@ -17,7 +17,6 @@ export default function useEvaluationDocumentSheetData() {
         charge_sign: chargeSign || "",
         tm_user:     tmUser     || "",
         hr_user:     hrUser     || "",
-        hp_user:     hpUser     || "",
         ceo_user:    ceoUser    || "",
         edit_idx:    editIdx    || "",
       });

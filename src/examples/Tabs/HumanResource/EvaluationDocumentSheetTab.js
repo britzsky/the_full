@@ -184,25 +184,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     return (hrTeamUsers || []).find((u) => Number(u.position) === 1)?.user_id || "";
   }, [hrTeamUsers]);
 
-  // 실장팀 사용자: department=8
-  const hpTeamUsers = useMemo(() => {
-    return (allUsers || []).filter((u) => String(u.department) === "8");
-  }, [allUsers]);
-
-  // 실장ID: department=8의 position=1 사용자
-  const hpUser = useMemo(() => {
-    return (hpTeamUsers || []).find((u) => Number(u.position) === 1)?.user_id || "";
-  }, [hpTeamUsers]);
-
-  // dept 4, 5, 8 모두 실장 확인 필요 (dept 8은 팀장 단계 없이 실장이 직접 확인)
   const ceoUser = useMemo(() => {
     return (allUsers || []).find((u) => String(u.user_id) === "ceo")?.user_id
       || (allUsers || []).find((u) => Number(u.position) === 0)?.user_id
       || "";
   }, [allUsers]);
 
-  const needsTeamLeaderConfirm = useMemo(() => approvalPosition <= 3 && String(department) !== "8", [approvalPosition, department]);
-  const needsHpConfirm = useMemo(() => approvalPosition <= 2, [approvalPosition]);
+  const needsTeamLeaderConfirm = useMemo(() => approvalPosition <= 3, [approvalPosition]);
   const needsHrConfirm = useMemo(() => approvalPosition <= 1, [approvalPosition]);
   const needsCeoConfirm = useMemo(() => approvalPosition <= 0, [approvalPosition]);
 
@@ -501,7 +489,6 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
       chargeSign: "4",
       tmUser: needsTeamLeaderConfirm ? tmUser : "",
       hrUser: needsHrConfirm ? hrUser : "",
-      hpUser: needsHpConfirm ? hpUser : "",
       ceoUser: needsCeoConfirm ? ceoUser : "",
       editIdx: editData?.editIdx || "",
     });
@@ -941,11 +928,10 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                     <tr>
                       {(() => {
                         // approval_position 설정값 기준으로 도장 칸 구성
-                        // 0=대표이사, 1=인사팀장, 2=실장, 3=팀장, 4=팀원확인만
+                        // 0=대표이사, 1=인사팀장, 3=팀장, 4=팀원확인만
                         const stamps = [
                           { label: "본인", content: writerName ? <Stamp name={writerName} /> : null },
                           ...(approvalPosition <= 3 ? [{ label: "팀장", content: null }] : []),
-                          ...(approvalPosition <= 2 ? [{ label: "실장", content: null }] : []),
                           ...(approvalPosition <= 1 ? [{ label: "인사팀장", content: null }] : []),
                           ...(approvalPosition <= 0 ? [{ label: "대표이사", content: null }] : []),
                         ];

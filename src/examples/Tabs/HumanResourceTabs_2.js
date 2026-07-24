@@ -86,9 +86,13 @@ function HumanResourceEvaluationTab() {
     setTabIndex(0);
   }, []);
 
-  // 작성 완료 후 수정 데이터 초기화
-  const handleEditClear = useCallback(() => {
+  // 수정 저장 완료 후: editData 초기화 + 관리 탭으로 이동 + 해당 문서 상세 자동 오픈
+  const handleEditClear = useCallback((savedIdx) => {
     setEditData(null);
+    if (savedIdx) {
+      setInitialEvalIdx(savedIdx);
+      setTabIndex(1);
+    }
   }, []);
 
   const numberIcons = ["1️⃣", "2️⃣", "3️⃣"];

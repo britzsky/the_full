@@ -750,6 +750,12 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                       const deletedOrders = rowDeletedOrders[row.id] || [];
                       const totalCount = pendingArr.length + savedArr.length;
 
+                      const countLines = (val) => String(val || "").split("\n").length;
+                      const syncedRows = Math.min(
+                        Math.max(countLines(row.plan), countLines(row.measurement), countLines(row.content), 3),
+                        5
+                      );
+
                       return (
                         <tr key={row.id}>
                           {/* 순번 */}
@@ -771,13 +777,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                             </TextField>
                           </td>
 
-                          {/* 실행계획 — height:1px 트릭으로 행 높이에 맞춰 textarea 자동 확장 */}
-                          <td style={{ ...tdCellTop, height: "1px" }}>
+                          {/* 실행계획 */}
+                          <td style={tdCellTop}>
                             <TextField
-                              multiline minRows={4} size="small" fullWidth
+                              multiline minRows={syncedRows} maxRows={5} size="small" fullWidth
                               value={row.plan}
                               onChange={(e) => onChangeRow(row.id, "plan", e.target.value)}
-                              sx={textareaStretchSx}
+                              sx={textareaAutoSx}
                               placeholder="실행계획"
                             />
                           </td>
@@ -795,13 +801,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                             />
                           </td>
 
-                          {/* 측정방법 — height:1px 트릭으로 행 높이에 맞춰 textarea 자동 확장 */}
-                          <td style={{ ...tdCellTop, height: "1px" }}>
+                          {/* 측정방법 */}
+                          <td style={tdCellTop}>
                             <TextField
-                              multiline minRows={4} size="small" fullWidth
+                              multiline minRows={syncedRows} maxRows={5} size="small" fullWidth
                               value={row.measurement}
                               onChange={(e) => onChangeRow(row.id, "measurement", e.target.value)}
-                              sx={textareaStretchSx}
+                              sx={textareaAutoSx}
                               placeholder="측정방법"
                             />
                           </td>
@@ -832,13 +838,13 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                             />
                           </td>
 
-                          {/* 내용 — height:1px 트릭으로 행 높이에 맞춰 textarea 자동 확장 */}
-                          <td style={{ ...tdCellTop, height: "1px" }}>
+                          {/* 내용 */}
+                          <td style={tdCellTop}>
                             <TextField
-                              multiline minRows={4} size="small" fullWidth
+                              multiline minRows={syncedRows} maxRows={5} size="small" fullWidth
                               value={row.content}
                               onChange={(e) => onChangeRow(row.id, "content", e.target.value)}
-                              sx={textareaStretchSx}
+                              sx={textareaAutoSx}
                               placeholder="내용"
                             />
                           </td>
@@ -1145,21 +1151,12 @@ const textareaSx = {
   "& .Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: "#1f4e79" },
 };
 
-// 테이블 행 높이에 맞춰 자동으로 늘어나는 textarea 스타일
-// td에 height:"1px" 설정 시 height:100%가 실제 행 높이를 채움
-const textareaStretchSx = {
+// 기본 2.5줄, 최대 5줄 후 스크롤되는 textarea 스타일
+const textareaAutoSx = {
   ...textareaSx,
-  height: "100%",
-  "& .MuiInputBase-root": {
-    height: "100%",
-    alignItems: "flex-start",
-  },
   "& .MuiInputBase-inputMultiline": {
     fontSize: 12,
-    height: "100% !important",
-    overflowY: "auto !important",
     resize: "none",
-    boxSizing: "border-box",
   },
 };
 

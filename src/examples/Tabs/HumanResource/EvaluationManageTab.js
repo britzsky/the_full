@@ -482,6 +482,7 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                   kpiRows: detailItems.map((item, i) => ({
                     id: i + 1,
                     type: String(item.type || ""),
+                    plan: item.plan || "",
                     goal: item.goal != null ? String(item.goal) : "",
                     measurement: item.measurement || "",
                     weight: item.weight != null ? String(item.weight) : "",
@@ -571,21 +572,23 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
           <MDBox sx={sectionSx}>
             <MDBox sx={sectionTitleSx}>KPI 내용</MDBox>
             <MDBox sx={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 880, fontSize: isMobile ? 11 : 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 980, fontSize: isMobile ? 11 : 12 }}>
                 <colgroup>
                   <col style={{ width: "3%" }} />
                   <col style={{ width: "7%" }} />
+                  <col style={{ width: "16%" }} />  {/* 실행계획 */}
                   <col style={{ width: "6%" }} />
-                  <col style={{ width: "22%" }} />
+                  <col style={{ width: "16%" }} />
                   <col style={{ width: "7%" }} />
                   <col style={{ width: "7%" }} />
-                  <col style={{ width: "29%" }} />
-                  <col style={{ width: "19%" }} />  {/* 첨부파일 */}
+                  <col style={{ width: "23%" }} />
+                  <col style={{ width: "15%" }} />  {/* 첨부파일 */}
                 </colgroup>
                 <thead>
                   <tr>
                     <th style={thCell}>No</th>
                     <th style={thCell}>업무</th>
+                    <th style={thCell}>실행계획</th>
                     <th style={thCell}>목표</th>
                     <th style={thCell}>측정방법</th>
                     <th style={thCell}>가중치</th>
@@ -608,6 +611,7 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                       <tr key={item.idx || idx}>
                         <td style={{ ...roTdCellCenter, fontWeight: 700 }}>{idx + 1}</td>
                         <td style={roTdCellCenter}>{TYPE_LABELS[item.type] || item.type_nm || "-"}</td>
+                        <td style={roTdCellTop}>{item.plan || "-"}</td>
                         <td style={roTdCellCenter}>{item.goal != null ? `${item.goal}%` : "-"}</td>
                         <td style={roTdCellTop}>{item.measurement || "-"}</td>
                         <td style={roTdCellCenter}>{item.weight != null ? `${item.weight}%` : "-"}</td>
@@ -682,7 +686,7 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                   })}
                   {/* KPI 가중치 합계 행 */}
                   <tr>
-                    <td colSpan={4} style={{ ...roTdCellCenter, fontWeight: 800, background: "#f3f6fb" }}>가중치 합계</td>
+                    <td colSpan={5} style={{ ...roTdCellCenter, fontWeight: 800, background: "#f3f6fb" }}>가중치 합계</td>
                     <td style={{ ...roTdCellCenter, fontWeight: 900, background: "#fffde7", color: "#e65100" }}>
                       {detailItems.reduce((s, r) => s + (Number(r.weight) || 0), 0)}%
                     </td>

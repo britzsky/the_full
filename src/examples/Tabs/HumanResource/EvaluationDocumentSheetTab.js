@@ -34,10 +34,10 @@ const TYPE_OPTIONS = [
   { value: 7, label: "기획" },
 ];
 
-// 빈 KPI 행 생성 팩토리 (신규 스키마: plan 컬럼 제외)
 const createEmptyRow = (id) => ({
   id,
   type: "",  // 업무 타입 (1~7)
+  plan: "",  // 실행계획
   goal: "",  // 목표 (%)
   measurement: "",  // 측정방법
   weight: "",  // 가중치 (%)
@@ -439,7 +439,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
       Swal.fire({ title: "확인", text: "선택한 문서 유형에 평가기간이 설정되어 있지 않습니다.\n평가문서 설정 탭에서 기간을 먼저 설정해주세요.", icon: "warning" }); return;
     }
 
-    const kpiRequiredFields = ["type", "goal", "measurement", "weight", "content"];
+    const kpiRequiredFields = ["type", "plan", "goal", "measurement", "weight", "content"];
 
     const filledRows = kpiRows.filter((r) =>
       kpiRequiredFields.some((field) => String(r[field] ?? "").trim())
@@ -476,6 +476,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
 
     const items = filledRows.map((r) => ({
       type: r.type ? Number(r.type) : null,
+      plan: r.plan || "",
       goal: r.goal !== "" ? Number(r.goal) : null,
       measurement: r.measurement || "",
       weight: r.weight !== "" ? Number(r.weight) : null,
@@ -715,22 +716,24 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                 </MDButton>
               </MDBox>
               <MDBox sx={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 900, fontSize: isMobile ? 11 : 12 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 1000, fontSize: isMobile ? 11 : 12 }}>
                   <colgroup>
                     <col style={{ width: "3%" }} />   {/* No */}
                     <col style={{ width: "7%" }} />   {/* 업무 */}
+                    <col style={{ width: "18%" }} />  {/* 실행계획 */}
                     <col style={{ width: "6%" }} />   {/* 목표 */}
-                    <col style={{ width: "22%" }} />  {/* 측정방법 */}
+                    <col style={{ width: "18%" }} />  {/* 측정방법 */}
                     <col style={{ width: "7%" }} />   {/* 가중치 */}
                     <col style={{ width: "7%" }} />   {/* 실적 */}
-                    <col style={{ width: "28%" }} />  {/* 내용 */}
-                    <col style={{ width: "11%" }} />  {/* 첨부파일 */}
+                    <col style={{ width: "23%" }} />  {/* 내용 */}
+                    <col style={{ width: "6%" }} />   {/* 첨부파일 */}
                     <col style={{ width: "5%" }} />   {/* 삭제 */}
                   </colgroup>
                   <thead>
                     <tr>
                       <th style={thCell}>No</th>
                       <th style={thCell}>업무</th>
+                      <th style={thCell}>실행계획</th>
                       <th style={thCell}>목표</th>
                       <th style={thCell}>측정방법</th>
                       <th style={thCell}>가중치</th>
@@ -766,6 +769,17 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
                                 <option key={o.value} value={o.value}>{o.label}</option>
                               ))}
                             </TextField>
+                          </td>
+
+                          {/* 실행계획 — height:1px 트릭으로 행 높이에 맞춰 textarea 자동 확장 */}
+                          <td style={{ ...tdCellTop, height: "1px" }}>
+                            <TextField
+                              multiline minRows={4} size="small" fullWidth
+                              value={row.plan}
+                              onChange={(e) => onChangeRow(row.id, "plan", e.target.value)}
+                              sx={textareaStretchSx}
+                              placeholder="실행계획"
+                            />
                           </td>
 
                           {/* 목표 (%) */}
@@ -907,7 +921,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
 
                     {/* 가중치 합계 행 */}
                     <tr>
-                      <td colSpan={4} style={{ ...tdCellCenter, fontWeight: 800, background: "#f3f6fb" }}>
+                      <td colSpan={5} style={{ ...tdCellCenter, fontWeight: 800, background: "#f3f6fb" }}>
                         가중치 합계
                       </td>
                       <td style={{ ...tdCellCenter, fontWeight: 900, background: "#fffde7", color: "#e65100" }}>

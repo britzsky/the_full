@@ -525,7 +525,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     handleReset();
 
     if (editData && typeof onEditClear === "function") {
-      onEditClear();
+      onEditClear(result.idx);
     }
   };
 

@@ -78,6 +78,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     saveEvaluation,
     syncEvaluationFiles,
     fetchEvaluationFormInit,   // types + users 단일 API
+    fetchEvaluationFiles,
   } = useEvaluationData();
 
   // ── 문서 타입 상태 (전자결재 동일 패턴) ─────────────────────────────────
@@ -251,6 +252,9 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     // 수정 상태 초기화
     setRowPendingFiles({});
     setRowDeletedOrders({});
+
+    // 기존 첨부파일 로드
+    fetchEvaluationFiles(editData.editIdx);
   }, [editData, typeList]);
 
   // ── 폼 초기화: types + 전체 users 단일 API 1회 호출 ─────────────────────

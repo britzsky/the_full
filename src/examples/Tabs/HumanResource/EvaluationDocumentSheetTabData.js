@@ -82,8 +82,19 @@ export default function useEvaluationDocumentSheetData() {
     }
   }, []);
 
+  const fetchEvaluationFiles = useCallback(async (idx) => {
+    if (!idx) { setEvaluationFiles([]); return; }
+    try {
+      const res = await api.get("/HeadOffice/EvaluationDetailWithFiles", { params: { idx } });
+      setEvaluationFiles(Array.isArray(res.data?.files) ? res.data.files : []);
+    } catch (e) {
+      console.error("평가 파일 조회 실패:", e);
+      setEvaluationFiles([]);
+    }
+  }, []);
+
   return {
     saving, evaluationFiles, setEvaluationFiles,
-    saveEvaluation, syncEvaluationFiles, fetchEvaluationFormInit,
+    saveEvaluation, syncEvaluationFiles, fetchEvaluationFormInit, fetchEvaluationFiles,
   };
 }

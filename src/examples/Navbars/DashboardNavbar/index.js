@@ -56,7 +56,7 @@ const resolveTheFullWebBaseUrl = () => {
 
       // 운영 ERP IP를 쓰는 환경이면 공개 웹 도메인으로 연결한다.
       if (parsedApiUrl.hostname === "52.64.151.137") {
-        return "http://n.thefull.kr";
+        return "https://thefull.co.kr";
       }
 
       // 그 외에는 같은 호스트의 로컬 공개 웹 포트를 사용한다.
@@ -75,7 +75,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const NOTIF_POLL_MS = 30000;
   // ------------------------------------------
   // 알림 관련 API 호출을 임시로 중단하는 스위치
-  const DISABLE_NOTIFICATION_API = false;
+  const DISABLE_NOTIFICATION_API = true;
   // ------------------------------------------
 
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];

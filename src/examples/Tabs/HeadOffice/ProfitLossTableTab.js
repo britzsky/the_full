@@ -241,7 +241,7 @@ export default function ProfitLossTableTab() {
       "주간직원",
       "보전",
       "반환금",
-      "매출소계",
+      "매출소계(판장금제외)",
     ];
 
     const salesCols = isSpecialSales2
@@ -256,7 +256,7 @@ export default function ProfitLossTableTab() {
         "주간직원",
         "보전",
         "반환금",
-        "매출소계",
+        "매출소계(판장금제외)",
       ]
       : salesColsBase;
 
@@ -299,7 +299,10 @@ export default function ProfitLossTableTab() {
     보전: { value: "integrity_cost", ratio: "integrity_ratio" },
     반환금: { value: "return_cost", ratio: "return_ratio" },
     판장금: { value: "payback_price", ratio: "payback_ratio" },
-    매출소계: { value: "sales_total", ratio: "sales_total_ratio" },
+    "매출소계(판장금제외)": {
+      value: "sales_total",
+      ratio: "sales_total_ratio",
+    },
     식자재: { value: "food_cost", ratio: "food_ratio" },
     음식물처리: { value: "food_process", ratio: "food_trash_ratio" },
     식기세척기: { value: "dishwasher", ratio: "dishwasher_ratio" },
@@ -1945,7 +1948,15 @@ export default function ProfitLossTableTab() {
                       ]
                       : h.cols.map((c) => (
                         <th key={c} rowSpan={2} data-field={fieldMap[c]?.value ?? ""}>
-                          {c}
+                          {c === "매출소계(판장금제외)" ? (
+                            <>
+                              매출소계
+                              <br />
+                              (판장금제외)
+                            </>
+                          ) : (
+                            c
+                          )}
                         </th>
                       ))
                   )}
@@ -1959,7 +1970,15 @@ export default function ProfitLossTableTab() {
                           key={c}
                           data-field={fieldMap[c]?.value ?? ""}
                         >
-                          {c}
+                          {c === "매출소계(판장금제외)" ? (
+                            <>
+                              매출소계
+                              <br />
+                              (판장금제외)
+                            </>
+                          ) : (
+                            c
+                          )}
                         </th>
                       ))
                     )}

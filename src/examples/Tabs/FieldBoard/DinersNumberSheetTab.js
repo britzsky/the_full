@@ -34,8 +34,8 @@ const SPECIAL_LAYOUT_IDS = [
   "20250819193544",
   "20250819193634",
   "20250819193630",
-  "20250819193610", // ✅ 추가(직원 3칸 구조)
-  "20260415190758", // ✅ 추가(직원 조식/중식 2칸)
+  "20250819193610",
+  "20260415190758",
 ];
 
 // 🔹 숫자 컬럼 목록
@@ -68,6 +68,14 @@ const numericCols = [
   "extra_diet5_price",
 ];
 
+// 모든 업장에서 공통으로 사용하는 직원 식수 컬럼
+const employeeMealColumns = ["employ_breakfast", "employ_lunch", "employ_dinner"];
+const employeeMealHeaders = [{ label: "조식" }, { label: "중식" }, { label: "석식" }];
+
+// 2026년 8월부터 모든 업장에 직원 조식·중식·석식 컬럼을 적용
+const isEmployeeMealColumnPeriod = (year, month) =>
+  Number(year) > 2026 || (Number(year) === 2026 && Number(month) >= 8);
+
 // 🔹 학교 / 산업체 판별
 const isSchoolAccount = (accountType) =>
   accountType === "학교" || accountType === "5" || accountType === 5;
@@ -92,14 +100,21 @@ const avgOfExisting = (...vals) => {
 };
 
 // ✅ 합계 계산 (account_id 별 분기 포함)
-const calculateTotal = (row, accountType, extraDietCols, accountId) => {
+const calculateTotal = (row, accountType, extraDietCols, accountId, year, month) => {
   const extras = Array.isArray(extraDietCols) ? extraDietCols : [];
+  const useEmployeeMealColumns = isEmployeeMealColumnPeriod(year, month);
 
-  // ✅ 20250819193617: (조식/중식/석식 평균(있는 항목만)) + 직원
+  // 해당 업장의 이용자와 직원 식수를 식사별 평균으로 합산
   if (accountId === "20250819193617") {
     const avgMeals = avgOfExisting(row.breakfast, row.lunch, row.dinner);
-    const employ = parseNumber(row.employ);
-    return Math.round(avgMeals + employ);
+    if (!useEmployeeMealColumns) return Math.round(avgMeals + parseNumber(row.employ));
+
+    const avgEmployeeMeals = avgOfExisting(
+      row.employ_breakfast,
+      row.employ_lunch,
+      row.employ_dinner
+    );
+    return Math.round(avgMeals + avgEmployeeMeals);
   }
 
   // ✅ 20250819193620: 2층 주간보호(어르신) (조/중/석 평균(있는 항목만)) + 경관식
@@ -213,11 +228,14 @@ const getTableStructure = (
   selectedAccountId,
   isDaycareVisible,
   extraDietCols,
-  selectedAccountType
+  selectedAccountType,
+  year,
+  month
 ) => {
   const isSchoolOrIndustry = selectedAccountType === "학교" || selectedAccountType === "산업체";
+  const useEmployeeMealColumns = isEmployeeMealColumnPeriod(year, month);
 
-  // ✅ 학교/산업체일 때만 특식여부(special_yn) 노출
+  // 학교/산업체는 특식 여부와 함께 직원 조식·중식·석식을 노출
   if (isSchoolOrIndustry) {
     const mainKey = selectedAccountId === "20250819193651" ? "breakfast" : "lunch";
     const mainLabel =
@@ -227,15 +245,23 @@ const getTableStructure = (
         ? "학생"
         : "중식";
 
-    const baseColumns = [
+    const legacyColumns = [
       mainKey,
       "special_yn",
       ...extraDietCols.map((col) => col.priceKey),
       "total",
       "note",
     ];
+    const baseColumns = [
+      mainKey,
+      "special_yn",
+      ...extraDietCols.map((col) => col.priceKey),
+      ...employeeMealColumns,
+      "total",
+      "note",
+    ];
 
-    const headerRow = [
+    const legacyHeaderRow = [
       { label: "구분" },
       { label: mainLabel },
       { label: "특식여부" },
@@ -243,11 +269,23 @@ const getTableStructure = (
       { label: "계" },
       { label: "비고" },
     ];
+    const headerRow = [
+      { label: "구분", rowSpan: 2 },
+      { label: mainLabel, rowSpan: 2 },
+      { label: "특식여부", rowSpan: 2 },
+      ...extraDietCols.map((col) => ({ label: col.name, rowSpan: 2 })),
+      { label: "직원", colSpan: 3 },
+      { label: "계", rowSpan: 2 },
+      { label: "비고", rowSpan: 2 },
+    ];
 
-    return { headerRows: [headerRow], visibleColumns: baseColumns };
+    if (!useEmployeeMealColumns) {
+      return { headerRows: [legacyHeaderRow], visibleColumns: legacyColumns };
+    }
+    return { headerRows: [headerRow, employeeMealHeaders], visibleColumns: baseColumns };
   }
 
-  // ✅ 20250819193610: 직원 TH 아래 조/중/석(3칸) 노출
+  // 업장별 식수 구조와 공통 직원 조식·중식·석식 컬럼을 함께 구성
   if (selectedAccountId === "20250819193610") {
     return {
       headerRows: [
@@ -292,23 +330,19 @@ const getTableStructure = (
           { label: "3층-5층 요양원(어르신)", colSpan: 3 },
           { label: "경관식", rowSpan: 2 },
           { label: "2층 주간보호(직원조식)", rowSpan: 2 },
-          { label: "요양원직원", colSpan: 2 },
+          {
+            label: useEmployeeMealColumns ? "직원" : "요양원직원",
+            colSpan: useEmployeeMealColumns ? 3 : 2,
+          },
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },
           { label: "조식취소", rowSpan: 2 },
           { label: "중식취소", rowSpan: 2 },
           { label: "석식취소", rowSpan: 2 },
         ],
-        [
-          { label: "조식" },
-          { label: "중식" },
-          { label: "석식" },
-          { label: "조식" },
-          { label: "중식" },
-          { label: "석식" },
-          { label: "조식" },
-          { label: "중식" },
-        ],
+        useEmployeeMealColumns
+          ? [...employeeMealHeaders, ...employeeMealHeaders, ...employeeMealHeaders]
+          : [...employeeMealHeaders, ...employeeMealHeaders, { label: "조식" }, { label: "중식" }],
       ],
       visibleColumns: [
         "daycare_breakfast",
@@ -319,8 +353,9 @@ const getTableStructure = (
         "dinner",
         "ceremony",
         "daycare_employ_breakfast",
-        "employ_breakfast",
-        "employ_lunch",
+        ...(useEmployeeMealColumns
+          ? employeeMealColumns
+          : ["employ_breakfast", "employ_lunch"]),
         "total",
         "note",
         "breakcancel",
@@ -339,16 +374,36 @@ const getTableStructure = (
           { label: "중식", rowSpan: 2 },
           { label: "석식", rowSpan: 2 },
           { label: "주간보호", colSpan: 2 },
-          { label: "직원(조식)", rowSpan: 2 },
-          { label: "직원(중식)", colSpan: 2 },
-          { label: "직원(석식)", rowSpan: 2 },
+          ...(useEmployeeMealColumns
+            ? [
+                { label: "주간보호 직원", colSpan: 2 },
+                { label: "직원", colSpan: 3 },
+              ]
+            : [
+                { label: "직원(조식)", rowSpan: 2 },
+                { label: "직원(중식)", colSpan: 2 },
+                { label: "직원(석식)", rowSpan: 2 },
+              ]),
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },
           { label: "조식취소", rowSpan: 2 },
           { label: "중식취소", rowSpan: 2 },
           { label: "석식취소", rowSpan: 2 },
         ],
-        [{ label: "중식" }, { label: "석식" }, { label: "요양원" }, { label: "주간보호" }],
+        useEmployeeMealColumns
+          ? [
+              { label: "중식" },
+              { label: "석식" },
+              { label: "중식" },
+              { label: "석식" },
+              ...employeeMealHeaders,
+            ]
+          : [
+              { label: "중식" },
+              { label: "석식" },
+              { label: "요양원" },
+              { label: "주간보호" },
+            ],
       ],
       visibleColumns: [
         "breakfast",
@@ -356,10 +411,14 @@ const getTableStructure = (
         "dinner",
         "daycare_lunch",
         "daycare_diner",
-        "employ_breakfast",
-        "employ_lunch",
-        "daycare_employ_lunch",
-        "daycare_employ_dinner",
+        ...(useEmployeeMealColumns
+          ? ["daycare_employ_lunch", "daycare_employ_dinner", ...employeeMealColumns]
+          : [
+              "employ_breakfast",
+              "employ_lunch",
+              "daycare_employ_lunch",
+              "daycare_employ_dinner",
+            ]),
         "total",
         "note",
         "breakcancel",
@@ -378,22 +437,25 @@ const getTableStructure = (
           { label: "중식", rowSpan: 2 },
           { label: "석식", rowSpan: 2 },
           { label: "경관식", rowSpan: 2 },
-          { label: "직원", colSpan: 2 },
+          { label: "직원", colSpan: useEmployeeMealColumns ? 3 : 2 },
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },
           { label: "조식취소", rowSpan: 2 },
           { label: "중식취소", rowSpan: 2 },
           { label: "석식취소", rowSpan: 2 },
         ],
-        [{ label: "중식" }, { label: "석식" }],
+        useEmployeeMealColumns
+          ? employeeMealHeaders
+          : [{ label: "중식" }, { label: "석식" }],
       ],
       visibleColumns: [
         "breakfast",
         "lunch",
         "dinner",
         "ceremony",
-        "employ_lunch",
-        "employ_dinner",
+        ...(useEmployeeMealColumns
+          ? employeeMealColumns
+          : ["employ_lunch", "employ_dinner"]),
         "total",
         "note",
         "breakcancel",
@@ -461,22 +523,25 @@ const getTableStructure = (
           { label: "중식", rowSpan: 2 },
           { label: "석식", rowSpan: 2 },
           { label: "경관식", rowSpan: 2 },
-          { label: "직원", colSpan: 2 },
+          { label: "직원", colSpan: useEmployeeMealColumns ? 3 : 2 },
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },
           { label: "조식취소", rowSpan: 2 },
           { label: "중식취소", rowSpan: 2 },
           { label: "석식취소", rowSpan: 2 },
         ],
-        [{ label: "조식" }, { label: "중식" }],
+        useEmployeeMealColumns
+          ? employeeMealHeaders
+          : [{ label: "조식" }, { label: "중식" }],
       ],
       visibleColumns: [
         "breakfast",
         "lunch",
         "dinner",
         "ceremony",
-        "employ_breakfast",
-        "employ_lunch",
+        ...(useEmployeeMealColumns
+          ? employeeMealColumns
+          : ["employ_breakfast", "employ_lunch"]),
         "total",
         "note",
         "breakcancel",
@@ -488,29 +553,47 @@ const getTableStructure = (
 
   if (selectedAccountId === "20250819193544") {
     return {
-      headerRows: [
-        [
-          { label: "구분" },
-          { label: "조식" },
-          { label: "중식" },
-          { label: "석식" },
-          { label: "경관식" },
-          { label: "주간보호 중식" },
-          { label: "직원" },
-          { label: "계" },
-          { label: "비고" },
-          { label: "조식취소" },
-          { label: "중식취소" },
-          { label: "석식취소" },
-        ],
-      ],
+      headerRows: useEmployeeMealColumns
+        ? [
+            [
+              { label: "구분", rowSpan: 2 },
+              { label: "조식", rowSpan: 2 },
+              { label: "중식", rowSpan: 2 },
+              { label: "석식", rowSpan: 2 },
+              { label: "경관식", rowSpan: 2 },
+              { label: "주간보호 중식", rowSpan: 2 },
+              { label: "직원", colSpan: 3 },
+              { label: "계", rowSpan: 2 },
+              { label: "비고", rowSpan: 2 },
+              { label: "조식취소", rowSpan: 2 },
+              { label: "중식취소", rowSpan: 2 },
+              { label: "석식취소", rowSpan: 2 },
+            ],
+            employeeMealHeaders,
+          ]
+        : [
+            [
+              { label: "구분" },
+              { label: "조식" },
+              { label: "중식" },
+              { label: "석식" },
+              { label: "경관식" },
+              { label: "주간보호 중식" },
+              { label: "직원" },
+              { label: "계" },
+              { label: "비고" },
+              { label: "조식취소" },
+              { label: "중식취소" },
+              { label: "석식취소" },
+            ],
+          ],
       visibleColumns: [
         "breakfast",
         "lunch",
         "dinner",
         "ceremony",
         "daycare_lunch",
-        "employ",
+        ...(useEmployeeMealColumns ? employeeMealColumns : ["employ"]),
         "total",
         "note",
         "breakcancel",
@@ -563,7 +646,7 @@ const getTableStructure = (
           { label: "2,3층", colSpan: 3 },
           { label: "7층", colSpan: 3 },
           { label: "경관식", colSpan: 2 },
-          { label: "직원", colSpan: 2 },
+          { label: "직원", colSpan: useEmployeeMealColumns ? 3 : 2 },
           { label: "계", rowSpan: 2 },
           { label: "비고", rowSpan: 2 },
           { label: "조식취소", rowSpan: 2 },
@@ -571,16 +654,13 @@ const getTableStructure = (
           { label: "석식취소", rowSpan: 2 },
         ],
         [
-          { label: "조식" },
-          { label: "중식" },
-          { label: "석식" },
-          { label: "조식" },
-          { label: "중식" },
-          { label: "석식" },
+          ...employeeMealHeaders,
+          ...employeeMealHeaders,
           { label: "2,3층" },
           { label: "7층" },
-          { label: "조식" },
-          { label: "중식" },
+          ...(useEmployeeMealColumns
+            ? employeeMealHeaders
+            : [{ label: "조식" }, { label: "중식" }]),
         ],
       ],
       visibleColumns: [
@@ -592,8 +672,9 @@ const getTableStructure = (
         "dinner2",
         "ceremony",
         "ceremony2",
-        "employ_breakfast",
-        "employ_lunch",
+        ...(useEmployeeMealColumns
+          ? employeeMealColumns
+          : ["employ_breakfast", "employ_lunch"]),
         "total",
         "note",
         "breakcancel",
@@ -605,29 +686,47 @@ const getTableStructure = (
 
   if (selectedAccountId === "20260415190758") {
     return {
-      headerRows: [
-        [
-          { label: "구분" },
-          { label: "조식" },
-          { label: "중식" },
-          { label: "석식" },
-          { label: "경관식" },
-          { label: "직원(조식)" },
-          { label: "직원(중식)" },
-          { label: "계" },
-          { label: "비고" },
-          { label: "조식취소" },
-          { label: "중식취소" },
-          { label: "석식취소" },
-        ],
-      ],
+      headerRows: useEmployeeMealColumns
+        ? [
+            [
+              { label: "구분", rowSpan: 2 },
+              { label: "조식", rowSpan: 2 },
+              { label: "중식", rowSpan: 2 },
+              { label: "석식", rowSpan: 2 },
+              { label: "경관식", rowSpan: 2 },
+              { label: "직원", colSpan: 3 },
+              { label: "계", rowSpan: 2 },
+              { label: "비고", rowSpan: 2 },
+              { label: "조식취소", rowSpan: 2 },
+              { label: "중식취소", rowSpan: 2 },
+              { label: "석식취소", rowSpan: 2 },
+            ],
+            employeeMealHeaders,
+          ]
+        : [
+            [
+              { label: "구분" },
+              { label: "조식" },
+              { label: "중식" },
+              { label: "석식" },
+              { label: "경관식" },
+              { label: "직원(조식)" },
+              { label: "직원(중식)" },
+              { label: "계" },
+              { label: "비고" },
+              { label: "조식취소" },
+              { label: "중식취소" },
+              { label: "석식취소" },
+            ],
+          ],
       visibleColumns: [
         "breakfast",
         "lunch",
         "dinner",
         "ceremony",
-        "employ_breakfast",
-        "employ_lunch",
+        ...(useEmployeeMealColumns
+          ? employeeMealColumns
+          : ["employ_breakfast", "employ_lunch"]),
         "total",
         "note",
         "breakcancel",
@@ -640,27 +739,44 @@ const getTableStructure = (
   // KDB생명 데이케어센터 고양(20260210044430)
   if (selectedAccountId === "20260210044430") {
     return {
-      headerRows: [
-        [
-          { label: "구분" },
-          { label: "오전간식" },
-          { label: "중식" },
-          { label: "석식" },
-          { label: "경관식" },
-          { label: "직원" },
-          { label: "계" },
-          { label: "비고" },
-          { label: "조식취소" },
-          { label: "중식취소" },
-          { label: "석식취소" },
-        ],
-      ],
+      headerRows: useEmployeeMealColumns
+        ? [
+            [
+              { label: "구분", rowSpan: 2 },
+              { label: "오전간식", rowSpan: 2 },
+              { label: "중식", rowSpan: 2 },
+              { label: "석식", rowSpan: 2 },
+              { label: "경관식", rowSpan: 2 },
+              { label: "직원", colSpan: 3 },
+              { label: "계", rowSpan: 2 },
+              { label: "비고", rowSpan: 2 },
+              { label: "조식취소", rowSpan: 2 },
+              { label: "중식취소", rowSpan: 2 },
+              { label: "석식취소", rowSpan: 2 },
+            ],
+            employeeMealHeaders,
+          ]
+        : [
+            [
+              { label: "구분" },
+              { label: "오전간식" },
+              { label: "중식" },
+              { label: "석식" },
+              { label: "경관식" },
+              { label: "직원" },
+              { label: "계" },
+              { label: "비고" },
+              { label: "조식취소" },
+              { label: "중식취소" },
+              { label: "석식취소" },
+            ],
+          ],
       visibleColumns: [
         "breakfast",
         "lunch",
         "dinner",
         "ceremony",
-        "employ",
+        ...(useEmployeeMealColumns ? employeeMealColumns : ["employ"]),
         "total",
         "note",
         "breakcancel",
@@ -682,7 +798,7 @@ const getTableStructure = (
     ...extraDietCols.map((col) => col.priceKey),
     ...(showDaycareLunch ? ["daycare_lunch"] : []),
     ...(showDaycareDinner ? ["daycare_diner"] : []),
-    "employ",
+    ...(useEmployeeMealColumns ? employeeMealColumns : ["employ"]),
     "total",
     "note",
     "breakcancel",
@@ -690,7 +806,7 @@ const getTableStructure = (
     "dinnercancel",
   ];
 
-  const headerRow = [
+  const legacyHeaderRow = [
     { label: "구분" },
     { label: "조식" },
     { label: "중식" },
@@ -706,8 +822,27 @@ const getTableStructure = (
     { label: "중식취소" },
     { label: "석식취소" },
   ];
+  const headerRow = [
+    { label: "구분", rowSpan: 2 },
+    { label: "조식", rowSpan: 2 },
+    { label: "중식", rowSpan: 2 },
+    { label: "석식", rowSpan: 2 },
+    { label: "경관식", rowSpan: 2 },
+    ...extraDietCols.map((col) => ({ label: col.name, rowSpan: 2 })),
+    ...(showDaycareLunch ? [{ label: "데이케어 중식", rowSpan: 2 }] : []),
+    ...(showDaycareDinner ? [{ label: "데이케어 석식", rowSpan: 2 }] : []),
+    { label: "직원", colSpan: 3 },
+    { label: "계", rowSpan: 2 },
+    { label: "비고", rowSpan: 2 },
+    { label: "조식취소", rowSpan: 2 },
+    { label: "중식취소", rowSpan: 2 },
+    { label: "석식취소", rowSpan: 2 },
+  ];
 
-  return { headerRows: [headerRow], visibleColumns: baseColumns };
+  return {
+    headerRows: useEmployeeMealColumns ? [headerRow, employeeMealHeaders] : [legacyHeaderRow],
+    visibleColumns: baseColumns,
+  };
 };
 
 function DinersNumberSheet() {
@@ -902,7 +1037,9 @@ function DinersNumberSheet() {
             rowCopy,
             selectedAccountType,
             stableExtraDietCols,
-            selectedAccountId
+            selectedAccountId,
+            year,
+            month
           );
           next[r] = rowCopy;
         }
@@ -1042,7 +1179,9 @@ function DinersNumberSheet() {
           mergedRow,
           selectedAccountType,
           stableExtraDietCols,
-          selectedAccountId
+          selectedAccountId,
+          year,
+          month
         ),
       };
     });
@@ -1077,7 +1216,9 @@ function DinersNumberSheet() {
                 { ...row, [key]: value },
                 selectedAccountType,
                 stableExtraDietCols,
-                selectedAccountId
+                selectedAccountId,
+                year,
+                month
               ),
             }
           : row
@@ -1098,7 +1239,9 @@ function DinersNumberSheet() {
     selectedAccountId,
     isDaycareVisible,
     stableExtraDietCols,
-    selectedAccountType
+    selectedAccountType,
+    year,
+    month
   );
 
   // ✅ 저장 처리

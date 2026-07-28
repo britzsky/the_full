@@ -417,6 +417,7 @@ const AttendanceCell = React.memo(function AttendanceCell({
 
   return (
     <div
+      onClick={(e) => e.stopPropagation()}
       style={{
         display: "flex",
         flexDirection: "column",

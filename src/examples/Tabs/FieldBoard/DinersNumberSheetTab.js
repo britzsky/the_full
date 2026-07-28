@@ -1598,7 +1598,8 @@ function DinersNumberSheet() {
                 }}
               >
                 <table className="dinersheet-table">
-                  <thead>
+                  {/* 상단 그룹명과 하위 조식·중식·석식 헤더를 하나의 영역으로 고정 */}
+                  <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     {headerRows.map((row, rowIdx) => (
                       <tr key={rowIdx}>
                         {row.map((cell, i) => (
@@ -1606,7 +1607,11 @@ function DinersNumberSheet() {
                             key={i}
                             colSpan={cell.colSpan || 1}
                             rowSpan={cell.rowSpan || 1}
-                            style={{ top: rowIdx * 24 }}
+                            style={{
+                              height: 24,
+                              boxSizing: "border-box",
+                              position: "static",
+                            }}
                           >
                             {cell.label}
                           </th>

@@ -460,19 +460,36 @@ function AccountCorporateCardSheet() {
   const fileIconSx = { color: "#1e88e5" };
   const [cardNoEditingIndex, setCardNoEditingIndex] = useState(null);
 
-  const handleDownload = useCallback((path) => {
+  const handleDownload = useCallback(async (path) => {
     if (!path || typeof path !== "string") return;
-    const url = `${API_BASE_URL}${path}`;
-    const filename = path.split("/").pop() || "download";
+    const url = /^(https?:\/\/|blob:|data:)/i.test(path)
+      ? path
+      : `${String(API_BASE_URL || "").replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+    const rawFilename = path.split("?")[0].split("/").pop() || "receipt";
+    let filename = rawFilename;
+    try {
+      filename = decodeURIComponent(rawFilename);
+    } catch {
+      filename = rawFilename;
+    }
 
-    const a = document.createElement("a");
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noopener noreferrer";
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+      console.error("영수증 다운로드 실패:", error);
+      Swal.fire("오류", "영수증 파일을 다운로드하지 못했습니다.", "error");
+    }
   }, []);
 
   // ============================================================

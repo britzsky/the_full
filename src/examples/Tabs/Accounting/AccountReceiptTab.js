@@ -58,8 +58,16 @@ const CONTROL_HEIGHT = 40;
 
 // 타입별 배지 색상 팔레트
 const TYPE_BADGE_COLORS = [
-  "#4f7ef8", "#f87c4f", "#4fc98d", "#c94f8a", "#8a4fc9",
-  "#4fc9c9", "#c9a84f", "#4f8ac9", "#c94f4f", "#7ac94f",
+  "#4f7ef8",
+  "#f87c4f",
+  "#4fc98d",
+  "#c94f8a",
+  "#8a4fc9",
+  "#4fc9c9",
+  "#c9a84f",
+  "#4f8ac9",
+  "#c94f4f",
+  "#7ac94f",
 ];
 
 // 타입 값에 따른 배지 색상 결정
@@ -68,19 +76,25 @@ const getTypeBadgeColor = (typeValue) => {
   const num = parseInt(typeValue, 10);
   if (Number.isFinite(num)) return TYPE_BADGE_COLORS[num % TYPE_BADGE_COLORS.length];
   let hash = 0;
-  for (let i = 0; i < typeValue.length; i += 1) hash = typeValue.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < typeValue.length; i += 1)
+    hash = typeValue.charCodeAt(i) + ((hash << 5) - hash);
   return TYPE_BADGE_COLORS[Math.abs(hash) % TYPE_BADGE_COLORS.length];
 };
 
 // 다운로드 파일명에서 특수문자 제거
 const sanitizeDownloadFileName = (fileName) => {
-  const safeName = String(fileName || "receipt").replace(/[\\/:*?"<>|]/g, "_").trim();
+  const safeName = String(fileName || "receipt")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .trim();
   return safeName || "receipt";
 };
 
 // 영수증 아이템 기본 다운로드 파일명 생성
 const getReceiptDownloadFileName = (item) => {
-  const rawName = String(item?.path || "receipt").split("/").pop() || "receipt";
+  const rawName =
+    String(item?.path || "receipt")
+      .split("/")
+      .pop() || "receipt";
   return sanitizeDownloadFileName(rawName);
 };
 
@@ -106,9 +120,15 @@ function AccountReceiptTab() {
   const [filters, setFilters] = useState({
     year: String(now.getFullYear()),
     month: String(now.getMonth() + 1),
+    startDay: "0",
+    endDay: "0",
     accountId: "0",
     type: "0",
     payType: "0",
+  });
+  const [appliedDays, setAppliedDays] = useState({
+    startDay: "0",
+    endDay: "0",
   });
 
   // 파일 미리보기 오버레이 상태
@@ -122,6 +142,12 @@ function AccountReceiptTab() {
   const [accountOptionRows, setAccountOptionRows] = useState([]);
 
   const yearOptions = useMemo(() => getYearOptions(), []);
+  const dayOptions = useMemo(() => {
+    const daysInMonth = dayjs(
+      `${filters.year}-${String(filters.month).padStart(2, "0")}-01`
+    ).daysInMonth();
+    return Array.from({ length: daysInMonth }, (_, index) => String(index + 1));
+  }, [filters.month, filters.year]);
 
   // Select 공통 스타일 (고정 높이)
   const selectSx = useMemo(
@@ -140,28 +166,58 @@ function AccountReceiptTab() {
 
   // 필터 변경 시 영수증 목록 재조회
   useEffect(() => {
-    fetchReceiptRows(filters);
-  }, [fetchReceiptRows, filters.accountId, filters.month, filters.payType, filters.type, filters.year]);
+    fetchReceiptRows({ ...filters, ...appliedDays });
+  }, [
+    fetchReceiptRows,
+    filters.accountId,
+    filters.month,
+    filters.payType,
+    filters.type,
+    filters.year,
+    appliedDays.endDay,
+    appliedDays.startDay,
+  ]);
 
   // 타입 드롭다운 옵션용 전체 목록 별도 조회 (타입 변경해도 드롭다운 옵션은 유지)
   useEffect(() => {
     let cancelled = false;
-    fetchReceiptRows({ ...filters, type: "0" }, { updateRows: false, silent: true }).then((nextRows) => {
-      if (!cancelled) setTypeOptionRows(nextRows);
-    });
-    return () => { cancelled = true; };
-  }, [fetchReceiptRows, filters.accountId, filters.month, filters.payType, filters.year]);
+    fetchReceiptRows({ ...filters, ...appliedDays, type: "0" }, { updateRows: false, silent: true }).then(
+      (nextRows) => {
+        if (!cancelled) setTypeOptionRows(nextRows);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fetchReceiptRows,
+    filters.accountId,
+    filters.month,
+    filters.payType,
+    filters.year,
+    appliedDays.endDay,
+    appliedDays.startDay,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
     fetchReceiptRows(
-      { ...filters, accountId: "0", type: "0" },
+      { ...filters, ...appliedDays, accountId: "0", type: "0" },
       { updateRows: false, silent: true }
     ).then((nextRows) => {
       if (!cancelled) setAccountOptionRows(nextRows);
     });
-    return () => { cancelled = true; };
-  }, [fetchReceiptRows, filters.month, filters.payType, filters.year]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    fetchReceiptRows,
+    filters.month,
+    filters.payType,
+    filters.year,
+    appliedDays.endDay,
+    appliedDays.startDay,
+  ]);
 
   // 타입 선택 옵션 목록 생성 (숨김 코드 제외, 삼성웰스토리 그룹화)
   const typeOptions = useMemo(() => {
@@ -247,7 +303,9 @@ function AccountReceiptTab() {
     if (selectedType === "0") {
       base = receiptItems;
     } else if (selectedType === SAMSUNG_WELSTORY_TYPE_GROUP_VALUE) {
-      base = receiptItems.filter((item) => SAMSUNG_WELSTORY_TYPE_VALUES.has(String(item.type ?? "")));
+      base = receiptItems.filter((item) =>
+        SAMSUNG_WELSTORY_TYPE_VALUES.has(String(item.type ?? ""))
+      );
     } else {
       base = receiptItems.filter((item) => String(item.type ?? "") === selectedType);
     }
@@ -265,8 +323,7 @@ function AccountReceiptTab() {
       if (!map.has(key)) {
         map.set(key, {
           value: key,
-          label:
-            key === SAMSUNG_WELSTORY_TYPE_GROUP_VALUE ? "삼성웰스토리" : item.type_name || key,
+          label: key === SAMSUNG_WELSTORY_TYPE_GROUP_VALUE ? "삼성웰스토리" : item.type_name || key,
           items: [],
         });
       }
@@ -282,7 +339,37 @@ function AccountReceiptTab() {
   // 필터 값 변경 핸들러 (Select용)
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setFilters((prev) => ({ ...prev, [name]: value }));
+    if (name === "year" || name === "month") {
+      setAppliedDays({ startDay: "0", endDay: "0" });
+    }
+    setFilters((prev) => ({
+      ...prev,
+      [name]: value,
+      ...(name === "year" || name === "month" ? { startDay: "0", endDay: "0" } : {}),
+    }));
+  };
+
+  const handleDayFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters((prev) =>
+      value === "0" ? { ...prev, startDay: "0", endDay: "0" } : { ...prev, [name]: value }
+    );
+  };
+
+  const handleSearch = () => {
+    const nextAppliedDays = {
+      startDay: filters.startDay,
+      endDay: filters.endDay,
+    };
+    const isSameRange =
+      appliedDays.startDay === nextAppliedDays.startDay &&
+      appliedDays.endDay === nextAppliedDays.endDay;
+
+    if (isSameRange) {
+      fetchReceiptRows({ ...filters, ...nextAppliedDays });
+      return;
+    }
+    setAppliedDays(nextAppliedDays);
   };
 
   // 타입 Autocomplete 변경 핸들러
@@ -302,7 +389,9 @@ function AccountReceiptTab() {
     const files = receiptItems.map((item) => ({
       path: item.path,
       url: item.previewUrl,
-      name: `${item.account_name || ""} ${item.use_name || ""} ${item.saleDate || ""} (${item.imageIndex + 1})`.trim(),
+      name: `${item.account_name || ""} ${item.use_name || ""} ${item.saleDate || ""} (${
+        item.imageIndex + 1
+      })`.trim(),
       kind: item.kind,
     }));
     const nextIndex = receiptItems.findIndex(
@@ -316,7 +405,10 @@ function AccountReceiptTab() {
   // 영수증 파일 Blob 다운로드 — 경로 인코딩 후 정적 URL로 시도, 실패 시 AccountStoredFileView로 재시도
   const fetchReceiptBlob = async (item) => {
     const rawPath = String(item.path || "").trim();
-    const encodedPath = rawPath.split("/").map((seg) => (seg ? encodeURIComponent(seg) : "")).join("/");
+    const encodedPath = rawPath
+      .split("/")
+      .map((seg) => (seg ? encodeURIComponent(seg) : ""))
+      .join("/");
     const normalizedPath = encodedPath.startsWith("/") ? encodedPath : `/${encodedPath}`;
     const staticUrl = `${API_BASE_URL}${normalizedPath}`;
 
@@ -330,7 +422,8 @@ function AccountReceiptTab() {
 
     const res2 = await api.get(item.previewUrl, { responseType: "blob", withCredentials: true });
     const blob2 = res2?.data;
-    if (!(blob2 instanceof Blob) || blob2.size === 0) throw new Error("영수증 파일을 불러오지 못했습니다.");
+    if (!(blob2 instanceof Blob) || blob2.size === 0)
+      throw new Error("영수증 파일을 불러오지 못했습니다.");
     return blob2;
   };
 
@@ -438,7 +531,10 @@ function AccountReceiptTab() {
     for (const result of results) {
       if (result.status === "fulfilled") {
         const { item, blob } = result.value;
-        const fileName = getUniqueDownloadFileName(getReceiptDownloadFileName(item), usedFileNameMap);
+        const fileName = getUniqueDownloadFileName(
+          getReceiptDownloadFileName(item),
+          usedFileNameMap
+        );
         zip.file(fileName, blob);
         addedCount += 1;
       } else {
@@ -474,7 +570,10 @@ function AccountReceiptTab() {
       Swal.fire("완료", "영수증 이미지 저장이 완료되었습니다.", "success");
       return;
     } catch (error) {
-      if (error?.name === "AbortError") { Swal.close(); return; }
+      if (error?.name === "AbortError") {
+        Swal.close();
+        return;
+      }
       console.error("zip 저장 실패:", error);
       const objectUrl = URL.createObjectURL(zipBlob);
       triggerBrowserDownload(objectUrl, defaultName);
@@ -484,139 +583,227 @@ function AccountReceiptTab() {
   };
 
   return (
-    <MDBox sx={{ position: "relative", display: "flex", flexDirection: "column", height: "calc(100vh - 143px)", overflow: "hidden" }}>
+    <MDBox
+      sx={{
+        position: "relative",
+        display: "flex",
+        flexDirection: "column",
+        height: "calc(100vh - 143px)",
+        overflow: "hidden",
+      }}
+    >
       {loading && (
-        <MDBox sx={{ position: "absolute", inset: 0, zIndex: 10, backgroundColor: "white", overflow: "hidden" }}>
+        <MDBox
+          sx={{
+            position: "absolute",
+            inset: 0,
+            zIndex: 10,
+            backgroundColor: "white",
+            overflow: "hidden",
+          }}
+        >
           <LoadingScreen />
         </MDBox>
       )}
 
-        {/* 조회 조건 영역 */}
-        <MDBox
-          sx={{
-            flexShrink: 0,
-            mb: 2,
-            p: 1.5,
-            border: "1px solid #e5e7eb",
-            borderRadius: 2,
-            backgroundColor: "#fff",
-            boxShadow: "0 1px 4px 0 rgba(0,0,0,0.06)",
-          }}
-        >
-          <Grid container spacing={1.2} alignItems="center">
-            {/* 조회 건수 표시 */}
-            <Grid item xs={12} md>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
-                <ReceiptLongIcon sx={{ fontSize: 16, color: "#6b7280" }} />
-                <Box sx={{ fontSize: 12, color: "#374151" }}>
-                  영수증{" "}
-                  <Box component="span" sx={{ fontWeight: 700, color: "#111827" }}>
-                    {receiptItems.length.toLocaleString("ko-KR")}
-                  </Box>
-                  건
+      {/* 조회 조건 영역 */}
+      <MDBox
+        sx={{
+          flexShrink: 0,
+          mb: 2,
+          p: 1.5,
+          border: "1px solid #e5e7eb",
+          borderRadius: 2,
+          backgroundColor: "#fff",
+          boxShadow: "0 1px 4px 0 rgba(0,0,0,0.06)",
+        }}
+      >
+        <Grid container spacing={1.2} alignItems="center">
+          {/* 조회 건수 표시 */}
+          <Grid item xs={12} md>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.8 }}>
+              <ReceiptLongIcon sx={{ fontSize: 16, color: "#6b7280" }} />
+              <Box sx={{ fontSize: 12, color: "#374151" }}>
+                영수증{" "}
+                <Box component="span" sx={{ fontWeight: 700, color: "#111827" }}>
+                  {receiptItems.length.toLocaleString("ko-KR")}
                 </Box>
+                건
               </Box>
-            </Grid>
-
-            {/* 연도 선택 */}
-            <Grid item xs={6} md={1.2}>
-              <FormControl fullWidth size="small">
-                <InputLabel>연도</InputLabel>
-                <Select name="year" label="연도" value={filters.year} onChange={handleFilterChange} sx={selectSx}>
-                  {yearOptions.map((year) => (
-                    <MenuItem key={year} value={year}>{year}년</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* 월 선택 */}
-            <Grid item xs={6} md={1}>
-              <FormControl fullWidth size="small">
-                <InputLabel>월</InputLabel>
-                <Select name="month" label="월" value={filters.month} onChange={handleFilterChange} sx={selectSx}>
-                  {MONTH_OPTIONS.map((month) => (
-                    <MenuItem key={month} value={month}>{month}월</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            {/* 거래처 Autocomplete 선택 */}
-            <Grid item xs={12} md={2.4}>
-              <Autocomplete
-                size="small"
-                options={accountOptions}
-                value={selectedAccountOption}
-                inputValue={accountInput}
-                onInputChange={(_, value) => setAccountInput(value)}
-                onChange={handleAccountChange}
-                getOptionLabel={(option) =>
-                  typeof option === "string" ? option : option?.label || option?.value || ""
-                }
-                isOptionEqualToValue={(option, value) => option.value === value.value}
-                disableClearable
-                renderInput={(params) => <TextField {...params} label="거래처" />}
-                sx={{
-                  "& .MuiInputBase-root": { height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT, alignItems: "center" },
-                  "& .MuiInputBase-input": { height: "auto", py: 0 },
-                }}
-              />
-            </Grid>
-
-            {/* 타입 Autocomplete 선택 */}
-            <Grid item xs={12} md={2.2}>
-              <Autocomplete
-                size="small"
-                options={typeFilterOptions}
-                value={selectedTypeOption}
-                onChange={handleTypeChange}
-                getOptionLabel={(option) =>
-                  typeof option === "string" ? option : option?.label || option?.value || ""
-                }
-                isOptionEqualToValue={(option, value) => option.value === value.value}
-                renderInput={(params) => <TextField {...params} label="타입" />}
-                sx={{
-                  "& .MuiInputBase-root": { height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT, alignItems: "center" },
-                  "& .MuiInputBase-input": { height: "auto", py: 0 },
-                }}
-              />
-            </Grid>
-
-            {/* 조회 버튼 영역 */}
-            <Grid item xs={12} md="auto">
-              <Box sx={{ display: "flex", justifyContent: { xs: "flex-start", md: "flex-end" }, gap: 0.8 }}>
-                <MDButton
-                  size="small"
-                  color="success"
-                  onClick={handleDownloadAll}
-                  disabled={downloadableImageItems.length === 0}
-                  sx={{
-                    width: 190,
-                    height: CONTROL_HEIGHT,
-                    minHeight: CONTROL_HEIGHT,
-                    whiteSpace: "nowrap",
-                    "& .MuiSvgIcon-root": { width: 20, height: 20, fontSize: "24px !important" },
-                  }}
-                >
-                  <DownloadIcon sx={{ mr: 0.6 }} />
-                  이미지 전체 다운로드
-                </MDButton>
-                <MDButton
-                  size="small"
-                  color="info"
-                  onClick={() => fetchReceiptRows(filters)}
-                  sx={{ width: 72, height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT }}
-                >
-                  조회
-                </MDButton>
-              </Box>
-            </Grid>
+            </Box>
           </Grid>
-        </MDBox>
 
-        {/* 타입별 영수증 목록 — 스크롤 영역 */}
-        <MDBox sx={{ flex: 1, overflowY: "auto", pb: 3 }}>
+          {/* 연도 선택 */}
+          <Grid item xs={6} md={1.2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>연도</InputLabel>
+              <Select
+                name="year"
+                label="연도"
+                value={filters.year}
+                onChange={handleFilterChange}
+                sx={selectSx}
+              >
+                {yearOptions.map((year) => (
+                  <MenuItem key={year} value={year}>
+                    {year}년
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 월 선택 */}
+          <Grid item xs={6} md={1}>
+            <FormControl fullWidth size="small">
+              <InputLabel>월</InputLabel>
+              <Select
+                name="month"
+                label="월"
+                value={filters.month}
+                onChange={handleFilterChange}
+                sx={selectSx}
+              >
+                {MONTH_OPTIONS.map((month) => (
+                  <MenuItem key={month} value={month}>
+                    {month}월
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 조회 시작일 */}
+          <Grid item xs={6} md={1}>
+            <FormControl fullWidth size="small">
+              <InputLabel>시작일</InputLabel>
+              <Select
+                name="startDay"
+                label="From"
+                value={filters.startDay}
+                onChange={handleDayFilterChange}
+                sx={selectSx}
+              >
+                <MenuItem value="0">전체</MenuItem>
+                {dayOptions.map((day) => (
+                  <MenuItem key={day} value={day}>
+                    {day}일
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 조회 종료일 */}
+          <Grid item xs={6} md={1}>
+            <FormControl fullWidth size="small">
+              <InputLabel>종료일</InputLabel>
+              <Select
+                name="endDay"
+                label="To"
+                value={filters.endDay}
+                onChange={handleDayFilterChange}
+                sx={selectSx}
+              >
+                <MenuItem value="0">전체</MenuItem>
+                {dayOptions.map((day) => (
+                  <MenuItem key={day} value={day}>
+                    {day}일
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* 거래처 Autocomplete 선택 */}
+          <Grid item xs={12} md={2.4}>
+            <Autocomplete
+              size="small"
+              options={accountOptions}
+              value={selectedAccountOption}
+              inputValue={accountInput}
+              onInputChange={(_, value) => setAccountInput(value)}
+              onChange={handleAccountChange}
+              getOptionLabel={(option) =>
+                typeof option === "string" ? option : option?.label || option?.value || ""
+              }
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              disableClearable
+              renderInput={(params) => <TextField {...params} label="거래처" />}
+              sx={{
+                "& .MuiInputBase-root": {
+                  height: CONTROL_HEIGHT,
+                  minHeight: CONTROL_HEIGHT,
+                  alignItems: "center",
+                },
+                "& .MuiInputBase-input": { height: "auto", py: 0 },
+              }}
+            />
+          </Grid>
+
+          {/* 타입 Autocomplete 선택 */}
+          <Grid item xs={12} md={2.2}>
+            <Autocomplete
+              size="small"
+              options={typeFilterOptions}
+              value={selectedTypeOption}
+              onChange={handleTypeChange}
+              getOptionLabel={(option) =>
+                typeof option === "string" ? option : option?.label || option?.value || ""
+              }
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              renderInput={(params) => <TextField {...params} label="타입" />}
+              sx={{
+                "& .MuiInputBase-root": {
+                  height: CONTROL_HEIGHT,
+                  minHeight: CONTROL_HEIGHT,
+                  alignItems: "center",
+                },
+                "& .MuiInputBase-input": { height: "auto", py: 0 },
+              }}
+            />
+          </Grid>
+
+          {/* 조회 버튼 영역 */}
+          <Grid item xs={12} md="auto">
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: { xs: "flex-start", md: "flex-end" },
+                gap: 0.8,
+              }}
+            >
+              <MDButton
+                size="small"
+                color="success"
+                onClick={handleDownloadAll}
+                disabled={downloadableImageItems.length === 0}
+                sx={{
+                  width: 190,
+                  height: CONTROL_HEIGHT,
+                  minHeight: CONTROL_HEIGHT,
+                  whiteSpace: "nowrap",
+                  "& .MuiSvgIcon-root": { width: 20, height: 20, fontSize: "24px !important" },
+                }}
+              >
+                <DownloadIcon sx={{ mr: 0.6 }} />
+                이미지 전체 다운로드
+              </MDButton>
+              <MDButton
+                size="small"
+                color="info"
+                onClick={handleSearch}
+                sx={{ width: 72, height: CONTROL_HEIGHT, minHeight: CONTROL_HEIGHT }}
+              >
+                조회
+              </MDButton>
+            </Box>
+          </Grid>
+        </Grid>
+      </MDBox>
+
+      {/* 타입별 영수증 목록 — 스크롤 영역 */}
+      <MDBox sx={{ flex: 1, overflowY: "auto", pb: 3 }}>
         <MDBox sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {groupedReceiptItems.length === 0 ? (
             /* 데이터 없음 안내 */
@@ -632,7 +819,9 @@ function AccountReceiptTab() {
                 boxShadow: "0 1px 4px 0 rgba(0,0,0,0.06)",
               }}
             >
-              <ReceiptLongIcon sx={{ fontSize: 36, color: "#d1d5db", mb: 1, display: "block", mx: "auto" }} />
+              <ReceiptLongIcon
+                sx={{ fontSize: 36, color: "#d1d5db", mb: 1, display: "block", mx: "auto" }}
+              />
               조회된 영수증 자료가 없습니다.
             </MDBox>
           ) : (
@@ -642,13 +831,29 @@ function AccountReceiptTab() {
                 <MDBox key={group.value}>
                   {/* 타입 그룹 헤더 */}
                   <Box sx={{ mb: 1, display: "flex", alignItems: "center", gap: 1 }}>
-                    <Box sx={{ width: 4, height: 18, borderRadius: 1, backgroundColor: badgeColor, flexShrink: 0 }} />
-                    <Box sx={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{group.label}</Box>
                     <Box
                       sx={{
-                        fontSize: 11, fontWeight: 600, color: "#fff",
-                        backgroundColor: badgeColor, borderRadius: 10,
-                        px: 0.9, pt: 0.3, pb: 0.05, lineHeight: 1.5,
+                        width: 4,
+                        height: 18,
+                        borderRadius: 1,
+                        backgroundColor: badgeColor,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Box sx={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>
+                      {group.label}
+                    </Box>
+                    <Box
+                      sx={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: "#fff",
+                        backgroundColor: badgeColor,
+                        borderRadius: 10,
+                        px: 0.9,
+                        pt: 0.3,
+                        pb: 0.05,
+                        lineHeight: 1.5,
                       }}
                     >
                       {group.items.length.toLocaleString("ko-KR")}
@@ -665,7 +870,8 @@ function AccountReceiptTab() {
                           borderLeft: `3px solid ${badgeColor}`,
                           borderRadius: 2,
                           backgroundColor: "#fff",
-                          px: 1.5, py: 1,
+                          px: 1.5,
+                          py: 1,
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "space-between",
@@ -679,24 +885,44 @@ function AccountReceiptTab() {
                         {/* 영수증 정보 (요양원·사용처·날짜·금액) */}
                         <Box
                           sx={{
-                            minWidth: 0, flex: 1,
+                            minWidth: 0,
+                            flex: 1,
                             display: "grid",
-                            gridTemplateColumns: { xs: "repeat(2, minmax(0, 1fr))", md: "1.3fr 1.3fr 1fr 1fr" },
-                            gap: 1, alignItems: "center",
+                            gridTemplateColumns: {
+                              xs: "repeat(2, minmax(0, 1fr))",
+                              md: "1.3fr 1.3fr 1fr 1fr",
+                            },
+                            gap: 1,
+                            alignItems: "center",
                           }}
                         >
                           <Box sx={{ minWidth: 0 }}>
-                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>요양원</Box>
-                            <Box sx={{ fontSize: 12, fontWeight: 700, color: "#111827", lineHeight: 1.4 }}>
+                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>
+                              요양원
+                            </Box>
+                            <Box
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 700,
+                                color: "#111827",
+                                lineHeight: 1.4,
+                              }}
+                            >
                               {item.account_name || "-"}
                             </Box>
                           </Box>
                           <Box sx={{ minWidth: 0 }}>
-                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>사용처</Box>
-                            <Box sx={{ fontSize: 12, color: "#374151", lineHeight: 1.4 }}>{item.use_name || "-"}</Box>
+                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>
+                              사용처
+                            </Box>
+                            <Box sx={{ fontSize: 12, color: "#374151", lineHeight: 1.4 }}>
+                              {item.use_name || "-"}
+                            </Box>
                           </Box>
                           <Box sx={{ minWidth: 0 }}>
-                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>날짜</Box>
+                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>
+                              날짜
+                            </Box>
                             <Box sx={{ fontSize: 12, color: "#374151", lineHeight: 1.4 }}>
                               {dayjs(item.saleDate).isValid()
                                 ? dayjs(item.saleDate).format("YYYY-MM-DD")
@@ -704,8 +930,17 @@ function AccountReceiptTab() {
                             </Box>
                           </Box>
                           <Box sx={{ minWidth: 0 }}>
-                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>금액</Box>
-                            <Box sx={{ fontSize: 12, fontWeight: 600, color: "#374151", lineHeight: 1.4 }}>
+                            <Box sx={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.3, mb: 0.2 }}>
+                              금액
+                            </Box>
+                            <Box
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "#374151",
+                                lineHeight: 1.4,
+                              }}
+                            >
                               {item.total ? `${item.total}원` : "-"}
                             </Box>
                           </Box>
@@ -713,13 +948,23 @@ function AccountReceiptTab() {
 
                         {/* 다운로드·미리보기 버튼 */}
                         <Box
-                          sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 0.3, flexShrink: 0, ml: "auto" }}
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                            gap: 0.3,
+                            flexShrink: 0,
+                            ml: "auto",
+                          }}
                         >
                           <Tooltip title="다운로드">
                             <IconButton
                               size="small"
                               onClick={() => handleDownload(item)}
-                              sx={{ color: "#6b7280", "&:hover": { color: "#1d4ed8", backgroundColor: "#eff6ff" } }}
+                              sx={{
+                                color: "#6b7280",
+                                "&:hover": { color: "#1d4ed8", backgroundColor: "#eff6ff" },
+                              }}
                             >
                               <DownloadIcon fontSize="small" />
                             </IconButton>
@@ -728,7 +973,10 @@ function AccountReceiptTab() {
                             <IconButton
                               size="small"
                               onClick={() => handleOpenViewer(item)}
-                              sx={{ color: "#6b7280", "&:hover": { color: "#0891b2", backgroundColor: "#ecfeff" } }}
+                              sx={{
+                                color: "#6b7280",
+                                "&:hover": { color: "#0891b2", backgroundColor: "#ecfeff" },
+                              }}
                             >
                               <ImageSearchIcon fontSize="small" />
                             </IconButton>
@@ -742,7 +990,7 @@ function AccountReceiptTab() {
             })
           )}
         </MDBox>
-        </MDBox>
+      </MDBox>
 
       {/* 파일 미리보기 오버레이 */}
       <PreviewOverlay

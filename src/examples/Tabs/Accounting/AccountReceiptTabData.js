@@ -85,6 +85,12 @@ export default function useAccountReceiptTabData() {
           type: toParam(filters?.type),
           year: toParam(filters?.year),
           month: toParam(filters?.month),
+          start_dt:
+            toParam(filters?.startDay) &&
+            `${filters.year}-${String(filters.month).padStart(2, "0")}-${String(filters.startDay).padStart(2, "0")}`,
+          end_dt:
+            toParam(filters?.endDay) &&
+            `${filters.year}-${String(filters.month).padStart(2, "0")}-${String(filters.endDay).padStart(2, "0")}`,
           payType: toParam(filters?.payType),
         },
       });

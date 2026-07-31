@@ -38,6 +38,17 @@ const pickBudgetGrant = (resData) => {
   return parseNumber(first?.budget_grant);
 };
 
+// ✅ 예산 리스트에서 소모품 예산/사용 안전 추출
+const pickSuppliesData = (resData) => {
+  const list = Array.isArray(resData) ? resData : resData?.data || [];
+  if (!Array.isArray(list) || list.length === 0) return { suppliesBudget: 0, suppliesUsed: 0 };
+  const first = list.find((x) => x && x.supplies_budget != null) || list[0];
+  return {
+    suppliesBudget: parseNumber(first?.supplies_budget),
+    suppliesUsed: parseNumber(first?.supplies_used),
+  };
+};
+
 export default function useTallysheetData(account_id, year, month) {
   const [dataRows, setDataRows] = useState([]);
   const [data2Rows, setData2Rows] = useState([]);
@@ -50,6 +61,12 @@ export default function useTallysheetData(account_id, year, month) {
   // ✅ 예산(현재월/전월)
   const [budgetGrant, setBudgetGrant] = useState(0);
   const [budget2Grant, setBudget2Grant] = useState(0);
+
+  // ✅ 소모품 예산/사용(현재월/전월)
+  const [suppliesBudget, setSuppliesBudget] = useState(0);
+  const [suppliesUsed, setSuppliesUsed] = useState(0);
+  const [supplies2Budget, setSupplies2Budget] = useState(0);
+  const [supplies2Used, setSupplies2Used] = useState(0);
 
   const [loading, setLoading] = useState(false);
 
@@ -217,10 +234,18 @@ export default function useTallysheetData(account_id, year, month) {
 
           const grant = pickBudgetGrant(res.data);
           setBudgetGrant(grant);
+
+          // 소모품 예산/사용 추출
+          const { suppliesBudget: sb, suppliesUsed: su } = pickSuppliesData(res.data);
+          setSuppliesBudget(sb);
+          setSuppliesUsed(su);
+
           return grant;
         } catch (err) {
           console.error("예산 조회 실패 (현재월):", err);
           setBudgetGrant(0);
+          setSuppliesBudget(0);
+          setSuppliesUsed(0);
           return 0;
         }
       });
@@ -250,10 +275,18 @@ export default function useTallysheetData(account_id, year, month) {
 
           const grant = pickBudgetGrant(res.data);
           setBudget2Grant(grant);
+
+          // 전월 소모품 예산/사용 추출
+          const { suppliesBudget: sb, suppliesUsed: su } = pickSuppliesData(res.data);
+          setSupplies2Budget(sb);
+          setSupplies2Used(su);
+
           return grant;
         } catch (err) {
           console.error("예산 조회 실패 (전월):", err);
           setBudget2Grant(0);
+          setSupplies2Budget(0);
+          setSupplies2Used(0);
           return 0;
         }
       });
@@ -305,6 +338,12 @@ export default function useTallysheetData(account_id, year, month) {
     // ✅ 예산
     budgetGrant,
     budget2Grant,
+
+    // ✅ 소모품 예산/사용
+    suppliesBudget,
+    suppliesUsed,
+    supplies2Budget,
+    supplies2Used,
 
     // ✅ 재조회(저장 후 등)
     fetchDataRows,

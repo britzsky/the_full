@@ -29,6 +29,8 @@ export default function BudgetTableTab() {
   const [budgetGrantDrafts, setBudgetGrantDrafts] = useState({});
   // ✅ 거래처 검색 없는 표 화면용 정렬 기준(기본: 거래처명)
   const [accountSortKey, setAccountSortKey] = useState("account_name");
+  // ✅ 소모품/이벤트 서브행 펼침 여부
+  const [showSubRows, setShowSubRows] = useState(false);
 
   // ✅ 예산 테이블 데이터 훅 (연/월 기준 전체 조회)
   const {
@@ -66,7 +68,7 @@ export default function BudgetTableTab() {
   });
 
   // ✅ 직접 입력 가능한 항목만 지정
-  const editableFields = ["budget_grant", "note"];
+  const editableFields = ["budget_grant", "first_sales", "note"];
 
   // ✅ 숫자 필드 목록 (콤마 포맷 대상)
   const numericFields = [
@@ -84,6 +86,7 @@ export default function BudgetTableTab() {
     "existing_budget",
     "diff_amount",
     "budget_grant",
+    "first_sales",
   ];
 
   // ✅ % 표시할 필드
@@ -99,17 +102,18 @@ export default function BudgetTableTab() {
     // { key: "diet_price",        label: "식비",              width: 80 },
     // { key: "utility_bills",     label: "수도광열비",        width: 90 },
     // { key: "food_budget",       label: "1식 기준 식재비",   width: 90 },
-    { key: "budget_total", label: "예상 부여금액", width: 120 },
-    { key: "prev_budget_grant", label: "전월 예산부여금액", width: 120 },
+    { key: "budget_total", label: "예상 부여금액", width: 115 },
+    { key: "prev_budget_grant", label: "전월 예산부여금액", width: 115 },
     { key: "new_diff", label: "차액", width: 90 },
+    { key: "first_sales", label: "첫 달 예상 매출액", width: 110 }, // editable
     { key: "day_budget", label: "현기준 적정예산", width: 110 },
     { key: "day_use_amount", label: "현기준 사용금액", width: 110 },
-    { key: "day_use_ratio", label: "현기준 적정금액 비율(%)", width: 135, excelWidth: 28 },
+    { key: "day_use_ratio", label: "현기준 적정금액 비율", width: 130, excelWidth: 28 },
     // { key: "existing_budget",   label: "기존예산",        width: 90 },
     // { key: "diff_amount", label: "차액", width: 90 },
-    { key: "use_ratio", label: "총 예산대비 사용비율(%)", width: 135, excelWidth: 28 },
+    { key: "use_ratio", label: "총 예산대비 사용비율", width: 130, excelWidth: 28 },
     { key: "budget_grant", label: "예산부여", width: 90 }, // editable
-    { key: "note", label: "비고", width: 250 }, // editable
+    { key: "note", label: "비고", width: 200 }, // editable
   ];
   const stickyAccountColumnKey = "account_name";
 
@@ -185,13 +189,16 @@ export default function BudgetTableTab() {
 
   const getDraftKey = (rowKey, field) => `${rowKey}__${field}`;
 
-  // ✅ 입력 핸들러 (budget_grant: 숫자, note: 문자열)
+  // ✅ 숫자 편집 필드 목록
+  const numericEditFields = ["budget_grant", "first_sales"];
+
+  // ✅ 입력 핸들러 (숫자 필드: budget_grant/first_sale, 문자열: note)
   const handleInputChange = (rowKey, field, value) => {
     const newRows = [...editRows];
     const targetIdx = newRows.findIndex((row) => row._rowKey === rowKey);
     if (targetIdx < 0) return;
 
-    if (field === "budget_grant") {
+    if (numericEditFields.includes(field)) {
       const numericValue =
         value === "" || value === null
           ? null
@@ -205,25 +212,25 @@ export default function BudgetTableTab() {
     setEditRows(newRows);
   };
 
-  const handleBudgetGrantFocus = (rowKey, value) => {
-    const draftKey = getDraftKey(rowKey, "budget_grant");
+  const handleNumericFocus = (rowKey, field, value) => {
+    const draftKey = getDraftKey(rowKey, field);
     setBudgetGrantDrafts((prev) => ({
       ...prev,
       [draftKey]: value == null ? "" : String(value),
     }));
   };
 
-  const handleBudgetGrantChange = (rowKey, value) => {
-    const draftKey = getDraftKey(rowKey, "budget_grant");
+  const handleNumericChange = (rowKey, field, value) => {
+    const draftKey = getDraftKey(rowKey, field);
     setBudgetGrantDrafts((prev) => ({
       ...prev,
       [draftKey]: value,
     }));
-    handleInputChange(rowKey, "budget_grant", value);
+    handleInputChange(rowKey, field, value);
   };
 
-  const handleBudgetGrantBlur = (rowKey) => {
-    const draftKey = getDraftKey(rowKey, "budget_grant");
+  const handleNumericBlur = (rowKey, field) => {
+    const draftKey = getDraftKey(rowKey, field);
     setBudgetGrantDrafts((prev) => {
       if (!Object.prototype.hasOwnProperty.call(prev, draftKey)) return prev;
       const next = { ...prev };
@@ -231,6 +238,7 @@ export default function BudgetTableTab() {
       return next;
     });
   };
+
 
   const handleYearChange = (e) => setYear(Number(e.target.value));
   const handleMonthChange = (e) => setMonth(Number(e.target.value));
@@ -553,14 +561,24 @@ export default function BudgetTableTab() {
                                 : {}),
                             }}
                           >
-                            {col.label}
+                            {col.key === "budget_grant" ? (
+                              <span
+                                style={{ cursor: "pointer", userSelect: "none" }}
+                                onClick={() => setShowSubRows((s) => !s)}
+                              >
+                                {col.label} {showSubRows ? "▲" : "▼"}
+                              </span>
+                            ) : (
+                              col.label
+                            )}
                           </th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {sortedEditRows.map((row, rowIdx) => (
-                        <tr key={row._rowKey || `${row.account_id}_${row.month}_${rowIdx}`}>
+                        <React.Fragment key={row._rowKey || `${row.account_id}_${row.month}_${rowIdx}`}>
+                        <tr>
                           {columns.map((col) => {
                             const field = col.key;
                             const baseCellStyle = {
@@ -595,8 +613,8 @@ export default function BudgetTableTab() {
                                 diff > 0
                                   ? "#ffebee"   // 양수: 연한 빨강
                                   : diff < 0
-                                  ? "#e8f5e9"   // 음수: 연한 초록
-                                  : undefined;
+                                    ? "#e8f5e9"   // 음수: 연한 초록
+                                    : undefined;
                               return (
                                 <td
                                   key={field}
@@ -732,7 +750,7 @@ export default function BudgetTableTab() {
                               );
                             }
 
-                            // ✅ editable (budget_grant, 숫자)
+                            // ✅ editable (budget_grant / first_sale, 숫자)
                             const draftKey = getDraftKey(row._rowKey, field);
                             const hasDraft = Object.prototype.hasOwnProperty.call(
                               budgetGrantDrafts,
@@ -764,7 +782,7 @@ export default function BudgetTableTab() {
                                   type="text"
                                   value={inputValue}
                                   style={{
-                                    width: "80px",
+                                    width: "100%",
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",
@@ -774,17 +792,33 @@ export default function BudgetTableTab() {
                                     color: isChanged ? "red" : "black",
                                   }}
                                   onFocus={() =>
-                                    handleBudgetGrantFocus(row._rowKey, current)
+                                    handleNumericFocus(row._rowKey, field, current)
                                   }
-                                  onBlur={() => handleBudgetGrantBlur(row._rowKey)}
+                                  onBlur={() => handleNumericBlur(row._rowKey, field)}
                                   onChange={(e) =>
-                                    handleBudgetGrantChange(row._rowKey, e.target.value)
+                                    handleNumericChange(row._rowKey, field, e.target.value)
                                   }
                                 />
                               </td>
                             );
                           })}
                         </tr>
+                        {showSubRows && (
+                          <tr style={{ backgroundColor: "#f5f5f5" }}>
+                            <td
+                              colSpan={columns.length}
+                              style={{ textAlign: "left", padding: "4px 12px", fontSize: "11px", color: "#444" }}
+                            >
+                              <span style={{ marginRight: 80 }}>
+                                - <b>소모품</b>&nbsp; 예산 {formatNumber(row.supplies_budget || 0)} / 사용 {formatNumber(row.supplies_used || 0)} / 누계 {formatNumber(row.supplies_cumulative || 0)}
+                              </span>
+                              <span>
+                                - <b>이벤트</b>&nbsp; 예산 {formatNumber(row.event_budget || 0)} / 사용 {formatNumber(row.event_used || 0)} / 누계 {formatNumber(row.event_cumulative || 0)}
+                              </span>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>

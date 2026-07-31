@@ -1,4 +1,4 @@
-﻿// ==============================
+// ==============================
 // Part 1 / 2
 // ==============================
 /* eslint-disable react/function-component-definition */
@@ -93,35 +93,58 @@ const getPreviewFileKind = (value) => {
   return "image";
 };
 
-// ======================== ✅ 상단 예산/사용/비율 표시 바 (모바일 UI로 통일) ========================
-function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
+// ======================== ✅ 상단 예산/사용/비율 표시 바 ========================
+function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, title = "예산 현황", monthText }) {
   const safeBudget = parseNumber(budget);
   const safeUsed = parseNumber(used);
+  const safeSuppliesBudget = parseNumber(suppliesBudget);
+  const safeSuppliesUsed = parseNumber(suppliesUsed);
 
-  const ratio = useMemo(() => {
+  const foodRatio = useMemo(() => {
     if (!safeBudget || safeBudget <= 0) return 0;
     return (safeUsed / safeBudget) * 100;
   }, [safeBudget, safeUsed]);
 
-  const ratioText = `${ratio.toFixed(2)}%`;
+  const suppliesRatio = useMemo(() => {
+    if (!safeSuppliesBudget || safeSuppliesBudget <= 0) return 0;
+    return (safeSuppliesUsed / safeSuppliesBudget) * 100;
+  }, [safeSuppliesBudget, safeSuppliesUsed]);
 
-  const items = [
-    { label: "월예산", value: formatNumber(safeBudget) },
-    { label: "사용금액", value: formatNumber(safeUsed) },
-    { label: "예산대비", value: ratioText },
-  ];
+  const foodRatioColor = foodRatio >= 100 ? "#f44336" : foodRatio >= 90 ? "#ff9800" : undefined;
+  const suppliesRatioColor = suppliesRatio >= 100 ? "#f44336" : suppliesRatio >= 90 ? "#ff9800" : undefined;
 
   const monthLabel = monthText ?? dayjs().format("MM월");
 
-  return (
+  const renderRow = (cells, borderTop = false) => (
     <Box
       sx={{
-        width: "100%",
-        border: "1px solid #111",
-        borderRadius: 1,
-        overflow: "hidden",
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        borderTop: borderTop ? "1px solid #111" : "none",
       }}
     >
+      {cells.map((it) => (
+        <Box
+          key={it.label}
+          sx={{
+            px: 0.5,
+            py: 0.5,
+            borderRight: "1px solid #111",
+            "&:last-of-type": { borderRight: "none" },
+            bgcolor: it.bg || "#fff",
+          }}
+        >
+          <Typography sx={{ fontSize: 12, fontWeight: 800, color: it.color || "#444" }}>
+            {it.label} : {it.value}
+          </Typography>
+        </Box>
+      ))}
+    </Box>
+  );
+
+  return (
+    <Box sx={{ width: "100%", border: "1px solid #111", borderRadius: 1, overflow: "hidden" }}>
+      {/* 헤더 */}
       <Box
         sx={{
           px: 0.5,
@@ -137,30 +160,18 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
         <Typography sx={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{monthLabel}</Typography>
       </Box>
 
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 0,
-        }}
-      >
-        {items.map((it) => (
-          <Box
-            key={it.label}
-            sx={{
-              px: 0.5,
-              py: 0.5,
-              borderRight: "1px solid #111",
-              "&:last-of-type": { borderRight: "none" },
-              bgcolor: "#fff",
-            }}
-          >
-            <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#444" }}>
-              {it.label} : {it.value}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
+      {/* 식자재 행 */}
+      {renderRow([
+        { label: "식자재 예산", value: formatNumber(safeBudget) },
+        { label: "식자재 사용금액", value: formatNumber(safeUsed) },
+        { label: "예산대비", value: `${foodRatio.toFixed(2)}%`, bg: foodRatioColor, color: foodRatioColor ? "#fff" : "#444" },
+      ])}
+
+      {renderRow([
+        { label: "소모품 예산", value: formatNumber(safeSuppliesBudget) },
+        { label: "소모품 사용금액", value: formatNumber(safeSuppliesUsed) },
+        { label: "예산대비", value: `${suppliesRatio.toFixed(2)}%`, bg: suppliesRatioColor, color: suppliesRatioColor ? "#fff" : "#444" },
+      ], true)}
     </Box>
   );
 }
@@ -168,6 +179,8 @@ function BudgetSummaryBar({ budget, used, title = "식자재", monthText }) {
 BudgetSummaryBar.propTypes = {
   budget: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   used: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  suppliesBudget: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  suppliesUsed: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   title: PropTypes.string,
   monthText: PropTypes.string,
 };
@@ -421,6 +434,10 @@ function TallySheet() {
     prevMonth: hookPrevMonth,
     budgetGrant = 0,
     budget2Grant = 0,
+    suppliesBudget = 0,
+    suppliesUsed = 0,
+    supplies2Budget = 0,
+    supplies2Used = 0,
     fetchBudgetGrant = async () => {},
     fetchBudget2Grant = async () => {},
   } = hook || {};
@@ -978,6 +995,7 @@ function TallySheet() {
 
       Swal.close();
       Swal.fire("완료", "저장되었습니다.", "success");
+      // 소모품 예산 누계 갱신 (type 1002 소모품 포함, 백그라운드 호출)
 
       await fetchDataRows?.(selectedAccountId, year, month);
       await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
@@ -1883,18 +1901,31 @@ function TallySheet() {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  // type 1002(소모품)는 소모품 바에서 따로 표시 → 식자재 합계에서 제외
   const usedTotalNow = useMemo(() => {
-    const last = (tableData || []).find((r) => r?.name === "총합");
-    return parseNumber(last?.total);
-  }, [tableData]);
+    return (dataRows || [])
+      .filter((r) => String(r?.type) !== "1002")
+      .reduce((sum, r) => {
+        return sum + Array.from({ length: daysInMonthNow }, (_, i) =>
+          parseNumber(r[`day_${i + 1}`])
+        ).reduce((a, b) => a + b, 0);
+      }, 0);
+  }, [dataRows, daysInMonthNow]);
 
   const usedTotalPrev = useMemo(() => {
-    const last = (table2Data || []).find((r) => r?.name === "총합");
-    return parseNumber(last?.total);
-  }, [table2Data]);
+    return (data2Rows || [])
+      .filter((r) => String(r?.type) !== "1002")
+      .reduce((sum, r) => {
+        return sum + Array.from({ length: daysInMonthPrev }, (_, i) =>
+          parseNumber(r[`day_${i + 1}`])
+        ).reduce((a, b) => a + b, 0);
+      }, 0);
+  }, [data2Rows, daysInMonthPrev]);
 
   const budgetForTab = tabValue === 1 ? budget2Grant : budgetGrant;
   const usedForTab = tabValue === 1 ? usedTotalPrev : usedTotalNow;
+  const suppliesBudgetForTab = tabValue === 1 ? supplies2Budget : suppliesBudget;
+  const suppliesUsedForTab = tabValue === 1 ? supplies2Used : suppliesUsed;
 
   // ✅ 직접 입력은 type=1~4 허용
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
@@ -2965,7 +2996,12 @@ function TallySheet() {
               </MDTypography>
 
               <Box sx={{ width: "65%" }}>
-                <BudgetSummaryBar budget={budgetForTab} used={usedForTab} />
+                <BudgetSummaryBar
+                  budget={budgetForTab}
+                  used={usedForTab}
+                  suppliesBudget={suppliesBudgetForTab}
+                  suppliesUsed={suppliesUsedForTab}
+                />
               </Box>
 
               <Tabs
@@ -3852,6 +3888,7 @@ function TallySheet() {
 
                   Swal.close();
                   Swal.fire("완료", "저장되었습니다.", "success");
+      // 소모품 예산 누계 갱신 (type 1002 소모품 포함, 백그라운드 호출)
 
                   await fetchDataRows?.(selectedAccountId, year, month);
                   await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
@@ -4249,6 +4286,7 @@ function TallySheet() {
 
                   Swal.close();
                   Swal.fire("완료", "저장되었습니다.", "success");
+      // 소모품 예산 누계 갱신 (type 1002 소모품 포함, 백그라운드 호출)
 
                   await fetchDataRows?.(selectedAccountId, year, month);
                   await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
@@ -4571,6 +4609,7 @@ function TallySheet() {
 
                   Swal.close();
                   Swal.fire("완료", "저장되었습니다.", "success");
+      // 소모품 예산 누계 갱신 (type 1002 소모품 포함, 백그라운드 호출)
 
                   await fetchDataRows?.(selectedAccountId, year, month);
                   await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);

@@ -1935,7 +1935,8 @@ function DinersNumberSheet() {
                 }}
               >
                 <table className="dinersheet-table">
-                  <thead>
+                  {/* 상단 그룹명과 하위 조식·중식·석식 헤더를 하나의 영역으로 고정 */}
+                  <thead style={{ position: "sticky", top: 0, zIndex: 10 }}>
                     {headerRows.map((row, rowIdx) => (
                       <tr key={rowIdx}>
                         {row.map((cell, i) => (
@@ -1944,12 +1945,15 @@ function DinersNumberSheet() {
                             colSpan={cell.colSpan || 1}
                             rowSpan={cell.rowSpan || 1}
                             style={{
-                              top: rowIdx * 24,
+                              height: 24,
+                              boxSizing: "border-box",
+                              position: "static",
                               // 구분 컬럼만 좌측 고정
                               ...(rowIdx === 0 && i === 0
                                 ? {
+                                  position: "sticky",
                                   left: 0,
-                                  zIndex: 11,
+                                  zIndex: 12,
                                 }
                                 : {}),
                             }}

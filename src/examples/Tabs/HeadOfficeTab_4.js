@@ -5,6 +5,7 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import CorCarTab from "examples/Tabs/Business/CorCarTab";
 import UserManagement from "layouts/humanresource/usermanagement";
 import WeekMenuManager from "layouts/weekmenusheet";
+import ErpSurveyTab, { getSurveyPeriod } from "examples/Tabs/HeadOffice/ErpSurveyTab";
 
 // 로그인 사용자 정보를 기준으로 탭별 접근 권한을 판정합니다.
 const hasAccess = ({ allowedDepartments, allowedPositions, allowUserIds, accessMode = "AND" }) => {
@@ -58,9 +59,17 @@ function HeadOfficeTab_4() {
       accessMode: "OR",
       allowUserIds: ["db1", "si1"],
     },
+    {
+      key: "erpSurvey",
+      label: "📊 ERP 만족도 조사",
+      component: <ErpSurveyTab />,
+      condition: () => getSurveyPeriod() !== null,
+    },
   ];
 
-  const visibleTabs = tabConfig.filter(hasAccess);
+  const visibleTabs = tabConfig.filter(
+    (tab) => hasAccess(tab) && (!tab.condition || tab.condition())
+  );
 
   // 권한에 따라 노출 탭 수가 달라지면 첫 번째 탭으로 선택 상태를 보정합니다.
   useEffect(() => {

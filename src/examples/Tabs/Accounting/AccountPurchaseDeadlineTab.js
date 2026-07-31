@@ -3469,6 +3469,9 @@ function AccountPurchaseDeadlineTab() {
                             <td
                               key={key}
                               contentEditable={!isDeletedAccount && !isLocked}
+                              lang={key === "use_name" || key === "name" ? "ko" : undefined}
+                              spellCheck={key === "use_name" || key === "name" ? false : undefined}
+                              data-korean-input={key === "use_name" || key === "name" ? "true" : undefined}
                               suppressContentEditableWarning
                               onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
                               onKeyDown={(e) => e.stopPropagation()}
@@ -3500,6 +3503,7 @@ function AccountPurchaseDeadlineTab() {
                               style={fixedColStyle(col.size, {
                                 ...cellStyle(key, value),
                                 cursor: isDeletedAccount ? "not-allowed" : "text",
+                                imeMode: key === "use_name" || key === "name" ? "active" : undefined,
                               })}
                             >
                               {value}
@@ -3663,6 +3667,9 @@ function AccountPurchaseDeadlineTab() {
                           </td>
                           <td
                             contentEditable={!isDeletedAccount && !isLocked}
+                            lang="ko"
+                            spellCheck={false}
+                            data-korean-input="true"
                             suppressContentEditableWarning
                             onClick={(e) => { e.stopPropagation(); selectAllContent(e.currentTarget); }}
                             onKeyDown={(e) => e.stopPropagation()}
@@ -3674,6 +3681,7 @@ function AccountPurchaseDeadlineTab() {
                               textAlign: "left",
                               ...getDetailCellStyle(r, "name", r.name),
                               cursor: isDeletedAccount ? "not-allowed" : "text",
+                              imeMode: "active",
                             }}
                           >
                             {r.name ?? ""}

@@ -2970,8 +2970,14 @@ function CorporateCardSheet() {
                         <td
                           key={key}
                           contentEditable={!isLocked}
+                          lang={key === "use_name" || key === "name" ? "ko" : undefined}
+                          spellCheck={key === "use_name" || key === "name" ? false : undefined}
+                          data-korean-input={key === "use_name" || key === "name" ? "true" : undefined}
                           suppressContentEditableWarning
-                          style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
+                          style={fixedColStyle(c.size, {
+                            color: changed ? "red" : "black",
+                            imeMode: key === "use_name" || key === "name" ? "active" : undefined,
+                          })}
                           onFocus={(ev) => keepEditableTailVisible(ev.currentTarget)}
                           onInput={(ev) => keepEditableTailVisible(ev.currentTarget)}
                           onBlur={(e) => {
@@ -3240,8 +3246,14 @@ function CorporateCardSheet() {
                             <td
                               key={key}
                               contentEditable={!isLocked}
+                              lang={key === "use_name" || key === "name" ? "ko" : undefined}
+                              spellCheck={key === "use_name" || key === "name" ? false : undefined}
+                              data-korean-input={key === "use_name" || key === "name" ? "true" : undefined}
                               suppressContentEditableWarning
-                              style={fixedColStyle(c.size, { color: changed ? "red" : "black" })}
+                              style={fixedColStyle(c.size, {
+                                color: changed ? "red" : "black",
+                                imeMode: key === "use_name" || key === "name" ? "active" : undefined,
+                              })}
                               onMouseDown={(ev) => {
                                 if (!isNumCol) return;
 

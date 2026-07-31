@@ -486,6 +486,14 @@ export default function BudgetTableTab() {
                   엑셀 다운로드
                 </MDButton>
                 <MDButton
+                  variant="gradient"
+                  color="info"
+                  size="small"
+                  onClick={() => fetchBudgetTableList()}
+                >
+                  새로고침
+                </MDButton>
+                <MDButton
                   variant="contained"
                   color="info"
                   size="small"

@@ -2313,15 +2313,26 @@ function TallySheet() {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  // type 1002(소모품)는 소모품 바에서 따로 표시 → 식자재 합계에서 제외
   const usedTotalNow = useMemo(() => {
-    const last = (tableData || []).find((r) => r?.name === "총합");
-    return parseNumber(last?.total);
-  }, [tableData]);
+    return filterWelstoryRows(dataRows)
+      .filter((r) => String(r?.type) !== "1002")
+      .reduce((sum, r) => {
+        return sum + Array.from({ length: daysInMonthNow }, (_, i) =>
+          parseNumber(r[`day_${i + 1}`])
+        ).reduce((a, b) => a + b, 0);
+      }, 0);
+  }, [dataRows, daysInMonthNow, isWelstory]);
 
   const usedTotalPrev = useMemo(() => {
-    const last = (table2Data || []).find((r) => r?.name === "총합");
-    return parseNumber(last?.total);
-  }, [table2Data]);
+    return filterWelstoryRows(data2Rows)
+      .filter((r) => String(r?.type) !== "1002")
+      .reduce((sum, r) => {
+        return sum + Array.from({ length: daysInMonthPrev }, (_, i) =>
+          parseNumber(r[`day_${i + 1}`])
+        ).reduce((a, b) => a + b, 0);
+      }, 0);
+  }, [data2Rows, daysInMonthPrev, isWelstory]);
 
   const budgetForTab = tabValue === 1 ? budget2Grant : budgetGrant;
   const usedForTab = tabValue === 1 ? usedTotalPrev : usedTotalNow;

@@ -14,6 +14,7 @@ import axios from "axios";
 
 // ✅ 엑셀 생성용
 import ExcelJS from "exceljs";
+import * as XLSX from "xlsx";
 
 export default function ProfitLossTableTab() {
   const today = dayjs();
@@ -350,8 +351,20 @@ export default function ProfitLossTableTab() {
     })
     .filter((h) => h.cols.length > 0);
 
+  // 생계비와 일반식대가 모두 없는 월은 합계 계산 대상에서 제외한다.
+  const hasBaseSalesCost = (row) => {
+    const hasAmount = (value) => {
+      if (value === null || value === undefined || String(value).trim() === "") return false;
+      const amount = Number(String(value).replace(/,/g, ""));
+      return Number.isFinite(amount) && amount !== 0;
+    };
+
+    return hasAmount(row?.living_cost) || hasAmount(row?.basic_cost);
+  };
+
   const totalRow = useMemo(() => {
     if (!editRows || editRows.length === 0) return null;
+    const rowsForTotal = editRows.filter(hasBaseSalesCost);
     const result = {};
 
     // 값 필드 합산 (비율 필드 제외)
@@ -361,12 +374,30 @@ export default function ProfitLossTableTab() {
     allValueFields.forEach((field) => {
       let sum = 0;
       let hasAny = false;
-      editRows.forEach((row) => {
+      rowsForTotal.forEach((row) => {
         const n = Number(row[field]);
         if (Number.isFinite(n)) { sum += n; hasAny = true; }
       });
       result[field] = hasAny ? sum : null;
     });
+
+    // 매출소계는 구성 항목으로 다시 계산해 판장금(payback_price)을 완전히 제외한다.
+    const salesTotalFields = [
+      "living_cost",
+      "basic_cost",
+      "employ_cost",
+      "living_cost2",
+      "basic_cost2",
+      "employ_cost2",
+      "daycare_cost",
+      "daycare_emp_cost",
+      "integrity_cost",
+      "return_cost",
+    ];
+    result.sales_total = salesTotalFields.reduce(
+      (sum, field) => sum + (Number(result[field]) || 0),
+      0
+    );
 
     // 비율 계산 (프로시저 로직 동일하게 적용)
     const rnd = (v, d) => d ? Math.round((v / d) * 100 * 10) / 10 : 0;
@@ -390,12 +421,12 @@ export default function ProfitLossTableTab() {
     result.integrity_ratio = rnd(result.integrity_cost || 0, st);
     result.return_ratio = rnd(result.return_cost || 0, st);
     result.payback_ratio = rnd(result.payback_price || 0, st);
-    // sales_total_ratio: payback 포함 (프로시저와 동일)
+    // 매출소계 비율에서도 판장금을 제외한다.
     result.sales_total_ratio = Math.round((
       result.living_ratio + result.basic_ratio + result.employ_ratio +
       result.living_ratio2 + result.basic_ratio2 + result.employ_ratio2 +
       result.daycare_ratio + result.daycare_emp_ratio +
-      result.integrity_ratio + result.return_ratio + result.payback_ratio
+      result.integrity_ratio + result.return_ratio
     ) * 10) / 10;
 
     // 매입 (분모: sales_total)
@@ -428,11 +459,11 @@ export default function ProfitLossTableTab() {
 
     // 예외: 빼기 방식 (프로시저와 동일)
     result.business_profit_ratio = Math.round((
-      result.sales_total_ratio - result.payback_ratio -
+      result.sales_total_ratio -
       result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
     ) * 10) / 10;
     result.total_business_profit_ratio = Math.round((
-      result.sales_total_ratio -
+      result.sales_total_ratio + result.payback_ratio -
       result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
     ) * 10) / 10;
 
@@ -624,6 +655,94 @@ export default function ProfitLossTableTab() {
     const n = Number(v);
     if (!Number.isFinite(n)) return "";
     return n / 100;
+  };
+
+  const excelSalesTotalFields = [
+    "living_cost",
+    "basic_cost",
+    "employ_cost",
+    "living_cost2",
+    "basic_cost2",
+    "employ_cost2",
+    "daycare_cost",
+    "daycare_emp_cost",
+    "integrity_cost",
+    "return_cost",
+  ];
+
+  // 모든 클라이언트 생성 엑셀에 동일한 판장금 제외 기준을 적용한다.
+  const normalizeProfitLossRowForExcel = (sourceRow) => {
+    const row = { ...(sourceRow || {}) };
+    const amount = (field) => Number(row[field]) || 0;
+    const rnd = (value, denominator) =>
+      denominator ? Math.round((value / denominator) * 100 * 10) / 10 : 0;
+
+    row.sales_total = excelSalesTotalFields.reduce((sum, field) => sum + amount(field), 0);
+    const salesTotal = row.sales_total || 0;
+
+    [
+      ["living_cost", "living_ratio"],
+      ["basic_cost", "basic_ratio"],
+      ["employ_cost", "employ_ratio"],
+      ["living_cost2", "living_ratio2"],
+      ["basic_cost2", "basic_ratio2"],
+      ["employ_cost2", "employ_ratio2"],
+      ["daycare_cost", "daycare_ratio"],
+      ["daycare_emp_cost", "daycare_emp_ratio"],
+      ["integrity_cost", "integrity_ratio"],
+      ["return_cost", "return_ratio"],
+      ["payback_price", "payback_ratio"],
+      ["food_cost", "food_ratio"],
+      ["etc_cost", "etc_ratio"],
+      ["food_process", "food_trash_ratio"],
+      ["dishwasher", "dishwasher_ratio"],
+      ["cesco", "cesco_ratio"],
+      ["water_puri", "water_ratio"],
+      ["event_cost", "event_ratio"],
+      ["not_budget_cost", "not_budget_ratio"],
+      ["person_cost", "person_ratio"],
+      ["dispatch_cost", "dispatch_ratio"],
+      ["utility_bills", "utility_ratio"],
+      ["duty_secure", "duty_secure_ratio"],
+      ["etc_indirect_cost", "etc_indirect_ratio"],
+    ].forEach(([valueKey, ratioKey]) => {
+      row[ratioKey] = rnd(amount(valueKey), salesTotal);
+    });
+
+    row.sales_total_ratio = Math.round(
+      (
+        row.living_ratio + row.basic_ratio + row.employ_ratio +
+        row.living_ratio2 + row.basic_ratio2 + row.employ_ratio2 +
+        row.daycare_ratio + row.daycare_emp_ratio +
+        row.integrity_ratio + row.return_ratio
+      ) * 10
+    ) / 10;
+    row.purchase_total_ratio = Math.round(
+      (
+        row.food_ratio + row.etc_ratio + row.food_trash_ratio +
+        row.dishwasher_ratio + row.cesco_ratio + row.water_ratio +
+        row.event_ratio + row.not_budget_ratio
+      ) * 10
+    ) / 10;
+    row.person_total_ratio =
+      Math.round((row.person_ratio + row.dispatch_ratio) * 10) / 10;
+    row.indirect_total_ratio = Math.round(
+      (row.utility_ratio + row.duty_secure_ratio + row.etc_indirect_ratio) * 10
+    ) / 10;
+    row.business_profit_ratio = Math.round(
+      (
+        row.sales_total_ratio - row.purchase_total_ratio -
+        row.person_total_ratio - row.indirect_total_ratio
+      ) * 10
+    ) / 10;
+    row.total_business_profit_ratio = Math.round(
+      (
+        row.sales_total_ratio + row.payback_ratio -
+        row.purchase_total_ratio - row.person_total_ratio - row.indirect_total_ratio
+      ) * 10
+    ) / 10;
+
+    return row;
   };
 
   const buildTwoRowHeader = (sheet, firstTitle, firstKey) => {
@@ -861,7 +980,7 @@ export default function ProfitLossTableTab() {
     });
 
     const byAccount = new Map();
-    rows.forEach((r) => {
+    rows.map(normalizeProfitLossRowForExcel).forEach((r) => {
       const aid = String(r?.account_id ?? r?.account_name ?? "");
       if (!aid) return;
       if (!byAccount.has(aid)) byAccount.set(aid, []);
@@ -895,7 +1014,7 @@ export default function ProfitLossTableTab() {
       const monthMap = new Map();
       accRows.forEach((r) => {
         const m = getMonthNumber(r);
-        if (m) monthMap.set(m, r);
+        if (m) monthMap.set(m, normalizeProfitLossRowForExcel(r));
       });
 
       const accName = accRows[0]?.account_name ?? "";
@@ -935,10 +1054,26 @@ export default function ProfitLossTableTab() {
           let hasAny = false;
           for (let m = 1; m <= 12; m++) {
             const rec = monthMap.get(m);
+            if (!hasBaseSalesCost(rec)) continue;
             const v = rec ? getDisplayValue(rec, def.valueKey) : null;
             const n = Number(v);
             if (Number.isFinite(n)) {
-              sum += n;
+              const salesTotalWithoutPayback = [
+                "living_cost",
+                "basic_cost",
+                "employ_cost",
+                "living_cost2",
+                "basic_cost2",
+                "employ_cost2",
+                "daycare_cost",
+                "daycare_emp_cost",
+                "integrity_cost",
+                "return_cost",
+              ].reduce(
+                (total, field) => total + (Number(getDisplayValue(rec, field)) || 0),
+                0
+              );
+              sum += def.valueKey === "sales_total" ? salesTotalWithoutPayback : n;
               hasAny = true;
             }
           }
@@ -1145,13 +1280,20 @@ export default function ProfitLossTableTab() {
     return workbook.xlsx.writeBuffer();
   };
 
+  const appendCalculatedTotalRow = (rows) => {
+    if (!Array.isArray(rows)) return [];
+    if (!totalRow || rows.length === 0) return rows;
+    return [...rows, { ...totalRow, __isCalculatedTotal: true }];
+  };
+
   const addMonthTotalSheet = (workbook, rows) => {
     return addValueRatioSheet(workbook, {
-      rows,
+      rows: appendCalculatedTotalRow(rows),
       sheetName: "손익표(월-전체)",
       firstTitle: "월",
       firstKey: "__month",
-      labelGetter: (r) => `${r.month ?? r.mm ?? r.mon ?? ""}월`,
+      labelGetter: (r) =>
+        r.__isCalculatedTotal ? "합계" : `${r.month ?? r.mm ?? r.mon ?? ""}월`,
     });
   };
 
@@ -1187,6 +1329,179 @@ export default function ProfitLossTableTab() {
     currentColumn.width = Math.max(currentWidth, 16);
   };
 
+  const applyCalculationRulesToDownloadedWorkbook = (workbook) => {
+    const salesLabels = new Set(["매출소계(판장금제외)", "소계(매출)", "매출소계"]);
+    const componentLabels = new Set([
+      "생계비", "일반식대", "직원식대", "생계비(2)", "일반식대(2)", "직원식대(2)",
+      "주간일반", "주간직원", "주간보호", "주간보호직원", "보전", "반환금",
+    ]);
+    const textOf = (cell) => String(cell?.value?.text ?? cell?.value ?? "").trim();
+    const numberOf = (cell) => {
+      const value = cell?.value?.result ?? cell?.value;
+      const number = Number(String(value ?? "").replace(/,/g, ""));
+      return Number.isFinite(number) ? number : 0;
+    };
+
+    workbook.worksheets.forEach((sheet) => {
+      // 가로형 엑셀: 거래처/월이 행, 손익 항목이 열인 형식
+      let horizontalHeader = null;
+      sheet.eachRow((row) => {
+        if (horizontalHeader) return;
+        const labels = new Map();
+        row.eachCell((cell, colNumber) => labels.set(textOf(cell), colNumber));
+        const salesCol = [...salesLabels].map((label) => labels.get(label)).find(Boolean);
+        if (labels.get("생계비") && labels.get("일반식대") && salesCol) {
+          horizontalHeader = { rowNumber: row.number, labels, salesCol };
+        }
+      });
+
+      if (horizontalHeader) {
+        const componentCols = [...componentLabels]
+          .map((label) => horizontalHeader.labels.get(label))
+          .filter(Boolean);
+        const totalRows = [];
+        const eligibleValueRows = [];
+
+        for (let rowNumber = horizontalHeader.rowNumber + 1; rowNumber <= sheet.rowCount; rowNumber++) {
+          const row = sheet.getRow(rowNumber);
+          const isTotalRow = row.values.some((value) => {
+            const text = String(value?.text ?? value ?? "").trim();
+            return text === "합계" || text === "총합계";
+          });
+          if (isTotalRow) {
+            const totalLiving = numberOf(row.getCell(horizontalHeader.labels.get("생계비")));
+            const totalBasic = numberOf(row.getCell(horizontalHeader.labels.get("일반식대")));
+            if (Math.max(Math.abs(totalLiving), Math.abs(totalBasic)) > 1) {
+              totalRows.push(rowNumber);
+            }
+            continue;
+          }
+
+          const living = numberOf(row.getCell(horizontalHeader.labels.get("생계비")));
+          const basic = numberOf(row.getCell(horizontalHeader.labels.get("일반식대")));
+          const hasBaseSales = living !== 0 || basic !== 0;
+          if (!hasBaseSales) continue;
+
+          // 금액 행과 바로 아래 비율 행을 구분한다.
+          if (Math.max(Math.abs(living), Math.abs(basic)) > 1) {
+            eligibleValueRows.push(rowNumber);
+          }
+
+          row.getCell(horizontalHeader.salesCol).value = componentCols.reduce(
+            (sum, col) => sum + numberOf(row.getCell(col)),
+            0
+          );
+        }
+
+        // 서버가 만든 합계 행도 유효한 월의 금액 행만 사용해 다시 계산한다.
+        totalRows.forEach((totalRowNumber) => {
+          const totalRow = sheet.getRow(totalRowNumber);
+          horizontalHeader.labels.forEach((_, label) => {
+            const col = horizontalHeader.labels.get(label);
+            if (!col || col === 1 || label === "비고") return;
+            const hasNumericValue = eligibleValueRows.some(
+              (rowNumber) => numberOf(sheet.getCell(rowNumber, col)) !== 0
+            );
+            if (!hasNumericValue) return;
+            totalRow.getCell(col).value = eligibleValueRows.reduce(
+              (sum, rowNumber) => sum + numberOf(sheet.getCell(rowNumber, col)),
+              0
+            );
+          });
+
+          totalRow.getCell(horizontalHeader.salesCol).value = componentCols.reduce(
+            (sum, col) => sum + numberOf(totalRow.getCell(col)),
+            0
+          );
+        });
+      }
+
+      // 세로형 월-전체 엑셀: 항목이 행, 각 월과 합계가 열인 형식
+      let headerRow = null;
+      let totalCol = null;
+      const monthCols = new Map();
+      sheet.eachRow((row) => {
+        if (headerRow) return;
+        row.eachCell((cell, colNumber) => {
+          const text = textOf(cell);
+          const match = text.match(/^(\d{1,2})월$/);
+          if (match) monthCols.set(Number(match[1]), colNumber);
+          if (text === "합계") totalCol = colNumber;
+        });
+        if (monthCols.size === 12 && totalCol) headerRow = row.number;
+      });
+      if (!headerRow || !totalCol) return;
+
+      let labelCol = null;
+      for (let col = 1; col < totalCol; col++) {
+        let score = 0;
+        for (let row = headerRow + 1; row <= sheet.rowCount; row++) {
+          const label = textOf(sheet.getCell(row, col));
+          if (label === "생계비" || label === "일반식대" || salesLabels.has(label)) score++;
+        }
+        if (score >= 3) {
+          labelCol = col;
+          break;
+        }
+      }
+      if (!labelCol) return;
+
+      const blockStarts = [];
+      for (let row = headerRow + 1; row <= sheet.rowCount; row++) {
+        if (textOf(sheet.getCell(row, labelCol)) === "인원추산(생계비)") blockStarts.push(row);
+      }
+      blockStarts.forEach((start, index) => {
+        const end = (blockStarts[index + 1] || sheet.rowCount + 1) - 1;
+        const rowByLabel = new Map();
+        for (let row = start; row <= end; row++) {
+          const label = textOf(sheet.getCell(row, labelCol));
+          if (label) rowByLabel.set(label, row);
+        }
+        const livingRow = rowByLabel.get("생계비");
+        const basicRow = rowByLabel.get("일반식대");
+        if (!livingRow || !basicRow) return;
+
+        const eligibleMonthCols = [...monthCols.values()].filter(
+          (col) =>
+            numberOf(sheet.getCell(livingRow, col)) !== 0 ||
+            numberOf(sheet.getCell(basicRow, col)) !== 0
+        );
+        for (let row = start; row <= end; row++) {
+          const hasMonthlyNumber = [...monthCols.values()].some(
+            (col) => numberOf(sheet.getCell(row, col)) !== 0
+          );
+          if (!hasMonthlyNumber) continue;
+          sheet.getCell(row, totalCol).value = eligibleMonthCols.reduce(
+            (sum, col) => sum + numberOf(sheet.getCell(row, col)),
+            0
+          );
+        }
+
+        const salesRow = [...salesLabels]
+          .map((label) => rowByLabel.get(label))
+          .find(Boolean);
+        if (salesRow) {
+          sheet.getCell(salesRow, totalCol).value = [...componentLabels].reduce(
+            (sum, label) => {
+              const row = rowByLabel.get(label);
+              return sum + (row ? numberOf(sheet.getCell(row, totalCol)) : 0);
+            },
+            0
+          );
+        }
+      });
+    });
+  };
+
+  const convertLegacyXlsWithCalculationRules = async (arrayBuffer) => {
+    const legacyWorkbook = XLSX.read(arrayBuffer, { type: "array" });
+    const convertedBuffer = XLSX.write(legacyWorkbook, { bookType: "xlsx", type: "array" });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(convertedBuffer);
+    applyCalculationRulesToDownloadedWorkbook(workbook);
+    return workbook.xlsx.writeBuffer();
+  };
+
   const handleExcelDownload = async () => {
     if (!selectedAccountId) return;
 
@@ -1214,15 +1529,28 @@ export default function ProfitLossTableTab() {
 
           const detected = detectExcelExtOrError(res.data);
 
-          if (detected.kind === "xlsx" || detected.kind === "xls") {
-            const ext = detected.kind === "xls" ? "xls" : "xlsx";
-            const blob = new Blob([res.data], {
-              type:
-                ext === "xls"
-                  ? "application/vnd.ms-excel"
-                  : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            });
-            downloadBlob(blob, `${year}-${queryMonth}월(손익표).${ext}`);
+          if (detected.kind === "xlsx") {
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(res.data);
+            applyCalculationRulesToDownloadedWorkbook(workbook);
+            const buffer = await workbook.xlsx.writeBuffer();
+            downloadBlob(
+              new Blob([buffer], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              }),
+              `${year}-${queryMonth}월(손익표).xlsx`
+            );
+            return;
+          }
+
+          if (detected.kind === "xls") {
+            const buffer = await convertLegacyXlsWithCalculationRules(res.data);
+            downloadBlob(
+              new Blob([buffer], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              }),
+              `${year}-${queryMonth}월(손익표).xlsx`
+            );
             return;
           }
 
@@ -1325,6 +1653,7 @@ export default function ProfitLossTableTab() {
               setWorksheetName(workbook, accountSheet, "손익표(거래처-전체)");
             }
             addMonthTotalSheet(workbook, monthTotalRows);
+            applyCalculationRulesToDownloadedWorkbook(workbook);
 
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], {
@@ -1335,10 +1664,13 @@ export default function ProfitLossTableTab() {
           }
 
           if (detected.kind === "xls") {
-            const blob = new Blob([res.data], {
-              type: "application/vnd.ms-excel",
-            });
-            downloadBlob(blob, `${year}(손익표).xls`);
+            const buffer = await convertLegacyXlsWithCalculationRules(res.data);
+            downloadBlob(
+              new Blob([buffer], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              }),
+              `${year}(손익표).xlsx`
+            );
             return;
           }
 
@@ -1400,6 +1732,7 @@ export default function ProfitLossTableTab() {
             const workbook = new ExcelJS.Workbook();
             await workbook.xlsx.load(res.data);
             widenMonthAllCurrentColumn(workbook);
+            applyCalculationRulesToDownloadedWorkbook(workbook);
 
             const buffer = await workbook.xlsx.writeBuffer();
             downloadBlob(
@@ -1412,10 +1745,13 @@ export default function ProfitLossTableTab() {
           }
 
           if (detected.kind === "xls") {
-            const blob = new Blob([res.data], {
-              type: "application/vnd.ms-excel",
-            });
-            downloadBlob(blob, `${year}(손익표-월전체).xls`);
+            const buffer = await convertLegacyXlsWithCalculationRules(res.data);
+            downloadBlob(
+              new Blob([buffer], {
+                type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              }),
+              `${year}(손익표-월전체).xlsx`
+            );
             return;
           }
 
@@ -1463,11 +1799,11 @@ export default function ProfitLossTableTab() {
       }
 
       const buffer = await buildValueRatioWorkbook({
-        rows: editRows,
+        rows: appendCalculatedTotalRow(editRows),
         sheetName: "손익표",
         firstTitle: "월",
         firstKey: "__month",
-        labelGetter: (r) => `${r.month}월`,
+        labelGetter: (r) => (r.__isCalculatedTotal ? "합계" : `${r.month}월`),
       });
 
       const blob = new Blob([buffer], {

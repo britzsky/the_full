@@ -25,6 +25,10 @@ import useEvaluationData from "./EvaluationDocumentSheetTabData";
 // 상수
 // ────────────────────────────────────────────────────────────────────────────
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8080";
+const KPI_LOCKED_DOCUMENT_NAMES = new Set([
+  "KPI 본인 평가표(상반기)",
+  "KPI 본인 평가표(하반기)",
+]);
 
 // 업무 타입 옵션 (DB type 컬럼 값과 매핑)
 const TYPE_OPTIONS = [
@@ -78,8 +82,14 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     saveEvaluation,
     syncEvaluationFiles,
     fetchEvaluationFormInit,   // types + users 단일 API
+    fetchKPIOnOff,
+    saveKPIOnOff,
     fetchEvaluationFiles,
   } = useEvaluationData();
+  const [memberCanWrite, setMemberCanWrite] = useState(null);
+  const [leaderCanWrite, setLeaderCanWrite] = useState(null);
+  const [savingKPIOnOff, setSavingKPIOnOff] = useState(false);
+  const isKPIWritingDisabled = memberCanWrite === 0;
 
   // ── 문서 타입 상태 (전자결재 동일 패턴) ─────────────────────────────────
   const [typeList, setTypeList] = useState([]);  // tb_hr_evaluation_type 전체 목록
@@ -109,6 +119,16 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
         seen.add(v); return true;
       }).map((r) => String(r.middle_type));
   }, [typeList, selectedLargeType]);
+
+  const lockedMiddleTypes = useMemo(() => {
+    if (!isKPIWritingDisabled) return new Set();
+    return new Set(
+      (typeList || [])
+        .filter((row) => KPI_LOCKED_DOCUMENT_NAMES.has(String(row.doc_name ?? "").trim()))
+        .map((row) => String(row.middle_type ?? "").trim())
+        .filter(Boolean)
+    );
+  }, [typeList, isKPIWritingDisabled]);
 
   // 소분류 옵션 (대+중분류 기준 필터)
   const smallTypeOptions = useMemo(() => {
@@ -274,6 +294,22 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
     })();
   }, [fetchEvaluationFormInit, loginDepartment]);
 
+  useEffect(() => {
+    (async () => {
+      const { memberCanWrite: memberValue, leaderCanWrite: leaderValue } =
+        await fetchKPIOnOff();
+      setMemberCanWrite(memberValue);
+      setLeaderCanWrite(leaderValue);
+    })();
+  }, [fetchKPIOnOff]);
+
+  useEffect(() => {
+    if (isKPIWritingDisabled && lockedMiddleTypes.has(selectedMiddleType)) {
+      setSelectedMiddleType("");
+      setDocType("");
+    }
+  }, [isKPIWritingDisabled, lockedMiddleTypes, selectedMiddleType]);
+
   // 대분류 변경 시 중분류·소분류 초기화
   const onChangeLargeType = useCallback((value) => {
     setSelectedLargeType(value);
@@ -283,6 +319,7 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
 
   // 중분류 변경 시 해당 대+중분류 조합의 첫 번째 doc_type 자동 선택
   const onChangeMiddleType = useCallback((value) => {
+    if (isKPIWritingDisabled && lockedMiddleTypes.has(value)) return;
     setSelectedMiddleType(value);
     const matched = (typeList || []).filter(
       (r) =>
@@ -290,7 +327,36 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
         String(r.middle_type ?? "").trim() === value
     );
     setDocType(matched.length > 0 ? String(matched[0].doc_type) : "");
-  }, [typeList, selectedLargeType]);
+  }, [typeList, selectedLargeType, isKPIWritingDisabled, lockedMiddleTypes]);
+
+  const handleKPIOnOff = useCallback(async () => {
+    if (savingKPIOnOff || memberCanWrite == null) return;
+
+    const nextValue = memberCanWrite === 1 ? 0 : 1;
+    setSavingKPIOnOff(true);
+    const saved = await saveKPIOnOff({
+      memberCanWrite: nextValue,
+      leaderCanWrite,
+      userId: loginUserId,
+    });
+
+    if (saved) {
+      const { memberCanWrite: refreshedMemberValue, leaderCanWrite: refreshedLeaderValue } =
+        await fetchKPIOnOff();
+      setMemberCanWrite(refreshedMemberValue);
+      setLeaderCanWrite(refreshedLeaderValue);
+    } else {
+      Swal.fire({
+        title: "실패",
+        text: "KPI 작성 상태를 변경하지 못했습니다.",
+        icon: "error",
+      });
+    }
+    setSavingKPIOnOff(false);
+  }, [
+    savingKPIOnOff, memberCanWrite, leaderCanWrite, saveKPIOnOff, loginUserId,
+    fetchKPIOnOff,
+  ]);
 
   // ── 부서 변경 시 작성자 자동 선택 ──────────────────────────────────────
   useEffect(() => {
@@ -596,13 +662,26 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
           >
             <option value="" disabled>중분류</option>
             {middleTypeOptions.map((t) => (
-              <option key={t} value={t}>{t}</option>
+              <option key={t} value={t} disabled={lockedMiddleTypes.has(t)}>{t}</option>
             ))}
           </TextField>
         </MDBox>
 
         {/* 오른쪽: 초기화 / 저장 */}
         <MDBox sx={{ display: "flex", gap: 1 }}>
+          {loginUserId === "britzsky" && (
+            <MDButton
+              variant="outlined"
+              color={memberCanWrite === 1 ? "error" : "success"}
+              onClick={handleKPIOnOff}
+              disabled={savingKPIOnOff || memberCanWrite == null}
+              sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 100 : 120 }}
+            >
+              {savingKPIOnOff
+                ? "변경 중..."
+                : memberCanWrite === 1 ? "KPI작성 잠금" : "KPI작성 활성"}
+            </MDButton>
+          )}
           <MDButton
             variant="outlined" color="secondary" onClick={handleReset}
             sx={{ fontSize: isMobile ? 11 : 13 }}

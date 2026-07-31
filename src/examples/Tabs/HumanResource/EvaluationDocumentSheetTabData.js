@@ -82,6 +82,37 @@ export default function useEvaluationDocumentSheetData() {
     }
   }, []);
 
+  const fetchKPIOnOff = useCallback(async () => {
+    try {
+      const res = await api.get("/HeadOffice/SelectKPIOnOff");
+      const responseData = res.data;
+      const rawData = Array.isArray(responseData)
+        ? responseData[0]
+        : Array.isArray(responseData?.data) ? responseData.data[0] : responseData?.data ?? responseData;
+      return {
+        memberCanWrite: Number(rawData?.member_can_write) === 1 ? 1 : 0,
+        leaderCanWrite: rawData?.leader_can_write,
+      };
+    } catch (e) {
+      console.error("KPI 작성 상태 조회 실패:", e);
+      return { memberCanWrite: 0, leaderCanWrite: null };
+    }
+  }, []);
+
+  const saveKPIOnOff = useCallback(async ({ memberCanWrite, leaderCanWrite, userId }) => {
+    try {
+      await api.post("/HeadOffice/SaveKPIOnOff", {
+        member_can_write: memberCanWrite,
+        leader_can_write: leaderCanWrite,
+        user_id: userId,
+      });
+      return true;
+    } catch (e) {
+      console.error("KPI 작성 상태 저장 실패:", e);
+      return false;
+    }
+  }, []);
+
   const fetchEvaluationFiles = useCallback(async (idx) => {
     if (!idx) { setEvaluationFiles([]); return; }
     try {
@@ -95,6 +126,7 @@ export default function useEvaluationDocumentSheetData() {
 
   return {
     saving, evaluationFiles, setEvaluationFiles,
-    saveEvaluation, syncEvaluationFiles, fetchEvaluationFormInit, fetchEvaluationFiles,
+    saveEvaluation, syncEvaluationFiles, fetchEvaluationFormInit, fetchKPIOnOff, saveKPIOnOff,
+    fetchEvaluationFiles,
   };
 }

@@ -71,6 +71,7 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const {
     rows, loading, detail, detailLoading, saving, evaluationFiles,
     loadList, loadDetail, deleteEvaluation,
+    fetchKPIOnOff, saveKPIOnOff,
     confirmTeamLeader, confirmHrLeader, confirmCeoLeader,
     updatePerformance, clearEvaluationFiles,
   } = useEvaluationData();
@@ -79,6 +80,9 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
   const [view, setView] = useState("list");
   const [selectedIdx, setSelectedIdx] = useState(null);
   const [filterText, setFilterText] = useState("");
+  const [memberCanWrite, setMemberCanWrite] = useState(null);
+  const [leaderCanWrite, setLeaderCanWrite] = useState(null);
+  const [savingKPIOnOff, setSavingKPIOnOff] = useState(false);
 
   // 실적 입력 모드 상태
   const [performanceEditMode, setPerformanceEditMode] = useState(false);
@@ -101,6 +105,41 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
 
   // 권한별 조회 조건에 따른 목록 초기 조회
   useEffect(() => { loadList(listParams); }, [loadList, listParams]);
+
+  useEffect(() => {
+    (async () => {
+      const values = await fetchKPIOnOff();
+      setMemberCanWrite(values.memberCanWrite);
+      setLeaderCanWrite(values.leaderCanWrite);
+    })();
+  }, [fetchKPIOnOff]);
+
+  const handleLeaderKPIOnOff = useCallback(async () => {
+    if (savingKPIOnOff || leaderCanWrite == null || memberCanWrite == null) return;
+
+    setSavingKPIOnOff(true);
+    const saved = await saveKPIOnOff({
+      memberCanWrite,
+      leaderCanWrite: leaderCanWrite === 1 ? 0 : 1,
+      userId: loginUserId,
+    });
+
+    if (saved) {
+      const values = await fetchKPIOnOff();
+      setMemberCanWrite(values.memberCanWrite);
+      setLeaderCanWrite(values.leaderCanWrite);
+    } else {
+      Swal.fire({
+        title: "실패",
+        text: "팀장 확인 상태를 변경하지 못했습니다.",
+        icon: "error",
+      });
+    }
+    setSavingKPIOnOff(false);
+  }, [
+    savingKPIOnOff, leaderCanWrite, memberCanWrite, saveKPIOnOff, loginUserId,
+    fetchKPIOnOff,
+  ]);
 
   // 외부에서 전달된 평가문서 번호 기준 상세 자동 진입
   useEffect(() => {
@@ -284,9 +323,24 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
             <input type="text" value={filterText} onChange={(e) => setFilterText(e.target.value)} placeholder="작성자 검색" style={filterInputSx} />
             <span style={{ fontSize: 12, color: "#888" }}>{filteredRows.length}건</span>
           </MDBox>
-          <MDButton variant="gradient" color="info" onClick={() => loadList(listParams)} sx={{ fontSize: isMobile ? 11 : 13 }}>
-            새로고침
-          </MDButton>
+          <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {loginUserId === "britzsky" && (
+              <MDButton
+                variant="outlined"
+                color={leaderCanWrite === 1 ? "error" : "success"}
+                onClick={handleLeaderKPIOnOff}
+                disabled={savingKPIOnOff || leaderCanWrite == null || memberCanWrite == null}
+                sx={{ fontSize: isMobile ? 11 : 13, minWidth: isMobile ? 110 : 130 }}
+              >
+                {savingKPIOnOff
+                  ? "변경 중..."
+                  : leaderCanWrite === 1 ? "팀장확인 잠금" : "팀장확인 활성"}
+              </MDButton>
+            )}
+            <MDButton variant="gradient" color="info" onClick={() => loadList(listParams)} sx={{ fontSize: isMobile ? 11 : 13 }}>
+              새로고침
+            </MDButton>
+          </MDBox>
         </MDBox>
 
         <MDBox sx={{ flex: 1, overflowY: "auto" }}>
@@ -335,11 +389,21 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                     return (
                       <tr
                         key={`${row.idx}-${i}`}
-                        onClick={() => openDetail(row.idx)}
-                        style={listRowSx}
-
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "#f0f4fa"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
+                        onClick={leaderCanWrite === 1 ? () => openDetail(row.idx) : undefined}
+                        title={leaderCanWrite === 0 ? "팀장 확인이 잠금 상태입니다." : undefined}
+                        style={{
+                          ...listRowSx,
+                          cursor: leaderCanWrite === 1 ? "pointer" : "not-allowed",
+                          opacity: leaderCanWrite === 0 ? 0.6 : 1,
+                          background: leaderCanWrite === 0 ? "#f5f5f5" : undefined,
+                        }}
+                        onMouseEnter={(e) => {
+                          if (leaderCanWrite === 1) e.currentTarget.style.background = "#f0f4fa";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background =
+                            leaderCanWrite === 0 ? "#f5f5f5" : "";
+                        }}
                       >
                         <td style={td2CellCenter}>{i + 1}</td>
                         <td style={td2CellCenter}>{row.document_id || "-"}</td>
@@ -454,7 +518,13 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
 
           {/* 팀장 의견 저장 및 확인 버튼 */}
           {canTeamLeaderConfirm && (
-            <MDButton variant="gradient" color="info" onClick={handleTeamLeaderConfirm} sx={{ fontSize: isMobile ? 11 : 13 }}>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleTeamLeaderConfirm}
+              disabled={leaderCanWrite !== 1}
+              sx={{ fontSize: isMobile ? 11 : 13 }}
+            >
               팀장 의견 저장 및 확인
             </MDButton>
           )}

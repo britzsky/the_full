@@ -22,6 +22,37 @@ export default function useEvaluationManageData() {
     }
   }, []);
 
+  const fetchKPIOnOff = useCallback(async () => {
+    try {
+      const res = await api.get("/HeadOffice/SelectKPIOnOff");
+      const responseData = res.data;
+      const rawData = Array.isArray(responseData)
+        ? responseData[0]
+        : Array.isArray(responseData?.data) ? responseData.data[0] : responseData?.data ?? responseData;
+      return {
+        memberCanWrite: Number(rawData?.member_can_write) === 1 ? 1 : 0,
+        leaderCanWrite: Number(rawData?.leader_can_write) === 1 ? 1 : 0,
+      };
+    } catch (e) {
+      console.error("KPI 확인 상태 조회 실패:", e);
+      return { memberCanWrite: 0, leaderCanWrite: 0 };
+    }
+  }, []);
+
+  const saveKPIOnOff = useCallback(async ({ memberCanWrite, leaderCanWrite, userId }) => {
+    try {
+      await api.post("/HeadOffice/SaveKPIOnOff", {
+        member_can_write: memberCanWrite,
+        leader_can_write: leaderCanWrite,
+        user_id: userId,
+      });
+      return true;
+    } catch (e) {
+      console.error("KPI 확인 상태 저장 실패:", e);
+      return false;
+    }
+  }, []);
+
   const loadDetail = useCallback(async (idx) => {
     setDetailLoading(true);
     try {
@@ -140,6 +171,7 @@ export default function useEvaluationManageData() {
   return {
     rows, loading, detail, detailLoading, saving, evaluationFiles,
     loadList, loadDetail, deleteEvaluation,
+    fetchKPIOnOff, saveKPIOnOff,
     confirmTeamLeader, confirmHrLeader, confirmCeoLeader,
     updatePerformance, clearEvaluationFiles,
     fetchEvaluationNotifications, markEvaluationNotificationRead,

@@ -166,7 +166,7 @@ const getRequiredRoles = (pos) => {
 };
 
 const createEmptyItems = () =>
-  Array.from({ length: 15 }).map((_, i) => ({
+  Array.from({ length: 10 }).map((_, i) => ({
     no: i + 1,
     item_name: "",
     qty: "",
@@ -1251,7 +1251,7 @@ export default function ElectronicPaymentSheetTab() {
     if (requiredRoles.includes("ceo") && !approvalLine.ceo_user) {
       Swal.fire({
         title: "확인",
-        text: "대표가 자동 지정되지 않았습니다.",
+        text: "대표이사가 자동 지정되지 않았습니다.",
         icon: "warning",
       });
       return;
@@ -1508,7 +1508,17 @@ export default function ElectronicPaymentSheetTab() {
   };
 
   const renderEmptyState = (msg) => (
-    <MDBox p={1} sx={{ border: "1px dashed #bbb", borderRadius: 2, background: "#fafafa" }}>
+    <MDBox
+      sx={{
+        ...sheetWrapSx(isMobile),
+        minHeight: 480,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#888",
+        fontSize: 13,
+      }}
+    >
       {msg}
     </MDBox>
   );
@@ -1809,7 +1819,7 @@ export default function ElectronicPaymentSheetTab() {
                         : { visibility: "hidden" }),
                     }}
                   >
-                    {moveCeoToPayerSlot ? "대표" : "결재자"}
+                    {moveCeoToPayerSlot ? "대표이사" : "결재자"}
                   </td>
                   {/* 대표는 position===0일 때만 "표시" */}
                   <td
@@ -1819,7 +1829,7 @@ export default function ElectronicPaymentSheetTab() {
                       ...(needCeo && !moveCeoToPayerSlot ? {} : { visibility: "hidden" }),
                     }}
                   >
-                    대표
+                    대표이사
                   </td>
                 </tr>
 

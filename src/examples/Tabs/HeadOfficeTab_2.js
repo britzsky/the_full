@@ -58,7 +58,7 @@ function HeadOfficeTab_2() {
     />,
   ];
   return (
-    <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
+    <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)", minHeight: "calc(100vh - 34px)" }}>
       <MDBox
         sx={{
           position: "sticky",
@@ -113,7 +113,7 @@ function HeadOfficeTab_2() {
         </Tabs>
       </MDBox>
       {/* 탭 내용 */}
-      <MDBox px={2} pb={2} pt={2}>{tabComponents[tabIndex]}</MDBox>
+      <MDBox px={2} pb={2} pt={2} sx={{ minHeight: 640 }}>{tabComponents[tabIndex]}</MDBox>
     </Card>
   );
 }

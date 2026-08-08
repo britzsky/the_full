@@ -11,6 +11,9 @@ import HandoverSheetTab from "./FieldBoard/HandoverSheetTab";
 import HygieneSheetTab from "./FieldBoard/HygieneSheetTab";
 import PropertySheetTab from "./FieldBoard/PropertySheetTab";
 import MenuManagementTab from "./FieldBoard/MenuManagementTab";
+// 구입요청 탭 (현장 영양사 구입요청서 작성)
+import PurchaseRequestTab from "./FieldBoard/PurchaseRequestTab";
+import FieldBoardPurchaseNotificationButton from "utils/FieldBoardPurchaseNotificationButton";
 
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { clearSharedAuthCookies } from "utils/sharedAuthSession";
@@ -23,6 +26,11 @@ function FieldBoardTabs() {
   const switchTimerRef = useRef(null);
   const TAB_SWITCH_DELAY_MS = 320;
   const navigate = useNavigate();
+  // 구입요청 알림에서 선택한 작성 문서를 자동으로 여는 대상과 실행 토큰
+  const [purchaseNotificationTarget, setPurchaseNotificationTarget] = useState({
+    paymentId: "",
+    token: 0,
+  });
 
   const handleTabChange = (_, newValue) => {
     if (newValue === tabIndex) return;
@@ -78,8 +86,13 @@ function FieldBoardTabs() {
     "🔁 인수인계",
     "🧹 위생점검",
     "📦 기물관리",
-    "🍽️ 식단표 관리",
+    // "🍽️ 식단표 관리",
+    "🛒 구입요청",
   ];
+
+  // 구입요청 탭 인덱스를 배열에서 동적으로 찾아 하드코딩 없이 사용한다.
+  // MenuManagementTab 주석 해제 시에도 자동으로 올바른 인덱스를 가리킨다.
+  const PURCHASE_TAB_INDEX = tabLabels.findIndex((l) => l.includes("구입요청"));
 
   const tabComponents = [
     <RecordSheetTab key="record" />,
@@ -88,8 +101,23 @@ function FieldBoardTabs() {
     <HandoverSheetTab key="handover" />,
     <HygieneSheetTab key="hygiene" />,
     <PropertySheetTab key="property" />,
-    <MenuManagementTab key="menu-management" />,
+    // <MenuManagementTab key="menu-management" />,
+    <PurchaseRequestTab
+      key="purchase-request"
+      isActive={tabIndex === PURCHASE_TAB_INDEX}
+      openHistoryPaymentId={purchaseNotificationTarget.paymentId}
+      openHistoryToken={purchaseNotificationTarget.token}
+    />,
   ];
+
+  // 승인·반려 알림을 누르면 구입요청 탭으로 전환하고 해당 상신 문서를 연다.
+  const handleOpenPurchaseRequest = (paymentId) => {
+    if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+    setTabIndex(PURCHASE_TAB_INDEX);
+    setContentTabIndex(PURCHASE_TAB_INDEX);
+    setTabSwitchLoading(false);
+    setPurchaseNotificationTarget({ paymentId, token: Date.now() });
+  };
   const activeTabComponent = tabComponents[contentTabIndex] ?? tabComponents[tabIndex];
 
   return (
@@ -108,7 +136,16 @@ function FieldBoardTabs() {
           borderBottom: "1px solid #eee",
         }}
       >
-        <HeaderWithLogout showMenuButton title="현장관리" onLogout={handleLogout} />
+        <HeaderWithLogout
+          showMenuButton
+          title="현장관리"
+          rightContent={(
+            <FieldBoardPurchaseNotificationButton
+              onOpenPurchaseRequest={handleOpenPurchaseRequest}
+            />
+          )}
+          onLogout={handleLogout}
+        />
 
         <Tabs
           value={tabIndex}

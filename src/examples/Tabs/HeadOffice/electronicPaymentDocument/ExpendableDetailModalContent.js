@@ -78,9 +78,10 @@ function ExpendableDetailModalContent({
   // 합계는 표시 전용 계산값이며 저장값을 변경하지 않는다.
   const totalAmountText = useMemo(() => {
     const sum = (detailItems || []).reduce((acc, it) => {
-      if (!toYnValue(it?.buy_yn)) return acc;
-      const amount = toNumberValue(it?.price);
-      return acc + (amount || 0);
+      const price = toNumberValue(it?.price) || 0;
+      if (!price) return acc;
+      const qty = Math.max(Number(it?.qty) || 1, 1);
+      return acc + price * qty;
     }, 0);
     return sum.toLocaleString("ko-KR");
   }, [detailItems]);
@@ -211,7 +212,7 @@ function ExpendableDetailModalContent({
           </table>
         </MDBox>
         <MDBox sx={totalAmountRowSx}>
-          <MDBox sx={{ fontWeight: 700, color: "#1f4e79" }}>총 금액</MDBox>
+          <MDBox sx={{ fontWeight: 700, color: "#1f4e79" }}>합계 금액</MDBox>
           <MDBox sx={{ fontWeight: 800, color: "#1f4e79" }}>{`${totalAmountText} 원`}</MDBox>
         </MDBox>
       </MDBox>

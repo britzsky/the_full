@@ -286,6 +286,8 @@ function PreviewOverlay({
   }, [open]);
 
   // 오버레이가 열린 동안 Esc 키로 닫기 동작을 지원한다.
+  // capture:true 로 캡처 단계에서 먼저 잡고, stopImmediatePropagation으로
+  // 같은 window에 등록된 MUI Dialog ESC 핸들러까지 차단한다.
   useEffect(() => {
     if (!open) return undefined;
 
@@ -293,12 +295,13 @@ function PreviewOverlay({
       if (e.key !== "Escape") return;
       e.preventDefault();
       e.stopPropagation();
+      e.stopImmediatePropagation();
       if (typeof onClose === "function") onClose();
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
     };
   }, [open, onClose]);
 
@@ -310,6 +313,8 @@ function PreviewOverlay({
     const handleIframeKeyDown = (e) => {
       if (e.key !== "Escape") return;
       e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
       if (typeof onClose === "function") onClose();
     };
 

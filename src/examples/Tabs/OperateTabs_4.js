@@ -8,6 +8,7 @@ import AccountMemberRecordMainTableTab from "./Operate/AccountMemberRecordMainTa
 import AccountEmergencyMemberSheetTab from "./Operate/AccountEmergencyMemberSheetTab";
 import AccountRootTab from "./Operate/AccountRootTab";
 import AccountFieldMemberTab from "./Operate/AccountFieldMemberTab";
+import PurchaseAccountMapTab from "./Operate/PurchaseAccountMapTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
@@ -112,6 +113,14 @@ function OperateTabs_2() {
       component: <AccountFieldMemberTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
+      accessMode: "AND",
+    },
+    {
+      key: "purchaseAccountMap",
+      label: "🛒 구입 업장관리",
+      iconIndex: 4,
+      component: <PurchaseAccountMapTab />,
+      allowedDepartments: [0, 5, 6], // 🔹 대표, 운영팀, 개발팀
       accessMode: "AND",
     },
 

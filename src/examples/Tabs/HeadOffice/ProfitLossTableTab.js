@@ -26,6 +26,8 @@ export default function ProfitLossTableTab() {
   const didSetDefaultAccountRef = useRef(false);
   const tableBoxRef = useRef(null);
   const noteMeasureCanvasRef = useRef(null);
+  const theadRef = useRef(null);
+  const [secondRowTop, setSecondRowTop] = useState(0);
 
   // ✅ 조회된 값 + 변경 감지 버전
   const [editRows, setEditRows] = useState([]);
@@ -123,6 +125,18 @@ export default function ProfitLossTableTab() {
   useEffect(() => {
     setUnlockedPersonCostMonths(new Set());
   }, [selectedAccountId, year, queryMonth]);
+
+  // ✅ 두 번째 헤더 행의 sticky top 오프셋 측정
+  useEffect(() => {
+    const measure = () => {
+      if (theadRef.current?.rows?.[0]) {
+        setSecondRowTop(theadRef.current.rows[0].offsetHeight);
+      }
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [editRows]);
 
   // ✅ 데이터 원본 저장
   useEffect(() => {
@@ -275,6 +289,7 @@ export default function ProfitLossTableTab() {
           "정수기",
           "이벤트",
           "예산미발행",
+          "초기투자비용",
           "매입소계",
         ],
       },
@@ -312,6 +327,7 @@ export default function ProfitLossTableTab() {
     기타경비: { value: "etc_cost", ratio: "etc_ratio" },
     이벤트: { value: "event_cost", ratio: "event_ratio" },
     예산미발행: { value: "not_budget_cost", ratio: "not_budget_ratio" },
+    초기투자비용: { value: "upfront_cost", ratio: "upfront_cost_ratio" },
     매입소계: { value: "purchase_total", ratio: "purchase_total_ratio" },
     인건비정보: { value: "person_cost", ratio: "person_ratio" },
     파출비: { value: "dispatch_cost", ratio: "dispatch_ratio" },
@@ -399,6 +415,51 @@ export default function ProfitLossTableTab() {
       0
     );
 
+    // upfront_cost 합계 보정:
+    // DB upfront_cost는 잔존가치(잔액)이므로 단순 합산 불가.
+    // 1순위: 백엔드 upfront_monthly_deprec 합산
+    // 2순위(개별 거래처): 연속 월 잔존가치 차이로 월 감가액 역산
+    {
+      let sumDeprec = 0;
+      let hasDeprec = false;
+
+      // 1순위: 백엔드가 upfront_monthly_deprec 제공 시
+      // editRows 전체 사용 - 매출 없는 달도 감가는 계속되므로 rowsForTotal 제외 불가
+      editRows.forEach((r) => {
+        const n = Number(r.upfront_monthly_deprec);
+        if (Number.isFinite(n) && n > 0) { sumDeprec += n; hasDeprec = true; }
+      });
+
+      // 2순위: 개별 거래처 + 백엔드 값 없을 때 → 연속 월 잔존가치 차이로 역산
+      if (!hasDeprec && selectedAccountId && selectedAccountId !== "ALL") {
+        const sorted = [...editRows]
+          .filter(r => Number(r.upfront_cost) > 0)
+          .sort((a, b) => Number(a.month) - Number(b.month));
+        if (sorted.length >= 2) {
+          for (let i = 0; i < sorted.length - 1; i++) {
+            const diff = Number(sorted[i].upfront_cost) - Number(sorted[i + 1].upfront_cost);
+            if (diff > 0) {
+              sumDeprec = diff * sorted.length;
+              hasDeprec = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (hasDeprec) {
+        result.upfront_cost = sumDeprec;
+        const purchaseBase = ["food_process", "dishwasher", "cesco", "water_puri",
+          "food_cost", "event_cost", "not_budget_cost", "etc_cost"]
+          .reduce((s, f) => s + (Number(result[f]) || 0), 0);
+        result.purchase_total = purchaseBase + sumDeprec;
+        result.business_profit =
+          (result.sales_total || 0) - result.purchase_total -
+          (result.person_total || 0) - (result.indirect_total || 0);
+        result.total_business_profit = result.business_profit + (result.payback_price || 0);
+      }
+    }
+
     // 비율 계산 (프로시저 로직 동일하게 적용)
     const rnd = (v, d) => d ? Math.round((v / d) * 100 * 10) / 10 : 0;
     const st = result.sales_total || 0;
@@ -438,10 +499,11 @@ export default function ProfitLossTableTab() {
     result.water_ratio = rnd(result.water_puri || 0, st);
     result.event_ratio = rnd(result.event_cost || 0, st);
     result.not_budget_ratio = rnd(result.not_budget_cost || 0, st);
+    result.upfront_cost_ratio = rnd(result["upfront_cost"] || 0, st);
     result.purchase_total_ratio = Math.round((
       result.food_trash_ratio + result.dishwasher_ratio + result.cesco_ratio +
       result.water_ratio + result.food_ratio + result.etc_ratio +
-      result.event_ratio + result.not_budget_ratio
+      result.event_ratio + result.not_budget_ratio + result.upfront_cost_ratio
     ) * 10) / 10;
 
     // 인건 (분모: sales_total)
@@ -468,7 +530,7 @@ export default function ProfitLossTableTab() {
     ) * 10) / 10;
 
     return result;
-  }, [editRows]);
+  }, [editRows, selectedAccountId]);
 
   const hasUnsavedChanges = useMemo(() => {
     return (editRows || []).some((row) => {
@@ -1129,7 +1191,8 @@ export default function ProfitLossTableTab() {
 
         if (valueCols.has(cno)) {
           if (typeof cell.value === "number") {
-            cell.numFmt = "#,##0";
+            const isEstimateRow = fLabel.includes("인원추산");
+            cell.numFmt = isEstimateRow ? "0.0" : "#,##0";
             cell.alignment = { vertical: "middle", horizontal: "right" };
           } else {
             cell.alignment = { vertical: "middle", horizontal: "center" };
@@ -1201,6 +1264,12 @@ export default function ProfitLossTableTab() {
       sheet.mergeCells(valueRowNo, 1, ratioRowNo, 1);
     });
 
+    const estimateHeaders = new Set(["생계인원", "일반인원", "인원합계"]);
+    const estimateCols = new Set();
+    sheet.getRow(2).eachCell((cell, colNo) => {
+      if (estimateHeaders.has(String(cell.value ?? ""))) estimateCols.add(colNo);
+    });
+
     sheet.eachRow((row, rowNumber) => {
       row.eachCell((cell, colNumber) => {
         cell.border = excelBorderThin;
@@ -1225,7 +1294,7 @@ export default function ProfitLossTableTab() {
         }
 
         if (typeof cell.value === "number") {
-          cell.numFmt = "#,##0";
+          cell.numFmt = estimateCols.has(colNumber) ? "0.0" : "#,##0";
           cell.alignment = { vertical: "middle", horizontal: "right" };
         } else {
           cell.alignment = { vertical: "middle", horizontal: "center" };
@@ -2237,20 +2306,32 @@ export default function ProfitLossTableTab() {
               "& th": {
                 backgroundColor: "#f0f0f0",
               },
+              "& thead tr:first-of-type th": {
+                position: "sticky",
+                top: 0,
+                zIndex: 4,
+              },
+              "& thead tr:nth-of-type(2) th": {
+                position: "sticky",
+                top: `${secondRowTop}px`,
+                zIndex: 4,
+              },
               ".sticky-col": {
                 position: "sticky",
                 left: 0,
                 background: "#e8f0ff",
-                zIndex: 2,
+                zIndex: 3,
                 borderRight: "1px solid #686D76",
                 width: "50px",
                 minWidth: "50px",
                 maxWidth: "50px",
               },
               ".sticky-header": {
-                zIndex: 3,
                 background: "#e8f0ff",
                 borderRight: "1px solid #686D76",
+              },
+              "& thead tr:first-of-type th.sticky-col": {
+                zIndex: 6,
               },
               // 모바일 가로 모드에서는 테이블 레이어를 낮추고 고정 컬럼을 해제해 탭 헤더를 우선 노출
               "@media (orientation: landscape) and (max-height: 900px)": {
@@ -2270,9 +2351,9 @@ export default function ProfitLossTableTab() {
             }}
           >
             <table>
-              <thead>
+              <thead ref={theadRef}>
                 <tr>
-                  <th className="sticky-col sticky-header" rowSpan={2}>
+                  <th className="sticky-col sticky-header" rowSpan={2} style={{ zIndex: 7 }}>
                     월
                   </th>
                   {filteredHeaders.flatMap((h) =>

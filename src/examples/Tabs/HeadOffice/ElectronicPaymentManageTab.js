@@ -63,6 +63,8 @@ function toPositionText(positionCode) {
 // - 1: 팀장
 // - 2: 결재자
 function getRequiredRolesByDocPosition(pos, docType, docTypeList) {
+  // 현장 구매요청서(FP)는 매핑 관리자와 같은 부서 팀장까지 2단계 결재한다.
+  if (asText(docType).toUpperCase() === "FP") return ["tm", "payer"];
   // 소모품 구매 품의서는 결재자 1명(고정)만 사용한다.
   // position 값과 무관하게 payer 단계만 남긴다.
   if (isDocKind(docType, docTypeList, DOC_KIND.EXPENDABLE)) return ["payer"];
@@ -158,8 +160,11 @@ function toAccessLevelText(value) {
     : raw;
 }
 
-// 상세/목록 응답에서 부서명(또는 부서코드) 표시값 추출
+// FP 구매요청서는 기안자의 거래처명을 표시하고, 다른 문서는 기존 부서명을 표시한다.
 function getDepartmentText(row) {
+  const accountName = asText(row?.account_name ?? row?.ACCOUNT_NAME);
+  if (accountName) return accountName;
+
   const deptName = asText(
     row?.dept_name ??
     row?.department_name ??
@@ -198,19 +203,23 @@ function getProgressStatusText(main, requiredRoles) {
 
   if (tmDone && payerDone && ceoDone) return "승인완료";
 
-  if (needTM && !tmDone) return tmSign === "2" ? "검토중(팀장)" : "결재대기(팀장)";
+  // 팀장 없이 결재자만 있으면 해당 결재자가 1차 결재자 역할
+  const isPayerFirstApprover = !needTM && needPayer;
+
+  if (needTM && !tmDone) return tmSign === "2" ? "검토중(1차)" : "결재대기(1차)";
 
   if (needPayer && payerUser && !payerDone) {
-    return payerSign === "2" ? "검토중(결재자)" : "결재대기(결재자)";
+    const label = isPayerFirstApprover ? "1차" : "2차";
+    return payerSign === "2" ? `검토중(${label})` : `결재대기(${label})`;
   }
 
   if (needCeo && ceoUser && !ceoDone) {
-    return ceoSign === "2" ? "검토중(대표)" : "결재대기(대표)";
+    return ceoSign === "2" ? "검토중(최종)" : "결재대기(최종)";
   }
 
-  if (needTM) return "결재대기(팀장)";
-  if (needPayer) return "결재대기(결재자)";
-  if (needCeo) return "결재대기(대표)";
+  if (needTM) return "결재대기(1차)";
+  if (needPayer) return isPayerFirstApprover ? "결재대기(1차)" : "결재대기(2차)";
+  if (needCeo) return "결재대기(최종)";
   return "-";
 }
 
@@ -260,7 +269,13 @@ function getSignTextByUser(signValue, approverUserId) {
 // 목록 상태 필터용 완료 판정
 // - 승인완료/반려는 "완료"
 // - 그 외는 "결재 중"
-function isCompletedRow(row) {
+function isCompletedRow(row, docTypeList) {
+  // FP는 과거 저장 상태값보다 현재 1·2차 결재선의 실제 진행상태를 우선한다.
+  if (asText(row?.doc_type).toUpperCase() === "FP") {
+    const fpStatusText = getRowProgressStatusText(row, docTypeList);
+    return fpStatusText === "승인완료" || fpStatusText.includes("반려");
+  }
+
   const statusCode = Number(asText(row?.status));
   if (statusCode === 3 || statusCode === 4) return true;
 
@@ -444,13 +459,24 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     [detailMain?.doc_type, docTypeList, detailItems]
   );
 
-  // 목록 상태 필터 적용
+  // 목록 상태 필터 + 기안일자 내림차순 정렬 적용
   const filteredRows = useMemo(() => {
     const source = Array.isArray(rows) ? rows : [];
-    if (listStatusFilter === "all") return source;
-    if (listStatusFilter === "done") return source.filter((row) => isCompletedRow(row));
-    return source.filter((row) => !isCompletedRow(row));
-  }, [rows, listStatusFilter]);
+    const filtered =
+      listStatusFilter === "all"
+        ? source
+        : listStatusFilter === "done"
+          ? source.filter((row) => isCompletedRow(row, docTypeList))
+          : source.filter((row) => !isCompletedRow(row, docTypeList));
+
+    return [...filtered].sort((a, b) => {
+      const dtA = String(a?.draft_dt || "");
+      const dtB = String(b?.draft_dt || "");
+      if (dtB > dtA) return 1;
+      if (dtB < dtA) return -1;
+      return String(b?.payment_id || "").localeCompare(String(a?.payment_id || ""));
+    });
+  }, [rows, listStatusFilter, docTypeList]);
   // 소모품 특수 사용자 여부 판정
   const isExpendableSpecialUser = loginUserId === EXPENDABLE_SPECIAL_USER_ID;
 
@@ -696,7 +722,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     if (sign === "4") return <Stamp name={name} mode="approve" />;
     if (sign === "3") return <Stamp name={name} mode="reject" />;
     if (sign === "2") return <StatusBadge text="검토" />;
-    return <StatusBadge text="-" />;
+    return <StatusBadge text="대기" />;
   };
 
   // 결재 칸 도장 셀 렌더
@@ -859,21 +885,21 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: isExpendableSpecialUser ? 1120 : 1060,
+              minWidth: isMobile ? 700 : 900,
               tableLayout: "fixed",
             }}
           >
             <colgroup>
-              {isExpendableSpecialUser && <col style={{ width: 60 }} />}
-              <col style={{ width: 170 }} />
-              <col style={{ width: 148 }} />
-              <col style={{ width: 120 }} />
-              <col style={{ width: 120 }} />
-              <col style={{ width: 130 }} />
-              <col style={{ width: 112 }} />
-              <col style={{ width: 112 }} />
-              <col style={{ width: 112 }} />
-              <col style={{ width: 112 }} />
+              {isExpendableSpecialUser && <col style={{ width: "4%" }} />}
+              <col style={{ width: "15%" }} />
+              <col style={{ width: isMobile ? "13%" : "11%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: "10%" }} />
+              <col style={{ width: isMobile ? "10%" : "12%" }} />
+              <col style={{ width: isMobile ? "10%" : "12%" }} />
+              <col style={{ width: isMobile ? "10%" : "12%" }} />
             </colgroup>
             <thead>
               <tr>
@@ -881,12 +907,12 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                 <th style={th2Cell}>문서번호</th>
                 <th style={th2Cell}>기안일자</th>
                 <th style={th2Cell}>문서타입</th>
-                <th style={th2Cell}>부서</th>
+                <th style={th2Cell}>부서(거래처)</th>
                 <th style={th2Cell}>상신자</th>
                 <th style={th2Cell}>결재상태</th>
-                <th style={th2Cell}>팀장</th>
-                <th style={th2Cell}>결재자</th>
-                <th style={th2Cell}>대표이사</th>
+                <th style={th2Cell}>1차결재</th>
+                <th style={th2Cell}>2차결재</th>
+                <th style={th2Cell}>최종결재</th>
               </tr>
             </thead>
             <tbody>
@@ -904,12 +930,19 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                 filteredRows.map((row, idx) => {
                   const rowRequiredFlags = getRowRequiredRoleFlags(row, docTypeList);
                   const statusText = getRowProgressStatusText(row, docTypeList);
+                  const moveRowPayerToTmSlot = !rowRequiredFlags.needTM && rowRequiredFlags.needPayer;
                   const tmSignText = rowRequiredFlags.needTM
                     ? getSignTextByUser(row.tm_sign, row.tm_user)
-                    : "-";
-                  const payerSignText = rowRequiredFlags.needPayer
-                    ? getSignTextByUser(row.payer_sign, row.payer_user)
-                    : "-";
+                    : moveRowPayerToTmSlot
+                      ? getSignTextByUser(row.payer_sign, row.payer_user)
+                      : "-";
+                  const tmSignedAt = moveRowPayerToTmSlot ? row.payer_dt : row.tm_dt;
+                  const payerSignText = moveRowPayerToTmSlot
+                    ? "-"
+                    : rowRequiredFlags.needPayer
+                      ? getSignTextByUser(row.payer_sign, row.payer_user)
+                      : "-";
+                  const payerSignedAt = moveRowPayerToTmSlot ? "" : row.payer_dt;
                   const ceoSignText = rowRequiredFlags.needCeo
                     ? getSignTextByUser(row.ceo_sign, row.ceo_user)
                     : "-";
@@ -960,15 +993,15 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                       <td style={td2CellCenter}>{asText(row.draft_dt) || "-"}</td>
                       <td style={td2CellCenter}>{toDocTypeText(row.doc_type, docTypeList)}</td>
                       <td style={td2CellCenter}>{getDepartmentText(row)}</td>
-                      <td style={td2CellCenter}>{getUserLabel(row.reg_user_id)}</td>
+                      <td style={td2CellCenter}>{asText(row.reg_user_name) || getUserLabel(row.reg_user_id)}</td>
                       <td style={td2CellCenter}>
                         <MDBox sx={statusBadgeSx(getStatusTone(statusText))}>{statusText}</MDBox>
                       </td>
                       <td style={td2CellCenter}>
-                        <SignStatusCell text={tmSignText} signedAt={row.tm_dt} />
+                        <SignStatusCell text={tmSignText} signedAt={tmSignedAt} />
                       </td>
                       <td style={td2CellCenter}>
-                        <SignStatusCell text={payerSignText} signedAt={row.payer_dt} />
+                        <SignStatusCell text={payerSignText} signedAt={payerSignedAt} />
                       </td>
                       <td style={td2CellCenter}>
                         <SignStatusCell text={ceoSignText} signedAt={row.ceo_dt} />
@@ -1089,10 +1122,13 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                         </td>
                       </tr>
                       <tr>
-                        <td style={thCell}>기안부서</td>
+                        <td style={thCell}>기안부서(거래처)</td>
                         <td style={tdCell}>{getDepartmentText(detailMain)}</td>
                         <td style={thCell}>작성자</td>
-                        <td style={tdCell}>{getUserLabel(detailMain.user_id || detailMain.reg_user_id)}</td>
+                        <td style={tdCell}>
+                          {asText(detailMain.reg_user_name) ||
+                            getUserLabel(detailMain.user_id || detailMain.reg_user_id)}
+                        </td>
                       </tr>
                       <tr>
                         <td style={thCell}>보존연한</td>
@@ -1116,31 +1152,42 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                     </colgroup>
                     <tbody>
                       <tr>
-                        <td style={thCell}>팀장</td>
-                        <td style={tdCell}>{getUserLabel(detailMain.tm_user)}</td>
-                        <td style={thCell}>팀장결재</td>
+                        <td style={thCell}>1차 결재</td>
+                        <td style={tdCell}>
+                          {movePayerToTmSlot
+                            ? asText(detailMain.payer_user_name) || getUserLabel(detailMain.payer_user)
+                            : asText(detailMain.tm_user_name) || getUserLabel(detailMain.tm_user)}
+                        </td>
+                        <td style={thCell}>1차 결재</td>
                         <td style={tdCellCenter}>
                           <SignStatusCell
-                            text={getSignTextByUser(detailMain.tm_sign, detailMain.tm_user)}
-                            signedAt={detailMain.tm_dt}
+                            text={getSignTextByUser(
+                              movePayerToTmSlot ? detailMain.payer_sign : detailMain.tm_sign,
+                              movePayerToTmSlot ? detailMain.payer_user : detailMain.tm_user
+                            )}
+                            signedAt={movePayerToTmSlot ? detailMain.payer_dt : detailMain.tm_dt}
                           />
                         </td>
                       </tr>
                       <tr>
-                        <td style={thCell}>결재자</td>
-                        <td style={tdCell}>{getUserLabel(detailMain.payer_user)}</td>
-                        <td style={thCell}>결재자결재</td>
+                        <td style={thCell}>2차 결재</td>
+                        <td style={tdCell}>
+                          {movePayerToTmSlot
+                            ? "-"
+                            : asText(detailMain.payer_user_name) || getUserLabel(detailMain.payer_user)}
+                        </td>
+                        <td style={thCell}>2차 결재</td>
                         <td style={tdCellCenter}>
                           <SignStatusCell
-                            text={getSignTextByUser(detailMain.payer_sign, detailMain.payer_user)}
-                            signedAt={detailMain.payer_dt}
+                            text={movePayerToTmSlot ? "-" : getSignTextByUser(detailMain.payer_sign, detailMain.payer_user)}
+                            signedAt={movePayerToTmSlot ? "" : detailMain.payer_dt}
                           />
                         </td>
                       </tr>
                       <tr>
-                        <td style={thCell}>대표</td>
+                        <td style={thCell}>최종 결재</td>
                         <td style={tdCell}>{getUserLabel(detailMain.ceo_user)}</td>
-                        <td style={thCell}>대표결재</td>
+                        <td style={thCell}>최종 결재</td>
                         <td style={tdCellCenter}>
                           <SignStatusCell
                             text={getSignTextByUser(detailMain.ceo_sign, detailMain.ceo_user)}
@@ -1201,7 +1248,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                               ...(needTM || movePayerToTmSlot ? {} : { visibility: "hidden" }),
                             }}
                           >
-                            {movePayerToTmSlot ? "결재자" : "팀장"}
+                            {"1차 결재"}
                           </td>
                           <td
                             style={{
@@ -1212,7 +1259,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                                 : { visibility: "hidden" }),
                             }}
                           >
-                            {moveCeoToPayerSlot ? "대표" : "결재자"}
+                            {moveCeoToPayerSlot ? "최종 결재" : "2차 결재"}
                           </td>
                           <td
                             style={{
@@ -1221,7 +1268,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                               ...((needCeo && !moveCeoToPayerSlot) ? {} : { visibility: "hidden" }),
                             }}
                           >
-                            대표
+                            최종 결재
                           </td>
                         </tr>
 
@@ -1238,8 +1285,8 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                           {renderRoleStampCell({
                             need: needTM || movePayerToTmSlot,
                             userName: movePayerToTmSlot
-                              ? getUserName(detailMain.payer_user, "결재자")
-                              : getUserName(detailMain.tm_user, "팀장"),
+                              ? getUserName(detailMain.payer_user, detailMain.payer_user_name || "2차 결재자")
+                              : getUserName(detailMain.tm_user, detailMain.tm_user_name || "1차 결재자"),
                             signValue: movePayerToTmSlot ? payerSignForDisplay : tmSignForDisplay,
                             width: "23%",
                             hideWhenNotNeed: true,
@@ -1249,7 +1296,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                             need: (needPayer && !movePayerToTmSlot) || moveCeoToPayerSlot,
                             userName: moveCeoToPayerSlot
                               ? getUserName(detailMain.ceo_user, "대표")
-                              : getUserName(detailMain.payer_user, "결재자"),
+                              : getUserName(detailMain.payer_user, detailMain.payer_user_name || "2차 결재자"),
                             signValue: moveCeoToPayerSlot ? ceoSignForDisplay : payerSignForDisplay,
                             width: "23%",
                             hideWhenNotNeed: true,
@@ -1561,7 +1608,7 @@ const summaryTableSx = {
 };
 
 const summaryThColSx = (isMobile) => ({
-  width: isMobile ? 82 : 94,
+  width: isMobile ? 100 : 120,
 });
 
 // 상세 품목 셀 기본 줄바꿈

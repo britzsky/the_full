@@ -54,6 +54,7 @@ function toDocNameKey(value) {
 // - "소모품 ... 품의서"  : 소모품 문서
 // - "기안서"             : 기안 문서
 // - "지출결의서"         : 지출결의서 문서
+// - "구매요청서"         : 현장 구매요청서 (FP) → 지출결의서 포맷 동일 처리
 function detectDocKindByName(docName) {
   const name = toDocNameKey(docName);
   if (!name) return DOC_KIND.UNKNOWN;
@@ -61,6 +62,7 @@ function detectDocKindByName(docName) {
   if (name.includes("소모품") && name.includes("품의서")) return DOC_KIND.EXPENDABLE;
   if (name.includes("기안서")) return DOC_KIND.DRAFT;
   if (name.includes("지출결의서")) return DOC_KIND.PAYMENT;
+  if (name.includes("구매요청서")) return DOC_KIND.PAYMENT;
   return DOC_KIND.UNKNOWN;
 }
 

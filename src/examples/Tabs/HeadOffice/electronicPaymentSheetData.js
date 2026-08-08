@@ -54,6 +54,9 @@ export default function useElectronicPaymentSheetData() {
           }
         });
 
+        // 현장 구매요청서(FP)는 작성 탭에서 제외 (PurchaseRequestTab 전용)
+        byType.delete("FP");
+
         const rows = Array.from(byType.values()).sort((a, b) => {
           const largeDiff = String(a.large_type || "").localeCompare(String(b.large_type || ""));
           if (largeDiff !== 0) return largeDiff;

@@ -62,11 +62,16 @@ export function getWriteDocumentComponent(docType, docTypeList = []) {
 // - 2차: 상세 데이터(rows) 컬럼 구조 기준 보정
 // 알 수 없는 타입이라고 해서 소모품으로 고정 fallback하지 않도록 수정한다.
 export function getDetailDocumentComponent(docType, docTypeList = [], detailItems = []) {
+  // FP 구매요청서는 결재 흐름은 기존 문서종류를 따르지만 본문은 품목형으로 저장되므로
+  // 실제 상세 데이터 구조를 먼저 확인해 알맞은 본문 포맷을 선택한다.
+  const inferredKind = inferDetailDocKindByItems(detailItems);
+  if (DETAIL_DOCUMENT_COMPONENT_BY_KIND[inferredKind]) {
+    return DETAIL_DOCUMENT_COMPONENT_BY_KIND[inferredKind];
+  }
+
   const kind = getDocKindByType(docType, docTypeList);
   if (DETAIL_DOCUMENT_COMPONENT_BY_KIND[kind]) {
     return DETAIL_DOCUMENT_COMPONENT_BY_KIND[kind];
   }
-
-  const inferredKind = inferDetailDocKindByItems(detailItems);
-  return DETAIL_DOCUMENT_COMPONENT_BY_KIND[inferredKind] || DraftDetailModalContent;
+  return DraftDetailModalContent;
 }

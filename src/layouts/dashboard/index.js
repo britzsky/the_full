@@ -449,9 +449,7 @@ const INTERNAL_ROUTES = {
     { name: "📢 공지사항", route: "/headoffice/notices" },
     { name: "📅 급식사업부 일정관리", route: "/headoffice/schedule" },
     { name: "🎉 행사", route: "/event" },
-    { name: "🍚 본사 식단표", route: "/weekmenu" },
-    { name: "🚙 법인차량 관리", route: "/carManager" },
-    { name: "👥 사용자 관리", route: "/headoffice/user-management" },
+    { name: "🏢 본사 관리", route: "/headoffice/management" },
     { name: "📝 전자결재 관리", route: "/electronicpaymentmanager" },
   ],
   영업: [
@@ -474,10 +472,12 @@ const INTERNAL_ROUTES = {
     { name: "💳 현장 법인카드", route: "/purchase/accountcorporatecard" },
     { name: "💳 개인구매 관리", route: "/purchase/accountpersonpurchase" },
     { name: "📦 매입마감", route: "/purchaseTally/purchasetally" },
+    { name: "🧾 거래처 마감 자료", route: "/accountReceiptSheet/account-receipts" },
   ],
   인사: [
     { name: "🧑‍🔧 현장관리", route: "/fieldstaff_1" },
     { name: "📚 본사 교육", route: "/humanresource/education" },
+    { name: "📊 평가", route: "/humanresource/evaluation" },
   ],
   현장: [
     { name: "📋 집계표", route: "/layouts/tallysheet" },

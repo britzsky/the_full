@@ -91,7 +91,7 @@ export default function DeadlineBalanceTab() {
   // ✅ 권한(특정 user_id만 편집/저장/입금 가능)
   // =========================================================
   const allowedEditors = useMemo(
-    () => new Set(["yh2", "sy9", "britzsky", "ww1", "dh2", "hh2"]),
+    () => new Set(["yh2", "sy9", "britzsky", "ww1", "dh2", "hh2", "nr1"]),
     []
   );
   const userId = useMemo(() => {

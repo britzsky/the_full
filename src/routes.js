@@ -247,7 +247,7 @@ const routes = [
         component: <AccountSales />,
         allowedDepartments: [0, 4, 5, 6, 8, 9], // 🔹 부서권한
         // ✅ 특정 아이디에게도 권한 부여 (예: 팀장/대표 조건과는 별개로 통과시키고 싶을 때)
-        allowUserIds: ["dh2", "ww1", "hh1", "hh2", "mh3"],
+        allowUserIds: ["dh2", "ww1", "hh1", "hh2", "mh3", "nr1"],
         accessMode: "OR",
       },
     ],

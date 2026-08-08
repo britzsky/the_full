@@ -121,6 +121,7 @@ const numericCols = [
   "extra_diet5_price",
   "dishwasher_cnt",
   "water_puri_cnt",
+  "upfront_cost",
 ];
 
 const formatNumber = (num) => {
@@ -865,7 +866,7 @@ function AccountInfoSheet() {
 
     const baseDietColumns = [
       { header: "식단가", accessorKey: "diet_price" },
-      { header: "기초 식단가", accessorKey: "basic_price" },
+      { header: "생계비", accessorKey: "basic_price" },
       { header: "인상전 단가", accessorKey: "before_diet_price" },
       { header: "인상시점", accessorKey: "after_dt" },
     ];
@@ -922,6 +923,12 @@ function AccountInfoSheet() {
           { header: "중식시간", accessorKey: "lunch_time" },
           { header: "석식시간", accessorKey: "dinner_time" },
           { header: "간식시간", accessorKey: "snack_time" },
+        ],
+      },
+      {
+        header: "투자",
+        columns: [
+          { header: "초기투자 비용", accessorKey: "upfront_cost" },
         ],
       },
       {
@@ -1075,6 +1082,7 @@ function AccountInfoSheet() {
     setting_item: "5%",
     cuisine: "3%",
     cuisine_note: "5%",
+    upfront_cost: "5%",
     name: "3%",
     budget_note: "5%",
     breakfast_time: "2%",
@@ -1207,6 +1215,19 @@ function AccountInfoSheet() {
                         minWidth: columnMinWidths[colKey] || "40px",
                         backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
                       }}
+                      onInput={isNumeric ? (e) => {
+                        const el = e.currentTarget;
+                        const clean = el.innerText.replace(/[^0-9]/g, "");
+                        if (el.innerText !== clean) {
+                          el.innerText = clean;
+                          const range = document.createRange();
+                          const sel = window.getSelection();
+                          range.selectNodeContents(el);
+                          range.collapse(false);
+                          sel.removeAllRanges();
+                          sel.addRange(range);
+                        }
+                      } : undefined}
                       onBlur={(e) => {
                         if (isDeletedAccount || nonEditableCols.includes(colKey)) return;
 
@@ -1292,17 +1313,17 @@ function AccountInfoSheet() {
 
     let dietCols;
     if (isDaycareView) {
-      // 주간보호: 1식 단가, 간식가, 직원 식단가, 인상전 단가, 인상시점, 기초 식단가
+      // 주간보호: 1식 단가, 간식가, 직원 식단가, 인상전 단가, 인상시점, 생계비
       dietCols = [
         { header: "1식 단가", key: "elderly", isNumeric: true },
         { header: "간식가", key: "snack", isNumeric: true },
         { header: "직원 식단가", key: "employ", isNumeric: false },
         { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
         { header: "인상시점", key: "after_dt", isNumeric: false },
-        { header: "기초 식단가", key: "basic_price", isNumeric: true },
+        { header: "생계비", key: "basic_price", isNumeric: true },
       ];
     } else {
-      // 요양원: 1일 식단가, 1식 단가, 간식가, 직원식단가, 인상전 단가, 인상시점, 기초 식단가
+      // 요양원: 1일 식단가, 1식 단가, 간식가, 직원식단가, 인상전 단가, 인상시점, 생계비
       dietCols = [
         { header: "1일 식단가", key: "diet_price", isNumeric: true },
         { header: "1식 단가", key: "elderly", isNumeric: true },
@@ -1310,7 +1331,7 @@ function AccountInfoSheet() {
         { header: "직원 식단가", key: "employ", isNumeric: false },
         { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
         { header: "인상시점", key: "after_dt", isNumeric: false },
-        { header: "기초 식단가", key: "basic_price", isNumeric: true },
+        { header: "생계비", key: "basic_price", isNumeric: true },
       ];
     }
 

@@ -313,11 +313,18 @@ function ExpendableWriteDocumentForm({
   td2Cell,
   td2CellCenter,
 }) {
-  // 상위 탭 전체 리렌더를 줄이기 위해 품목 입력은 로컬 버퍼로 먼저 받고,
-  // 입력 중에는 부모 상태 갱신을 최소화하고 blur 시점에만 반영한다.
   const normalizedItems = useMemo(() => normalizeItems(items), [items]);
   const [localItems, setLocalItems] = useState(normalizedItems);
   const localItemsRef = useRef(localItems);
+
+  const totalAmount = useMemo(() => {
+    return localItems.reduce((acc, row) => {
+      const price = Number(String(row.price || "").replace(/,/g, "")) || 0;
+      if (!price) return acc;
+      const qty = Number(row.qty) || 1;
+      return acc + price * qty;
+    }, 0);
+  }, [localItems]);
 
   useEffect(() => {
     setLocalItems((prev) => (areItemsEqual(prev, normalizedItems) ? prev : normalizedItems));
@@ -414,6 +421,10 @@ function ExpendableWriteDocumentForm({
           </tbody>
         </table>
       </MDBox>
+      <MDBox sx={totalAmountRowSx}>
+        <MDBox sx={{ fontWeight: 700, color: "#1f4e79" }}>합계 금액</MDBox>
+        <MDBox sx={{ fontWeight: 800, color: "#1f4e79" }}>{`${totalAmount.toLocaleString("ko-KR")} 원`}</MDBox>
+      </MDBox>
     </MDBox>
   );
 }
@@ -439,3 +450,13 @@ ExpendableWriteDocumentForm.propTypes = {
 };
 
 export default React.memo(ExpendableWriteDocumentForm);
+
+const totalAmountRowSx = {
+  display: "flex",
+  justifyContent: "flex-end",
+  alignItems: "center",
+  gap: 1.25,
+  padding: "5px 8px",
+  borderTop: "1px solid #cfd8e3",
+  background: "#f7f9fd",
+};

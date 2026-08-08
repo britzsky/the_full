@@ -75,7 +75,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const NOTIF_POLL_MS = 30000;
   // ------------------------------------------
   // 알림 관련 API 호출을 임시로 중단하는 스위치
-  const DISABLE_NOTIFICATION_API = true;
+  const DISABLE_NOTIFICATION_API = false;
   // ------------------------------------------
 
   const CONTACT_PENDING_ENDPOINTS = ["/ERP/ContactInquiryPendingList", "/User/ContactInquiryPendingList"];
@@ -1060,9 +1060,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const totalBadgeCount =
     electronicPaymentNotifCount +
     evaluationNotifCount +
-    notifications.length +
     inquiryPendingCount +
-    birthdayMemberCount +
     (isAdmin ? pendingCount : 0);
 
   // 사용자 승인대기 / 문의 답변대기 / 전자결재 / KPI평가 알림이 있으면 뱃지를 강조한다.
@@ -1079,7 +1077,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     const showEvaluationSection = evaluationNotifCount > 0;
     const showApprovalSection = isAdmin && pendingCount > 0;
     const showBirthdaySection = birthdayMemberCount > 0;
-    const showContractSection = notifLoading || notifications.length > 0;
+    const showContractSection = false;
     const hasAnyMenuItems =
       showPromotionSection ||
       showInquirySection ||
@@ -1302,7 +1300,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
 
         {!notifLoading && !hasAnyMenuItems && (
           <MDBox px={2} py={1}>
-            <MDTypography variant="button" fontSize="0.7rem" sx={{ color: "#fff" }}>
+            <MDTypography variant="button" fontSize="0.7rem" color="text">
               새로운 알림이 없습니다.
             </MDTypography>
           </MDBox>
@@ -1474,7 +1472,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                     max={99}
                     invisible={totalBadgeCount === 0}
                     sx={{
-                      "& .MuiBadge-badge": {
+                      "& .MuiBadge-badge:not(.MuiBadge-invisible)": {
                         transform: "translate(60%, -34%)",
                         ...(shouldBlinkNotificationBadge
                           ? {

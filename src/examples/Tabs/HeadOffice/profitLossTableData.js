@@ -61,6 +61,8 @@ export default function useProfitLossTableData(year, month, account_id) {
           account_id: item.account_id,
           account_name: item.account_name,
           account_type: item.account_type,
+          contract_start: item.contract_start ?? null,
+          contract_end: item.contract_end ?? null,
         }));
         setAccountList(rows);
       })

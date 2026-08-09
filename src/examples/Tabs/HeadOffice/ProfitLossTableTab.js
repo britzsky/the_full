@@ -419,15 +419,21 @@ export default function ProfitLossTableTab() {
     // DB upfront_cost는 잔존가치(잔액)이므로 단순 합산 불가.
     // 1순위: 백엔드 upfront_monthly_deprec 합산
     // 2순위(개별 거래처): 연속 월 잔존가치 차이로 월 감가액 역산
+    // 누적: 계약 시작 연도가 조회 연도 이전이면 이전 연도 감가액도 합산
     {
       let sumDeprec = 0;
       let hasDeprec = false;
+      let monthlyDeprecAmount = 0; // 누적 계산용 단위 월 감가액
 
       // 1순위: 백엔드가 upfront_monthly_deprec 제공 시
       // editRows 전체 사용 - 매출 없는 달도 감가는 계속되므로 rowsForTotal 제외 불가
       editRows.forEach((r) => {
         const n = Number(r.upfront_monthly_deprec);
-        if (Number.isFinite(n) && n > 0) { sumDeprec += n; hasDeprec = true; }
+        if (Number.isFinite(n) && n > 0) {
+          sumDeprec += n;
+          hasDeprec = true;
+          if (!monthlyDeprecAmount) monthlyDeprecAmount = n;
+        }
       });
 
       // 2순위: 개별 거래처 + 백엔드 값 없을 때 → 연속 월 잔존가치 차이로 역산
@@ -440,10 +446,65 @@ export default function ProfitLossTableTab() {
             const diff = Number(sorted[i].upfront_cost) - Number(sorted[i + 1].upfront_cost);
             if (diff > 0) {
               sumDeprec = diff * sorted.length;
+              monthlyDeprecAmount = diff;
               hasDeprec = true;
               break;
             }
           }
+        }
+      }
+
+      // 누적: 계약 시작이 조회 연도 이전이면 이전 연도 감가액 추가
+      // upfront_original_cost 있으면 (원본금액 / 계약총월) × 누적월로 round 오차 제거
+      // 없으면 monthlyDeprecAmount × 개월수 fallback
+      if (hasDeprec) {
+        const parseCS = (s) => s ? { y: parseInt(s.substring(0, 4)), m: parseInt(s.substring(5, 7)) } : null;
+
+        if (selectedAccountId && selectedAccountId !== "ALL") {
+          const account = accountList.find(a => String(a.account_id) === String(selectedAccountId));
+          const cs = parseCS(account?.contract_start);
+          if (cs && cs.y < year) {
+            const prevMonths = (year - cs.y) * 12 + (1 - cs.m);
+            if (prevMonths > 0) {
+              const originalCost = Number(editRows.find(r => Number(r.upfront_original_cost) > 0)?.upfront_original_cost ?? 0);
+              const ce = parseCS(account?.contract_end);
+              if (originalCost > 0 && ce) {
+                const contractTotalMonths = (ce.y - cs.y) * 12 + (ce.m - cs.m) + 1;
+                const currentYearMonths = editRows.filter(r => Number(r.upfront_monthly_deprec) > 0).length;
+                sumDeprec = Math.round((originalCost / contractTotalMonths) * (prevMonths + currentYearMonths));
+              } else {
+                sumDeprec += prevMonths * monthlyDeprecAmount;
+              }
+            }
+          }
+        } else if (selectedAccountId === "ALL") {
+          const byAccountId = new Map();
+          editRows.forEach(r => {
+            const aid = String(r.account_id ?? "");
+            if (!aid) return;
+            if (!byAccountId.has(aid)) byAccountId.set(aid, []);
+            byAccountId.get(aid).push(r);
+          });
+          byAccountId.forEach((accRows, aid) => {
+            const accMonthlyDeprec = Number(accRows.find(r => Number(r.upfront_monthly_deprec) > 0)?.upfront_monthly_deprec ?? 0);
+            if (accMonthlyDeprec <= 0) return;
+            const account = accountList.find(a => String(a.account_id) === String(aid));
+            const cs = parseCS(account?.contract_start);
+            if (!cs || cs.y >= year) return;
+            const prevMonths = (year - cs.y) * 12 + (1 - cs.m);
+            if (prevMonths <= 0) return;
+            const currentYearMonths = accRows.filter(r => Number(r.upfront_monthly_deprec) > 0).length;
+            const originalCost = Number(accRows.find(r => Number(r.upfront_original_cost) > 0)?.upfront_original_cost ?? 0);
+            const ce = parseCS(account?.contract_end);
+            if (originalCost > 0 && ce) {
+              const contractTotalMonths = (ce.y - cs.y) * 12 + (ce.m - cs.m) + 1;
+              // 기존 현재연도 기여분 제거 후 정밀 누적값으로 교체
+              sumDeprec -= accMonthlyDeprec * currentYearMonths;
+              sumDeprec += Math.round((originalCost / contractTotalMonths) * (prevMonths + currentYearMonths));
+            } else {
+              sumDeprec += prevMonths * accMonthlyDeprec;
+            }
+          });
         }
       }
 
@@ -530,7 +591,7 @@ export default function ProfitLossTableTab() {
     ) * 10) / 10;
 
     return result;
-  }, [editRows, selectedAccountId]);
+  }, [editRows, selectedAccountId, accountList, year]);
 
   const hasUnsavedChanges = useMemo(() => {
     return (editRows || []).some((row) => {
@@ -1464,22 +1525,29 @@ export default function ProfitLossTableTab() {
 
         // 서버가 만든 합계 행도 유효한 월의 금액 행만 사용해 다시 계산한다.
         totalRows.forEach((totalRowNumber) => {
-          const totalRow = sheet.getRow(totalRowNumber);
+          const excelTotalRow = sheet.getRow(totalRowNumber);
           horizontalHeader.labels.forEach((_, label) => {
             const col = horizontalHeader.labels.get(label);
-            if (!col || col === 1 || label === "비고") return;
+            // 초기투자비용은 잔존가치 합이 아닌 누적 감가액이어야 하므로 별도 처리
+            if (!col || col === 1 || label === "비고" || label === "초기투자비용") return;
             const hasNumericValue = eligibleValueRows.some(
               (rowNumber) => numberOf(sheet.getCell(rowNumber, col)) !== 0
             );
             if (!hasNumericValue) return;
-            totalRow.getCell(col).value = eligibleValueRows.reduce(
+            excelTotalRow.getCell(col).value = eligibleValueRows.reduce(
               (sum, rowNumber) => sum + numberOf(sheet.getCell(rowNumber, col)),
               0
             );
           });
 
-          totalRow.getCell(horizontalHeader.salesCol).value = componentCols.reduce(
-            (sum, col) => sum + numberOf(totalRow.getCell(col)),
+          // 초기투자비용 합계: totalRow(useMemo)의 누적 계산값 사용 (합계 행이 하나인 시트만)
+          const upfrontCol = horizontalHeader.labels.get("초기투자비용");
+          if (upfrontCol && totalRows.length === 1 && totalRow?.upfront_cost != null) {
+            excelTotalRow.getCell(upfrontCol).value = totalRow.upfront_cost;
+          }
+
+          excelTotalRow.getCell(horizontalHeader.salesCol).value = componentCols.reduce(
+            (sum, col) => sum + numberOf(excelTotalRow.getCell(col)),
             0
           );
         });

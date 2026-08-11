@@ -1959,7 +1959,7 @@ export default function ProfitLossTableTab() {
         const changedFields = {};
 
         editableNumberFields.forEach((field) => {
-          if (field === "return_cost") {
+          if (field === "return_cost" || field === "utility_bills") {
             const rawKey = `__raw_${field}`;
             const raw = String(row?.[rawKey] ?? "")
               .replace(/,/g, "")
@@ -2201,7 +2201,7 @@ export default function ProfitLossTableTab() {
       return;
     }
 
-    if (field === "return_cost") {
+    if (field === "return_cost" || field === "utility_bills") {
       if (cleaned === "-") {
         newRows[rowIdx][field] = null;
         newRows[rowIdx][rawKey] = "-";
@@ -2605,7 +2605,7 @@ export default function ProfitLossTableTab() {
                                 (() => {
                                   const rawKey = `__raw_${field}`;
                                   const displayValue =
-                                    field === "return_cost" && r?.[rawKey]
+                                    (field === "return_cost" || field === "utility_bills") && r?.[rawKey]
                                       ? r[rawKey]
                                       : r[field] !== null && r[field] !== undefined
                                         ? formatNumber(r[field])

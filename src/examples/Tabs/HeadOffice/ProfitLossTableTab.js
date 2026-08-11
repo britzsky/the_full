@@ -852,18 +852,7 @@ export default function ProfitLossTableTab() {
     row.indirect_total_ratio = Math.round(
       (row.utility_ratio + row.duty_secure_ratio + row.etc_indirect_ratio) * 10
     ) / 10;
-    row.business_profit_ratio = Math.round(
-      (
-        row.sales_total_ratio - row.purchase_total_ratio -
-        row.person_total_ratio - row.indirect_total_ratio
-      ) * 10
-    ) / 10;
-    row.total_business_profit_ratio = Math.round(
-      (
-        row.sales_total_ratio + row.payback_ratio -
-        row.purchase_total_ratio - row.person_total_ratio - row.indirect_total_ratio
-      ) * 10
-    ) / 10;
+    // 영업이익/총 영업이익은 값과 비율 모두 재계산하지 않고 DB 값을 그대로 사용한다.
 
     return row;
   };
@@ -876,7 +865,7 @@ export default function ProfitLossTableTab() {
       { key: firstKey, width: firstTitle === "거래처" ? 22 : 10 },
       ...subCols.map((col) => ({
         key: fieldMap[col]?.value || col,
-        width: col === "비고" ? 30 : 14,
+        width: col === "비고" ? 30 : col === "매출소계(판장금제외)" ? 20 : 14,
       })),
     ];
 

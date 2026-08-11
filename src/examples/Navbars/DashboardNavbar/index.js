@@ -589,6 +589,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     fontSize: 12,
     textAlign: "center",
     whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
     borderRight: `1px solid ${pendingTableBorderColor}`,
     borderBottom: `1px solid ${pendingTableBorderColor}`,
     verticalAlign: "middle",
@@ -634,7 +636,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                 <td style={pendingBodyCellStyle}>{row.user_id || "-"}</td>
                 <td style={pendingBodyCellStyle}>{row.user_name || "-"}</td>
                 <td style={pendingBodyCellStyle}>{row.user_type_name || "-"}</td>
-                <td style={pendingBodyCellStyle}>
+                <td style={pendingBodyCellStyle} title={row.dept_or_account_name || "-"}>
                   {row.dept_or_account_name || "-"}
                 </td>
                 <td style={pendingBodyCellStyle}>{row.position_name || "-"}</td>
@@ -728,10 +730,18 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
               >
                 {row.title || "-"}
               </td>
-              <td style={pendingBodyCellStyle}>{row.business_name || "-"}</td>
-              <td style={pendingBodyCellStyle}>{row.manager_name || "-"}</td>
-              <td style={pendingBodyCellStyle}>{row.email || "-"}</td>
-              <td style={pendingBodyCellStyle}>{row.phone_number || "-"}</td>
+              <td style={pendingBodyCellStyle} title={row.business_name || "-"}>
+                {row.business_name || "-"}
+              </td>
+              <td style={pendingBodyCellStyle} title={row.manager_name || "-"}>
+                {row.manager_name || "-"}
+              </td>
+              <td style={pendingBodyCellStyle} title={row.email || "-"}>
+                {row.email || "-"}
+              </td>
+              <td style={pendingBodyCellStyle} title={row.phone_number || "-"}>
+                {row.phone_number || "-"}
+              </td>
               <td style={pendingBodyCellStyle}>
                 {row.answer_yn === "Y" ? (
                   <MDBox
@@ -802,8 +812,12 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           {(sortedBirthdayMemberRows || []).map((row, index) => (
             <tr key={row.member_id || `${row.account_id || "account"}-${row.name || index}`}>
               <td style={pendingBodyCellStyle}>{index + 1}</td>
-              <td style={pendingBodyCellStyle}>{row.account_name || "-"}</td>
-              <td style={pendingBodyCellStyle}>{row.name || "-"}</td>
+              <td style={pendingBodyCellStyle} title={row.account_name || "-"}>
+                {row.account_name || "-"}
+              </td>
+              <td style={pendingBodyCellStyle} title={row.name || "-"}>
+                {row.name || "-"}
+              </td>
               <td style={pendingBodyCellStyle}>{row.birthday || "-"}</td>
             </tr>
           ))}

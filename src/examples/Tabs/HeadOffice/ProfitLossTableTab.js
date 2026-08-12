@@ -367,7 +367,10 @@ export default function ProfitLossTableTab() {
     })
     .filter((h) => h.cols.length > 0);
 
-  // 생계비와 일반식대가 모두 없는 월은 합계 계산 대상에서 제외한다.
+  // 생계비/일반식대(기본 컬럼)와 생계비(2)/일반식대(2)(강남의 인천강남 병합분)가 모두 없는
+  // 월은 합계 계산 대상에서 제외한다. (2026년 5월분부터 강남은 자체 금액까지 전부
+  // living_cost2/basic_cost2로만 저장되어 living_cost/basic_cost가 0이 되므로, (2) 필드도 함께 확인해야
+  // 그 달이 합계에서 누락되지 않는다.)
   const hasBaseSalesCost = (row) => {
     const hasAmount = (value) => {
       if (value === null || value === undefined || String(value).trim() === "") return false;
@@ -375,7 +378,10 @@ export default function ProfitLossTableTab() {
       return Number.isFinite(amount) && amount !== 0;
     };
 
-    return hasAmount(row?.living_cost) || hasAmount(row?.basic_cost);
+    return (
+      hasAmount(row?.living_cost) || hasAmount(row?.basic_cost) ||
+      hasAmount(row?.living_cost2) || hasAmount(row?.basic_cost2)
+    );
   };
 
   const totalRow = useMemo(() => {
@@ -592,6 +598,46 @@ export default function ProfitLossTableTab() {
 
     return result;
   }, [editRows, selectedAccountId, accountList, year]);
+
+  // ✅ 엑셀 전용 병합 규칙: "거래처 전체 + 특정 월" 다운로드에서, 2026년 5월분부터
+  // 강남(SPECIAL_ACCOUNT_ID)의 생계비(2)/일반식대(2)/직원식대(2)(인천강남 마감금액)를
+  // 별도 컬럼 없이 강남의 생계비/일반식대/직원식대 칸에 그대로 옮겨 표시한다.
+  // (합산 아님, 대체) 개별 거래처 조회·거래처 전체+월 전체 다운로드는 대상이 아니며 기존 로직 그대로 둔다.
+  const SALES2_MERGE_YEAR = 2026;
+  const SALES2_MERGE_MONTH = 5;
+  const isSales2MergeMonth = (y, m) => {
+    const yy = Number(y);
+    const mm = Number(m);
+    if (!Number.isFinite(yy) || !Number.isFinite(mm)) return false;
+    return yy > SALES2_MERGE_YEAR || (yy === SALES2_MERGE_YEAR && mm >= SALES2_MERGE_MONTH);
+  };
+  const SALES2_BASE_TO_EXTRA_VALUE = {
+    living_cost: "living_cost2",
+    basic_cost: "basic_cost2",
+    employ_cost: "employ_cost2",
+  };
+  const SALES2_EXTRA_VALUE_FIELDS = new Set(Object.values(SALES2_BASE_TO_EXTRA_VALUE));
+  const SALES2_BASE_TO_EXTRA_RATIO = {
+    living_ratio: "living_ratio2",
+    basic_ratio: "basic_ratio2",
+    employ_ratio: "employ_ratio2",
+  };
+  const SALES2_EXTRA_RATIO_FIELDS = new Set(Object.values(SALES2_BASE_TO_EXTRA_RATIO));
+
+  // merge: 호출부(전체 거래처 + 특정 월)에서 이미 연/월 조건(2026-05~)을 확인한 뒤에만 true로 넘긴다.
+  const getExcelDisplayValue = (row, field, accountId, merge) => {
+    if (!merge || String(accountId ?? "") !== SPECIAL_ACCOUNT_ID) return getDisplayValue(row, field);
+    if (SALES2_BASE_TO_EXTRA_VALUE[field]) return getDisplayValue(row, SALES2_BASE_TO_EXTRA_VALUE[field]);
+    if (SALES2_EXTRA_VALUE_FIELDS.has(field)) return null;
+    return getDisplayValue(row, field);
+  };
+
+  const getExcelDisplayRatio = (row, ratioField, accountId, merge) => {
+    if (!merge || String(accountId ?? "") !== SPECIAL_ACCOUNT_ID) return getDisplayRatio(row, ratioField);
+    if (SALES2_BASE_TO_EXTRA_RATIO[ratioField]) return getDisplayRatio(row, SALES2_BASE_TO_EXTRA_RATIO[ratioField]);
+    if (SALES2_EXTRA_RATIO_FIELDS.has(ratioField)) return null;
+    return getDisplayRatio(row, ratioField);
+  };
 
   const hasUnsavedChanges = useMemo(() => {
     return (editRows || []).some((row) => {
@@ -913,6 +959,9 @@ export default function ProfitLossTableTab() {
         cell.border = excelBorderThin;
       });
     });
+
+    // 헤더가 2행이므로 2행까지 틀 고정
+    sheet.views = [{ state: "frozen", xSplit: 0, ySplit: 2 }];
   };
 
   const monthExcelRowDefs = [
@@ -1091,6 +1140,9 @@ export default function ProfitLossTableTab() {
       cell.border = excelBorderThin;
     });
 
+    // 헤더가 1행이므로 1행까지 틀 고정
+    sheet.views = [{ state: "frozen", xSplit: 0, ySplit: 1 }];
+
     const byAccount = new Map();
     rows.map(normalizeProfitLossRowForExcel).forEach((r) => {
       const aid = String(r?.account_id ?? r?.account_name ?? "");
@@ -1259,6 +1311,10 @@ export default function ProfitLossTableTab() {
   };
 
   // ✅ 공통: 행 데이터로 2줄(값/비율) 엑셀 시트 만들기
+  // applyExcelSales2Merge: "거래처 전체 + 특정 월" 다운로드에서만 true로 넘겨,
+  // 강남의 생계비(2)/일반식대(2)/직원식대(2)(인천강남 마감금액, 2026년 5월분부터)를
+  // 생계비/일반식대/직원식대 칸으로 옮겨 보여준다. 그 외(개별 거래처 다운로드 등)는
+  // 기본값 false로 기존 로직 그대로 둔다.
   const addValueRatioSheet = (
     workbook,
     {
@@ -1267,6 +1323,7 @@ export default function ProfitLossTableTab() {
       firstTitle,
       firstKey,
       labelGetter,
+      applyExcelSales2Merge = false,
     }
   ) => {
     const existingSheet = workbook.getWorksheet(sheetName);
@@ -1279,16 +1336,20 @@ export default function ProfitLossTableTab() {
     buildTwoRowHeader(sheet, firstTitle, firstKey);
 
     const ratioRowNumbers = new Set();
+    const totalRowNumbers = new Set();
 
     rows.forEach((r) => {
+      const rowLabel = labelGetter(r);
       const valueObj = {
-        [firstKey]: labelGetter(r),
+        [firstKey]: rowLabel,
       };
+
+      const rowAccountId = r?.account_id ?? selectedAccountId;
 
       filteredHeaders.forEach((h) => {
         h.cols.forEach((col) => {
           const key = fieldMap[col]?.value || col;
-          valueObj[key] = getDisplayValue(r, key) ?? "";
+          valueObj[key] = getExcelDisplayValue(r, key, rowAccountId, applyExcelSales2Merge) ?? "";
         });
       });
 
@@ -1302,7 +1363,9 @@ export default function ProfitLossTableTab() {
         h.cols.forEach((col) => {
           const ratioKey = fieldMap[col]?.ratio;
           const valueKey = fieldMap[col]?.value || col;
-          ratioObj[valueKey] = ratioKey ? toPercentCell(getDisplayRatio(r, ratioKey)) : "";
+          ratioObj[valueKey] = ratioKey
+            ? toPercentCell(getExcelDisplayRatio(r, ratioKey, rowAccountId, applyExcelSales2Merge))
+            : "";
         });
       });
 
@@ -1310,6 +1373,11 @@ export default function ProfitLossTableTab() {
 
       const ratioRowNo = sheet.lastRow.number;
       ratioRowNumbers.add(ratioRowNo);
+
+      if (rowLabel === "합계") {
+        totalRowNumbers.add(valueRowNo);
+        totalRowNumbers.add(ratioRowNo);
+      }
 
       sheet.mergeCells(valueRowNo, 1, ratioRowNo, 1);
     });
@@ -1320,9 +1388,12 @@ export default function ProfitLossTableTab() {
       if (estimateHeaders.has(String(cell.value ?? ""))) estimateCols.add(colNo);
     });
 
+    const excelTotalRowFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF9E6" } };
+
     sheet.eachRow((row, rowNumber) => {
       row.eachCell((cell, colNumber) => {
         cell.border = excelBorderThin;
+        if (totalRowNumbers.has(rowNumber)) cell.fill = excelTotalRowFill;
         if (rowNumber <= 2) return;
 
         const headerText = sheet.getRow(2).getCell(colNumber).value;
@@ -1386,6 +1457,7 @@ export default function ProfitLossTableTab() {
     firstTitle,
     firstKey,
     labelGetter,
+    applyExcelSales2Merge = false,
   }) => {
     const workbook = new ExcelJS.Workbook();
     addValueRatioSheet(workbook, {
@@ -1394,6 +1466,7 @@ export default function ProfitLossTableTab() {
       firstTitle,
       firstKey,
       labelGetter,
+      applyExcelSales2Merge,
     });
 
     return workbook.xlsx.writeBuffer();
@@ -1704,6 +1777,9 @@ export default function ProfitLossTableTab() {
             firstTitle: "거래처",
             firstKey: "__account",
             labelGetter: (r) => String(r?.account_name ?? ""),
+            // 거래처 전체 + 특정 월 다운로드는 2026년 5월분부터 강남의 (2) 금액을
+            // 생계비/일반식대/직원식대 칸으로 옮겨 보여준다.
+            applyExcelSales2Merge: isSales2MergeMonth(year, queryMonth),
           });
 
           const blob = new Blob([buffer], {

@@ -196,9 +196,14 @@ export default function EvaluationDocumentSheetTab({ editData, onEditClear }) {
   }, [writerList, writerId]);
 
   // 팀장ID: 작성자 부서의 position=1 사용자
+  // writerList는 로그인 사용자 본인만 포함하므로(179행 참고) 팀장 조회에는 사용 불가
+  // -> 부서 전체 사용자(allUsers)에서 같은 부서의 position=1 사용자를 찾는다
   const tmUser = useMemo(() => {
-    return (writerList || []).find((u) => Number(u.position) === 1)?.user_id || "";
-  }, [writerList]);
+    if (!department) return "";
+    return (allUsers || []).find(
+      (u) => String(u.department) === String(department) && Number(u.position) === 1
+    )?.user_id || "";
+  }, [allUsers, department]);
 
   // 인사팀장ID: 인사팀(department=3)의 position=1 사용자
   const hrUser = useMemo(() => {

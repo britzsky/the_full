@@ -185,6 +185,10 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
 
   // 실적 입력 시작
   const handleStartPerformanceEdit = useCallback(() => {
+    if (String((Array.isArray(detail) ? detail : [])[0]?.tm_opinion || "").trim()) {
+      Swal.fire({ title: "수정 불가", text: "팀장 의견이 등록된 이후에는 실적을 수정할 수 없습니다.", icon: "warning" });
+      return;
+    }
     const vals = {};
     (Array.isArray(detail) ? detail : []).forEach((item) => {
       vals[item.idx] = item.performance != null ? String(item.performance) : "";
@@ -486,6 +490,9 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
 
   const isOwner = firstItem.user_id === loginUserId;
 
+  // 팀장 의견이 이미 작성된 경우 실적 수정 불가
+  const hasTmOpinion = !!String(firstItem.tm_opinion || "").trim();
+
   return (
     <MDBox sx={{ display: "flex", flexDirection: "column", height: "100%", ...selectableAreaSx }}>
 
@@ -572,8 +579,8 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
             </MDButton>
           )}
 
-          {/* 작성자 실적 입력 버튼 */}
-          {isOwner && tmAlreadyConfirmed && !performanceEditMode && (
+          {/* 작성자 실적 입력 버튼 (팀장 의견이 달리면 더 이상 수정 불가) */}
+          {isOwner && tmAlreadyConfirmed && !hasTmOpinion && !performanceEditMode && (
             <MDButton variant="gradient" color="warning" onClick={handleStartPerformanceEdit} sx={{ fontSize: isMobile ? 11 : 13 }}>
               실적 입력
             </MDButton>
@@ -839,14 +846,20 @@ function Stamp({ name, small }) {
   const n = String(name || "").trim();
   const w = small ? 52 : 80;
   const h = small ? 34 : 52;
-  const fs = small ? 10 : 13;
+  // 이름 길이에 따라 폰트 크기를 줄여 도장 안에 온전히 들어가도록 함
+  let fs = small ? 10 : 13;
+  if (n.length >= 5) fs = small ? 7 : 9;
+  else if (n.length >= 4) fs = small ? 8 : 10;
+  else if (n.length >= 3) fs = small ? 9 : 12;
   return (
     <div style={{
       display: "inline-flex", width: w, height: h, borderRadius: 999,
       border: "2px solid #d32f2f", alignItems: "center", justifyContent: "center",
-      color: "#d32f2f", fontWeight: 900, letterSpacing: 1,
+      color: "#d32f2f", fontWeight: 900, letterSpacing: 0,
       transform: "rotate(-6deg)", background: "rgba(211,47,47,0.06)",
       userSelect: "none", fontSize: fs, flexShrink: 0,
+      whiteSpace: "nowrap", overflow: "hidden", lineHeight: 1,
+      padding: "0 3px", boxSizing: "border-box", textAlign: "center",
     }}>
       {n}
     </div>

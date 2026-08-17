@@ -1521,8 +1521,8 @@ function RecordSheet() {
 
       // ✅ AK1:AK100을 하나로 병합해, 관리표(tb_account_managerment_table)와 tb_account를 account_id로
       //    조인한 거래처명을 줄바꿈으로 이어서 왼쪽 위부터 한 번에 보이게 표시
-      sheet.getColumn(accountNameRefCol).width = 20;
-      sheet.mergeCells(1, accountNameRefCol, 100, accountNameRefCol);
+      sheet.getColumn(accountNameRefCol).width = 40;
+      sheet.mergeCells(1, accountNameRefCol, 300, accountNameRefCol);
       const accountNameRefCell = sheet.getCell(1, accountNameRefCol);
       accountNameRefCell.value = (accountNameRefList || [])
         .map((a) => a?.account_name ?? "")

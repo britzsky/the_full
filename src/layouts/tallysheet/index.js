@@ -2395,13 +2395,43 @@ function TallySheet() {
     return [...calculatedRows, { name: "총합", ...totals, total: grandTotal }];
   };
 
+  // ----------- ✅ 행(row) type 노출/숨김 규칙 (이 목록만 수정하면 됨) -----------
+  // mode: "onlyMonth"     → 지정된 year/month 에만 노출, 그 외 월은 숨김
+  // mode: "hiddenFromMonth" → 지정된 year/month부터(이후 포함) 숨김, 그 이전은 계속 노출
+  // accountId를 지정하면 해당 거래처에만 규칙이 적용됨 (미지정 시 전체 거래처 공통 적용)
+  const ROW_TYPE_VISIBILITY_RULES = [
+    { mode: "onlyMonth", types: ["1030", "1031"], year: 2026, month: 7 },
+    { mode: "onlyMonth", types: ["1010"], year: 2026, month: 1 },
+    { mode: "hiddenFromMonth", types: ["3", "4"], year: 2026, month: 5, accountId: "20250819193630" }, // 강남(웰스토리)
+  ];
+
+  const filterRowsByTypeVisibility = (rows, targetYear, targetMonth) => {
+    const y = Number(targetYear);
+    const m = Number(targetMonth);
+    const accountId = String(selectedAccountId).trim();
+    return (rows || []).filter((r) => {
+      const t = String(r.type);
+      return ROW_TYPE_VISIBILITY_RULES.every((rule) => {
+        if (!rule.types.includes(t)) return true;
+        if (rule.accountId && rule.accountId !== accountId) return true;
+        if (rule.mode === "onlyMonth") return y === rule.year && m === rule.month;
+        if (rule.mode === "hiddenFromMonth") {
+          const isAfterCutoff = y > rule.year || (y === rule.year && m >= rule.month);
+          return !isAfterCutoff;
+        }
+        return true;
+      });
+    });
+  };
+  // ----------------------------------------------------------------------
+
   const tableData = useMemo(
-    () => makeTableData(dataRows, daysInMonthNow),
-    [dataRows, daysInMonthNow]
+    () => makeTableData(filterRowsByTypeVisibility(dataRows, year, month), daysInMonthNow),
+    [dataRows, daysInMonthNow, selectedAccountId, year, month]
   );
   const table2Data = useMemo(
-    () => makeTableData(data2Rows, daysInMonthPrev),
-    [data2Rows, daysInMonthPrev]
+    () => makeTableData(filterRowsByTypeVisibility(data2Rows, prevYear, prevMonth), daysInMonthPrev),
+    [data2Rows, daysInMonthPrev, selectedAccountId, prevYear, prevMonth]
   );
 
   const table = useReactTable({
@@ -2417,24 +2447,24 @@ function TallySheet() {
 
   // type 1002(소모품)는 소모품 바에서 따로 표시 → 식자재 합계에서 제외
   const usedTotalNow = useMemo(() => {
-    return (dataRows || [])
+    return filterRowsByTypeVisibility(dataRows, year, month)
       .filter((r) => String(r?.type) !== "1002")
       .reduce((sum, r) => {
         return sum + Array.from({ length: daysInMonthNow }, (_, i) =>
           parseNumber(r[`day_${i + 1}`])
         ).reduce((a, b) => a + b, 0);
       }, 0);
-  }, [dataRows, daysInMonthNow]);
+  }, [dataRows, daysInMonthNow, selectedAccountId, year, month]);
 
   const usedTotalPrev = useMemo(() => {
-    return (data2Rows || [])
+    return filterRowsByTypeVisibility(data2Rows, prevYear, prevMonth)
       .filter((r) => String(r?.type) !== "1002")
       .reduce((sum, r) => {
         return sum + Array.from({ length: daysInMonthPrev }, (_, i) =>
           parseNumber(r[`day_${i + 1}`])
         ).reduce((a, b) => a + b, 0);
       }, 0);
-  }, [data2Rows, daysInMonthPrev]);
+  }, [data2Rows, daysInMonthPrev, selectedAccountId, prevYear, prevMonth]);
 
   const budgetForTab = tabValue === 1 ? budget2Grant : budgetGrant;
   const usedForTab = tabValue === 1 ? usedTotalPrev : usedTotalNow;

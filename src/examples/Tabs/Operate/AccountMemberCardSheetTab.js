@@ -735,6 +735,13 @@ function AccountMemberSheet() {
 
   const [utilMappingRows, setUtilMappingRows] = useState([]);
   const [utilSelectedMappingRowIndex, setUtilSelectedMappingRowIndex] = useState(null);
+  // ✅ 매핑 목록(가운데) 우클릭 컨텍스트 메뉴 상태 (직책이 통합일 때만 "삭제 처리" 노출)
+  const [utilMappingCtxMenu, setUtilMappingCtxMenu] = useState({
+    open: false,
+    mouseX: 0,
+    mouseY: 0,
+    rowIndex: null,
+  });
 
   const [utilAccountRows, setUtilAccountRows] = useState([]);
   const [utilSelectedAccount, setUtilSelectedAccount] = useState(null);
@@ -860,6 +867,67 @@ function AccountMemberSheet() {
       Swal.fire("저장 실패", err?.message || "오류", "error");
     }
   };
+
+  // ✅ 매핑 목록(가운데) 우클릭 메뉴 열기/닫기 (직책 통합(7)인 행에서만 사용)
+  const handleUtilMappingContextMenu = useCallback((e, rowIndex) => {
+    const row = utilMappingRows?.[rowIndex];
+    if (String(row?.position_type ?? "") !== INTEGRATION_POSITION) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setUtilMappingCtxMenu({ open: true, mouseX: e.clientX, mouseY: e.clientY, rowIndex });
+  }, [utilMappingRows]);
+
+  const closeUtilMappingCtxMenu = useCallback(() => {
+    setUtilMappingCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
+  }, []);
+
+  // ✅ 통합/유틸 매핑 삭제 처리: tb_account_util_member_mapping.del_yn만 'Y'로 변경(직원 원본은 유지)
+  const handleUtilMappingDelete = useCallback(async () => {
+    const { rowIndex } = utilMappingCtxMenu;
+    const targetRow = utilMappingRows?.[rowIndex];
+    closeUtilMappingCtxMenu();
+    if (!targetRow) return;
+
+    // 아직 저장 안 된 신규 매핑 행은 로컬에서만 제거
+    if (targetRow.idx == null) {
+      setUtilMappingRows((prev) => prev.filter((_, i) => i !== rowIndex));
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      title: "삭제 처리",
+      text: "해당 매핑을 삭제 처리(제외) 하시겠습니까?",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "삭제 처리",
+      cancelButtonText: "취소",
+    });
+    if (!confirm.isConfirmed) return;
+
+    try {
+      const userId = localStorage.getItem("user_id");
+      const res = await api.post("/Account/AccountUtilMemberMappingSave", [
+        {
+          idx: targetRow.idx,
+          member_id: targetRow.member_id,
+          account_id: targetRow.account_id,
+          del_yn: "Y",
+          user_id: userId,
+        },
+      ]);
+      const ok = res?.status === 200 || res?.data?.code === 200;
+      if (!ok) {
+        Swal.fire("처리 실패", res?.data?.message || "서버 오류", "error");
+        return;
+      }
+
+      Swal.fire("완료", "삭제 처리되었습니다.", "success");
+      const latest = await fetchUtilMappingList(targetRow.member_id);
+      setUtilMappingRows(latest || []);
+    } catch (err) {
+      Swal.fire("처리 실패", err?.message || "오류", "error");
+    }
+  }, [utilMappingCtxMenu, utilMappingRows, closeUtilMappingCtxMenu, fetchUtilMappingList]);
 
   // ✅ 행추가: 기본 직책 1.
   //    통합(7)은 account_id=1, 유틸(6)은 account_id=2 고정
@@ -2237,6 +2305,7 @@ function AccountMemberSheet() {
                         <tr
                           key={`${r.idx ?? "new"}-${r.account_id ?? "a"}-${i}`}
                           onClick={() => setUtilSelectedMappingRowIndex(i)}
+                          onContextMenu={(e) => handleUtilMappingContextMenu(e, i)}
                           className={isNewUtilRow ? "edited-cell" : ""}
                           style={{
                             cursor: "pointer",
@@ -2359,6 +2428,45 @@ function AccountMemberSheet() {
           </MDBox>
         </Box>
       </Modal>
+
+      {/* ✅ 통합/유틸 매핑 목록(가운데) 우클릭 메뉴 - 직책이 통합일 때만 노출 */}
+      {utilMappingCtxMenu.open && (
+        <div
+          onClick={closeUtilMappingCtxMenu}
+          onContextMenu={(e) => { e.preventDefault(); closeUtilMappingCtxMenu(); }}
+          style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 10000 }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              top: utilMappingCtxMenu.mouseY,
+              left: utilMappingCtxMenu.mouseX,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 8,
+              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
+              minWidth: 140,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                border: "none",
+                background: "transparent",
+                textAlign: "left",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              onClick={handleUtilMappingDelete}
+            >
+              🗑️ 삭제 처리
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 첨부파일 공통 미리보기 오버레이 */}
       <PreviewOverlay

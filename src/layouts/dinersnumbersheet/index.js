@@ -177,7 +177,14 @@ const calculateTotal = (row, accountType, extraDietCols, accountId, year, month)
     const mainKey = accountId === "20250819193651" ? "breakfast" : "lunch";
     const mainMeal = parseNumber(row[mainKey]);
 
-    // 🏭 산업체 중, TH에 "간편식"/"석식" 이 있는 특수 케이스 
+    // ✅ 20260609110526: 중식(mainMeal) + 석식(dinner) 단순 합산 + 특식합
+    if (accountId === "20260609110526") {
+      const dinnerMeal = parseNumber(row.dinner);
+      const extraSum = extras.reduce((sum, col) => sum + parseNumber(row[col.priceKey]), 0);
+      return mainMeal + dinnerMeal + extraSum;
+    }
+
+    // 🏭 산업체 중, TH에 "간편식"/"석식" 이 있는 특수 케이스
     const hasSimpleMealCols = extras.some((col) =>
       ["간편식", "석식"].includes((col.name || "").trim())
     );
@@ -344,8 +351,12 @@ const getTableStructure = (
           ? "학생"
           : "중식";
 
+    // ✅ 20260609110526: 산업체 기본 컬럼에 석식(dinner) 컬럼 추가
+    const showDinnerColumn = selectedAccountId === "20260609110526";
+
     const legacyColumns = [
       mainKey,
+      ...(showDinnerColumn ? ["dinner"] : []),
       "special_yn",
       ...extraDietCols.map((col) => col.priceKey),
       "total",
@@ -353,6 +364,7 @@ const getTableStructure = (
     ];
     const baseColumns = [
       mainKey,
+      ...(showDinnerColumn ? ["dinner"] : []),
       "special_yn",
       ...extraDietCols.map((col) => col.priceKey),
       ...employeeMealColumns,
@@ -363,6 +375,7 @@ const getTableStructure = (
     const legacyHeaderRow = [
       { label: "구분" },
       { label: mainLabel },
+      ...(showDinnerColumn ? [{ label: "석식" }] : []),
       { label: "특식여부" },
       ...extraDietCols.map((col) => ({ label: col.name })),
       { label: "계" },
@@ -371,6 +384,7 @@ const getTableStructure = (
     const headerRow = [
       { label: "구분", rowSpan: 2 },
       { label: mainLabel, rowSpan: 2 },
+      ...(showDinnerColumn ? [{ label: "석식", rowSpan: 2 }] : []),
       { label: "특식여부", rowSpan: 2 },
       ...extraDietCols.map((col) => ({ label: col.name, rowSpan: 2 })),
       { label: "직원", colSpan: 3 },

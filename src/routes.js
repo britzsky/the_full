@@ -131,7 +131,7 @@ const routes = [
           "sy9", // 전수연 매니저
           "hh1", // 김현호 매니저
           "si1", // 김세인 매니저
-          "sohyeon7180", // 임소현 매니저
+          "sh8", // 임소현 매니저
           "nr1", // 지나리 매니저
         ],
 
@@ -373,7 +373,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/purchase/headofficecorporatecard",
         component: <HeadOfficeCorporateCardManager />,
-        allowedDepartments: [0, 2, 5, 6, 9], // 🔹 부서권한
+        allowedDepartments: [0, 2, 4, 5, 6, 9], // 🔹 부서권한
         allowUserIds: [
           "yh2", // 이윤희 실장님
           "sy9", // 전수연 매니저

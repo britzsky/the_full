@@ -861,6 +861,11 @@ function RecordSheet() {
   // ✅ 파출이력 조회 버튼 전체 노출
   const canViewDispatchHistory = true;
 
+  // ✅ "유틸 출근부" 버튼 노출 권한: department 6, 또는 user_id가 si1/db1인 경우만
+  const loginUserId = safeTrim(localStorage.getItem("user_id"), "");
+  const canUseUtilRecord =
+    loginDepartmentCode === "6" || ["si1", "db1"].includes(loginUserId);
+
   const [open, setOpen] = useState(false);
   const [dispatchImportOpen, setDispatchImportOpen] = useState(false);
   const [dispatchImportRows, setDispatchImportRows] = useState([]);
@@ -880,6 +885,10 @@ function RecordSheet() {
   const [payRangeRows, setPayRangeRows] = useState([]);
   const [payRangeSelected, setPayRangeSelected] = useState({});
   const payRangeRecordMapRef = useRef(new Map());
+
+  // ✅ 유틸 출근부 엑셀 업로드 상태
+  const [utilRecordUploading, setUtilRecordUploading] = useState(false);
+  const utilRecordFileInputRef = useRef(null);
 
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
@@ -917,13 +926,16 @@ function RecordSheet() {
     const list = accountList || [];
     const qLower = q.toLowerCase();
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
-    const partial =
-      exact ||
-      list.find((a) =>
+    let partial = exact;
+    if (!partial) {
+      const candidates = list.filter((a) =>
         String(a?.account_name || "")
           .toLowerCase()
           .includes(qLower)
       );
+      // 부분일치 후보가 여럿이면(예: 늘사랑(부천), 늘사랑(서구)) 잘못 선택되지 않도록 매칭하지 않음
+      if (candidates.length === 1) partial = candidates[0];
+    }
     if (partial) {
       setSelectedAccountId(partial.account_id);
       accountInputRef.current = partial.account_name || q;
@@ -1340,6 +1352,404 @@ function RecordSheet() {
     } catch (e) {
       console.error(e);
       Swal.fire("오류", e?.message || "지급 처리 중 오류", "error");
+    }
+  };
+
+  // =========================================================
+  // ✅ 유틸 출근부 엑셀 업로드
+  //   - 유틸 직원(position_type 6,7)의 일자별 근무 업장을 엑셀로 일괄 등록
+  //   - tb_account_util_member_mapping(고정 매핑)을 더 이상 사용하지 않고
+  //     이 화면에서 업로드한 값이 tb_account_util_record 에 저장되어
+  //     출근부 조회 시 해당 테이블과 조인되어 표시됨
+  // =========================================================
+  const UTIL_RECORD_DAY_COLS = 31; // 서식상 D~AH 고정 31일치 컬럼
+  const UTIL_RECORD_FIRST_DAY_COL = 4; // D열부터 1일 시작(참고 이미지와 동일)
+  const UTIL_RECORD_LAST_DAY_COL = UTIL_RECORD_FIRST_DAY_COL + UTIL_RECORD_DAY_COLS - 1; // AH열
+  const UTIL_RECORD_GUBUN_COL_END = 2; // A:B 병합 = 구분
+  const UTIL_RECORD_NAME_COL = 3; // C열 = 성명(회원 매칭 기준)
+  const UTIL_RECORD_BLOCK_ROWS = 3; // 직원 1명당 세로 병합 행 수(A:B, C 모두 3행 병합)
+  const UTIL_RECORD_OFF_SUM_COL = UTIL_RECORD_FIRST_DAY_COL + UTIL_RECORD_DAY_COLS; // AI열 = 휴무합계
+  const UTIL_RECORD_NOTE_COL = UTIL_RECORD_OFF_SUM_COL + 1; // AJ열 = 비고
+  const UTIL_RECORD_OFF_TEXT = "휴"; // 비근무일 표시 텍스트
+
+  const utilRecordBorderThin = {
+    top: { style: "thin" },
+    left: { style: "thin" },
+    bottom: { style: "thin" },
+    right: { style: "thin" },
+  };
+  const utilRecordHeaderFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFEFEF" } };
+  const utilRecordGrayFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE6E6E6" } };
+  const utilRecordWeekdayNames = ["일", "월", "화", "수", "목", "금", "토"];
+  // ✅ ExcelJS의 column.width는 엑셀 화면에 실제로 표시되는 "열 너비"와 다르다(OOXML 저장값 기준).
+  //    엑셀 표시 너비 = ExcelJS width - 5/MDW(기본폰트 Calibri11 기준 MDW=7) 관계이므로,
+  //    엑셀 기준으로 정확히 원하는 너비가 보이도록 역보정해서 넣는다.
+  const toExcelDisplayWidth = (displayedChars) => displayedChars + 5 / 7;
+
+  // 유틸 출근부 등록용 엑셀 서식 파일 다운로드
+  // D2=기준일자(YYYY-MM-01), D3:AH3=1~말일, D4:AH4=요일, C열부터 성명 사전입력,
+  // 사람은 D열부터(일자별) 근무한 거래처명(또는 "휴")만 입력하면 됨
+  const handleUtilRecordTemplateDownload = async () => {
+    try {
+      // ✅ position_type: 6=유틸, 7=통합 → 이 서식은 유틸(6)만 대상으로 한다
+      // ✅ AK열 참고용 거래처명 목록: 관리표(tb_account_managerment_table)에 등록된 거래처만 조인해서 가져온다
+      const [utilMemberRes, accountNameRefRes] = await Promise.all([
+        api.get("/Account/AccountUtilMemberList", { params: { position_type: 6 } }),
+        api.get("/Account/AccountUtilRecordAccountNameList"),
+      ]);
+      const utilMembers = extractArray(utilMemberRes.data);
+      const accountNameRefList = extractArray(accountNameRefRes.data);
+      const lastCol = UTIL_RECORD_NOTE_COL;
+      const accountNameRefCol = UTIL_RECORD_NOTE_COL + 1; // AJ 바로 다음 열 = AK열
+
+      const wb = new ExcelJS.Workbook();
+      const sheet = wb.addWorksheet("유틸출근부");
+
+      sheet.columns = [
+        { key: "gubun", width: toExcelDisplayWidth(4) }, // A열: 구분(A:B 병합)
+        { key: "gubun2", width: toExcelDisplayWidth(4) }, // B열: A열과 병합되는 구분 칸의 나머지 영역(값 없음)
+        { key: "name", width: toExcelDisplayWidth(7) }, // C열: 성명
+        ...Array.from({ length: UTIL_RECORD_DAY_COLS }, (_, i) => ({
+          key: `day_${i + 1}`,
+          width: toExcelDisplayWidth(4), // D~AH: 엑셀 화면 기준 열너비 4
+        })),
+        { key: "off_sum", width: 10 },
+        { key: "note", width: 24 },
+      ];
+
+      // 1행: 제목 (A~마지막열 병합)
+      sheet.mergeCells(1, 1, 1, lastCol);
+      const titleCell = sheet.getCell(1, 1);
+      titleCell.value = "유 틸 출 근 부";
+      titleCell.font = { bold: true, size: 16 };
+      titleCell.alignment = { vertical: "middle", horizontal: "center" };
+      sheet.getRow(1).height = 28;
+
+      // 2행: D2~AH2를 통째로 병합해 하나의 셀로 만들고, 그 값 자체를 업로드 파싱 기준일자('YYYY-MM-01')로 사용한다.
+      sheet.mergeCells(2, UTIL_RECORD_FIRST_DAY_COL, 2, UTIL_RECORD_LAST_DAY_COL);
+      const baseDateText = `${year}-${String(month).padStart(2, "0")}-01`;
+      const baseDateCell = sheet.getCell(2, UTIL_RECORD_FIRST_DAY_COL);
+      baseDateCell.value = baseDateText;
+      baseDateCell.font = { bold: true, size: 14 };
+      baseDateCell.alignment = { vertical: "middle", horizontal: "center" };
+      sheet.getRow(2).height = 22;
+
+      // 2~4행: 구분(A:B)/성명(C)/휴무합계/비고 헤더
+      sheet.mergeCells(2, 1, 4, UTIL_RECORD_GUBUN_COL_END);
+      sheet.getCell(2, 1).value = "구분";
+      sheet.mergeCells(2, UTIL_RECORD_NAME_COL, 4, UTIL_RECORD_NAME_COL);
+      sheet.getCell(2, UTIL_RECORD_NAME_COL).value = "성명";
+      sheet.mergeCells(2, UTIL_RECORD_OFF_SUM_COL, 4, UTIL_RECORD_OFF_SUM_COL);
+      sheet.getCell(2, UTIL_RECORD_OFF_SUM_COL).value = "휴무합계";
+      sheet.mergeCells(2, lastCol, 4, lastCol);
+      sheet.getCell(2, lastCol).value = "비고";
+
+      // 3행: 일자(1~말일), 4행: 요일
+      for (let d = 1; d <= UTIL_RECORD_DAY_COLS; d += 1) {
+        const colNo = UTIL_RECORD_FIRST_DAY_COL + d - 1;
+        const dateCell = sheet.getCell(3, colNo);
+        const weekCell = sheet.getCell(4, colNo);
+        if (d <= daysInMonth) {
+          dateCell.value = d;
+          const wd = dayjs(`${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`).day();
+          weekCell.value = utilRecordWeekdayNames[wd];
+        } else {
+          // ✅ 해당 월에 존재하지 않는 날짜(예: 2월의 30~31일)는 회색으로 비워 구분
+          dateCell.value = null;
+          weekCell.value = null;
+          dateCell.fill = utilRecordGrayFill;
+          weekCell.fill = utilRecordGrayFill;
+        }
+      }
+
+      [2, 3, 4].forEach((rowNo) => {
+        const row = sheet.getRow(rowNo);
+        row.height = rowNo === 2 ? 22 : 18;
+        row.eachCell({ includeEmpty: true }, (cell) => {
+          cell.font = { ...(cell.font || {}), bold: true };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          if (!cell.fill) cell.fill = utilRecordHeaderFill;
+          cell.border = utilRecordBorderThin;
+        });
+      });
+
+      // 5행부터: 직원 1명당 3행(A:B=구분, C=성명 세로 병합) 블록으로 사전입력
+      // 실제 일자별 업장명 입력/휴무합계 집계는 블록의 첫 행(예: 5행)에서만 이루어진다.
+      const dayColLetter = (colNo) => sheet.getColumn(colNo).letter;
+      (utilMembers || []).forEach((m, idx) => {
+        const blockStartRow = 5 + idx * UTIL_RECORD_BLOCK_ROWS;
+        const blockEndRow = blockStartRow + UTIL_RECORD_BLOCK_ROWS - 1;
+        for (let r = blockStartRow; r <= blockEndRow; r += 1) {
+          sheet.getRow(r).height = 55; // ✅ 엑셀 기준 행 높이 55
+        }
+
+        // 구분(A:B, 세로 병합) - position_type 명칭
+        sheet.mergeCells(blockStartRow, 1, blockEndRow, UTIL_RECORD_GUBUN_COL_END);
+        const gubunCell = sheet.getCell(blockStartRow, 1);
+        gubunCell.value = "유틸";
+        gubunCell.alignment = { vertical: "middle", horizontal: "center" };
+
+        // 성명(C, 세로 병합)
+        sheet.mergeCells(blockStartRow, UTIL_RECORD_NAME_COL, blockEndRow, UTIL_RECORD_NAME_COL);
+        const nameCell = sheet.getCell(blockStartRow, UTIL_RECORD_NAME_COL);
+        nameCell.value = m.name;
+        nameCell.alignment = { vertical: "middle", horizontal: "center" };
+
+        // 일자별(D~AH) 각 열도 C열과 동일하게 블록 내 세로 병합
+        for (let colNo = UTIL_RECORD_FIRST_DAY_COL; colNo <= UTIL_RECORD_LAST_DAY_COL; colNo += 1) {
+          sheet.mergeCells(blockStartRow, colNo, blockEndRow, colNo);
+        }
+
+        // 휴무합계(AI)/비고(AJ)도 C열과 동일하게 블록 내 세로 병합
+        sheet.mergeCells(blockStartRow, UTIL_RECORD_OFF_SUM_COL, blockEndRow, UTIL_RECORD_OFF_SUM_COL);
+        sheet.mergeCells(blockStartRow, UTIL_RECORD_NOTE_COL, blockEndRow, UTIL_RECORD_NOTE_COL);
+
+        const rangeStart = `${dayColLetter(UTIL_RECORD_FIRST_DAY_COL)}${blockStartRow}`;
+        const rangeEnd = `${dayColLetter(UTIL_RECORD_LAST_DAY_COL)}${blockStartRow}`;
+        sheet.getCell(blockStartRow, UTIL_RECORD_OFF_SUM_COL).value = {
+          formula: `COUNTIF(${rangeStart}:${rangeEnd},"${UTIL_RECORD_OFF_TEXT}")`,
+        };
+
+        for (let r = blockStartRow; r <= blockEndRow; r += 1) {
+          for (let c = 1; c <= lastCol; c += 1) {
+            const cell = sheet.getCell(r, c);
+            cell.border = utilRecordBorderThin;
+            if (!cell.alignment) cell.alignment = { vertical: "middle", horizontal: "center" };
+          }
+        }
+      });
+
+      // ✅ AK1:AK100을 하나로 병합해, 관리표(tb_account_managerment_table)와 tb_account를 account_id로
+      //    조인한 거래처명을 줄바꿈으로 이어서 왼쪽 위부터 한 번에 보이게 표시
+      sheet.getColumn(accountNameRefCol).width = 20;
+      sheet.mergeCells(1, accountNameRefCol, 100, accountNameRefCol);
+      const accountNameRefCell = sheet.getCell(1, accountNameRefCol);
+      accountNameRefCell.value = (accountNameRefList || [])
+        .map((a) => a?.account_name ?? "")
+        .filter(Boolean)
+        .join("\n");
+      accountNameRefCell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      saveAs(blob, `유틸출근부서식_${year}년${month}월.xlsx`);
+    } catch (e) {
+      console.error(e);
+      Swal.fire({ title: "실패", text: "서식 생성 중 오류가 발생했습니다.", icon: "error" });
+    }
+  };
+
+  const handleUtilRecordModalOpen = async () => {
+    const { isConfirmed, isDenied } = await Swal.fire({
+      title: "유틸 출근부 등록",
+      html: `<p style="text-align:left; margin:0; font-size:14px; line-height:2.2; color:#555;">
+        ① <b>업로드 서식 다운로드</b>를 눌러 현재 연/월(${year}년 ${month}월) 기준 엑셀 서식을 받습니다.<br/>
+        ② 일자별 칸(D열~)에 <b>근무한 거래처명</b>을 입력합니다. (예: 지안실버)<br/>
+        ③ 근무하지 않은 날은 <b>"휴"</b>로 입력합니다.<br/>
+        ④ <b>업로드</b>를 눌러 작성한 파일을 등록합니다.
+      </p>`,
+      showDenyButton: true,
+      confirmButtonText: "업로드",
+      denyButtonText: "업로드 서식 다운로드",
+      showCancelButton: false,
+      reverseButtons: true,
+      confirmButtonColor: "#4CAF50",
+      denyButtonColor: "#7066e0",
+    });
+
+    if (isDenied) {
+      handleUtilRecordTemplateDownload();
+    } else if (isConfirmed) {
+      utilRecordFileInputRef.current?.click();
+    }
+  };
+
+  // 엑셀에 입력된 텍스트를 거래처명과 매칭(완전일치 우선, 부분일치 보조)
+  const matchUtilRecordAccount = (text) => {
+    const q = String(text ?? "").trim();
+    if (!q) return null;
+    const list = accountList || [];
+    const qLower = q.toLowerCase();
+    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+    if (exact) return exact;
+
+    // 부분일치 후보가 여럿이면(예: 늘사랑(부천), 늘사랑(서구)) 잘못 매칭되지 않도록 매칭하지 않음
+    const containsCandidates = list.filter((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
+    if (containsCandidates.length === 1) return containsCandidates[0];
+    if (containsCandidates.length > 1) return null;
+
+    const reverseCandidates = list.filter(
+      (a) => a?.account_name && qLower.includes(String(a.account_name).toLowerCase())
+    );
+    if (reverseCandidates.length === 1) return reverseCandidates[0];
+    return null;
+  };
+
+  // 사용자가 작성한 유틸 출근부 엑셀 파일을 읽어 서버에 저장
+  const handleUtilRecordUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = ""; // 같은 파일 재업로드 허용을 위해 input 초기화
+
+    setUtilRecordUploading(true);
+    showLoadingModal("유틸 출근부 업로드 중...");
+    try {
+      // ✅ 회원ID 숨김 컬럼 없이 C열 성명으로만 매칭하므로, 업로드 시점 기준 최신 유틸(6) 직원
+      //    목록을 다시 조회해 이름 → member_id 매핑을 만든다. 동명이인은 매칭 실패로 처리한다.
+      const utilMemberRes = await api.get("/Account/AccountUtilMemberList", {
+        params: { position_type: 6 },
+      });
+      const utilMembers = extractArray(utilMemberRes.data);
+      const nameToMemberId = new Map();
+      const duplicateNames = new Set();
+      (utilMembers || []).forEach((m) => {
+        const nm = String(m?.name ?? "").trim();
+        if (!nm) return;
+        if (nameToMemberId.has(nm)) {
+          duplicateNames.add(nm);
+        } else {
+          nameToMemberId.set(nm, m.member_id);
+        }
+      });
+
+      const arrayBuffer = await file.arrayBuffer();
+      const wb = new ExcelJS.Workbook();
+      await wb.xlsx.load(arrayBuffer);
+      const sheet = wb.worksheets[0];
+
+      // D2에 입력된 기준일자('YYYY-MM-01')로 등록 대상 연/월을 판단
+      const baseDateRaw = sheet.getCell(2, UTIL_RECORD_FIRST_DAY_COL).value;
+      const baseDateText =
+        baseDateRaw instanceof Date
+          ? dayjs(baseDateRaw).format("YYYY-MM-DD")
+          : String(baseDateRaw ?? "").trim();
+      const baseDate = dayjs(baseDateText);
+
+      if (!baseDate.isValid()) {
+        Swal.close();
+        Swal.fire("서식 오류", "D2(기준일자) 값을 확인해주세요. 예: 2026-08-01", "warning");
+        return;
+      }
+
+      const recYear = baseDate.year();
+      const recMonth = baseDate.month() + 1;
+      const recDaysInMonth = baseDate.daysInMonth();
+
+      const rows = [];
+      const unmatchedAccountTexts = new Set(); // 거래처명과 매칭 실패 → note로 저장된 값 목록
+      const skippedNoMemberRows = []; // 성명 매칭 실패(미등록/동명이인)로 건너뛴 행
+
+      sheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= 4) return; // 1~4행은 제목/헤더
+
+        const nameCell = row.getCell(UTIL_RECORD_NAME_COL);
+        // ✅ 직원 1명당 3행이 세로 병합되어 있고, exceljs는 병합된 각 행에서도
+        //    eachRow 콜백을 호출하면서 마스터 셀 값을 그대로 돌려준다.
+        //    병합 블록의 첫 행(마스터 행)에서만 처리해야 데이터가 3배로 중복 저장되지 않는다.
+        if (nameCell.isMerged && nameCell.master?.row !== rowNumber) return;
+
+        const name = String(nameCell.value ?? "").trim();
+        if (!name) return; // 빈 행
+
+        if (duplicateNames.has(name)) {
+          skippedNoMemberRows.push(`${name}(동명이인, 매칭불가)`);
+          return;
+        }
+
+        const memberId = nameToMemberId.get(name);
+        if (!memberId) {
+          skippedNoMemberRows.push(name);
+          return;
+        }
+
+        const noteCellText = String(row.getCell(UTIL_RECORD_NOTE_COL).value ?? "").trim();
+
+        for (let d = 1; d <= UTIL_RECORD_DAY_COLS; d += 1) {
+          if (d > recDaysInMonth) continue; // 해당 월에 없는 날짜는 무시
+
+          const colNo = UTIL_RECORD_FIRST_DAY_COL + d - 1;
+          const cellText = String(row.getCell(colNo).value ?? "").trim();
+          if (!cellText) continue; // 입력 없는 날은 건너뜀(등록 대상 아님)
+
+          if (cellText === UTIL_RECORD_OFF_TEXT) {
+            rows.push({
+              record_year: recYear,
+              record_month: recMonth,
+              record_date: d,
+              type: 0, // 0 = 휴무
+              account_id: "", // ✅ PK 제약상 NULL 불가 → 빈 문자열을 "미배정"으로 사용
+              member_id: memberId,
+              is_present: "N",
+              note: "",
+            });
+            continue;
+          }
+
+          const matched = matchUtilRecordAccount(cellText);
+          if (matched) {
+            rows.push({
+              record_year: recYear,
+              record_month: recMonth,
+              record_date: d,
+              type: 7, // 7 = 유틸 근무(거래처 배정)
+              account_id: matched.account_id,
+              member_id: memberId,
+              is_present: "Y",
+              note: noteCellText || "",
+            });
+          } else {
+            // ✅ 거래처명과 매칭되지 않는 특이 근무명(예: 프라미스/탑재활/정담 등)은
+            //    account_id 없이 note에 원문 텍스트를 그대로 저장
+            unmatchedAccountTexts.add(cellText);
+            rows.push({
+              record_year: recYear,
+              record_month: recMonth,
+              record_date: d,
+              type: 9, // 9 = 기타(거래처 미매칭, note 참고)
+              account_id: "",
+              member_id: memberId,
+              is_present: "Y",
+              note: cellText,
+            });
+          }
+        }
+      });
+
+      if (rows.length === 0) {
+        Swal.close();
+        Swal.fire("업로드할 데이터가 없습니다.", "일자별로 입력된 값이 없습니다.", "info");
+        return;
+      }
+
+      const userId = localStorage.getItem("user_id") || "";
+      const res = await api.post("/Account/AccountUtilRecordExcelSave", {
+        rows: rows.map((r) => ({ ...r, user_id: userId })),
+      });
+      const result = typeof res.data === "string" ? JSON.parse(res.data) : res.data || {};
+
+      let html = `<div style="text-align:left; margin-bottom:10px; font-size:13px; color:#888;">총 ${rows.length}건 처리 &nbsp;|&nbsp; 등록: ${result.savedCount ?? rows.length}건</div>`;
+      if (skippedNoMemberRows.length > 0) {
+        html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#e67e22;">⚠ 회원ID 없음 - 건너뜀 (${skippedNoMemberRows.length}건)<br/>${skippedNoMemberRows.join(", ")}</div>`;
+      }
+      if (unmatchedAccountTexts.size > 0) {
+        html += `<div style="text-align:left; font-size:13px; color:#aaa;">— 거래처명과 매칭되지 않아 비고로만 저장된 값<br/>${Array.from(unmatchedAccountTexts).join(", ")}</div>`;
+      }
+
+      Swal.close();
+      Swal.fire({ title: "유틸 출근부 등록 결과", html, icon: "success" });
+
+      // 현재 조회 중인 화면과 같은 연/월이면 즉시 재조회
+      if (Number(year) === recYear && Number(month) === recMonth) {
+        await fetchAllData?.();
+      }
+    } catch (err) {
+      console.error(err);
+      Swal.close();
+      Swal.fire("업로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    } finally {
+      setUtilRecordUploading(false);
     }
   };
 
@@ -4755,7 +5165,7 @@ function RecordSheet() {
           onChange={(e) => setYear(Number(e.target.value))}
           size="small"
           sx={{
-            minWidth: isMobile ? 90 : 110,
+            minWidth: isMobile ? 70 : 85,
             "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
           }}
         >
@@ -4771,7 +5181,7 @@ function RecordSheet() {
           onChange={(e) => setMonth(Number(e.target.value))}
           size="small"
           sx={{
-            minWidth: isMobile ? 80 : 100,
+            minWidth: isMobile ? 60 : 75,
             "& .MuiSelect-select": { fontSize: isMobile ? "0.75rem" : "0.875rem" },
           }}
         >
@@ -4788,8 +5198,8 @@ function RecordSheet() {
           onClick={handleApplyDefaultTime}
           sx={{
             fontSize: isMobile ? "0.7rem" : "0.8rem",
-            minWidth: isMobile ? 110 : 130,
-            px: isMobile ? 1 : 2,
+            minWidth: isMobile ? 95 : 115,
+            px: isMobile ? 1 : 1.5,
           }}
         >
           출퇴근 일괄 적용
@@ -4803,8 +5213,8 @@ function RecordSheet() {
             disabled={excelDownloading}
             sx={{
               fontSize: isMobile ? "0.7rem" : "0.8rem",
-              minWidth: isMobile ? 90 : 140,
-              px: isMobile ? 1 : 2,
+              minWidth: isMobile ? 78 : 122,
+              px: isMobile ? 1 : 1.5,
               opacity: excelDownloading ? 0.6 : 1,
             }}
           >
@@ -4819,13 +5229,40 @@ function RecordSheet() {
             onClick={openPayRangeModal}
             sx={{
               fontSize: isMobile ? "0.7rem" : "0.8rem",
-              minWidth: isMobile ? 90 : 130,
-              px: isMobile ? 1 : 2,
+              minWidth: "unset !important",
+              padding: isMobile ? "6px 10px !important" : "6px 14px !important",
+              whiteSpace: "nowrap",
             }}
           >
             지급 일괄
           </MDButton>
         )}
+
+        {canUseUtilRecord && (
+          <MDButton
+            variant="gradient"
+            color="success"
+            onClick={handleUtilRecordModalOpen}
+            disabled={utilRecordUploading}
+            sx={{
+              fontSize: isMobile ? "0.7rem" : "0.8rem",
+              minWidth: "unset !important",
+              padding: isMobile ? "6px 10px !important" : "6px 14px !important",
+              whiteSpace: "nowrap",
+              opacity: utilRecordUploading ? 0.6 : 1,
+            }}
+          >
+            {utilRecordUploading ? "업로드 중..." : "유틸 출근부"}
+          </MDButton>
+        )}
+        {/* ✅ 유틸 출근부 엑셀 업로드용 숨김 input */}
+        <input
+          ref={utilRecordFileInputRef}
+          type="file"
+          accept=".xlsx,.xls"
+          style={{ display: "none" }}
+          onChange={handleUtilRecordUpload}
+        />
 
         <MDButton
           variant="outlined"
@@ -4833,8 +5270,9 @@ function RecordSheet() {
           onClick={() => setDispatchMaskingEnabled((prev) => !prev)}
           sx={{
             fontSize: isMobile ? "0.7rem" : "0.8rem",
-            minWidth: isMobile ? 78 : 96,
-            px: isMobile ? 1 : 2,
+            minWidth: "unset !important",
+            padding: isMobile ? "6px 14px !important" : "6px 20px !important",
+            whiteSpace: "nowrap",
           }}
         >
           {dispatchMaskingEnabled ? "* 해제" : "* 적용"}
@@ -4849,8 +5287,9 @@ function RecordSheet() {
           }}
           sx={{
             fontSize: isMobile ? "0.7rem" : "0.8rem",
-            minWidth: isMobile ? 70 : 90,
-            px: isMobile ? 1 : 2,
+            minWidth: "unset !important",
+            padding: isMobile ? "6px 14px !important" : "6px 20px !important",
+            whiteSpace: "nowrap",
           }}
         >
           조회

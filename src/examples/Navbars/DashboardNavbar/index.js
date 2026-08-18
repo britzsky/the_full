@@ -117,11 +117,11 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const canViewInquiryAlert = webPosition === "I" || webPosition === "A";
   const shouldAlwaysShowInquirySection = canViewInquiryAlert;
 
-  // 관리자 여부 체크
+  // 관리자 여부 체크 (사용자 승인 권한: 개발팀(6) + 팀장(1)만)
   const isAdmin = (() => {
     const pos = String(localStorage.getItem("position") ?? "");
     const dept = String(localStorage.getItem("department") ?? "");
-    return pos === "0" || pos === "1" || dept === "6";
+    return dept === "6" && pos === "1";
   })();
 
   // ✅ 승인대기 Dialog 상태 (Navbar에만 존재!)
@@ -535,7 +535,17 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     }
 
     try {
-      await api.post("/User/ApprovalSave", { list: changed });
+      const res = await api.post("/User/ApprovalSave", { list: changed, requester_id: userId });
+
+      if (String(res?.data?.code) !== "200") {
+        Swal.fire({
+          title: "권한 없음",
+          text: res?.data?.msg || "승인 권한이 없습니다.",
+          icon: "error",
+          confirmButtonText: "확인",
+        });
+        return;
+      }
 
       Swal.fire({ title: "저장 완료", text: "승인 처리가 저장되었습니다.", icon: "success", confirmButtonText: "확인" });
 

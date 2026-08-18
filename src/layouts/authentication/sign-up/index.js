@@ -114,7 +114,6 @@ function SignUp() {
   const [accountList, setAccountList] = useState([]); // 🔹 영양사용 거래처 목록
 
   const USER_TYPE_OPTIONS = [
-    { label: "ceo", labelKo: "ceo", code: "1" },       // 필요하면 labelKo를 한글로 써도 됨
     { label: "본사", labelKo: "본사", code: "2" },
     { label: "영양사", labelKo: "영양사", code: "3" },
     { label: "통합/유틸", labelKo: "통합/유틸", code: "4" },

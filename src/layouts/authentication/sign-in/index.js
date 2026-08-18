@@ -26,6 +26,7 @@ function Basic() {
   const [rememberMe, setRememberMe] = useState(false);
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false); // ✅ 중복 제출 방지
   const navigate = useNavigate();
   const handleSetRememberMe = () => setRememberMe(!rememberMe);
 
@@ -41,6 +42,10 @@ function Basic() {
       });
       return;
     }
+
+    // ✅ 이미 요청 진행 중이면 재호출 무시 (연타/엔터 중복 방지)
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
 
     api
       .post("/User/Login", {
@@ -125,6 +130,9 @@ function Basic() {
       })
       .catch((error) => {
         console.log(error);
+      })
+      .finally(() => {
+        setIsLoggingIn(false); // ✅ 성공/실패 관계없이 재요청 가능하도록 해제
       });
   };
 
@@ -205,9 +213,10 @@ function Basic() {
                 type="submit" // 🔥 엔터/클릭 모두 submit로 처리
                 variant="gradient"
                 fullWidth
+                disabled={isLoggingIn}
                 sx={{ bgcolor: "#FFC107", color: "#fff" }}
               >
-                Log In
+                {isLoggingIn ? "로그인 중..." : "Log In"}
               </MDButton>
             </MDBox>
 

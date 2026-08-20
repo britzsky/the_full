@@ -1,5 +1,13 @@
 ﻿/* eslint-disable react/prop-types */
-import React, { startTransition, useMemo, useEffect, useLayoutEffect, useState, useCallback, useRef } from "react";
+import React, {
+  startTransition,
+  useMemo,
+  useEffect,
+  useLayoutEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useReactTable, getCoreRowModel, flexRender } from "@tanstack/react-table";
 import { useLocation, useParams } from "react-router-dom";
 import Grid from "@mui/material/Grid";
@@ -863,8 +871,7 @@ function RecordSheet() {
 
   // ✅ "유틸 출근부" 버튼 노출 권한: department 6, 또는 user_id가 si1/db1인 경우만
   const loginUserId = safeTrim(localStorage.getItem("user_id"), "");
-  const canUseUtilRecord =
-    loginDepartmentCode === "6" || ["si1", "db1"].includes(loginUserId);
+  const canUseUtilRecord = loginDepartmentCode === "6" || ["si1", "db1"].includes(loginUserId);
 
   const [open, setOpen] = useState(false);
   const [dispatchImportOpen, setDispatchImportOpen] = useState(false);
@@ -889,6 +896,12 @@ function RecordSheet() {
   // ✅ 유틸 출근부 엑셀 업로드 상태
   const [utilRecordUploading, setUtilRecordUploading] = useState(false);
   const utilRecordFileInputRef = useRef(null);
+  // ✅ 거래처명이 정확히 하나로 매칭되지 않는 경우(동명 후보 여럿/매칭 실패) 사용자가 직접 선택
+  const [utilRecordAmbiguousOpen, setUtilRecordAmbiguousOpen] = useState(false);
+  const [utilRecordAmbiguousItems, setUtilRecordAmbiguousItems] = useState([]);
+  // ✅ 이름이 동명이인인 경우, 입력된 날짜가 있으면 버리지 않고 실제 회원을 선택
+  const [utilRecordDuplicateItems, setUtilRecordDuplicateItems] = useState([]);
+  const utilRecordUploadContextRef = useRef(null);
 
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
@@ -920,27 +933,30 @@ function RecordSheet() {
     [year, month]
   );
 
-  const selectAccountByInput = useCallback((rawInput) => {
-    const q = String(rawInput ?? accountInputRef.current ?? "").trim();
-    if (!q) return;
-    const list = accountList || [];
-    const qLower = q.toLowerCase();
-    const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
-    let partial = exact;
-    if (!partial) {
-      const candidates = list.filter((a) =>
-        String(a?.account_name || "")
-          .toLowerCase()
-          .includes(qLower)
-      );
-      // 부분일치 후보가 여럿이면(예: 늘사랑(부천), 늘사랑(서구)) 잘못 선택되지 않도록 매칭하지 않음
-      if (candidates.length === 1) partial = candidates[0];
-    }
-    if (partial) {
-      setSelectedAccountId(partial.account_id);
-      accountInputRef.current = partial.account_name || q;
-    }
-  }, [accountList]);
+  const selectAccountByInput = useCallback(
+    (rawInput) => {
+      const q = String(rawInput ?? accountInputRef.current ?? "").trim();
+      if (!q) return;
+      const list = accountList || [];
+      const qLower = q.toLowerCase();
+      const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
+      let partial = exact;
+      if (!partial) {
+        const candidates = list.filter((a) =>
+          String(a?.account_name || "")
+            .toLowerCase()
+            .includes(qLower)
+        );
+        // 부분일치 후보가 여럿이면(예: 늘사랑(부천), 늘사랑(서구)) 잘못 선택되지 않도록 매칭하지 않음
+        if (candidates.length === 1) partial = candidates[0];
+      }
+      if (partial) {
+        setSelectedAccountId(partial.account_id);
+        accountInputRef.current = partial.account_name || q;
+      }
+    },
+    [accountList]
+  );
 
   useEffect(() => {
     if (!year || !month) return;
@@ -1212,8 +1228,8 @@ function RecordSheet() {
         const toDay = endInMonth
           ? realEnd.date()
           : realEnd.isBefore(monthStart)
-            ? null
-            : daysInThisMonth;
+          ? null
+          : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -1282,8 +1298,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                  ? "미지급"
-                  : "부분"
+                ? "미지급"
+                : "부분"
               : "-";
 
           return {
@@ -1392,13 +1408,13 @@ function RecordSheet() {
   const handleUtilRecordTemplateDownload = async () => {
     try {
       // ✅ position_type: 6=유틸, 7=통합 → 이 서식은 유틸(6)만 대상으로 한다
-      // ✅ AK열 참고용 거래처명 목록: 관리표(tb_account_managerment_table)에 등록된 거래처만 조인해서 가져온다
-      const [utilMemberRes, accountNameRefRes] = await Promise.all([
-        api.get("/Account/AccountUtilMemberList", { params: { position_type: 6 } }),
-        api.get("/Account/AccountUtilRecordAccountNameList"),
-      ]);
+      const utilMemberRes = await api.get("/Account/AccountUtilMemberList", {
+        params: { position_type: 6 },
+      });
       const utilMembers = extractArray(utilMemberRes.data);
-      const accountNameRefList = extractArray(accountNameRefRes.data);
+      // ✅ AK열 참고용 거래처명 목록: 별도 API가 아니라 화면 "거래처 검색"과 동일한 accountList를 사용해
+      //    두 목록이 서로 다르게 보이지 않도록 맞춘다.
+      const accountNameRefList = accountList || [];
       const lastCol = UTIL_RECORD_NOTE_COL;
       const accountNameRefCol = UTIL_RECORD_NOTE_COL + 1; // AJ 바로 다음 열 = AK열
 
@@ -1451,7 +1467,9 @@ function RecordSheet() {
         const weekCell = sheet.getCell(4, colNo);
         if (d <= daysInMonth) {
           dateCell.value = d;
-          const wd = dayjs(`${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`).day();
+          const wd = dayjs(
+            `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+          ).day();
           weekCell.value = utilRecordWeekdayNames[wd];
         } else {
           // ✅ 해당 월에 존재하지 않는 날짜(예: 2월의 30~31일)는 회색으로 비워 구분
@@ -1501,7 +1519,12 @@ function RecordSheet() {
         }
 
         // 휴무합계(AI)/비고(AJ)도 C열과 동일하게 블록 내 세로 병합
-        sheet.mergeCells(blockStartRow, UTIL_RECORD_OFF_SUM_COL, blockEndRow, UTIL_RECORD_OFF_SUM_COL);
+        sheet.mergeCells(
+          blockStartRow,
+          UTIL_RECORD_OFF_SUM_COL,
+          blockEndRow,
+          UTIL_RECORD_OFF_SUM_COL
+        );
         sheet.mergeCells(blockStartRow, UTIL_RECORD_NOTE_COL, blockEndRow, UTIL_RECORD_NOTE_COL);
 
         const rangeStart = `${dayColLetter(UTIL_RECORD_FIRST_DAY_COL)}${blockStartRow}`;
@@ -1519,14 +1542,15 @@ function RecordSheet() {
         }
       });
 
-      // ✅ AK1:AK100을 하나로 병합해, 관리표(tb_account_managerment_table)와 tb_account를 account_id로
-      //    조인한 거래처명을 줄바꿈으로 이어서 왼쪽 위부터 한 번에 보이게 표시
+      // ✅ AK1:AK100을 하나로 병합해, 화면 "거래처 검색"과 동일한 accountList의 거래처명을
+      //    가나다순으로 줄바꿈해 이어서 왼쪽 위부터 한 번에 보이게 표시
       sheet.getColumn(accountNameRefCol).width = 40;
       sheet.mergeCells(1, accountNameRefCol, 300, accountNameRefCol);
       const accountNameRefCell = sheet.getCell(1, accountNameRefCol);
       accountNameRefCell.value = (accountNameRefList || [])
         .map((a) => a?.account_name ?? "")
         .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "ko"))
         .join("\n");
       accountNameRefCell.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
@@ -1567,24 +1591,44 @@ function RecordSheet() {
   };
 
   // 엑셀에 입력된 텍스트를 거래처명과 매칭(완전일치 우선, 부분일치 보조)
+  // ✅ 후보가 여럿이거나 하나도 없으면 자동으로 실패 처리하지 않고,
+  //    status(exact/ambiguous/none)와 candidates를 돌려줘서 업로드 화면에서 사용자가 직접 고르게 한다.
   const matchUtilRecordAccount = (text) => {
     const q = String(text ?? "").trim();
-    if (!q) return null;
+    if (!q) return { status: "none", account: null, candidates: [] };
     const list = accountList || [];
     const qLower = q.toLowerCase();
+
+    // ✅ 입력값이 거래처명과 1:1로 완전히 똑같으면(예: "한결" = 계정명 "한결") 다른 후보가 있어도
+    //    바로 그 계정으로 확정한다. 완전일치가 없을 때만 LIKE 검색처럼 후보를 모아 선택하게 한다.
     const exact = list.find((a) => String(a?.account_name || "").toLowerCase() === qLower);
-    if (exact) return exact;
+    if (exact) return { status: "exact", account: exact, candidates: [exact] };
 
-    // 부분일치 후보가 여럿이면(예: 늘사랑(부천), 늘사랑(서구)) 잘못 매칭되지 않도록 매칭하지 않음
-    const containsCandidates = list.filter((a) => String(a?.account_name || "").toLowerCase().includes(qLower));
-    if (containsCandidates.length === 1) return containsCandidates[0];
-    if (containsCandidates.length > 1) return null;
+    // ✅ LIKE 검색처럼 이름에 포함되는 후보를 전부 모은다.
+    //    (예: "계양" 입력 시 "계양고은"/"계양효중" 둘 다 후보로 뜨게)
+    const containsCandidates = list.filter((a) =>
+      String(a?.account_name || "")
+        .toLowerCase()
+        .includes(qLower)
+    );
+    if (containsCandidates.length === 1) {
+      return { status: "exact", account: containsCandidates[0], candidates: containsCandidates };
+    }
+    if (containsCandidates.length > 1)
+      return { status: "ambiguous", account: null, candidates: containsCandidates };
 
+    // 거래처명이 입력 텍스트에 포함되는 경우(예: "한결소래점"처럼 뒤에 부가 텍스트가 붙은 경우)
     const reverseCandidates = list.filter(
       (a) => a?.account_name && qLower.includes(String(a.account_name).toLowerCase())
     );
-    if (reverseCandidates.length === 1) return reverseCandidates[0];
-    return null;
+    if (reverseCandidates.length === 1) {
+      return { status: "exact", account: reverseCandidates[0], candidates: reverseCandidates };
+    }
+    if (reverseCandidates.length > 1) {
+      return { status: "ambiguous", account: null, candidates: reverseCandidates };
+    }
+
+    return { status: "none", account: null, candidates: [] };
   };
 
   // 사용자가 작성한 유틸 출근부 엑셀 파일을 읽어 서버에 저장
@@ -1603,10 +1647,15 @@ function RecordSheet() {
       });
       const utilMembers = extractArray(utilMemberRes.data);
       const nameToMemberId = new Map();
+      const memberIdToName = new Map(); // ✅ 결과 안내에서 member_id → 이름 표시용
+      const membersByName = new Map(); // ✅ 동명이인 선택 시 후보 목록으로 사용
       const duplicateNames = new Set();
       (utilMembers || []).forEach((m) => {
         const nm = String(m?.name ?? "").trim();
         if (!nm) return;
+        if (m?.member_id) memberIdToName.set(m.member_id, nm);
+        if (!membersByName.has(nm)) membersByName.set(nm, []);
+        membersByName.get(nm).push(m);
         if (nameToMemberId.has(nm)) {
           duplicateNames.add(nm);
         } else {
@@ -1637,9 +1686,11 @@ function RecordSheet() {
       const recMonth = baseDate.month() + 1;
       const recDaysInMonth = baseDate.daysInMonth();
 
-      const rows = [];
-      const unmatchedAccountTexts = new Set(); // 거래처명과 매칭 실패 → note로 저장된 값 목록
-      const skippedNoMemberRows = []; // 성명 매칭 실패(미등록/동명이인)로 건너뛴 행
+      const rows = []; // 즉시 확정되는 행(휴무, 완전/단일 매칭)
+      const pendingEntries = []; // 거래처명이 애매하거나 매칭 안 되어 사용자 선택이 필요한 행
+      const unresolvedTextMap = new Map(); // cellText → 후보 거래처 목록(빈 배열이면 후보 없음)
+      const skippedNoMemberRows = []; // 성명 매칭 실패(미등록)로 건너뛴 행
+      const duplicateNameItemsMap = new Map(); // 동명이인 placeholder key → { name, filledDays, candidates }
 
       sheet.eachRow((row, rowNumber) => {
         if (rowNumber <= 4) return; // 1~4행은 제목/헤더
@@ -1653,15 +1704,37 @@ function RecordSheet() {
         const name = String(nameCell.value ?? "").trim();
         if (!name) return; // 빈 행
 
-        if (duplicateNames.has(name)) {
-          skippedNoMemberRows.push(`${name}(동명이인, 매칭불가)`);
-          return;
-        }
+        // ✅ 동명이인/미등록으로 건너뛸 때, 실제로 며칠치 데이터가 입력되어 있었는지 같이 알려준다.
+        const countFilledDays = () => {
+          let cnt = 0;
+          for (let d = 1; d <= UTIL_RECORD_DAY_COLS; d += 1) {
+            if (d > recDaysInMonth) continue;
+            const colNo = UTIL_RECORD_FIRST_DAY_COL + d - 1;
+            if (String(row.getCell(colNo).value ?? "").trim()) cnt += 1;
+          }
+          return cnt;
+        };
 
-        const memberId = nameToMemberId.get(name);
-        if (!memberId) {
-          skippedNoMemberRows.push(name);
-          return;
+        let memberId;
+        if (duplicateNames.has(name)) {
+          const filledDays = countFilledDays();
+          if (filledDays === 0) return; // 입력된 데이터가 없으면 선택받을 필요 없이 그냥 건너뜀
+
+          // ✅ 동명이인이라도 입력된 날짜가 있으면 버리지 않고, 실제 어느 회원인지 사용자가 선택하게 한다.
+          const dupKey = `__DUP__${name}__${rowNumber}`;
+          duplicateNameItemsMap.set(dupKey, {
+            name,
+            filledDays,
+            candidates: membersByName.get(name) || [],
+          });
+          memberId = dupKey;
+        } else {
+          const foundMemberId = nameToMemberId.get(name);
+          if (!foundMemberId) {
+            skippedNoMemberRows.push(`${name}(미등록, ${countFilledDays()}일 입력됨)`);
+            return;
+          }
+          memberId = foundMemberId;
         }
 
         const noteCellText = String(row.getCell(UTIL_RECORD_NOTE_COL).value ?? "").trim();
@@ -1687,63 +1760,249 @@ function RecordSheet() {
             continue;
           }
 
-          const matched = matchUtilRecordAccount(cellText);
-          if (matched) {
+          const matchResult = matchUtilRecordAccount(cellText);
+          if (matchResult.status === "exact") {
             rows.push({
               record_year: recYear,
               record_month: recMonth,
               record_date: d,
               type: 7, // 7 = 유틸 근무(거래처 배정)
-              account_id: matched.account_id,
+              account_id: matchResult.account.account_id,
               member_id: memberId,
               is_present: "Y",
               note: noteCellText || "",
             });
           } else {
-            // ✅ 거래처명과 매칭되지 않는 특이 근무명(예: 프라미스/탑재활/정담 등)은
-            //    account_id 없이 note에 원문 텍스트를 그대로 저장
-            unmatchedAccountTexts.add(cellText);
-            rows.push({
+            // ✅ 거래처명이 하나로 정해지지 않으면(동명 후보 여럿/매칭 실패) 자동으로 실패 처리하지 말고
+            //    업로드 화면에서 사용자가 직접 거래처를 선택하도록 보류한다.
+            if (!unresolvedTextMap.has(cellText)) {
+              unresolvedTextMap.set(cellText, matchResult.candidates || []);
+            }
+            pendingEntries.push({
               record_year: recYear,
               record_month: recMonth,
               record_date: d,
-              type: 9, // 9 = 기타(거래처 미매칭, note 참고)
-              account_id: "",
               member_id: memberId,
-              is_present: "Y",
-              note: cellText,
+              note: noteCellText || "",
+              cellText,
             });
           }
         }
       });
 
-      if (rows.length === 0) {
+      if (rows.length === 0 && pendingEntries.length === 0) {
         Swal.close();
         Swal.fire("업로드할 데이터가 없습니다.", "일자별로 입력된 값이 없습니다.", "info");
         return;
       }
 
       const userId = localStorage.getItem("user_id") || "";
-      const res = await api.post("/Account/AccountUtilRecordExcelSave", {
-        rows: rows.map((r) => ({ ...r, user_id: userId })),
-      });
-      const result = typeof res.data === "string" ? JSON.parse(res.data) : res.data || {};
+      const saveMeta = { recYear, recMonth, skippedNoMemberRows, userId, memberIdToName };
 
-      let html = `<div style="text-align:left; margin-bottom:10px; font-size:13px; color:#888;">총 ${rows.length}건 처리 &nbsp;|&nbsp; 등록: ${result.savedCount ?? rows.length}건</div>`;
-      if (skippedNoMemberRows.length > 0) {
-        html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#e67e22;">⚠ 회원ID 없음 - 건너뜀 (${skippedNoMemberRows.length}건)<br/>${skippedNoMemberRows.join(", ")}</div>`;
-      }
-      if (unmatchedAccountTexts.size > 0) {
-        html += `<div style="text-align:left; font-size:13px; color:#aaa;">— 거래처명과 매칭되지 않아 비고로만 저장된 값<br/>${Array.from(unmatchedAccountTexts).join(", ")}</div>`;
+      if (unresolvedTextMap.size > 0 || duplicateNameItemsMap.size > 0) {
+        // ✅ 사용자가 선택을 마칠 때까지 저장을 미루고, 확정에 필요한 정보를 보관해둔다.
+        Swal.close();
+        utilRecordUploadContextRef.current = { rows, pendingEntries, ...saveMeta };
+        setUtilRecordAmbiguousItems(
+          Array.from(unresolvedTextMap.entries()).map(([text, candidates]) => ({
+            text,
+            count: pendingEntries.filter((p) => p.cellText === text).length,
+            candidates,
+            selectedAccountId: "",
+          }))
+        );
+        setUtilRecordDuplicateItems(
+          Array.from(duplicateNameItemsMap.entries()).map(([key, info]) => ({
+            key,
+            ...info,
+            selectedMemberId: "",
+          }))
+        );
+        setUtilRecordAmbiguousOpen(true);
+        return;
       }
 
+      await saveUtilRecordRows(rows, saveMeta, new Set());
+    } catch (err) {
+      console.error(err);
       Swal.close();
-      Swal.fire({ title: "유틸 출근부 등록 결과", html, icon: "success" });
+      Swal.fire("업로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    } finally {
+      setUtilRecordUploading(false);
+    }
+  };
 
-      // 현재 조회 중인 화면과 같은 연/월이면 즉시 재조회
-      if (Number(year) === recYear && Number(month) === recMonth) {
-        await fetchAllData?.();
+  // ✅ 사용자가 선택한 거래처를 pendingEntries에 반영해 최종 저장용 행으로 변환
+  //    거래처를 선택하지 않은("매칭 안함") 항목은 저장하지 않고 건너뛴다.
+  const resolveUtilRecordPendingEntries = (pendingEntries, resolutionMap) => {
+    const finalRows = [];
+    const unmatchedAccountTexts = new Set(); // 거래처를 선택하지 않아 저장되지 않고 건너뛴 값
+
+    (pendingEntries || []).forEach((p) => {
+      const accountId = resolutionMap.get(p.cellText) || "";
+      if (accountId) {
+        finalRows.push({
+          record_year: p.record_year,
+          record_month: p.record_month,
+          record_date: p.record_date,
+          type: 7, // 7 = 유틸 근무(거래처 배정)
+          account_id: accountId,
+          member_id: p.member_id,
+          is_present: "Y",
+          note: p.note,
+        });
+      } else {
+        // ✅ 거래처를 선택하지 않으면 저장 자체를 하지 않는다(비고로만 저장하지 않음)
+        unmatchedAccountTexts.add(p.cellText);
       }
+    });
+
+    return { finalRows, unmatchedAccountTexts };
+  };
+
+  // ✅ 최종 확정된 행을 서버에 저장하고 결과 안내
+  const saveUtilRecordRows = async (finalRows, meta, unmatchedAccountTexts) => {
+    const { recYear, recMonth, skippedNoMemberRows, userId, memberIdToName } = meta;
+
+    if (!finalRows || finalRows.length === 0) {
+      Swal.close();
+      Swal.fire("업로드할 데이터가 없습니다.", "일자별로 입력된 값이 없습니다.", "info");
+      return;
+    }
+
+    const res = await api.post("/Account/AccountUtilRecordExcelSave", {
+      rows: finalRows.map((r) => ({ ...r, user_id: userId })),
+    });
+    const result = typeof res.data === "string" ? JSON.parse(res.data) : res.data || {};
+
+    // ✅ 전체 등록 건수 대신, 실제로 궁금한 "누가 며칠 출근하고 며칠 휴무인지"를 인원별로 보여준다.
+    const memberSummary = new Map(); // member_id → { work, off }
+    finalRows.forEach((r) => {
+      const cur = memberSummary.get(r.member_id) || { work: 0, off: 0 };
+      if (Number(r.type) === 0) cur.off += 1; // 0 = 휴무
+      else cur.work += 1; // 7 = 거래처 근무
+      memberSummary.set(r.member_id, cur);
+    });
+
+    let html = `<div style="text-align:left; margin-bottom:10px; font-size:13px; color:#888;">총 ${
+      finalRows.length
+    }건 처리 &nbsp;|&nbsp; 등록: ${result.savedCount ?? finalRows.length}건</div>`;
+    if (memberSummary.size > 0) {
+      const summaryLines = Array.from(memberSummary.entries())
+        .map(([mid, s]) => [memberIdToName?.get(mid) || mid, s])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0]), "ko"))
+        .map(([name, s]) => `${name}: 출근 ${s.work}일 / 휴무 ${s.off}일`)
+        .join("<br/>");
+      html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#555;">📋 등록 현황<br/>${summaryLines}</div>`;
+    }
+    if (skippedNoMemberRows.length > 0) {
+      html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#e67e22;">⚠ 회원ID 없음 - 건너뜀 (${
+        skippedNoMemberRows.length
+      }건)<br/>${skippedNoMemberRows.join(", ")}</div>`;
+    }
+    if (unmatchedAccountTexts.size > 0) {
+      html += `<div style="text-align:left; font-size:13px; color:#e67e22;">⚠ 거래처를 선택하지 않아 저장되지 않고 건너뛴 값<br/>${Array.from(
+        unmatchedAccountTexts
+      ).join(", ")}</div>`;
+    }
+
+    Swal.close();
+    Swal.fire({ title: "유틸 출근부 등록 결과", html, icon: "success" });
+
+    // 현재 조회 중인 화면과 같은 연/월이면 즉시 재조회
+    if (Number(year) === recYear && Number(month) === recMonth) {
+      await fetchAllData?.();
+    }
+  };
+
+  const closeUtilRecordAmbiguousModal = useCallback(() => {
+    setUtilRecordAmbiguousOpen(false);
+    setUtilRecordAmbiguousItems([]);
+    setUtilRecordDuplicateItems([]);
+    utilRecordUploadContextRef.current = null;
+  }, []);
+
+  const handleUtilRecordAmbiguousSelect = useCallback((text, accountId) => {
+    setUtilRecordAmbiguousItems((prev) =>
+      prev.map((it) => (it.text === text ? { ...it, selectedAccountId: accountId } : it))
+    );
+  }, []);
+
+  const handleUtilRecordDuplicateSelect = useCallback((key, memberId) => {
+    setUtilRecordDuplicateItems((prev) =>
+      prev.map((it) => (it.key === key ? { ...it, selectedMemberId: memberId } : it))
+    );
+  }, []);
+
+  // ✅ 동명이인 placeholder member_id를 사용자가 선택한 실제 member_id로 치환.
+  //    선택하지 않으면(미선택) 해당 이름의 입력분은 저장하지 않고 건너뛴다.
+  const resolveUtilRecordDuplicateMembers = (rows, pendingEntries, duplicateItems) => {
+    const resolutionMap = new Map(duplicateItems.map((it) => [it.key, it.selectedMemberId]));
+    const isDupKey = (mid) => typeof mid === "string" && mid.startsWith("__DUP__");
+
+    const resolvedRows = [];
+    (rows || []).forEach((r) => {
+      if (!isDupKey(r.member_id)) {
+        resolvedRows.push(r);
+        return;
+      }
+      const resolvedId = resolutionMap.get(r.member_id);
+      if (resolvedId) resolvedRows.push({ ...r, member_id: resolvedId });
+    });
+
+    const resolvedPending = [];
+    (pendingEntries || []).forEach((p) => {
+      if (!isDupKey(p.member_id)) {
+        resolvedPending.push(p);
+        return;
+      }
+      const resolvedId = resolutionMap.get(p.member_id);
+      if (resolvedId) resolvedPending.push({ ...p, member_id: resolvedId });
+    });
+
+    const skippedDuplicateNames = duplicateItems
+      .filter((it) => !it.selectedMemberId)
+      .map((it) => `${it.name}(동명이인 미선택, ${it.filledDays}일 건너뜀)`);
+
+    return { resolvedRows, resolvedPending, skippedDuplicateNames };
+  };
+
+  // ✅ 사용자가 애매한 거래처명/동명이인을 모두 선택(또는 미선택)한 뒤 최종 저장
+  const handleUtilRecordAmbiguousConfirm = async () => {
+    const ctx = utilRecordUploadContextRef.current;
+    if (!ctx) return;
+
+    const { resolvedRows, resolvedPending, skippedDuplicateNames } =
+      resolveUtilRecordDuplicateMembers(ctx.rows, ctx.pendingEntries, utilRecordDuplicateItems);
+
+    const resolutionMap = new Map(
+      utilRecordAmbiguousItems.map((it) => [it.text, it.selectedAccountId])
+    );
+    const { finalRows, unmatchedAccountTexts } = resolveUtilRecordPendingEntries(
+      resolvedPending,
+      resolutionMap
+    );
+    const allRows = [...resolvedRows, ...finalRows];
+
+    setUtilRecordAmbiguousOpen(false);
+    setUtilRecordAmbiguousItems([]);
+    setUtilRecordDuplicateItems([]);
+    utilRecordUploadContextRef.current = null;
+
+    setUtilRecordUploading(true);
+    showLoadingModal("유틸 출근부 업로드 중...");
+    try {
+      await saveUtilRecordRows(
+        allRows,
+        {
+          recYear: ctx.recYear,
+          recMonth: ctx.recMonth,
+          skippedNoMemberRows: [...(ctx.skippedNoMemberRows || []), ...skippedDuplicateNames],
+          userId: ctx.userId,
+          memberIdToName: ctx.memberIdToName,
+        },
+        unmatchedAccountTexts
+      );
     } catch (err) {
       console.error(err);
       Swal.close();
@@ -1757,13 +2016,13 @@ function RecordSheet() {
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-      src?.record_type ??
-      src?.work_type ??
-      src?.recordType ??
-      src?.workType ??
-      src?.work_kind ??
-      src?.work_cd ??
-      "",
+        src?.record_type ??
+        src?.work_type ??
+        src?.recordType ??
+        src?.workType ??
+        src?.work_kind ??
+        src?.work_cd ??
+        "",
       ""
     );
 
@@ -2013,35 +2272,35 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-            ...source,
-            type: t,
-            gubun: safeTrim(source.gubun, baseGubun),
-            cor_type: safeTrim(source?.cor_type ?? source?.corType ?? baseCorType, baseCorType),
-            position_type: safeTrim(source.position_type, basePt),
-            start: source.start_time || source.start || "",
-            end: source.end_time || source.end || "",
-            start_time: source.start_time || "",
-            end_time: source.end_time || "",
-            salary: source.salary || "",
-            note: source.note ?? source.note ?? "",
-            pay_yn:
-              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
-          }
+              ...source,
+              type: t,
+              gubun: safeTrim(source.gubun, baseGubun),
+              cor_type: safeTrim(source?.cor_type ?? source?.corType ?? baseCorType, baseCorType),
+              position_type: safeTrim(source.position_type, basePt),
+              start: source.start_time || source.start || "",
+              end: source.end_time || source.end || "",
+              start_time: source.start_time || "",
+              end_time: source.end_time || "",
+              salary: source.salary || "",
+              note: source.note ?? source.note ?? "",
+              pay_yn:
+                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+            }
           : {
-            account_id: item.account_id,
-            member_id: memberId || item.member_id,
-            gubun: baseGubun,
-            cor_type: baseCorType,
-            position_type: basePt,
-            type: "",
-            start: "",
-            end: "",
-            start_time: "",
-            end_time: "",
-            salary: "",
-            note: "",
-            pay_yn: "N",
-          };
+              account_id: item.account_id,
+              member_id: memberId || item.member_id,
+              gubun: baseGubun,
+              cor_type: baseCorType,
+              position_type: basePt,
+              type: "",
+              start: "",
+              end: "",
+              start_time: "",
+              end_time: "",
+              salary: "",
+              note: "",
+              pay_yn: "N",
+            };
       }
 
       return { ...base, ...dayEntries };
@@ -2364,7 +2623,10 @@ function RecordSheet() {
 
       // 거래처명은 최대 길이에 맞춰 자동 폭 계산
       const accountNameVisualLen = (s) =>
-        Array.from(String(s || "")).reduce((sum, ch) => sum + (/[\u0000-\u007f]/.test(ch) ? 1 : 2), 0);
+        Array.from(String(s || "")).reduce(
+          (sum, ch) => sum + (/[\u0000-\u007f]/.test(ch) ? 1 : 2),
+          0
+        );
       const maxAccountNameLen = Math.max(
         accountNameVisualLen("거래처"),
         ...(accountList || []).map((a) => accountNameVisualLen(a?.account_name || ""))
@@ -2505,7 +2767,13 @@ function RecordSheet() {
         const memberInfoMap = new Map(); // 회원 아이디 → { rrn, account_number, position_type, name }
         const rrnByNameMap = new Map(); // 이름 정규키 → rrn(숫자만) Set
         const dispatchSummaryMap = new Map(); // 회원 아이디 → 요약
-        const ensureValidationRow = (memberId, name = "", corType = "", delYn = "N", delDt = "") => {
+        const ensureValidationRow = (
+          memberId,
+          name = "",
+          corType = "",
+          delYn = "N",
+          delDt = ""
+        ) => {
           const key = `${accId}::${String(memberId)}`;
           const existing = attendValidationMap.get(key);
           if (existing) {
@@ -2631,8 +2899,8 @@ function RecordSheet() {
           const toDay = endInMonth
             ? realEnd.date()
             : realEnd.isBefore(monthStart)
-              ? null
-              : daysInThisMonth;
+            ? null
+            : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -2704,7 +2972,11 @@ function RecordSheet() {
                   rrnKey = Array.from(rrnSet)[0];
                 }
               }
-              const personKey = rrnKey ? `rrn:${rrnKey}` : nameKey ? `name:${nameKey}` : `mid:${dedupMemberKey}`;
+              const personKey = rrnKey
+                ? `rrn:${rrnKey}`
+                : nameKey
+                ? `name:${nameKey}`
+                : `mid:${dedupMemberKey}`;
               const dedupKey = `${personKey}_${y}_${m}_${d}_${t}`;
               if (validationSeenByDate.has(dedupKey)) continue;
               validationSeenByDate.add(dedupKey);
@@ -2713,7 +2985,10 @@ function RecordSheet() {
               const noteHoursRaw = toFirstNumberMaybe(cell?.note ?? "");
               const overHours =
                 noteHoursRaw === ""
-                  ? calcDurationHours(cell?.start_time ?? cell?.start ?? "", cell?.end_time ?? cell?.end ?? "")
+                  ? calcDurationHours(
+                      cell?.start_time ?? cell?.start ?? "",
+                      cell?.end_time ?? cell?.end ?? ""
+                    )
                   : Number(noteHoursRaw);
 
               if (t === "4") {
@@ -2857,7 +3132,12 @@ function RecordSheet() {
           if (dispatchMappingRowsArg == null) {
             try {
               const mappingRes = await api.get("/Account/AccountMemberDispatchMappingList", {
-                params: { dispatch_account_id: accId, record_year: year, record_month: month, del_yn: "N" },
+                params: {
+                  dispatch_account_id: accId,
+                  record_year: year,
+                  record_month: month,
+                  del_yn: "N",
+                },
               });
               dispatchMappingRowsArg = extractArray(mappingRes.data);
             } catch (err) {
@@ -2895,21 +3175,21 @@ function RecordSheet() {
             const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
             const origin = safeTrim(
               row?.origin_account_name ??
-              row?.origin_account ??
-              accountNameMap.get(originId) ??
-              info.origin ??
-              "",
+                row?.origin_account ??
+                accountNameMap.get(originId) ??
+                info.origin ??
+                "",
               ""
             );
             const dispatch = safeTrim(
               row?.dispatch_account_name ??
-              row?.dispatch_account ??
-              row?.dispatch_account_nm ??
-              row?.dispatch_accountName ??
-              accountNameMap.get(dispatchId) ??
-              info.dispatch ??
-              accName ??
-              "",
+                row?.dispatch_account ??
+                row?.dispatch_account_nm ??
+                row?.dispatch_accountName ??
+                accountNameMap.get(dispatchId) ??
+                info.dispatch ??
+                accName ??
+                "",
               ""
             );
             const name = safeTrim(row?.name ?? row?.member_name ?? stat?.name ?? "", "");
@@ -3032,8 +3312,9 @@ function RecordSheet() {
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
           totalCnt > 0
-            ? `${paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
-            }(${paidCnt}/${totalCnt})`
+            ? `${
+                paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
+              }(${paidCnt}/${totalCnt})`
             : "";
 
         wsDispatch.addRow([
@@ -3064,10 +3345,14 @@ function RecordSheet() {
       const attendValidationRows = Array.from(attendValidationMap.values())
         .filter((r) => shouldIncludeRetiredForExcel(r, realStart))
         .sort((a, b) => {
-          const accCmp = String(a.account_name || "").localeCompare(String(b.account_name || ""), "ko", {
-            sensitivity: "base",
-            numeric: true,
-          });
+          const accCmp = String(a.account_name || "").localeCompare(
+            String(b.account_name || ""),
+            "ko",
+            {
+              sensitivity: "base",
+              numeric: true,
+            }
+          );
           if (accCmp !== 0) return accCmp;
           return String(a.name || "").localeCompare(String(b.name || ""), "ko", {
             sensitivity: "base",
@@ -3516,7 +3801,11 @@ function RecordSheet() {
       setAttendanceLoadedViewKey("");
       setDispatchLoadedViewKey("");
       setMappingLoadedViewKey("");
-      await Promise.all([fetchAllData?.(), fetchDispatchOnly(dispatchDelFilter), fetchDispatchMappingOnly()]);
+      await Promise.all([
+        fetchAllData?.(),
+        fetchDispatchOnly(dispatchDelFilter),
+        fetchDispatchMappingOnly(),
+      ]);
     },
     [
       selectedAccountId,
@@ -3541,7 +3830,8 @@ function RecordSheet() {
       );
 
       const pickOrigin = (r) => safeTrim(r?.account_id ?? r?.origin_account_id ?? "", "");
-      const pickDispatch = (r) => safeTrim(r?.dispatch_account_id ?? r?.dispatchAccountId ?? "", "");
+      const pickDispatch = (r) =>
+        safeTrim(r?.dispatch_account_id ?? r?.dispatchAccountId ?? "", "");
 
       const isSameYearMonth = (r) => {
         const rawDate = safeTrim(r?.record_date ?? r?.recordDate ?? "", "");
@@ -3609,7 +3899,14 @@ function RecordSheet() {
       );
       if (candidates.length === 0) return;
 
-      const buildMappingKey = (memberId, originAccountId, dispatchId, recordYear, recordMonth, recordDate) =>
+      const buildMappingKey = (
+        memberId,
+        originAccountId,
+        dispatchId,
+        recordYear,
+        recordMonth,
+        recordDate
+      ) =>
         [
           String(memberId ?? "").trim(),
           String(originAccountId ?? "").trim(),
@@ -3643,7 +3940,11 @@ function RecordSheet() {
         }
 
         if (!memberId || !originAccountId || !dispatchId) return;
-        if (!Number.isFinite(recordYear) || !Number.isFinite(recordMonth) || !Number.isFinite(recordDate))
+        if (
+          !Number.isFinite(recordYear) ||
+          !Number.isFinite(recordMonth) ||
+          !Number.isFinite(recordDate)
+        )
           return;
 
         const key = buildMappingKey(
@@ -3810,11 +4111,7 @@ function RecordSheet() {
         closeModal: closeDispatchImportModal,
       });
     },
-    [
-      closeDispatchImportModal,
-      isDispatchImportAlreadyRegistered,
-      saveDispatchMember,
-    ]
+    [closeDispatchImportModal, isDispatchImportAlreadyRegistered, saveDispatchMember]
   );
 
   // ✅ click 대신 mousedown에서 바로 처리해 확인 모달 체감 지연을 줄임
@@ -3871,11 +4168,7 @@ function RecordSheet() {
           </tr>
         );
       }),
-    [
-      dispatchImportRows,
-      formatDispatchImportCellValue,
-      isDispatchImportAlreadyRegistered,
-    ]
+    [dispatchImportRows, formatDispatchImportCellValue, isDispatchImportAlreadyRegistered]
   );
 
   // ✅ 핵심: year/month/selectedAccountId/filter 바뀌면 자동 재조회
@@ -4258,7 +4551,15 @@ function RecordSheet() {
           size: isMobile ? 52 : 80,
         };
       }),
-    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap, holidayDays]
+    [
+      daysInMonth,
+      year,
+      month,
+      isMobile,
+      employeeDispatchDayStatusMap,
+      originalRecordTypeMap,
+      holidayDays,
+    ]
   );
 
   // 회원 퇴사 메타 맵
@@ -4567,21 +4868,21 @@ function RecordSheet() {
 
       const origin = safeTrim(
         row?.origin_account_name ??
-        row?.origin_account ??
-        accNameMap.get(originId) ??
-        info.origin ??
-        "",
+          row?.origin_account ??
+          accNameMap.get(originId) ??
+          info.origin ??
+          "",
         ""
       );
 
       const dispatch = safeTrim(
         row?.dispatch_account_name ??
-        row?.dispatch_account ??
-        row?.dispatch_account_nm ??
-        row?.dispatch_accountName ??
-        accNameMap.get(dispatchId) ??
-        info.dispatch ??
-        "",
+          row?.dispatch_account ??
+          row?.dispatch_account_nm ??
+          row?.dispatch_accountName ??
+          accNameMap.get(dispatchId) ??
+          info.dispatch ??
+          "",
         ""
       );
 
@@ -4643,11 +4944,7 @@ function RecordSheet() {
         accessorKey: "phone",
         size: "3%",
         cell: (props) => (
-          <DispatchEditableCell
-            {...props}
-            field="phone"
-            maskingEnabled={dispatchMaskingEnabled}
-          />
+          <DispatchEditableCell {...props} field="phone" maskingEnabled={dispatchMaskingEnabled} />
         ),
       },
       {
@@ -4655,11 +4952,7 @@ function RecordSheet() {
         accessorKey: "rrn",
         size: "3%",
         cell: (props) => (
-          <DispatchEditableCell
-            {...props}
-            field="rrn"
-            maskingEnabled={dispatchMaskingEnabled}
-          />
+          <DispatchEditableCell {...props} field="rrn" maskingEnabled={dispatchMaskingEnabled} />
         ),
       },
       {
@@ -4922,11 +5215,7 @@ function RecordSheet() {
           // ✅ 저장 키 안정화: account_id를 현재 선택값으로 강제하지 않고
           //    기존(row/original) account_id를 우선 사용해 기존 row 업데이트를 유도
           const resolvedAccountId =
-            originalVal?.account_id ??
-            val?.account_id ??
-            row.account_id ??
-            selectedAccountId ??
-            "";
+            originalVal?.account_id ?? val?.account_id ?? row.account_id ?? selectedAccountId ?? "";
           const oldTypeNum = orgType === "" ? null : Number(orgType);
           const isDispatchType = isDispatchTypeValue(curType);
           const isNoteType = curType === "3" || curType === "11" || curType === "17";
@@ -4941,8 +5230,8 @@ function RecordSheet() {
           const normalizedNote = shouldSendEmptyNoteForType(curType)
             ? ""
             : isNoteType
-              ? safeTrim(val?.note ?? "", "") || null
-              : null;
+            ? safeTrim(val?.note ?? "", "") || null
+            : null;
 
           if (cleared) {
             const recordObj = {
@@ -5896,7 +6185,9 @@ function RecordSheet() {
               <tbody onMouseDown={handleDispatchImportRowMouseDown}>
                 {dispatchImportRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>{dispatchImportLoading ? "조회중입니다." : "조회된 인원이 없습니다."}</td>
+                    <td colSpan={6}>
+                      {dispatchImportLoading ? "조회중입니다." : "조회된 인원이 없습니다."}
+                    </td>
                   </tr>
                 ) : (
                   dispatchImportRowNodes
@@ -5928,6 +6219,190 @@ function RecordSheet() {
               }}
             >
               닫기
+            </Button>
+          </Box>
+        </Box>
+      </Modal>
+      <Modal open={utilRecordAmbiguousOpen} onClose={closeUtilRecordAmbiguousModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile ? "96vw" : 640,
+            maxWidth: "96vw",
+            maxHeight: "80vh",
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            overflow: "hidden",
+          }}
+        >
+          <MDBox>
+            <MDTypography variant="h6">선택 확인 필요</MDTypography>
+            <MDTypography variant="caption" sx={{ color: "#666" }}>
+              동명이인이거나 거래처명이 하나로 정해지지 않은 항목이 있습니다.
+              <br />각 항목을 직접 선택해주세요. 선택하지 않은 항목은 저장되지 않고 건너뜁니다.
+            </MDTypography>
+          </MDBox>
+
+          <Box
+            sx={{ overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 2 }}
+          >
+            {utilRecordDuplicateItems.length > 0 && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                <MDTypography variant="button" fontWeight="bold" sx={{ color: "#d32f2f" }}>
+                  동명이인 확인 ({utilRecordDuplicateItems.length}명)
+                </MDTypography>
+                {utilRecordDuplicateItems.map((item) => (
+                  <Box
+                    key={item.key}
+                    sx={{
+                      border: "1px solid #eee",
+                      borderRadius: 1,
+                      p: 1.5,
+                      display: "flex",
+                      flexDirection: isMobile ? "column" : "row",
+                      alignItems: isMobile ? "flex-start" : "center",
+                      gap: 1,
+                    }}
+                  >
+                    <MDBox sx={{ minWidth: isMobile ? "auto" : 160 }}>
+                      <MDTypography variant="button" fontWeight="bold">
+                        {item.name}
+                      </MDTypography>
+                      <MDTypography variant="caption" sx={{ color: "#999", display: "block" }}>
+                        {item.filledDays}일 입력됨 · 동명 후보 {item.candidates.length}명
+                      </MDTypography>
+                    </MDBox>
+                    <Autocomplete
+                      size="small"
+                      options={item.candidates}
+                      value={
+                        item.candidates.find((c) => c.member_id === item.selectedMemberId) || null
+                      }
+                      onChange={(_, newVal) =>
+                        handleUtilRecordDuplicateSelect(item.key, newVal?.member_id || "")
+                      }
+                      getOptionLabel={(opt) => (opt ? `${opt.name} (ID: ${opt.member_id})` : "")}
+                      isOptionEqualToValue={(opt, val) => opt?.member_id === val?.member_id}
+                      sx={{ flex: 1, minWidth: isMobile ? "100%" : 260 }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="실제 회원 선택"
+                          placeholder="미선택 시 저장 안함"
+                          sx={{
+                            "& .MuiInputBase-root": { fontSize: 12 },
+                            "& .MuiInputLabel-root": { fontSize: 12 },
+                          }}
+                        />
+                      )}
+                    />
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {utilRecordAmbiguousItems.length > 0 && (
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                <MDTypography variant="button" fontWeight="bold" sx={{ color: "#555" }}>
+                  거래처 선택 ({utilRecordAmbiguousItems.length}건)
+                </MDTypography>
+                {utilRecordAmbiguousItems.map((item) => (
+                  <Box
+                    key={item.text}
+                    sx={{
+                      border: "1px solid #eee",
+                      borderRadius: 1,
+                      p: 1.5,
+                      display: "flex",
+                      flexDirection: isMobile ? "column" : "row",
+                      alignItems: isMobile ? "flex-start" : "center",
+                      gap: 1,
+                    }}
+                  >
+                    <MDBox sx={{ minWidth: isMobile ? "auto" : 160 }}>
+                      <MDTypography variant="button" fontWeight="bold">
+                        {item.text}
+                      </MDTypography>
+                      <MDTypography variant="caption" sx={{ color: "#999", display: "block" }}>
+                        {item.count}건
+                        {item.candidates.length > 1
+                          ? ` · 후보 ${item.candidates.length}개`
+                          : " · 매칭 후보 없음"}
+                      </MDTypography>
+                    </MDBox>
+                    <Autocomplete
+                      size="small"
+                      // ✅ MUI Autocomplete의 groupBy는 options 배열 순서대로 그룹을 나누므로,
+                      //    "추천 후보"가 먼저 오고 그 다음 나머지 "전체 거래처"가 오도록 미리 정렬해서 넣는다.
+                      options={[
+                        ...item.candidates,
+                        ...(accountList || []).filter(
+                          (a) => !item.candidates.some((c) => c.account_id === a.account_id)
+                        ),
+                      ]}
+                      value={
+                        (accountList || []).find((a) => a.account_id === item.selectedAccountId) ||
+                        null
+                      }
+                      onChange={(_, newVal) =>
+                        handleUtilRecordAmbiguousSelect(item.text, newVal?.account_id || "")
+                      }
+                      getOptionLabel={(opt) => opt?.account_name || ""}
+                      isOptionEqualToValue={(opt, val) => opt?.account_id === val?.account_id}
+                      groupBy={(opt) =>
+                        item.candidates.some((c) => c.account_id === opt.account_id)
+                          ? "추천 후보"
+                          : "전체 거래처"
+                      }
+                      sx={{ flex: 1, minWidth: isMobile ? "100%" : 260 }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="거래처 선택"
+                          placeholder="미선택 시 저장 안함"
+                          sx={{
+                            "& .MuiInputBase-root": { fontSize: 12 },
+                            "& .MuiInputLabel-root": { fontSize: 12 },
+                          }}
+                        />
+                      )}
+                    />
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
+
+          <Box display="flex" justifyContent="flex-end" gap={1}>
+            <Button
+              variant="outlined"
+              onClick={closeUtilRecordAmbiguousModal}
+              sx={{
+                color: "#333",
+                borderColor: "#999",
+                "&:hover": { borderColor: "#666", bgcolor: "#f0f0f0" },
+              }}
+            >
+              취소
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleUtilRecordAmbiguousConfirm}
+              sx={{
+                bgcolor: "#4CAF50",
+                color: "#ffffff",
+                "&:hover": { bgcolor: "#43a047", color: "#ffffff" },
+              }}
+            >
+              선택 완료 후 저장
             </Button>
           </Box>
         </Box>
@@ -6109,11 +6584,7 @@ function RecordSheet() {
                         </td>
                         <td>{r.name || ""}</td>
                         <td>
-                          {maskSensitiveFieldValue(
-                            "phone",
-                            r.phone || "",
-                            dispatchMaskingEnabled
-                          )}
+                          {maskSensitiveFieldValue("phone", r.phone || "", dispatchMaskingEnabled)}
                         </td>
                         <td>{formatMoneyLike(r.total_pay || 0)}</td>
                         <td>

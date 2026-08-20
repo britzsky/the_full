@@ -24,6 +24,7 @@ import api from "api/api";
 import { sortAccountRows } from "utils/accountSort";
 import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
+import RefreshIcon from "@mui/icons-material/Refresh";
 
 // 🔹 데이터 훅 import
 import useDeadlineBalanceData, { parseNumber, formatNumber } from "./deadlineBalanceData";
@@ -251,6 +252,26 @@ export default function DeadlineBalanceTab() {
     () => sortAccountRows(editableRows, { sortKey: accountSortKey, keepAllOnTop: true }),
     [editableRows, accountSortKey]
   );
+
+  // 새로고침 버튼 중복 클릭 방지 플래그
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // ✅ 새로고침: 왼쪽 미수잔액 테이블은 항상, 거래처가 선택된 상태면 오른쪽 입금내역도 함께 재조회
+  const handleRefresh = async () => {
+    if (isRefreshing) return;
+    try {
+      setIsRefreshing(true);
+      await Promise.all([
+        fetchDeadlineBalanceList(),
+        fetchAllUnpaidSummarySourceList(),
+        selectedCustomer
+          ? fetchDepositHistoryList(selectedCustomer.account_id, year)
+          : Promise.resolve(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // ✅ 거래처 선택(행 클릭): 스크롤 위치 저장/복원 + 우측 입금내역 조회
   const handleSelectCustomer = async (row) => {
@@ -1960,6 +1981,16 @@ export default function DeadlineBalanceTab() {
             sx={actionButtonSx}
           >
             엑셀다운로드
+          </MDButton>
+          <MDButton
+            variant="gradient"
+            color="dark"
+            startIcon={<RefreshIcon />}
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            sx={compactActionButtonSx}
+          >
+            새로고침
           </MDButton>
           <MDButton
             variant="gradient"

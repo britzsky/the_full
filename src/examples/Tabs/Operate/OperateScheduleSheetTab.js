@@ -175,8 +175,12 @@ function OperateScheduleSheetTab() {
   useEffect(() => {
     const mapped = eventListRows
       .filter((item) => {
-        const date = dayjs(item.start_date);
-        return date.year() === currentYear && date.month() + 1 === currentMonth;
+        // 기간(start_date~end_date)이 현재 표시중인 달과 겹치면 표시 (달 경계를 걸친 일정 대응)
+        const monthStart = dayjs(`${currentYear}-${String(currentMonth).padStart(2, "0")}-01`);
+        const monthEnd = monthStart.endOf("month");
+        const start = dayjs(item.start_date);
+        const end = dayjs(item.end_date || item.start_date);
+        return !start.isAfter(monthEnd) && !end.isBefore(monthStart);
       })
       .map((item) => {
         const bgColor = getTypeColor(item.type);
@@ -439,7 +443,7 @@ function OperateScheduleSheetTab() {
         eventTextColor="#fff"
         height="80vh"
         dayMaxEventRows={5}
-        fixedWeeks={false}
+        fixedWeekCount={false}
         datesSet={() => {
           // 6주 고정 달력에서 '전부 다음/이전달'로만 채워진 주는 숨김 처리
           document.querySelectorAll(".fc-daygrid-body tbody tr").forEach((row) => {

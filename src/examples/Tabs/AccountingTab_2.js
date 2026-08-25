@@ -7,6 +7,8 @@ import MDBox from "components/MDBox";
 import AccountReceiptTab from "./Accounting/AccountReceiptTab";
 import CoupangReceiptTab from "./Accounting/CoupangReceiptTab";
 import CorpCardReceiptArchiveTab from "./Accounting/CorpCardReceiptArchiveTab";
+import SiteCorpCardReceiptArchiveTab from "./Accounting/SiteCorpCardReceiptArchiveTab";
+import PersonPurchaseReceiptArchiveTab from "./Accounting/PersonPurchaseReceiptArchiveTab";
 
 function AccountingTab_2() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -19,12 +21,16 @@ function AccountingTab_2() {
     "거래처 마감 자료",
     "영수증 등록(본사 법인카드)",
     "영수증 마감 자료(본사 법인카드)",
+    "영수증 마감 자료(현장 법인카드)",
+    "영수증 마감 자료(개인구매)",
   ];
 
   const tabComponents = [
     <AccountReceiptTab key="receipt" />,
     <CoupangReceiptTab key="coupang" />,
     <CorpCardReceiptArchiveTab key="corpcard-archive" />,
+    <SiteCorpCardReceiptArchiveTab key="site-corpcard-archive" />,
+    <PersonPurchaseReceiptArchiveTab key="person-purchase-archive" />,
   ];
 
   return (
@@ -80,7 +86,9 @@ function AccountingTab_2() {
             ))}
           </Tabs>
         </MDBox>
-        <MDBox p={2} sx={{ overflow: "hidden" }}>{tabComponents[tabIndex]}</MDBox>
+        <MDBox p={2} sx={{ overflow: "hidden" }}>
+          {tabComponents[tabIndex]}
+        </MDBox>
       </Card>
     </DashboardLayout>
   );

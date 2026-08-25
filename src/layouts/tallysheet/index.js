@@ -5475,7 +5475,7 @@ function TallySheet() {
 
                   Swal.close();
                   Swal.fire("완료", "저장되었습니다.", "success");
-      // 소모품 예산 누계 갱신 (백그라운드 호출)
+                  // 소모품 예산 누계 갱신 (백그라운드 호출)
 
                   await fetchDataRows?.(selectedAccountId, year, month);
                   await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
@@ -5881,7 +5881,7 @@ function TallySheet() {
 
                   Swal.close();
                   Swal.fire("완료", "저장되었습니다.", "success");
-      // 소모품 예산 누계 갱신 (백그라운드 호출)
+                  // 소모품 예산 누계 갱신 (백그라운드 호출)
 
                   await fetchDataRows?.(selectedAccountId, year, month);
                   await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);
@@ -6390,7 +6390,7 @@ function TallySheet() {
 
                   Swal.close();
                   Swal.fire("완료", "저장되었습니다.", "success");
-      // 소모품 예산 누계 갱신 (백그라운드 호출)
+                  // 소모품 예산 누계 갱신 (백그라운드 호출)
 
                   await fetchDataRows?.(selectedAccountId, year, month);
                   await fetchData2Rows?.(selectedAccountId, prevYear, prevMonth);

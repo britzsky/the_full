@@ -31,7 +31,7 @@ import MDButton from "components/MDButton";
 import NotificationItem from "examples/Items/NotificationItem";
 import api from "api/api";
 import Swal from "sweetalert2";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { syncSharedAuthCookiesFromStorage } from "utils/sharedAuthSession";
 
 // ✅ 프로필 모달
@@ -95,11 +95,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const [openMenu, setOpenMenu] = useState(null);
   const [openProfile, setOpenProfile] = useState(false);
   const navigate = useNavigate();
-  const location = useLocation();
-  // 모바일에서는 대시보드에서만 우측 사용자/알림 영역을 표시한다.
-  // 데스크탑에서는 어느 화면에서도 우측 영역을 표시한다.
-  const isDashboardRoute = location.pathname === "/dashboard" || location.pathname === "/dashboard/";
-  const shouldShowRightArea = !hideRightArea && (!isMdDown || isDashboardRoute);
+  // ✅ 모바일/데스크탑 구분 없이 어느 화면에서도 우측 사용자/알림 영역을 항상 표시한다.
+  const shouldShowRightArea = !hideRightArea;
 
   // 계약 만료 알림
   const [notifications, setNotifications] = useState([]);

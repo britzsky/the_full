@@ -78,9 +78,12 @@ function EventSheetTab() {
   useEffect(() => {
     const mapped = (eventListRows || [])
       .filter((item) => {
-        // ✅ menu_date 기준 월 필터 (기간 이벤트라도 start가 속한 달에서 보이게)
-        const date = dayjs(item.menu_date || item.menu_date);
-        return date.year() === currentYear && date.month() + 1 === currentMonth;
+        // ✅ 기간(menu_date~end_date)이 현재 표시중인 달과 겹치면 표시 (달 경계를 걸친 일정 대응)
+        const monthStart = dayjs(`${currentYear}-${String(currentMonth).padStart(2, "0")}-01`);
+        const monthEnd = monthStart.endOf("month");
+        const start = dayjs(item.menu_date);
+        const end = dayjs(item.end_date || item.menu_date);
+        return !start.isAfter(monthEnd) && !end.isBefore(monthStart);
       })
       .map((item) => {
         const bgColor = getTypeColor(item.type);

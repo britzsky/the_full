@@ -1,24 +1,22 @@
 // =====================================================================
-// 영수증 마감 자료(본사 법인카드) 탭 - 데이터 훅
-// - HeadOfficeCorporateCardPaymentListAll (account_id 무관 전체 조회)
+// 영수증 마감 자료(현장 법인카드) 탭 - 데이터 훅
+// - AccountCorporateCardPaymentListAll (account_id 무관 전체 조회)
 // - 1회 API 호출로 전체 거래처 영수증 조회
-// - receipt_type(쿠팡/G마켓 등)별로 그룹화하여 표시
+// - receipt_type(카드전표/마트 등)별로 그룹화하여 표시
 // =====================================================================
 import { useCallback, useState } from "react";
 import api from "api/api";
 import { API_BASE_URL } from "config";
 
 // 영수증 타입 코드 → 한글 라벨 매핑
+// (accountcorporatecardsheet.js의 RECEIPT_TYPES와 동일한 코드 체계)
 export const RECEIPT_TYPE_LABEL_MAP = {
-  coupang:       "쿠팡",
-  gmarket:       "G마켓",
-  "11post":      "11번가",
-  naver:         "네이버",
-  homeplus:      "홈플러스",
-  auction:       "옥션",
-  daiso:         "다이소",
-  MART_ITEMIZED: "마트",
-  CONVENIENCE:   "편의점",
+  UNKNOWN:            "알수없음",
+  CARD_SLIP_GENERIC:  "카드전표",
+  MART_ITEMIZED:      "마트",
+  CONVENIENCE:        "편의점",
+  COUPANG_CARD:       "쿠팡",
+  COUPANG_APP:        "배달앱",
 };
 
 // 영수증 타입 목록 (필터 드롭박스용)
@@ -26,26 +24,12 @@ export const CORP_CARD_RECEIPT_TYPES = Object.entries(RECEIPT_TYPE_LABEL_MAP).ma
   ([value, label]) => ({ value, label })
 );
 
-// receipt_type 값 정규화 (corporatecardsheet.js와 동일한 로직)
-// - 알려진 코드가 아니면 라벨/변형 입력을 방어적으로 매칭, 그래도 못 찾으면 기본값(coupang)으로 귀속
+// receipt_type 값 정규화 (accountcorporatecardsheet.js와 동일한 로직)
+// - 알려진 코드가 아니면 "UNKNOWN"(알수없음)으로 귀속시켜 DB 원본 코드가 그대로 노출되지 않게 함
 const RECEIPT_TYPE_SET = new Set(Object.keys(RECEIPT_TYPE_LABEL_MAP));
 const normalizeReceiptTypeVal = (v) => {
-  const raw = String(v ?? "").replace(/ /g, " ").trim();
-  const s = raw.toLowerCase();
-
-  if (RECEIPT_TYPE_SET.has(raw)) return raw;
-
-  if (s.includes("옥션") || s.includes("auction")) return "auction";
-  if (s.includes("11번가") || s.includes("11st") || s.includes("11post")) return "11post";
-  if (s.includes("g마켓") || s.includes("gmarket")) return "gmarket";
-  if (s.includes("편의점") || s === "convenience") return "CONVENIENCE";
-  if (s.includes("마트") || s === "mart_itemized" || s === "mart") return "MART_ITEMIZED";
-  if (s.includes("쿠팡") || s.includes("coupang")) return "coupang";
-  if (s.includes("네이버") || s.includes("naver")) return "naver";
-  if (s.includes("홈플러스") || s.includes("homeplus")) return "homeplus";
-  if (s.includes("다이소") || s.includes("daiso")) return "daiso";
-
-  return "coupang";
+  const s = String(v ?? "").trim();
+  return RECEIPT_TYPE_SET.has(s) ? s : "UNKNOWN";
 };
 
 // 저장된 파일 경로를 미리보기 URL로 변환
@@ -72,18 +56,18 @@ const formatNumber = (value) => {
 };
 
 // =====================================================================
-// 본사 법인카드 영수증 마감 자료 조회 훅
-// - /Account/HeadOfficeCorporateCardPaymentListAll 1회 호출
+// 현장 법인카드 영수증 마감 자료 조회 훅
+// - /Account/AccountCorporateCardPaymentListAll 1회 호출
 // - filters: { year, month, receiptType, accountId }
 // =====================================================================
-export default function useCorpCardReceiptArchiveData() {
+export default function useSiteCorpCardReceiptArchiveData() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const fetchRows = useCallback(async (filters) => {
     setLoading(true);
     try {
-      const res = await api.get("/Account/HeadOfficeCorporateCardPaymentListAll", {
+      const res = await api.get("/Account/AccountCorporateCardPaymentListAll", {
         params: {
           account_id: filters?.accountId || "",
           year:       filters?.year      || "",
@@ -117,7 +101,7 @@ export default function useCorpCardReceiptArchiveData() {
       setRows(filtered);
       return filtered;
     } catch (err) {
-      console.error("본사 법인카드 영수증 마감 자료 조회 실패:", err);
+      console.error("현장 법인카드 영수증 마감 자료 조회 실패:", err);
       setRows([]);
       return [];
     } finally {

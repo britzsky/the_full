@@ -28,3 +28,16 @@ code {
 html {
   background-color: white;
 }
+
+/* iOS Safari는 포커스되는 input/select/textarea의 글자 크기가 16px 미만이면
+   자동으로 화면을 확대하고, SPA 특성상 다른 화면으로 이동해도 그 확대 상태가
+   풀리지 않는다(대시보드가 확대되어 보이는 원인). 모바일 폭에서는 16px 미만
+   폰트를 쓰는 입력 요소를 강제로 16px로 올려서 애초에 확대가 발생하지
+   않도록 막는다. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}

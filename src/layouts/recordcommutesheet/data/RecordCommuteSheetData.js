@@ -27,7 +27,25 @@ export default function useRecordCommuteSheetData() {
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [todayStatus, setTodayStatus] = useState(null);
   const [deviceRequestList, setDeviceRequestList] = useState([]);
+  const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // ✅ 근무지(거래처) 검색용 목록 - "거래처 검색" 화면(recordsheet)과 동일한 API
+  const fetchAccountList = useCallback(async () => {
+    try {
+      const res = await api.get("/Account/AccountList", { params: { account_type: "0" } });
+      const rows = (res.data || []).map((item) => ({
+        account_id: item.account_id,
+        account_name: item.account_name,
+      }));
+      setAccountList(rows);
+      return rows;
+    } catch (e) {
+      console.error("거래처 목록 조회 실패:", e);
+      setAccountList([]);
+      return [];
+    }
+  }, []);
 
   // ✅ 내 등록기기(승인/요청) 상태 조회 (account_id + user_name 기준)
   const fetchDeviceInfo = useCallback(async (account_id, user_name) => {
@@ -183,7 +201,9 @@ export default function useRecordCommuteSheetData() {
     deviceInfo,
     todayStatus,
     deviceRequestList,
+    accountList,
     loading,
+    fetchAccountList,
     fetchDeviceInfo,
     fetchTodayStatus,
     fetchAccountCoordinate,
@@ -192,5 +212,7 @@ export default function useRecordCommuteSheetData() {
     approveDevice,
     submitCommute,
     fetchRecordList,
+    // ✅ 지도 화면에서 "근무지까지 거리" 표시용으로 submitCommute와 동일한 계산식을 그대로 재사용
+    getDistanceInMeters,
   };
 }

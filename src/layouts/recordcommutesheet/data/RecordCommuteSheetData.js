@@ -28,6 +28,7 @@ export default function useRecordCommuteSheetData() {
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [todayStatus, setTodayStatus] = useState(null);
   const [deviceRequestList, setDeviceRequestList] = useState([]);
+  const [deviceList, setDeviceList] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -117,6 +118,20 @@ export default function useRecordCommuteSheetData() {
     } catch (e) {
       console.error("등록기기 요청 목록 조회 실패:", e);
       setDeviceRequestList([]);
+      return [];
+    }
+  }, []);
+
+  // ✅ (관리자) 승인 완료된 등록기기(사람+기기) 전체 목록
+  const fetchDeviceList = useCallback(async () => {
+    try {
+      const res = await api.get("/Account/CommuteDeviceList");
+      const list = Array.isArray(res.data) ? res.data : [];
+      setDeviceList(list);
+      return list;
+    } catch (e) {
+      console.error("등록기기 목록 조회 실패:", e);
+      setDeviceList([]);
       return [];
     }
   }, []);
@@ -217,6 +232,7 @@ export default function useRecordCommuteSheetData() {
     deviceInfo,
     todayStatus,
     deviceRequestList,
+    deviceList,
     accountList,
     loading,
     fetchAccountList,
@@ -225,6 +241,7 @@ export default function useRecordCommuteSheetData() {
     fetchAccountCoordinate,
     requestDevice,
     fetchDeviceRequestList,
+    fetchDeviceList,
     approveDevice,
     submitCommute,
     fetchRecordList,

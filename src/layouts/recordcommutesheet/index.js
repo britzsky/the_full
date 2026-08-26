@@ -282,6 +282,12 @@ function RecordCommuteSheet() {
   const [name, setName] = useState(storedUserName);
   const effectiveName = name.trim();
 
+  // ✅ 휴대폰 뒷자리 4자리 - 동명이인(같은 이름+같은 근무지) 구분용.
+  //    device_token(브라우저 랜덤값)과 달리 본인이 항상 기억하는 값이라 캐시 삭제와 무관하게 항상 같은
+  //    사람으로 인식된다. 숫자 4자리만 허용.
+  const [phoneLast4, setPhoneLast4] = useState("");
+  const effectivePhoneLast4 = phoneLast4.trim();
+
   // ✅ 근무지 - 거래처 검색 자동완성으로 선택
   const [selectedAccount, setSelectedAccount] = useState(null); // {account_id, account_name}
   const [accountQuery, setAccountQuery] = useState("");
@@ -369,12 +375,12 @@ function RecordCommuteSheet() {
   const [initialLoading, setInitialLoading] = useState(true);
 
   const refreshMyStatus = useCallback(async () => {
-    if (!effectiveAccountId || !effectiveName) return;
+    if (!effectiveAccountId || !effectiveName || !effectivePhoneLast4) return;
     await Promise.all([
-      fetchDeviceInfo(effectiveAccountId, effectiveName),
-      fetchTodayStatus(effectiveName, effectiveAccountId),
+      fetchDeviceInfo(effectiveAccountId, effectiveName, effectivePhoneLast4),
+      fetchTodayStatus(effectiveName, effectiveAccountId, effectivePhoneLast4),
     ]);
-  }, [effectiveName, effectiveAccountId, fetchDeviceInfo, fetchTodayStatus]);
+  }, [effectiveName, effectiveAccountId, effectivePhoneLast4, fetchDeviceInfo, fetchTodayStatus]);
 
   // ✅ 등록/승인/반려/출근/퇴근 등 뭔가 하나라도 하면 화면 전체(내 상태 + 승인대기 목록)를 다시 조회
   const refreshAll = useCallback(async () => {
@@ -383,19 +389,19 @@ function RecordCommuteSheet() {
 
   // ✅ 최초 진입 시 1회 조회 (로그인 정보로 이름/근무지가 이미 채워져 있는 경우)
   useEffect(() => {
-    if (!effectiveAccountId || !effectiveName) {
+    if (!effectiveAccountId || !effectiveName || !effectivePhoneLast4) {
       setInitialLoading(false);
       return;
     }
     refreshAll().finally(() => setInitialLoading(false));
   }, []);
 
-  // ✅ 이후 이름/근무지를 직접 바꾸면(최초 조회 이후) 다시 조회
+  // ✅ 이후 이름/근무지/뒷자리를 직접 바꾸면(최초 조회 이후) 다시 조회
   useEffect(() => {
     if (initialLoading) return;
-    if (!effectiveAccountId || !effectiveName) return;
+    if (!effectiveAccountId || !effectiveName || !effectivePhoneLast4) return;
     refreshAll();
-  }, [effectiveAccountId, effectiveName]);
+  }, [effectiveAccountId, effectiveName, effectivePhoneLast4]);
 
   const isApproved = String(deviceInfo?.approve_yn ?? "N").toUpperCase() === "Y";
   const hasPendingRequest = !!deviceInfo?.pending_device_token;
@@ -404,10 +410,10 @@ function RecordCommuteSheet() {
   useEffect(() => {
     if (!hasPendingRequest) return undefined;
     const timer = setInterval(() => {
-      fetchDeviceInfo(effectiveAccountId, effectiveName);
+      fetchDeviceInfo(effectiveAccountId, effectiveName, effectivePhoneLast4);
     }, 5000);
     return () => clearInterval(timer);
-  }, [hasPendingRequest, effectiveAccountId, effectiveName, fetchDeviceInfo]);
+  }, [hasPendingRequest, effectiveAccountId, effectiveName, effectivePhoneLast4, fetchDeviceInfo]);
 
   const checkedIn = !!todayStatus?.start_time;
   const checkedOut = !!todayStatus?.end_time;
@@ -424,6 +430,7 @@ function RecordCommuteSheet() {
       const res = await requestDevice({
         user_name: effectiveName,
         account_id: effectiveAccountId,
+        phone_last4: effectivePhoneLast4,
         device_token: deviceToken,
         device_name: deviceName,
       });
@@ -491,6 +498,7 @@ function RecordCommuteSheet() {
       const result = await submitCommute({
         account_id: effectiveAccountId,
         user_name: effectiveName,
+        phone_last4: effectivePhoneLast4,
         action,
         target: effectiveTarget,
         location: { latitude, longitude },
@@ -534,6 +542,7 @@ function RecordCommuteSheet() {
         const list = await fetchRecordList({
           user_name: effectiveName,
           account_id: effectiveAccountId,
+          phone_last4: effectivePhoneLast4,
           start_date: month.startOf("month").format("YYYY-MM-DD"),
           end_date: month.endOf("month").format("YYYY-MM-DD"),
         });
@@ -542,7 +551,7 @@ function RecordCommuteSheet() {
         setRecordLoading(false);
       }
     },
-    [effectiveName, effectiveAccountId, fetchRecordList]
+    [effectiveName, effectiveAccountId, effectivePhoneLast4, fetchRecordList]
   );
 
   const openRecordModal = () => {
@@ -572,6 +581,7 @@ function RecordCommuteSheet() {
       const res = await approveDevice({
         account_id: row.account_id,
         user_name: row.user_name,
+        phone_last4: row.phone_last4,
         approve,
         approve_user_id: userId,
       });
@@ -635,30 +645,52 @@ function RecordCommuteSheet() {
   const InputCard = (
     <Card sx={{ borderRadius: 4, p: 2.5 }}>
       <MDBox display="flex" flexDirection="column" gap={2}>
-        <MDBox>
-          <MDTypography
-            variant="button"
-            fontWeight="bold"
-            color="text"
-            sx={{ fontSize: "0.95rem" }}
-          >
-            이름
-          </MDTypography>
-          <TextField
-            fullWidth
-            size="small"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="이름을 입력하세요"
-            sx={{ mt: 0.5 }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <User size={15} color="#9AA0AC" />
-                </InputAdornment>
-              ),
-            }}
-          />
+        <MDBox display="flex" gap={1.5}>
+          <MDBox flex={1}>
+            <MDTypography
+              variant="button"
+              fontWeight="bold"
+              color="text"
+              sx={{ fontSize: "0.95rem" }}
+            >
+              이름
+            </MDTypography>
+            <TextField
+              fullWidth
+              size="small"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="이름을 입력하세요"
+              sx={{ mt: 0.5 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <User size={15} color="#9AA0AC" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+          </MDBox>
+
+          <MDBox flex={1}>
+            <MDTypography
+              variant="button"
+              fontWeight="bold"
+              color="text"
+              sx={{ fontSize: "0.95rem" }}
+            >
+              휴대폰 뒷자리(4자리)
+            </MDTypography>
+            <TextField
+              fullWidth
+              size="small"
+              value={phoneLast4}
+              onChange={(e) => setPhoneLast4(e.target.value.replace(/[^0-9]/g, "").slice(0, 4))}
+              placeholder="1234"
+              inputMode="numeric"
+              sx={{ mt: 0.5 }}
+            />
+          </MDBox>
         </MDBox>
 
         <MDBox>
@@ -824,7 +856,7 @@ function RecordCommuteSheet() {
           <MDBox flexShrink={0}>{deviceStatusChip}</MDBox>
         </MDBox>
 
-        {!isApproved && effectiveAccountId && effectiveName && (
+        {!isApproved && effectiveAccountId && effectiveName && effectivePhoneLast4 && (
           <MDBox width="100%" textAlign="center">
             <MDTypography variant="caption" color="text" display="block" mb={1}>
               등록된 기기에서만 출퇴근이 가능합니다.
@@ -1064,15 +1096,17 @@ function RecordCommuteSheet() {
         <MDBox display="flex" flexDirection="column" gap={1.5}>
           {deviceRequestList.map((row) => (
             <MDBox
-              key={`${row.account_id}_${row.user_name}`}
+              key={`${row.account_id}_${row.user_name}_${row.phone_last4}`}
               display="flex"
               alignItems="center"
               justifyContent="space-between"
               sx={{ border: "1px solid #eee", borderRadius: 1, p: 1.5 }}
             >
               <MDBox>
+                {/* ✅ 뒷자리를 같이 보여줘서 동명이인이 섞여 있어도 승인자가 구분할 수 있게 함 */}
                 <MDTypography variant="button" fontWeight="bold" display="block">
-                  {row.user_name} · {row.account_name || row.account_id}
+                  {row.user_name}
+                  {row.phone_last4 ? ` (${row.phone_last4})` : ""} · {row.account_name || row.account_id}
                 </MDTypography>
                 <MDTypography variant="caption" color="text" display="block">
                   요청기기: {row.pending_device_name || "-"}

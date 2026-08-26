@@ -20,8 +20,9 @@ const getDistanceInMeters = (latitudeA, longitudeA, latitudeB, longitudeB) => {
 };
 
 // ✅ 출퇴근(모바일 GPS 체크인) 화면에서 사용하는 API 호출 모음
-//    - 모바일앱(thefull-m)과 동일한 엔드포인트/페이로드(/User/AccountCoordinateInfo, /User/CommuteSave)를 사용
-//    - 그 위에 등록기기(tb_member_device) 승인 검증만 추가로 붙는다(/Commute/*)
+//    - 엔드포인트는 /Account/* 로 통일 (기존 /User/*, /Commute/*)
+//    - ⚠️ 모바일앱(thefull-m)도 동일 엔드포인트(/Account/AccountCoordinateInfo, /Account/CommuteSave)를 쓰므로
+//      모바일 쪽 호출 경로도 함께 변경해야 한다 (이 저장소에는 없어 별도 반영 필요)
 //    - 식별 기준은 user_id(로그인 계정)가 아니라 account_id + user_name(이름)
 export default function useRecordCommuteSheetData() {
   const [deviceInfo, setDeviceInfo] = useState(null);
@@ -47,11 +48,13 @@ export default function useRecordCommuteSheetData() {
     }
   }, []);
 
-  // ✅ 내 등록기기(승인/요청) 상태 조회 (account_id + user_name 기준)
-  const fetchDeviceInfo = useCallback(async (account_id, user_name) => {
-    if (!account_id || !user_name) return null;
+  // ✅ 내 등록기기(승인/요청) 상태 조회 (account_id + user_name + phone_last4 기준 - 동명이인 구분용)
+  const fetchDeviceInfo = useCallback(async (account_id, user_name, phone_last4) => {
+    if (!account_id || !user_name || !phone_last4) return null;
     try {
-      const res = await api.get("/Commute/CommuteDeviceInfo", { params: { account_id, user_name } });
+      const res = await api.get("/Account/CommuteDeviceInfo", {
+        params: { account_id, user_name, phone_last4 },
+      });
       const data = res.data && res.data.user_name ? res.data : null;
       setDeviceInfo(data);
       return data;
@@ -62,11 +65,13 @@ export default function useRecordCommuteSheetData() {
     }
   }, []);
 
-  // ✅ 오늘 출퇴근 진행상태 조회 (account_id + user_name 기준 - 출퇴근 기록은 user_id 대신 이름으로 식별)
-  const fetchTodayStatus = useCallback(async (user_name, account_id) => {
-    if (!user_name || !account_id) return null;
+  // ✅ 오늘 출퇴근 진행상태 조회 (account_id + user_name + phone_last4 기준 - 동명이인 구분용)
+  const fetchTodayStatus = useCallback(async (user_name, account_id, phone_last4) => {
+    if (!user_name || !account_id || !phone_last4) return null;
     try {
-      const res = await api.get("/User/CommuteTodayStatus", { params: { user_name, account_id } });
+      const res = await api.get("/Account/CommuteTodayStatus", {
+        params: { user_name, account_id, phone_last4 },
+      });
       const data = res.data && res.data.t_date ? res.data : null;
       setTodayStatus(data);
       return data;
@@ -79,7 +84,7 @@ export default function useRecordCommuteSheetData() {
 
   // ✅ 사업장 기준 좌표 조회 (모바일과 동일 엔드포인트)
   const fetchAccountCoordinate = useCallback(async (account_id) => {
-    const res = await api.post("/User/AccountCoordinateInfo", { account_id });
+    const res = await api.post("/Account/AccountCoordinateInfo", { account_id });
     const data = res.data || {};
     const x = Number(data.x_coordinate);
     const y = Number(data.y_coordinate);
@@ -88,20 +93,24 @@ export default function useRecordCommuteSheetData() {
   }, []);
 
   // ✅ 등록기기 등록/변경 요청
-  const requestDevice = useCallback(async ({ user_name, account_id, device_token, device_name }) => {
-    const res = await api.post("/Commute/CommuteDeviceRequest", {
-      user_name,
-      account_id,
-      device_token,
-      device_name,
-    });
-    return res.data;
-  }, []);
+  const requestDevice = useCallback(
+    async ({ user_name, account_id, phone_last4, device_token, device_name }) => {
+      const res = await api.post("/Account/CommuteDeviceRequest", {
+        user_name,
+        account_id,
+        phone_last4,
+        device_token,
+        device_name,
+      });
+      return res.data;
+    },
+    []
+  );
 
   // ✅ (관리자) 승인 대기 등록기기 요청 목록
   const fetchDeviceRequestList = useCallback(async () => {
     try {
-      const res = await api.get("/Commute/CommuteDeviceRequestList");
+      const res = await api.get("/Account/CommuteDeviceRequestList");
       const list = Array.isArray(res.data) ? res.data : [];
       setDeviceRequestList(list);
       return list;
@@ -112,22 +121,27 @@ export default function useRecordCommuteSheetData() {
     }
   }, []);
 
-  // ✅ (관리자) 등록기기 승인/반려
-  const approveDevice = useCallback(async ({ account_id, user_name, approve, approve_user_id }) => {
-    const res = await api.post("/Commute/CommuteDeviceApprove", {
-      account_id,
-      user_name,
-      approve,
-      approve_user_id,
-    });
-    return res.data;
-  }, []);
+  // ✅ (관리자) 등록기기 승인/반려 - phone_last4까지 같이 보내야 동명이인 중 정확한 대상 행을 찾는다
+  const approveDevice = useCallback(
+    async ({ account_id, user_name, phone_last4, approve, approve_user_id }) => {
+      const res = await api.post("/Account/CommuteDeviceApprove", {
+        account_id,
+        user_name,
+        phone_last4,
+        approve,
+        approve_user_id,
+      });
+      return res.data;
+    },
+    []
+  );
 
-  // ✅ 출근/퇴근 저장 (모바일과 동일 페이로드 + device_token/device_name 추가)
+  // ✅ 출근/퇴근 저장 (모바일과 동일 페이로드 + device_token/device_name/phone_last4 추가)
   //    거리 오차(error_margin)는 클라이언트에서 계산해서 함께 보낸다(모바일과 동일 방식).
-  //    - 출퇴근 기록(tb_commute_record)은 user_id가 아니라 account_id + user_name으로 식별한다.
+  //    - 출퇴근 기록(tb_commute_record)은 user_id가 아니라 account_id + user_name + phone_last4로 식별한다
+  //      (phone_last4: 동명이인 구분용 휴대폰 뒷자리 4자리).
   const submitCommute = useCallback(
-    async ({ account_id, user_name, action, target, location, device_token, device_name }) => {
+    async ({ account_id, user_name, phone_last4, action, target, location, device_token, device_name }) => {
       const errorMargin = target
         ? Math.round(
             getDistanceInMeters(target.yCoordinate, target.xCoordinate, location.latitude, location.longitude)
@@ -155,6 +169,7 @@ export default function useRecordCommuteSheetData() {
               st_error_margin: errorMargin,
               account_id,
               user_name,
+              phone_last4,
               device_token,
               device_name,
             }
@@ -166,13 +181,14 @@ export default function useRecordCommuteSheetData() {
               ed_error_margin: errorMargin,
               account_id,
               user_name,
+              phone_last4,
               device_token,
               device_name,
             };
 
       // ✅ 서버가 4xx 를 내려도(등록기기 미승인 등) 응답 메시지/사유(reason)를 그대로 쓸 수 있도록 axios 에러를 흡수
       try {
-        const res = await api.post("/User/CommuteSave", payload);
+        const res = await api.post("/Account/CommuteSave", payload);
         return { ok: true, errorMargin, msg: res.data?.msg, reason: res.data?.reason };
       } catch (e) {
         const msg = e?.response?.data?.msg || e?.message || "출퇴근 저장 중 오류가 발생했습니다.";
@@ -187,7 +203,7 @@ export default function useRecordCommuteSheetData() {
   const fetchRecordList = useCallback(async (params) => {
     setLoading(true);
     try {
-      const res = await api.get("/User/CommuteRecordList", { params });
+      const res = await api.get("/Account/CommuteRecordList", { params });
       return Array.isArray(res.data) ? res.data : [];
     } catch (e) {
       console.error("출퇴근 기록 조회 실패:", e);

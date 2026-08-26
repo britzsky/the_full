@@ -59,6 +59,7 @@ const TYPE_OPTIONS_BY_DEPT = {
     { value: "5", label: "외근" },
     { value: "6", label: "출장" },
     { value: "7", label: "체크" },
+    { value: "11", label: "방문영업" },
     { value: "8", label: "연차" },
     { value: "9", label: "오전반차" },
     { value: "10", label: "오후반차" },

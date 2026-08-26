@@ -72,6 +72,7 @@ const TYPE_OPTIONS_BUSINESS = [
   { value: "5", label: "외근" },
   { value: "6", label: "출장" },
   { value: "7", label: "체크" },
+  { value: "11", label: "방문영업" },
   { value: "8", label: "연차" },
   { value: "9", label: "오전반차" },
   { value: "10", label: "오후반차" },
@@ -143,6 +144,7 @@ const getTypeColor = (type, deptType) => {
       case "5": return "#4478e9";   // 외근
       case "6": return "#2253da";   // 출장
       case "7": return "#6390d3";   // 체크
+      case "11": return "#00838F";  // 방문영업
       case "8": return "#1A0841";   // 연차
       case "9": return "#1A0841";   // 오전반차
       case "10": return "#1A0841";  // 오후반차

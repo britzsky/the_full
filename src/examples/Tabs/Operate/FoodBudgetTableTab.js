@@ -1,14 +1,11 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useState } from "react";
-import { Box, Grid, Select, MenuItem, Card, TextField, useTheme, useMediaQuery } from "@mui/material";
+import { Box, TextField, useTheme, useMediaQuery } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
-import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import MDButton from "components/MDButton";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "layouts/loading/loadingscreen";
-import useBudgetTableData, { formatNumber } from "./data/BudgetTableData";
+import useBudgetTableData, { formatNumber } from "./foodBudgetTableData";
 import Swal from "sweetalert2";
 import api from "api/api";
 import { sortAccountRows } from "utils/accountSort";
@@ -16,7 +13,8 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 
 
-export default function BudgetTableTab() {
+// 🔹 식자재 예산 관리 탭 (OperateTabs_6 에서 사용)
+export default function FoodBudgetTableTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
@@ -102,7 +100,7 @@ export default function BudgetTableTab() {
     // { key: "diet_price",        label: "식비",              width: 80 },
     // { key: "utility_bills",     label: "수도광열비",        width: 90 },
     // { key: "food_budget",       label: "1식 기준 식재비",   width: 90 },
-    { key: "budget_total", label: "예상 부여금액", width: 115 },
+    { key: "budget_total", label: "예상 부여금액", width: 90 },
     { key: "prev_budget_grant", label: "전월 예산부여금액", width: 115 },
     { key: "new_diff", label: "차액", width: 90 },
     { key: "first_sales", label: "첫 달 예상 매출액", width: 110 }, // editable
@@ -326,20 +324,14 @@ export default function BudgetTableTab() {
   if (loading) return <LoadingScreen />;
 
   return (
-    <DashboardLayout>
-      {/* 🔹 공통 헤더 사용 */}
-      {/* <HeaderWithLogout showMenuButton title="📑 예산관리" /> */}
-      <DashboardNavbar title="📑 예산관리" />
-      <Grid container spacing={6}>
-        {/* 거래처 테이블 */}
-        <Grid item xs={12}>
-          <Card>
-            {/* 상단 필터 + 저장 버튼 */}
-            <MDBox
-              pt={1}
-              pb={1}
-              px={2}
+    <>
+      {/* 상단 필터 + 저장 버튼 */}
+      <MDBox
+        pt={0}
+        pb={1}
+        px={0}
               sx={{
+                flexShrink: 0, // 🔹 필터바는 항상 제 높이만큼만 차지
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -502,15 +494,13 @@ export default function BudgetTableTab() {
                   저장
                 </MDButton>
               </Box>
-            </MDBox>
-            {/* 메인 테이블 */}
-            <Grid container spacing={2}>
-              <Grid item xs={12}>
-                <Box
-                  sx={{
-                    flex: 1,
-                    maxHeight: "85vh",
-                    overflowY: "auto",
+      </MDBox>
+      {/* 메인 테이블 */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: "auto",
                     "& table": {
                       borderCollapse: "collapse",
                       width: "max-content",
@@ -830,12 +820,7 @@ export default function BudgetTableTab() {
                       ))}
                     </tbody>
                   </table>
-                </Box>
-              </Grid>
-            </Grid>
-          </Card>
-        </Grid>
-      </Grid>
-    </DashboardLayout>
+      </Box>
+    </>
   );
 }

@@ -1509,6 +1509,7 @@ function TallySheet() {
     cash_receipt_type: "3",
     receipt_image: null,
     receipt_type: "UNKNOWN",
+    buyer: "",
     sale_id: "",
     account_id: "",
   });
@@ -1573,6 +1574,7 @@ function TallySheet() {
     fd.append("cash_receipt_type", String(cashForm.cash_receipt_type || "3"));
     fd.append("receipt_type", cashForm.receipt_type || "UNKNOWN");
     fd.append("use_name", cashForm.use_name || "");
+    fd.append("buyer", cashForm.buyer || "");
     fd.append("total", parseNumber(cashForm.total));
 
     if (cashForm.receipt_image) fd.append("file", cashForm.receipt_image);
@@ -1635,6 +1637,7 @@ function TallySheet() {
             fdFix.append("payType", "1");
             fdFix.append("cash_receipt_type", desiredCashReceiptType);
             fdFix.append("use_name", purchase.use_name || cashForm.use_name || "");
+            fdFix.append("buyer", purchase.buyer || cashForm.buyer || "");
             fdFix.append(
               "receipt_type",
               purchase.receipt_type || cashForm.receipt_type || "UNKNOWN"
@@ -1753,6 +1756,7 @@ function TallySheet() {
       cash_receipt_type: "3",
       receipt_image: null,
       receipt_type: "UNKNOWN",
+      buyer: "",
       sale_id: "",
       account_id: String(selectedAccountId || ""),
     });
@@ -1770,6 +1774,7 @@ function TallySheet() {
       cash_receipt_type: "3",
       receipt_image: null,
       receipt_type: "UNKNOWN",
+      buyer: "",
       sale_id: "",
       account_id: String(selectedAccountId || ""),
     });
@@ -1822,6 +1827,7 @@ function TallySheet() {
       cash_receipt_type: String(rowObj.cash_receipt_type ?? rowObj.cashReceiptType ?? "3"),
       receipt_image: null,
       receipt_type: rowObj.receipt_type || "UNKNOWN",
+      buyer: rowObj.buyer || "",
       sale_id: String(rowObj.sale_id ?? ""),
       account_id: String(rowObj.account_id ?? selectedAccountId ?? ""),
     });
@@ -5564,7 +5570,7 @@ function TallySheet() {
                   <th style={{ border: "1px solid #ddd", padding: 6, width: 110 }}>금액</th>
                   <th style={{ border: "1px solid #ddd", padding: 6, width: 120 }}>결제수단</th>
                   <th style={{ border: "1px solid #ddd", padding: 6, width: 140 }}>현금영수증</th>
-                  <th style={{ border: "1px solid #ddd", padding: 6, width: 160 }}>분류</th>
+                  <th style={{ border: "1px solid #ddd", padding: 6, width: 140 }}>구매자</th>
                   <th style={{ border: "1px solid #ddd", padding: 6, width: 220 }}>영수증</th>
                 </tr>
               </thead>
@@ -5685,37 +5691,22 @@ function TallySheet() {
                         </Select>
                       </td>
 
-                      <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
-                        <Select
+                      <td style={{ border: "1px solid #ddd", padding: 6 }}>
+                        <TextField
                           size="small"
-                          value={r.receipt_type || "UNKNOWN"}
+                          value={r.buyer || ""}
                           onClick={stopRowClick}
                           onMouseDown={stopRowClick}
                           onChange={(e) =>
                             setCashEditRows((prev) =>
                               prev.map((x, i) =>
-                                i === idx ? { ...x, receipt_type: e.target.value } : x
+                                i === idx ? { ...x, buyer: e.target.value } : x
                               )
                             )
                           }
                           fullWidth
-                          sx={{
-                            height: "39px",
-                            "& .MuiSelect-select": getCellStyleByCompare(
-                              orig.receipt_type,
-                              r.receipt_type
-                            ),
-                          }}
-                        >
-                          <MenuItem value="UNKNOWN" disabled>
-                            <em>영수증 타입 선택</em>
-                          </MenuItem>
-                          <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
-                          <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                          <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                          <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                          <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-                        </Select>
+                          sx={{ "& input": getCellStyleByCompare(orig.buyer, r.buyer) }}
+                        />
                       </td>
 
                       <td style={{ border: "1px solid #ddd", padding: 6, textAlign: "center" }}>
@@ -5802,8 +5793,7 @@ function TallySheet() {
                       String(r.payType ?? "1") !== String(orig.payType ?? "1") ||
                       String(r.cash_receipt_type ?? "3") !==
                       String(orig.cash_receipt_type ?? "3") ||
-                      String(r.receipt_type ?? "UNKNOWN") !==
-                      String(orig.receipt_type ?? "UNKNOWN");
+                      normalizeText(r.buyer) !== normalizeText(orig.buyer);
 
                     const hasFile = !!cashRowFiles?.[rowKey]?.file;
                     return fieldChanged || hasFile ? { r, idx, rowKey } : null;
@@ -5853,6 +5843,7 @@ function TallySheet() {
 
                     fd.append("use_name", r.use_name || "");
                     fd.append("receipt_type", r.receipt_type || "UNKNOWN");
+                    fd.append("buyer", r.buyer || "");
                     fd.append("total", parseNumber(r.total));
 
                     if (r.id != null) fd.append("id", r.id);
@@ -6736,22 +6727,13 @@ function TallySheet() {
             </Grid>
 
             <Grid item xs={12}>
-              <Select
+              <TextField
+                label="구매자"
                 size="small"
-                value={cashForm.receipt_type || "UNKNOWN"}
-                onChange={(e) => setCashForm((p) => ({ ...p, receipt_type: e.target.value }))}
+                value={cashForm.buyer || ""}
+                onChange={(e) => setCashForm((p) => ({ ...p, buyer: e.target.value }))}
                 fullWidth
-                sx={{ height: "40px" }}
-              >
-                <MenuItem value="UNKNOWN" disabled>
-                  <em>영수증 타입 선택</em>
-                </MenuItem>
-                <MenuItem value="TRANSACTION">거래명세표(서)</MenuItem>
-                <MenuItem value="MART_ITEMIZED">마트</MenuItem>
-                <MenuItem value="CONVENIENCE">편의점</MenuItem>
-                <MenuItem value="COUPANG_CARD">쿠팡</MenuItem>
-                <MenuItem value="COUPANG_APP">배달앱</MenuItem>
-              </Select>
+              />
             </Grid>
 
             <Grid item xs={12}>

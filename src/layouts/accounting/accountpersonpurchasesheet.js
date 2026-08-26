@@ -1032,7 +1032,10 @@ function AccountCorporateCardSheet() {
       cardNo: "",
       cardBrand: "",
 
-      // ✅ 영수증 타입(추가)
+      // ✅ 구매자(개인구매 type=1008 전용)
+      buyer: "",
+
+      // ✅ 영수증 타입(개인구매는 확인하지 않음, 값은 유지만)
       receipt_type: "UNKNOWN",
 
       receipt_image: "",
@@ -1685,6 +1688,8 @@ function AccountCorporateCardSheet() {
         type: "select",
         options: PAY_TYPES,
       },
+      // ✅ 구매자(개인구매 type=1008 전용, 결제타입 뒤에 노출)
+      { header: "구매자", key: "buyer", editable: true, size: 110 },
       {
         header: "증빙타입",
         key: "cash_receipt_type",
@@ -1698,14 +1703,7 @@ function AccountCorporateCardSheet() {
       { header: "카드번호", key: "cardNo", editable: true, size: 200 },
       { header: "카드사", key: "cardBrand", editable: true, size: 130 },
 
-      {
-        header: "영수증타입",
-        key: "receipt_type",
-        editable: false,
-        size: 120,
-        type: "select",
-        options: RECEIPT_TYPES,
-      },
+      // ✅ 영수증타입은 개인구매(type=1008)에서는 확인하지 않으므로 화면에 노출하지 않음
       { header: "영수증사진", key: "receipt_image", editable: false, size: 180 },
       { header: "비고", key: "note", editable: true, size: 160 },
       { header: "등록일자", key: "reg_dt", editable: false, size: 110 },
@@ -2405,35 +2403,6 @@ function AccountCorporateCardSheet() {
                                 : {}),
                             }}
                           />
-                        </td>
-                      );
-                    }
-
-                    if (key === "receipt_type") {
-                      return (
-                        <td key={key} style={fixedColStyle(c.size)}>
-                          <Select
-                            size="small"
-                            fullWidth
-                            value={normalizeReceiptTypeVal(row.receipt_type ?? "UNKNOWN")}
-                            onChange={(e) =>
-                              handleMasterCellChange(rowIndex, "receipt_type", e.target.value)
-                            }
-                            onClick={(ev) => ev.stopPropagation()}
-                            displayEmpty
-                            sx={{
-                              fontSize: 12,
-                              height: 28,
-                              "& .MuiSelect-select": { color: changed ? "red" : "black" },
-                              "& .MuiSvgIcon-root": { color: changed ? "red" : "black" },
-                            }}
-                          >
-                            {RECEIPT_TYPES.map((opt) => (
-                              <MenuItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </MenuItem>
-                            ))}
-                          </Select>
                         </td>
                       );
                     }

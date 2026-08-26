@@ -36,6 +36,7 @@ const getTypeColor = (type) => {
     case "5": return "#A459D1";
     case "6": return "#D71313";
     case "7": return "#364F6B";
+    case "11": return "#00838F";
     case "8": return "#1A0841";
     case "9": return "#1A0841";
     case "10": return "#1A0841";
@@ -51,6 +52,7 @@ const TYPE_OPTIONS = [
   { value: "5", label: "외근" },
   { value: "6", label: "출장" },
   { value: "7", label: "체크" },
+  { value: "11", label: "방문영업" },
   { value: "8", label: "연차" },
   { value: "9", label: "오전반차" },
   { value: "10", label: "오후반차" },

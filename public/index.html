@@ -18,7 +18,7 @@ Software.
   <head>
     <meta charset="utf-8" />
     <link rel="shortcut icon" href="%PUBLIC_URL%/thefull_favicon.png" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <meta name="theme-color" content="#77BEF0" />
     <link rel="apple-touch-icon" sizes="76x76" href="%PUBLIC_URL%/apple-icon.png" />
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
@@ -40,11 +40,6 @@ Software.
     <!-- ✅ FullCalendar Core & DayGrid CSS (v6.1.19) -->
     <link href="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.19/index.global.min.css" rel="stylesheet" />
     <link href="https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid@6.1.19/index.global.min.css" rel="stylesheet" />
-    <script
-      defer
-      data-site="YOUR_DOMAIN_HERE"
-      src="https://api.nepcha.com/js/nepcha-analytics.js"
-    ></script>
     <!-- <link rel="preload" as="image" href="/mousecursor.png">
     <link rel="preload" as="image" href="/mousehover.png">
     <link rel="preload" as="image" href="/mouseclick.png"> -->
@@ -53,6 +48,15 @@ Software.
         /* SweetAlert2 팝업이 화면 위에 표시되도록 레이어 우선순위를 높인다. */
         .swal2-container { z-index: 99999 !important; }
     </style>
+    <script>
+      // ResizeObserver loop 경고는 무해한 브라우저 내부 알림이지만
+      // React 개발 오버레이가 잡아서 빨간 화면을 띄우므로 여기서 차단한다.
+      window.addEventListener('error', function(e) {
+        if (e.message && e.message.indexOf('ResizeObserver loop') !== -1) {
+          e.stopImmediatePropagation();
+        }
+      });
+    </script>
   </head>
   <body style="background-color: #ffffff;">
     <noscript>You need to enable JavaScript to run this app.</noscript>

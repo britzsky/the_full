@@ -60,7 +60,8 @@ import OperateTab_3 from "layouts/operate/operatetab_3";
 import OperateTab_4 from "layouts/operate/operatetab_4";
 import OperateTab_5 from "layouts/operate/operatetab_5";
 import AccountIssueManager2 from "layouts/operate/accountissuesheet2";
-import Operate_6 from "layouts/operate/operatetab_6";
+import BudgetManager from "layouts/operate/budgettablesheet";
+// import Operate_6 from "layouts/operate/operatetab_6"; // 예산탭(인건비 예산 탭 주석처리)
 // 회계
 import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseDeadLineTally from "examples/Tabs/Accounting/AccountPurchaseDeadlineTab";
@@ -281,7 +282,7 @@ const routes = [
         key: "budget",
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/budget/budgetManager",
-        component: <Operate_6 />,
+        component: <BudgetManager />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",

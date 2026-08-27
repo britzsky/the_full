@@ -49,21 +49,35 @@ const normalizeText = (value) => (value == null ? "" : String(value).trim());
 // ERP API 주소의 도메인을 기준으로 공개 웹 주소를 결정한다.
 const resolveTheFullWebBaseUrl = () => {
   const apiBaseUrl = normalizeText(process.env.REACT_APP_API_BASE_URL);
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "";
+
+  let hostname = "";
+  let protocol = typeof window !== "undefined" ? window.location.protocol : "https:";
 
   if (apiBaseUrl) {
     try {
-      const parsedApiUrl = new URL(apiBaseUrl);
-
-      // 운영 ERP IP를 쓰는 환경이면 공개 웹 도메인으로 연결한다.
-      if (parsedApiUrl.hostname === "52.64.151.137") {
-        return "https://thefull.co.kr";
-      }
-
-      // 그 외에는 같은 호스트의 로컬 공개 웹 포트를 사용한다.
-      return `${parsedApiUrl.protocol}//${parsedApiUrl.hostname}:8081`;
+      // "/api"처럼 상대경로인 경우 현재 접속 origin을 기준으로 파싱한다.
+      const parsedApiUrl = new URL(apiBaseUrl, currentOrigin || undefined);
+      hostname = parsedApiUrl.hostname;
+      protocol = parsedApiUrl.protocol;
     } catch (error) {
-      // API 주소 파싱에 실패하면 아래 기본 로컬 주소를 사용한다.
+      // API 주소 파싱에 실패하면 아래에서 현재 접속 호스트를 기준으로 판단한다.
     }
+  }
+
+  // API 주소로 호스트를 판단하지 못했다면 현재 접속 중인 호스트를 사용한다.
+  if (!hostname && typeof window !== "undefined") {
+    hostname = window.location.hostname;
+  }
+
+  // 운영 ERP IP(또는 운영 도메인)를 쓰는 환경이면 공개 웹 도메인으로 연결한다.
+  if (hostname === "52.64.151.137" || hostname === "thefull.co.kr") {
+    return "https://thefull.co.kr";
+  }
+
+  // 그 외에는 같은 호스트의 로컬 공개 웹 포트를 사용한다.
+  if (hostname) {
+    return `${protocol}//${hostname}:8081`;
   }
 
   return "http://localhost:8081";

@@ -70,8 +70,9 @@ const resolveTheFullWebBaseUrl = () => {
     hostname = window.location.hostname;
   }
 
-  // 운영 ERP IP(또는 운영 도메인)를 쓰는 환경이면 공개 웹 도메인으로 연결한다.
-  if (hostname === "52.64.151.137" || hostname === "thefull.co.kr") {
+  // 운영 ERP IP/도메인(thefull.kr, WebConfig.java의 CORS 허용 목록과 동일)을 쓰는 환경이면 공개 웹 도메인으로 연결한다.
+  const PROD_ERP_HOSTNAMES = ["52.64.151.137", "thefull.kr", "www.thefull.kr", "remote.thefull.kr"];
+  if (PROD_ERP_HOSTNAMES.includes(hostname) || hostname === "thefull.co.kr") {
     return "https://thefull.co.kr";
   }
 

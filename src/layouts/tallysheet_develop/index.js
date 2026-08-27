@@ -46,12 +46,30 @@ import PreviewOverlay from "utils/PreviewOverlay";
  * ✅ type=1008 endpoint는 아래 상수만 실제 서버에 맞게 바꿔주세요.
  */
 
-// ======================== ✅ type=1008 전용 endpoint (프로젝트에 맞게 교체) ========================
+// ======================== ✅ type별 저장/조회 endpoint 정리 ========================
+// 저장은 전부 /receipt-scan-develop 하나로 들어가고, 서버(OcrController_develop)가
+// type 값을 보고 아래 표와 같은 테이블로 나눠서 저장한다. 조회는 그 저장 테이블에 맞춰 따로 호출해야 함.
+//
+//   type        | 구분           | 저장 테이블(서버가 분기)                         | 조회 endpoint
+//   ------------|----------------|---------------------------------------------------|--------------------------------------------------
+//   1000        | 법인카드       | tb_account_corporate_card_payment_list             | ENDPOINT_CARD_LIST
+//   1002 / 1003 | 기타-소모품/식자재 | tb_headoffice_corporate_card_payment_list          | ENDPOINT_CORP_CARD_LIST
+//   1008        | 현금/카드      | tb_account_purchase_tally                          | ENDPOINT_CASH_LIST
+//   그 외        | 일반 매입      | tb_account_purchase_tally                          | ENDPOINT_OTHER_LIST
+
+// ✅ type=1000 (법인카드)
+const ENDPOINT_CARD_SAVE = "/receipt-scan-develop";
+const ENDPOINT_CARD_LIST = "/Account/AccountCorporateCardPaymentList";
+
+// ✅ type=1002(기타-소모품) / 1003(기타-식자재)
+const ENDPOINT_CORP_CARD_SAVE = "/receipt-scan-develop";
+const ENDPOINT_CORP_CARD_LIST = "/Account/HeadOfficeCorporateCardPaymentList";
+
+// ✅ type=1008 (현금/카드 + 현금영수증 유형)
 const ENDPOINT_CASH_SAVE = "/receipt-scan-develop"; // develop 집계표 전용: 사용자 입력값 우선
 const ENDPOINT_CASH_LIST = "/Account/AccountPurchaseTallyPaymentList"; // TODO: 실제 목록 조회 endpoint로 변경
 
-// ======================== ✅ 기타 type(1000/1008/1 제외) 공통 endpoint ========================
-// ✅ 요청 반영: 저장 endPoint = /receipt-scan, 결제 리스트 endPoint = /Account/AccountPurchaseList
+// ✅ 그 외 type(1000/1002/1003/1008/1 제외) 공통
 const ENDPOINT_OTHER_SAVE = "/receipt-scan-develop";
 const ENDPOINT_OTHER_LIST = "/Account/AccountPurchaseTallyPaymentList";
 
@@ -809,7 +827,7 @@ function TallySheet() {
   }, [cardReceiptPreview]);
 
   const fetchCorpCardList = async (accountId, dateStr) => {
-    const res = await api.get("/Account/AccountCorporateCardPaymentList", {
+    const res = await api.get(ENDPOINT_CARD_LIST, {
       params: { account_id: accountId, payment_dt: dateStr },
       validateStatus: () => true,
     });
@@ -871,7 +889,7 @@ function TallySheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      const res = await api.post("/receipt-scan-develop", fd, {
+      const res = await api.post(ENDPOINT_CARD_SAVE, fd, {
         headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
         validateStatus: () => true,
       });
@@ -983,7 +1001,7 @@ function TallySheet() {
         if (row.sale_id) fd.append("sale_id", String(row.sale_id));
         fd.append("row_account_id", submitAccountId);
 
-        const res = await api.post("/receipt-scan-develop", fd, {
+        const res = await api.post(ENDPOINT_CARD_SAVE, fd, {
           headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
           validateStatus: () => true,
         });
@@ -1568,6 +1586,31 @@ function TallySheet() {
   }, [otherReceiptPreview]);
 
   const fetchOtherPurchaseList = async (accountId, dateStr, typeValue) => {
+    const t = String(typeValue ?? "");
+
+    // ✅ type 1002(기타-소모품)/1003(기타-식자재): tb_headoffice_corporate_card_payment_list 조회
+    // - SQL이 year/month 기준 조회 → dateStr(YYYY-MM-DD)에서 분리해서 전달, day는 프론트에서 필터링
+    if (t === "1002" || t === "1003") {
+      const [year, month, day] = String(dateStr).split("-");
+      const res = await api.get(ENDPOINT_CORP_CARD_LIST, {
+        params: { account_id: accountId, year, month, type: t },
+        validateStatus: () => true,
+      });
+      if (res.status !== 200) throw new Error(res.data?.message || "목록 조회 실패");
+      const raw = res.data;
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const list = Array.isArray(parsed) ? parsed : [];
+      return list
+        .filter((r) => String(r.payment_dt || "").slice(8, 10) === day)
+        .map((r) => ({
+          ...r,
+          total:
+            r.detail_total != null && Number(r.detail_total) !== 0
+              ? Number(r.detail_total)
+              : Number(r.total ?? 0),
+        }));
+    }
+
     const res = await api.get(ENDPOINT_OTHER_LIST, {
       params: {
         account_id: accountId,
@@ -1626,8 +1669,11 @@ function TallySheet() {
         didOpen: () => Swal.showLoading(),
       });
 
-      // ✅ 등록 때 endpoint 그대로
-      const res = await api.post(ENDPOINT_OTHER_SAVE, fd, {
+      // ✅ type 1002/1003(기타-소모품/식자재)은 ENDPOINT_CORP_CARD_SAVE, 그 외는 ENDPOINT_OTHER_SAVE
+      //    (현재 둘 다 같은 /receipt-scan-develop이지만, 서버가 type을 보고 저장 테이블을 나눈다)
+      const t = String(otherForm.type ?? "");
+      const saveEndpoint = t === "1002" || t === "1003" ? ENDPOINT_CORP_CARD_SAVE : ENDPOINT_OTHER_SAVE;
+      const res = await api.post(saveEndpoint, fd, {
         headers: { "Content-Type": "multipart/form-data", Accept: "application/json" },
         validateStatus: () => true,
       });

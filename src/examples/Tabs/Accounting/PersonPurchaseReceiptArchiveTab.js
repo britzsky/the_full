@@ -1,7 +1,7 @@
 // =====================================================================
 // 영수증 마감 자료(개인구매) 탭
 // - 전체 거래처 개인구매 영수증을 1회 API 호출로 조회
-// - receipt_type(영수증 타입)별로 그룹화하여 표시
+// - account(요양원)별로 그룹화하여 표시 (실제 자료가 있는 요양원만 노출)
 // - 필터 영역은 스크롤 시 탭 바 아래에 고정 (top: 111)
 // =====================================================================
 import React, { useEffect, useMemo, useState } from "react";
@@ -32,8 +32,6 @@ import { fetchAccountListByName } from "api/accountQueryApi";
 import usePersonPurchaseReceiptArchiveData, {
   buildCorpCardFilePreviewUrl,
   isCorpCardPdfFile,
-  CORP_CARD_RECEIPT_TYPES,
-  RECEIPT_TYPE_LABEL_MAP,
 } from "./PersonPurchaseReceiptArchiveTabData";
 
 // =====================================================================
@@ -60,14 +58,8 @@ const SELECT_SX = {
   },
 };
 
-const RECEIPT_TYPE_COLORS = {
-  UNKNOWN: "#9ca3af",
-  CARD_SLIP_GENERIC: "#4f7ef8",
-  MART_ITEMIZED: "#1abc9c",
-  CONVENIENCE: "#34495e",
-  COUPANG_CARD: "#f87c4f",
-  COUPANG_APP: "#e74c3c",
-};
+// 요양원 그룹 구분용 색상(순환 적용)
+const ACCOUNT_GROUP_COLORS = ["#4f7ef8", "#1abc9c", "#f87c4f", "#8b5cf6", "#e74c3c", "#0891b2"];
 const FALLBACK_COLOR = "#9ca3af";
 
 const sanitizeFileName = (name) =>
@@ -102,7 +94,6 @@ function PersonPurchaseReceiptArchiveTab() {
     accountId: "",
     year: String(now.getFullYear()),
     month: String(now.getMonth() + 1),
-    receiptType: "0",
   });
 
   const [accountOptions, setAccountOptions] = useState([]);
@@ -133,7 +124,7 @@ function PersonPurchaseReceiptArchiveTab() {
   // 필터 변경 시 자동 재조회
   useEffect(() => {
     fetchRows(filters);
-  }, [fetchRows, filters.accountId, filters.year, filters.month, filters.receiptType]);
+  }, [fetchRows, filters.accountId, filters.year, filters.month]);
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -175,27 +166,25 @@ function PersonPurchaseReceiptArchiveTab() {
     [receiptItems]
   );
 
-  // receipt_type별 그룹화
+  // 요양원(account)별 그룹화 — 실제 자료가 있는 요양원만 노출됨
   const groupedItems = useMemo(() => {
     const map = new Map();
     receiptItems.forEach((item) => {
-      const key = item.receipt_type || "UNKNOWN";
+      const key = item.account_id || item.account_name || "UNKNOWN";
       if (!map.has(key)) {
         map.set(key, {
           value: key,
-          label: RECEIPT_TYPE_LABEL_MAP[key] || key,
-          color: RECEIPT_TYPE_COLORS[key] || FALLBACK_COLOR,
+          label: item.account_name || "미지정",
+          color: ACCOUNT_GROUP_COLORS[map.size % ACCOUNT_GROUP_COLORS.length] || FALLBACK_COLOR,
           items: [],
         });
       }
       map.get(key).items.push(item);
     });
     return Array.from(map.values()).sort((a, b) =>
-      filters.receiptType === "0"
-        ? b.items.length - a.items.length
-        : String(a.label).localeCompare(String(b.label), "ko")
+      String(a.label).localeCompare(String(b.label), "ko")
     );
-  }, [receiptItems, filters.receiptType]);
+  }, [receiptItems]);
 
   const handleOpenViewer = (targetItem) => {
     const files = receiptItems.map((item) => ({
@@ -443,19 +432,6 @@ function PersonPurchaseReceiptArchiveTab() {
             </FormControl>
           </Grid>
 
-          {/* 영수증 타입 */}
-          <Grid item xs={12} md={1.4}>
-            <FormControl fullWidth size="small">
-              <InputLabel>영수증 타입</InputLabel>
-              <Select name="receiptType" label="영수증 타입" value={filters.receiptType} onChange={handleFilterChange} sx={SELECT_SX}>
-                <MenuItem value="0">전체</MenuItem>
-                {CORP_CARD_RECEIPT_TYPES.map((rt) => (
-                  <MenuItem key={rt.value} value={rt.value}>{rt.label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-
           {/* 거래처 */}
           <Grid item xs={12} md={1.8}>
             <Autocomplete
@@ -507,7 +483,7 @@ function PersonPurchaseReceiptArchiveTab() {
         </Grid>
       </MDBox>
 
-      {/* 영수증 타입별 그룹 목록 — 스크롤 영역 */}
+      {/* 요양원별 그룹 목록 — 스크롤 영역 */}
       <MDBox sx={{ flex: 1, overflowY: "auto", pb: 3 }}>
         <MDBox sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {groupedItems.length === 0 ? (

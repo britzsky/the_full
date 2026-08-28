@@ -88,6 +88,7 @@ export default function usePersonPurchaseReceiptArchiveData() {
         use_name:      item.use_name || "",
         saleDate:      item.saleDate || "",
         total:         formatNumber(item.total),
+        buyer:         item.buyer || "",
         receipt_image: item.receipt_image || "",
         receipt_type:  normalizeReceiptTypeVal(item.receipt_type),
       }));

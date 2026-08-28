@@ -73,6 +73,14 @@ const FALLBACK_COLOR = "#9ca3af";
 const sanitizeFileName = (name) =>
   String(name || "receipt").replace(/[\\/:*?"<>|]/g, "_").trim() || "receipt";
 
+// 요양원_구매자_원본파일명 형태로 다운로드 파일명 생성
+const buildReceiptFileName = (item) => {
+  const original = item.receipt_image?.split("/").pop() || "receipt";
+  const parts = [item.account_name, item.buyer].filter(Boolean);
+  const prefix = parts.length ? `${parts.join("_")}_` : "";
+  return sanitizeFileName(`${prefix}${original}`);
+};
+
 const getUniqueFileName = (fileName, usedMap) => {
   const safe = sanitizeFileName(fileName);
   const count = usedMap.get(safe) || 0;
@@ -222,7 +230,7 @@ function PersonPurchaseReceiptArchiveTab() {
 
   const saveItem = async (item) => {
     if (!item?.previewUrl) return;
-    const fileName = sanitizeFileName(item.receipt_image?.split("/").pop());
+    const fileName = buildReceiptFileName(item);
 
     if (!canChooseDownloadPath()) {
       try {
@@ -283,13 +291,34 @@ function PersonPurchaseReceiptArchiveTab() {
     }
 
     const total = downloadableItems.length;
-    let done = 0;
+    let done = 0; // 실제 완료 개수(동시 요청 때문에 한꺼번에 뛸 수 있음)
+    let shown = 0; // 화면에 표시 중인 개수(1개씩 순서대로만 올라가게 함)
+    let advancing = false;
+
+    // done이 여러 개 한꺼번에 늘어나도, 화면에는 1→2→3…처럼 한 단계씩만 보여준다.
+    // rAF(약 16ms)만으로는 개수가 적을 때(예: 7개) 사람 눈에 인지되기도 전에
+    // 다 지나가버려서 바로 끝 숫자로 보이므로, 최소 표시 간격을 더 준다.
+    const STEP_DELAY_MS = 40;
+    const advanceDisplay = async () => {
+      if (advancing) return;
+      advancing = true;
+      while (shown < done) {
+        shown += 1;
+        // 다른 탭(CoupangReceiptTab 등)과 동일한 방식: update 후 showLoading을 다시 호출해야
+        // 스피너가 유지된다 (안 하면 확인 버튼이 다시 나타난다).
+        Swal.update({ html: `<b>${shown} / ${total}</b> 처리 중...`, showConfirmButton: false });
+        Swal.showLoading();
+        await new Promise((resolve) => setTimeout(resolve, STEP_DELAY_MS));
+      }
+      advancing = false;
+    };
 
     Swal.fire({
       title: "다운로드 중...",
-      text: `0 / ${total} 처리 중...`,
+      html: `<b>0 / ${total}</b> 처리 중...`,
       allowOutsideClick: false,
       allowEscapeKey: false,
+      showConfirmButton: false,
       didOpen: () => Swal.showLoading(),
     });
 
@@ -303,11 +332,16 @@ function PersonPurchaseReceiptArchiveTab() {
         chunk.map(async (item) => {
           const blob = await fetchBlob(item);
           done += 1;
-          Swal.update({ text: `${done} / ${total} 처리 중...` });
+          advanceDisplay();
           return { item, blob };
         })
       );
       results.push(...chunkResults);
+    }
+
+    // 마지막 몇 건이 화면 표시를 따라잡을 시간을 준다.
+    while (shown < done) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
     }
 
     const usedMap = new Map();
@@ -316,10 +350,7 @@ function PersonPurchaseReceiptArchiveTab() {
     for (const result of results) {
       if (result.status === "fulfilled") {
         const { item, blob } = result.value;
-        const fileName = getUniqueFileName(
-          sanitizeFileName(item.receipt_image?.split("/").pop() || "receipt"),
-          usedMap
-        );
+        const fileName = getUniqueFileName(buildReceiptFileName(item), usedMap);
         zip.file(fileName, blob);
         addedCount += 1;
       } else {
@@ -333,7 +364,6 @@ function PersonPurchaseReceiptArchiveTab() {
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob" });
-    Swal.close();
 
     if (fileHandle) {
       try {
@@ -542,10 +572,8 @@ function PersonPurchaseReceiptArchiveTab() {
                           <Box sx={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>{item.total ? `${item.total}원` : "-"}</Box>
                         </Box>
                         <Box sx={{ minWidth: 0 }}>
-                          <Box sx={{ fontSize: 10, color: "#9ca3af", mb: 0.2 }}>영수증 타입</Box>
-                          <Box sx={{ display: "inline-block", px: 0.8, py: 0.15, borderRadius: 1, fontSize: 11, fontWeight: 600, color: "#fff", backgroundColor: group.color }}>
-                            {group.label}
-                          </Box>
+                          <Box sx={{ fontSize: 10, color: "#9ca3af", mb: 0.2 }}>구매자</Box>
+                          <Box sx={{ fontSize: 12, color: "#374151", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.buyer || "-"}</Box>
                         </Box>
                       </Box>
 

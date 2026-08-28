@@ -14,6 +14,8 @@ import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 import Autocomplete from "@mui/material/Autocomplete";
 import Swal from "sweetalert2";
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import api from "api/api";
 import useAccountMemberRecSheetData, {
   parseNumber,
@@ -105,6 +107,35 @@ const COR_OPTIONS = [
   { value: "2", label: "더채움" },
 ];
 
+const ACTIVE_STATUS_OPTIONS = [
+  { value: "D", label: "진행중" },
+  { value: "Y", label: "채용확정" },
+  { value: "N", label: "채용취소" },
+];
+
+// ✅ 엑셀 다운로드 컬럼(순서/헤더는 화면 표에 맞춤, act_join_dt는 화면에서 정렬용 헤더라 별도 라벨 지정)
+const EXCEL_COLUMNS = [
+  { key: "cor_type", header: "구분", width: 12 },
+  { key: "name", header: "성명", width: 12 },
+  { key: "rrn", header: "주민번호", width: 16 },
+  { key: "account_id", header: "업장명", width: 20 },
+  { key: "position_type", header: "직책", width: 10 },
+  { key: "account_number", header: "계좌번호", width: 20 },
+  { key: "phone", header: "연락처", width: 15 },
+  { key: "address", header: "주소", width: 26 },
+  { key: "contract_type", header: "계약형태", width: 12 },
+  { key: "act_join_dt", header: "실입사일", width: 12 },
+  { key: "salary", header: "급여(월)", width: 12 },
+  { key: "idx", header: "근무형태", width: 20 },
+  { key: "start_time", header: "시작", width: 8 },
+  { key: "end_time", header: "마감", width: 8 },
+  { key: "use_yn", header: "채용여부", width: 10 },
+  { key: "note", header: "비고", width: 24 },
+  { key: "employment_contract", header: "근로계약서", width: 24 },
+  { key: "id", header: "신분증", width: 24 },
+  { key: "bankbook", header: "통장사본", width: 24 },
+];
+
 const generateTimeOptions = (startHHMM, endHHMM, stepMinutes = 30) => {
   const toMinutes = (hhmm) => {
     const [h, m] = hhmm.split(":").map(Number);
@@ -161,6 +192,7 @@ function AccountMemberRecSheet() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [excelDownloading, setExcelDownloading] = useState(false);
   const [isColumnWidthLocked, setIsColumnWidthLocked] = useState(false);
   const [measuredColWidths, setMeasuredColWidths] = useState({});
   const [relockAfterMeasure, setRelockAfterMeasure] = useState(false);
@@ -350,6 +382,21 @@ function AccountMemberRecSheet() {
     [accountList]
   );
 
+  const accountNameMap = useMemo(
+    () =>
+      new Map(
+        (accountList || []).map((acc) => [String(acc.account_id ?? ""), String(acc.account_name ?? "")])
+      ),
+    [accountList]
+  );
+  const getAccountName = useCallback(
+    (accountId) => {
+      const key = String(accountId ?? "");
+      return accountNameMap.get(key) || key;
+    },
+    [accountNameMap]
+  );
+
   const accountOptions = useMemo(
     () => [
       // 거래처 전체 옵션
@@ -481,6 +528,153 @@ function AccountMemberRecSheet() {
         getStableRowKey(r, idx) === String(rid) ? { ...r, ...patch } : r
       )
     );
+  };
+
+  // =========================================================
+  // ✅ 엑셀 다운로드: 현재 화면에 걸린 필터(채용상태/거래처) + 정렬 그대로 반영해서 다운로드
+  //    - 마스킹은 권한 때문에 하는 것이므로 화면에 지금 보이는 그대로(해제 안 됐으면 마스킹된 채로,
+  //      해제됐으면 해제된 값 그대로) 엑셀에 담는다. 화면 표시 로직(maskSensitiveFieldValue)을 그대로 재사용.
+  // =========================================================
+  const mapOptionLabel = (options, value) => {
+    const key = String(value ?? "");
+    return options.find((o) => o.value === key)?.label ?? key;
+  };
+
+  // 근로계약서/신분증/통장사본: 실제 파일명은 빼고 그 앞 경로까지만 노출
+  const stripFileName = (path) => {
+    const raw = String(path ?? "").trim();
+    if (!raw) return "";
+    const idx = raw.lastIndexOf("/");
+    return idx >= 0 ? raw.slice(0, idx + 1) : "";
+  };
+
+  const handleExcelDownload = async () => {
+    if (excelDownloading) return;
+    setExcelDownloading(true);
+
+    try {
+      // ✅ 화면에 보이는 순서(현재 정렬 상태) 그대로 뽑는다
+      const rowsInScreenOrder = table.getSortedRowModel().rows.map((r) => r.original);
+
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "AccountMemberRecSheet";
+      const ws = wb.addWorksheet("현장 채용현황");
+
+      ws.columns = EXCEL_COLUMNS.map((c) => ({ key: c.key, width: c.width }));
+
+      const statusLabel = mapOptionLabel(ACTIVE_STATUS_OPTIONS, activeStatus);
+      const accountLabel = selectedAccountId ? getAccountName(selectedAccountId) : "전체";
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, "0");
+      const d = String(now.getDate()).padStart(2, "0");
+      const todayLabel = `${y}-${m}-${d}`;
+
+      // 제목행
+      ws.addRow([`■ 현장 채용현황 / 상태: ${statusLabel} / 업장: ${accountLabel} / ${todayLabel}`]);
+      const titleRowNum = ws.lastRow.number;
+      ws.mergeCells(titleRowNum, 1, titleRowNum, EXCEL_COLUMNS.length);
+      ws.getCell(titleRowNum, 1).font = { bold: true, size: 12 };
+      ws.getRow(titleRowNum).height = 26;
+
+      // 마스킹 해제가 안 됐으면 참고용 안내를 한 줄 더 남긴다(권한 때문에 마스킹된 채로 내려간다는 표시)
+      if (maskingEnabled) {
+        ws.addRow(["※ 마스킹 해제 전 상태로 다운로드되었습니다. (주민번호/연락처/계좌번호/주소 일부 마스킹)"]);
+        const noteRowNum = ws.lastRow.number;
+        ws.mergeCells(noteRowNum, 1, noteRowNum, EXCEL_COLUMNS.length);
+        ws.getCell(noteRowNum, 1).font = { italic: true, size: 10, color: { argb: "FF888888" } };
+      }
+
+      // 헤더행
+      const header = EXCEL_COLUMNS.map((c) => c.header);
+      ws.addRow(header);
+      const headerRowNum = ws.lastRow.number;
+      const headerRow = ws.getRow(headerRowNum);
+      headerRow.font = { bold: true };
+      headerRow.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      headerRow.height = 22;
+      headerRow.eachCell((cell) => {
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F0F0" } };
+      });
+
+      const salaryColIndex = EXCEL_COLUMNS.findIndex((c) => c.key === "salary") + 1;
+
+      // ✅ 내용이 잘려서 안 보이는 일이 없도록, 실제 값 길이를 보고 열 너비를 계산한다
+      const autoWidthValues = EXCEL_COLUMNS.map((c) => [c.header]);
+
+      rowsInScreenOrder.forEach((row) => {
+        const rowData = {};
+        EXCEL_COLUMNS.forEach((c, colIdx) => {
+          const key = c.key;
+          let value = row[key];
+
+          if (key === "cor_type") value = mapOptionLabel(COR_OPTIONS, value);
+          else if (key === "contract_type") value = mapOptionLabel(CONTRACT_OPTIONS, value);
+          else if (key === "position_type") value = mapOptionLabel(POSITION_OPTIONS, value);
+          else if (key === "use_yn") value = mapOptionLabel(USE_YN_OPTIONS, value);
+          else if (key === "account_id") value = getAccountName(value);
+          else if (key === "idx") value = workSystemOptionMap.get(String(value ?? ""))?.label ?? String(value ?? "");
+          else if (key === "salary") value = parseNumber(value);
+          else if (IMAGE_FIELDS.has(key)) {
+            // 저장 전(로컬 파일 객체) 상태는 다운로드에 포함할 경로가 없어 안내 문구로 대체,
+            // 저장된 경로는 파일명 빼고 그 앞 경로까지만 노출
+            value = typeof value === "object" && value ? "(저장 전 첨부)" : stripFileName(value);
+          } else {
+            // ✅ 화면과 동일하게 마스킹 여부/권한을 그대로 반영해서 값 결정
+            value = maskSensitiveFieldValue(key, value, maskingEnabled, maskingRole) ?? "";
+          }
+
+          rowData[key] = value ?? "";
+          autoWidthValues[colIdx].push(key === "salary" ? formatNumber(value) : value);
+        });
+        ws.addRow(rowData);
+        const rowNum = ws.lastRow.number;
+        // ✅ 행 높이를 고정하지 않고 그대로 둬서, 긴 텍스트(주소/비고 등)가 줄바꿈될 때
+        //    엑셀에서 열어봤을 때 잘리지 않고 전체 내용이 보이도록 한다
+        ws.getRow(rowNum).alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        ws.getRow(rowNum).eachCell((cell) => {
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+        if (salaryColIndex > 0) {
+          const salaryCell = ws.getRow(rowNum).getCell(salaryColIndex);
+          if (typeof salaryCell.value === "number") {
+            salaryCell.numFmt = "#,##0";
+            salaryCell.alignment = { vertical: "middle", horizontal: "right", wrapText: true };
+          }
+        }
+      });
+
+      // ✅ 실제로 들어간 값 중 가장 긴 걸 기준으로 열 너비 재계산(너무 좁아서 내용이 가려지는 것 방지)
+      const calcWidth = (values, min, max = 60) => {
+        const longest = Math.max(...values.map((v) => String(v ?? "").length), 0);
+        return Math.min(Math.max(longest + 2, min), max);
+      };
+      autoWidthValues.forEach((values, colIdx) => {
+        const baseWidth = EXCEL_COLUMNS[colIdx].width;
+        ws.getColumn(colIdx + 1).width = calcWidth(values, baseWidth);
+      });
+
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      saveAs(blob, `현장채용현황_${statusLabel}_${accountLabel}_${todayLabel}.xlsx`);
+    } catch (err) {
+      Swal.fire("다운로드 실패", err?.message || "엑셀 생성 중 오류가 발생했습니다.", "error");
+    } finally {
+      setExcelDownloading(false);
+    }
   };
 
   const clearPreviewObjectUrls = useCallback(() => {
@@ -1435,6 +1629,15 @@ function AccountMemberRecSheet() {
 
         <MDButton variant="gradient" color="success" onClick={handleAddRow}>
           행추가
+        </MDButton>
+
+        <MDButton
+          variant="gradient"
+          color="dark"
+          onClick={handleExcelDownload}
+          disabled={excelDownloading}
+        >
+          {excelDownloading ? "다운로드 중..." : "엑셀 다운로드"}
         </MDButton>
 
         <MDButton

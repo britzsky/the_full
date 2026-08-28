@@ -1677,7 +1677,6 @@ function RecordSheet() {
       const baseDate = dayjs(baseDateText);
 
       if (!baseDate.isValid()) {
-        Swal.close();
         Swal.fire("서식 오류", "D2(기준일자) 값을 확인해주세요. 예: 2026-08-01", "warning");
         return;
       }
@@ -1791,7 +1790,6 @@ function RecordSheet() {
       });
 
       if (rows.length === 0 && pendingEntries.length === 0) {
-        Swal.close();
         Swal.fire("업로드할 데이터가 없습니다.", "일자별로 입력된 값이 없습니다.", "info");
         return;
       }
@@ -1801,6 +1799,8 @@ function RecordSheet() {
 
       if (unresolvedTextMap.size > 0 || duplicateNameItemsMap.size > 0) {
         // ✅ 사용자가 선택을 마칠 때까지 저장을 미루고, 확정에 필요한 정보를 보관해둔다.
+        // (로딩창은 닫지 않고 바로 아래 모달을 띄운다 — 모달이 로딩창 위에 그대로 겹쳐 보이는 걸
+        //  막기 위해 로딩창만 닫아야 하므로 여기서는 close()가 필요하다)
         Swal.close();
         utilRecordUploadContextRef.current = { rows, pendingEntries, ...saveMeta };
         setUtilRecordAmbiguousItems(
@@ -1825,7 +1825,6 @@ function RecordSheet() {
       await saveUtilRecordRows(rows, saveMeta, new Set());
     } catch (err) {
       console.error(err);
-      Swal.close();
       Swal.fire("업로드 실패", err?.message || "오류가 발생했습니다.", "error");
     } finally {
       setUtilRecordUploading(false);
@@ -1865,7 +1864,6 @@ function RecordSheet() {
     const { recYear, recMonth, skippedNoMemberRows, userId, memberIdToName } = meta;
 
     if (!finalRows || finalRows.length === 0) {
-      Swal.close();
       Swal.fire("업로드할 데이터가 없습니다.", "일자별로 입력된 값이 없습니다.", "info");
       return;
     }
@@ -1906,7 +1904,6 @@ function RecordSheet() {
       ).join(", ")}</div>`;
     }
 
-    Swal.close();
     Swal.fire({ title: "유틸 출근부 등록 결과", html, icon: "success" });
 
     // 현재 조회 중인 화면과 같은 연/월이면 즉시 재조회
@@ -2005,7 +2002,6 @@ function RecordSheet() {
       );
     } catch (err) {
       console.error(err);
-      Swal.close();
       Swal.fire("업로드 실패", err?.message || "오류가 발생했습니다.", "error");
     } finally {
       setUtilRecordUploading(false);

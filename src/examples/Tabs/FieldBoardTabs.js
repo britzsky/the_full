@@ -87,12 +87,12 @@ function FieldBoardTabs() {
     "🧹 위생점검",
     "📦 기물관리",
     // "🍽️ 식단표 관리",
-    "🛒 구입요청",
+    "🛒 구매요청",
   ];
 
   // 구입요청 탭 인덱스를 배열에서 동적으로 찾아 하드코딩 없이 사용한다.
   // MenuManagementTab 주석 해제 시에도 자동으로 올바른 인덱스를 가리킨다.
-  const PURCHASE_TAB_INDEX = tabLabels.findIndex((l) => l.includes("구입요청"));
+  const PURCHASE_TAB_INDEX = tabLabels.findIndex((l) => l.includes("구매요청"));
 
   const tabComponents = [
     <RecordSheetTab key="record" />,

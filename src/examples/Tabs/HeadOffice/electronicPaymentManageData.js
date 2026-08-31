@@ -10,6 +10,7 @@ const MANAGE_LIST_API = "/HeadOffice/ElectronicPaymentManageList";
 const MANAGE_DETAIL_API = "/HeadOffice/ElectronicPaymentManageDetail";
 const MANAGE_SIGN_SAVE_API = "/HeadOffice/ElectronicPaymentManageSignSave";
 const MANAGE_ITEM_BUY_YN_SAVE_API = "/HeadOffice/ElectronicPaymentItemBuyYnSave";
+const MANAGE_ITEM_PURCHASE_INFO_SAVE_API = "/HeadOffice/ElectronicPaymentItemPurchaseInfoSave";
 const COMPANY_TREE_API = "/HeadOffice/HeadOfficeCompanyUserTree";
 const DOC_TYPE_LIST_API = "/HeadOffice/HeadOfficeElectronicPaymentTypeList";
 
@@ -273,12 +274,19 @@ export default function useElectronicPaymentManageData() {
     const normalizedBuyYn = String(buy_yn || "").trim().toUpperCase() === "Y" ? "Y" : "N";
 
     try {
-      await api.post(MANAGE_ITEM_BUY_YN_SAVE_API, {
+      const res = await api.post(MANAGE_ITEM_BUY_YN_SAVE_API, {
         payment_id,
         idx,
         user_id,
         buy_yn: normalizedBuyYn,
       });
+
+      // 백엔드는 저장 대상 행이 없어도(권한 불일치 등) HTTP 200 + code:400으로 응답하므로
+      // 응답 코드를 확인하지 않으면 실패해도 성공한 것처럼 로컬 상태가 갱신되어 버린다.
+      if (res?.data?.code !== 200) {
+        console.error("소모품 구매여부 저장 실패:", res?.data?.message || res?.data);
+        return false;
+      }
 
       setDetailItems((prev) =>
         (Array.isArray(prev) ? prev : []).map((row) => {
@@ -289,6 +297,46 @@ export default function useElectronicPaymentManageData() {
       return true;
     } catch (err) {
       console.error("소모품 구매여부 저장 실패:", err);
+      return false;
+    }
+  }, []);
+
+  // 현장 구매요청서(FP) 품목 예산포함여부(budget_yn)/구매진행여부(purchase_yn) 저장
+  // - 1차/2차 결재자 권한 검증은 백엔드에서 최종 검사
+  // - 성공 시 detailItems 로컬 상태도 즉시 반영한다.
+  const saveItemPurchaseInfo = useCallback(async ({ payment_id, idx, user_id, budget_yn, purchase_yn }) => {
+    if (!payment_id || !idx || !user_id) return false;
+
+    const normalizeYn = (v) => (String(v || "").trim().toUpperCase() === "Y" ? "Y" : "N");
+    const normalizedBudgetYn = normalizeYn(budget_yn);
+    const normalizedPurchaseYn = normalizeYn(purchase_yn);
+
+    try {
+      const res = await api.post(MANAGE_ITEM_PURCHASE_INFO_SAVE_API, {
+        payment_id,
+        idx,
+        user_id,
+        budget_yn: normalizedBudgetYn,
+        purchase_yn: normalizedPurchaseYn,
+      });
+
+      // 백엔드는 저장 대상 행이 없어도(권한 불일치 등) HTTP 200 + code:400으로 응답하므로
+      // 응답 코드를 확인하지 않으면 실패해도 성공한 것처럼 로컬 상태가 갱신되어 버린다.
+      // (1차 결재자의 tm_user 컬럼이 아직 비어있는 시점에 저장이 조용히 실패하던 원인이 바로 이것이었다.)
+      if (res?.data?.code !== 200) {
+        console.error("구매요청서 예산포함여부/구매진행여부 저장 실패:", res?.data?.message || res?.data);
+        return false;
+      }
+
+      setDetailItems((prev) =>
+        (Array.isArray(prev) ? prev : []).map((row) => {
+          if (String(row?.idx ?? "") !== String(idx)) return row;
+          return { ...row, budget_yn: normalizedBudgetYn, purchase_yn: normalizedPurchaseYn };
+        })
+      );
+      return true;
+    } catch (err) {
+      console.error("구매요청서 예산포함여부/구매진행여부 저장 실패:", err);
       return false;
     }
   }, []);
@@ -359,6 +407,7 @@ export default function useElectronicPaymentManageData() {
     fetchManageDetail,
     saveSign,
     saveItemBuyYn,
+    saveItemPurchaseInfo,
     fetchUserMetaMap,
     fetchDocTypeList,
   };

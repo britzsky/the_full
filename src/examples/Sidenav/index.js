@@ -84,6 +84,24 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
   const renderRoutes = (routesArray) =>
     routesArray.map(({ type, name, icon, key, href, route, collapse }) => {
       if (type === "collapse") {
+        // 하위 메뉴(collapse)만 있고 자체 route가 없는 그룹 헤더는 아코디언 토글일 뿐
+        // 실제 이동이 아니므로 NavLink로 감싸지 않는다. NavLink(to="#")로 감싸면
+        // 다른 화면에서 이 그룹 헤더를 클릭할 때 현재 페이지의 쿼리스트링(예: ?tab=1)이
+        // 사라져 버려, 쿼리스트링으로 상태를 유지하는 화면이 엉뚱하게 초기화되는 부작용이 있었다.
+        const isGroupHeader = Array.isArray(collapse) && collapse.length > 0 && !route;
+
+        const sidenavCollapse = (
+          <SidenavCollapse
+            name={name}
+            icon={icon}
+            active={key === collapseName}
+            subMenu={collapse}
+            openKey={openKey}
+            setOpenKey={setOpenKey}
+            myKey={key}
+          />
+        );
+
         const collapseComponent = href ? (
           <Link
             href={href}
@@ -92,16 +110,16 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
             rel="noreferrer"
             sx={{ textDecoration: "none" }}
           >
-            <SidenavCollapse
-              name={name}
-              icon={icon}
-              active={key === collapseName}
-              subMenu={collapse}
-              openKey={openKey}
-              setOpenKey={setOpenKey}
-              myKey={key}
-            />
+            {sidenavCollapse}
           </Link>
+        ) : isGroupHeader ? (
+          <MDBox
+            key={key}
+            data-clickable="true"
+            sx={{ textDecoration: "none", color: "inherit", cursor: "pointer" }}
+          >
+            {sidenavCollapse}
+          </MDBox>
         ) : (
           <NavLink
             key={key}
@@ -112,15 +130,7 @@ function Sidenav({ color, brand, brandName, routes, ...rest }) {
               if (key === "dashboard") setOpenKey(null);
             }}
           >
-            <SidenavCollapse
-              name={name}
-              icon={icon}
-              active={key === collapseName}
-              subMenu={collapse}
-              openKey={openKey}
-              setOpenKey={setOpenKey}
-              myKey={key}
-            />
+            {sidenavCollapse}
           </NavLink>
         );
         return collapseComponent;

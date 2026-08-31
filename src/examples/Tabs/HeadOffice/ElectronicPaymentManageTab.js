@@ -19,6 +19,9 @@ import useElectronicPaymentManageData, {
 
 // TODO: 소모품 고정 결재자/특수 조회 사용자 ID는 운영 정책에 맞춰 변경 가능
 const EXPENDABLE_SPECIAL_USER_ID = "iy1";
+// 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID
+// - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자는 실제 구매완료 여부(구매여부)만 체크한다.
+const FP_BUY_YN_USER_ID = "si1";
 const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
   largeType: "공통",
   middleType: "결의서",
@@ -348,6 +351,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     fetchManageDetail,
     saveSign,
     saveItemBuyYn,
+    saveItemPurchaseInfo,
     fetchUserMetaMap,
   } = useElectronicPaymentManageData();
 
@@ -370,6 +374,9 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     mouseY: 0,
   });
   const [buyYnSavingIdx, setBuyYnSavingIdx] = useState("");
+  // FP 품목별 예산포함여부/구매진행여부는 결재 저장(승인/반려) 시점에 함께 저장하는
+  // 화면 임시값(draft)으로 관리한다. key: item.idx, value: { budget_yn, purchase_yn }
+  const [fpItemDraftMap, setFpItemDraftMap] = useState({});
 
   // 로그인 사용자 기준 목록 로딩
   const loadList = useCallback(async () => {
@@ -410,6 +417,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       if (!paymentId) return;
       setOpenDetail(true);
       setActionStatus("");
+      setFpItemDraftMap({});
       await fetchManageDetail(paymentId, loginUserId);
     },
     [fetchManageDetail, loginUserId]
@@ -687,8 +695,14 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   const moveCeoToPayerSlot = !needPayer && needCeo;
   // 결재 액션 코드 정규화
   const selectedActionSign = actionStatus === "4" || actionStatus === "3" ? actionStatus : "";
+  // 현장 구매요청서(FP) 상세 여부 판정
+  const isFieldPurchaseRequestDetail = asText(detailMain?.doc_type).toUpperCase() === "FP";
+  // FP 구매여부 저장 담당자 여부(예산포함여부/구매진행여부는 조회만 가능)
+  const isFpBuyYnUser = loginUserId === FP_BUY_YN_USER_ID;
   // 소모품 구매 품의서 상세에서는 일반 직원도 구매여부를 볼 수 있도록 컬럼을 항상 노출한다.
-  const showBuyYnColumn = isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE);
+  // 현장 구매요청서(FP) 상세에서는 예산포함여부/구매진행여부/구매여부 3개 컬럼을 함께 노출한다.
+  const showBuyYnColumn =
+    isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE) || isFieldPurchaseRequestDetail;
   // 결재자 결재완료 상태 판정
   const isPayerApproved = asText(detailMain?.payer_sign) === "4";
   // 반려 상태 판정
@@ -698,11 +712,17 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     asText(detailMain?.payer_sign) === "3" ||
     asText(detailMain?.ceo_sign) === "3";
   // 구매여부 수정 가능 여부
+  // - 소모품 구매 품의서: 소모품 특수 사용자(iy1)
+  // - 현장 구매요청서(FP): 구매진행 담당자(si1) - 결재 완료 이후에도 실제 구매완료 여부를 계속 체크할 수 있어야 한다.
   const canEditBuyYn =
-    isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE) &&
-    isExpendableSpecialUser &&
-    !isPayerApproved &&
-    !isRejectedDocument;
+    (isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE) &&
+      isExpendableSpecialUser &&
+      !isPayerApproved &&
+      !isRejectedDocument) ||
+    (isFieldPurchaseRequestDetail && isFpBuyYnUser && !isRejectedDocument);
+  // 예산포함여부/구매진행여부 수정 가능 여부(FP 1차/2차 결재자만, 반려 전)
+  const canEditFpDecisionFields =
+    isFieldPurchaseRequestDetail && (canSignTM || canSignPayer) && !isRejectedDocument;
 
   // 상세 모달 진행상태 텍스트 (문서 타입별 결재권자 범위를 반영)
   const detailStatusText = useMemo(() => {
@@ -783,6 +803,25 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     [canEditBuyYn, detailMain?.payment_id, loginUserId, saveItemBuyYn]
   );
 
+  // 예산포함여부/구매진행여부 체크박스 토글 - 결재 저장 시점까지는 화면에만 반영(즉시 저장하지 않음)
+  const handleChangeFpDraft = useCallback(
+    (item, field, value) => {
+      if (!canEditFpDecisionFields) return;
+      const itemIdx = asText(item?.idx);
+      if (!itemIdx) return;
+
+      setFpItemDraftMap((prev) => ({
+        ...prev,
+        [itemIdx]: {
+          budget_yn: prev[itemIdx]?.budget_yn ?? item?.budget_yn,
+          purchase_yn: prev[itemIdx]?.purchase_yn ?? item?.purchase_yn,
+          [field]: value,
+        },
+      }));
+    },
+    [canEditFpDecisionFields]
+  );
+
   // 결재/반려 저장
   const handleSaveAction = async () => {
     if (!detailMain?.payment_id) return;
@@ -802,6 +841,32 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       confirmButtonColor: isApproveAction ? "#2e7d32" : "#d32f2f",
     });
     if (!confirmResult.isConfirmed) return;
+
+    // FP 1차/2차 결재자가 체크한 예산포함여부/구매진행여부를 결재 저장과 함께 반영한다.
+    if (canEditFpDecisionFields) {
+      const itemSaveResults = await Promise.all(
+        (detailItems || [])
+          .filter((item) => asText(item?.idx))
+          .map((item) => {
+            const itemIdx = asText(item.idx);
+            const draft = fpItemDraftMap[itemIdx];
+            if (!draft) return true; // 변경 없는 품목은 저장 생략
+
+            return saveItemPurchaseInfo({
+              payment_id: detailMain.payment_id,
+              idx: itemIdx,
+              user_id: loginUserId,
+              budget_yn: draft.budget_yn ?? item.budget_yn,
+              purchase_yn: draft.purchase_yn ?? item.purchase_yn,
+            });
+          })
+      );
+
+      if (itemSaveResults.some((result) => !result)) {
+        Swal.fire({ title: "실패", text: "예산포함여부/구매진행여부 저장 중 오류가 발생했습니다.", icon: "error" });
+        return;
+      }
+    }
 
     // 현재 문서 기준으로 결재 처리 저장
     const ok = await saveSign({
@@ -826,6 +891,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     });
 
     // 저장 성공 후 목록을 최신화하고 상세를 닫은 뒤 관리 탭으로 복귀
+    setFpItemDraftMap({});
     await loadList();
     setOpenDetail(false);
     moveToManageTab();
@@ -1219,6 +1285,11 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                   editableBuyYn={canEditBuyYn}
                   buyYnSavingIdx={buyYnSavingIdx}
                   onToggleBuyYn={handleToggleBuyYn}
+                  showFpColumns={isFieldPurchaseRequestDetail}
+                  editableFpDecisionFields={canEditFpDecisionFields}
+                  fpDraftMap={fpItemDraftMap}
+                  fpFieldsDisabled={saving}
+                  onChangeFpDraft={handleChangeFpDraft}
                 />
 
                 {/* 결재 처리: 작성 탭과 동일한 도장형 결재표 + 결재/반려 액션 */}

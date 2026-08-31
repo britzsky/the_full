@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import PropTypes from "prop-types";
 
 import MDBox from "components/MDBox";
@@ -30,6 +30,36 @@ function toYnValue(v) {
 
 function toBuyYnText(v) {
   return toYnValue(v) ? "구매" : "미구매";
+}
+
+function toBudgetYnText(v) {
+  return toYnValue(v) ? "포함" : "미포함";
+}
+
+function toPurchaseYnText(v) {
+  return toYnValue(v) ? "진행" : "미진행";
+}
+
+// 예산포함여부/구매진행여부 배지 톤 - 포함/진행: 초록, 미포함/미진행: 빨강
+const DECISION_YES_TONE = { backgroundColor: "#dff3e0", color: "#1b5e20" };
+const DECISION_NO_TONE = { backgroundColor: "#fdecea", color: "#c62828" };
+// 구매여부 배지 톤 - 구매: 하늘색, 미구매: 회색
+const BUY_YES_TONE = { backgroundColor: "#e3f2fd", color: "#1565c0" };
+const BUY_NO_TONE = { backgroundColor: "#f1f3f5", color: "#546e7a" };
+
+// 조회 전용으로 노출되는 예산포함여부/구매진행여부/구매여부를 색상 배지로 표시한다.
+function ynBadgeSx(isYes, yesTone, noTone) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 46,
+    padding: "3px 8px",
+    borderRadius: 6,
+    fontWeight: 700,
+    fontSize: 12,
+    ...(isYes ? yesTone : noTone),
+  };
 }
 
 const tableCellCenterInnerSx = {
@@ -68,7 +98,26 @@ function ExpendableDetailModalContent({
   editableBuyYn,
   buyYnSavingIdx,
   onToggleBuyYn,
+  showFpColumns,
+  editableFpDecisionFields,
+  fpDraftMap,
+  fpFieldsDisabled,
+  onChangeFpDraft,
 }) {
+  // 품목의 예산포함여부/구매진행여부 draft 값을 계산한다.
+  // - draft(상위 컴포넌트에서 관리, 결재 저장 시점까지 임시 보관)가 없으면 서버에서 내려온 현재 값을 그대로 사용한다.
+  const getFpDraft = useCallback(
+    (it) => {
+      const itemIdx = asText(it?.idx);
+      const draft = fpDraftMap?.[itemIdx];
+      return {
+        budget_yn: draft?.budget_yn ?? it?.budget_yn,
+        purchase_yn: draft?.purchase_yn ?? it?.purchase_yn,
+      };
+    },
+    [asText, fpDraftMap]
+  );
+
   // 요청 사유는 item.payment_note 중 첫 유효값을 대표값으로 사용
   const paymentNoteText = useMemo(() => {
     const found = (detailItems || []).find((it) => asText(it.payment_note));
@@ -97,6 +146,8 @@ function ExpendableDetailModalContent({
     window.open(finalUrl, "_blank", "noopener,noreferrer");
   }, []);
 
+  const extraColumnCount = (showBuyYnColumn ? 1 : 0) + (showFpColumns ? 2 : 0);
+
   return (
     <>
       <MDBox sx={sectionSx}>
@@ -107,7 +158,7 @@ function ExpendableDetailModalContent({
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: showBuyYnColumn ? 720 : 640,
+              minWidth: 640 + (showBuyYnColumn ? 86 : 0) + (showFpColumns ? 184 : 0),
               tableLayout: "fixed",
             }}
           >
@@ -120,6 +171,8 @@ function ExpendableDetailModalContent({
               <col style={{ width: "11%" }} />
               <col style={{ width: "28%" }} />
               <col style={{ width: "14%" }} />
+              {showFpColumns && <col style={{ width: 92 }} />}
+              {showFpColumns && <col style={{ width: 92 }} />}
               {showBuyYnColumn && <col style={{ width: 86 }} />}
             </colgroup>
             <thead>
@@ -132,6 +185,8 @@ function ExpendableDetailModalContent({
                 <th style={th2Cell}>결제 업체명</th>
                 <th style={th2Cell}>링크</th>
                 <th style={th2Cell}>비고</th>
+                {showFpColumns && <th style={th2Cell}>예산포함여부</th>}
+                {showFpColumns && <th style={th2Cell}>구매진행여부</th>}
                 {showBuyYnColumn && <th style={th2Cell}>구매여부</th>}
               </tr>
             </thead>
@@ -139,7 +194,7 @@ function ExpendableDetailModalContent({
               {/* 품목이 없더라도 빈 행을 명시해 레이아웃 높이를 안정화 */}
               {(detailItems || []).length === 0 ? (
                 <tr>
-                  <td style={{ ...td2CellCenter, padding: "14px" }} colSpan={showBuyYnColumn ? 9 : 8}>
+                  <td style={{ ...td2CellCenter, padding: "14px" }} colSpan={8 + extraColumnCount}>
                     등록된 품목이 없습니다.
                   </td>
                 </tr>
@@ -148,7 +203,11 @@ function ExpendableDetailModalContent({
                 detailItems.map((it, idx) => {
                   const itemIdx = asText(it.idx);
                   const isChecked = toYnValue(it.buy_yn);
-                  const isSaving = itemIdx && String(buyYnSavingIdx || "") === itemIdx;
+                  const isBuyYnSaving = itemIdx && String(buyYnSavingIdx || "") === itemIdx;
+                  const fpDraft = getFpDraft(it);
+                  // FP 품목은 구매진행여부가 '진행(Y)'인 품목만 구매여부를 체크할 수 있다.
+                  // (2차 결재까지 끝나 구매진행여부가 미진행으로 확정된 품목은 애초에 구매 대상이 아니다.)
+                  const canToggleBuyYn = editableBuyYn && (!showFpColumns || toYnValue(it.purchase_yn));
 
                   return (
                     <tr key={`${it.no || idx}`} style={{ verticalAlign: "middle" }}>
@@ -179,25 +238,75 @@ function ExpendableDetailModalContent({
                         )}
                       </td>
                       <td style={td2CellWrap}>{asText(it.note) || "-"}</td>
+                      {showFpColumns && (
+                        <td style={td2CellCenter}>
+                          <MDBox sx={tableCellCenterInnerSx}>
+                            {editableFpDecisionFields ? (
+                              <input
+                                type="checkbox"
+                                checked={toYnValue(fpDraft.budget_yn)}
+                                disabled={fpFieldsDisabled}
+                                style={{
+                                  ...nativeCheckboxCenterStyle,
+                                  cursor: fpFieldsDisabled ? "not-allowed" : "pointer",
+                                }}
+                                onChange={(e) => {
+                                  if (typeof onChangeFpDraft !== "function") return;
+                                  onChangeFpDraft(it, "budget_yn", e.target.checked ? "Y" : "N");
+                                }}
+                              />
+                            ) : (
+                              <MDBox component="span" sx={ynBadgeSx(toYnValue(it.budget_yn), DECISION_YES_TONE, DECISION_NO_TONE)}>
+                                {toBudgetYnText(it.budget_yn)}
+                              </MDBox>
+                            )}
+                          </MDBox>
+                        </td>
+                      )}
+                      {showFpColumns && (
+                        <td style={td2CellCenter}>
+                          <MDBox sx={tableCellCenterInnerSx}>
+                            {editableFpDecisionFields ? (
+                              <input
+                                type="checkbox"
+                                checked={toYnValue(fpDraft.purchase_yn)}
+                                disabled={fpFieldsDisabled}
+                                style={{
+                                  ...nativeCheckboxCenterStyle,
+                                  cursor: fpFieldsDisabled ? "not-allowed" : "pointer",
+                                }}
+                                onChange={(e) => {
+                                  if (typeof onChangeFpDraft !== "function") return;
+                                  onChangeFpDraft(it, "purchase_yn", e.target.checked ? "Y" : "N");
+                                }}
+                              />
+                            ) : (
+                              <MDBox component="span" sx={ynBadgeSx(toYnValue(it.purchase_yn), DECISION_YES_TONE, DECISION_NO_TONE)}>
+                                {toPurchaseYnText(it.purchase_yn)}
+                              </MDBox>
+                            )}
+                          </MDBox>
+                        </td>
+                      )}
                       {showBuyYnColumn && (
                         <td style={td2CellCenter}>
                           <MDBox sx={tableCellCenterInnerSx}>
-                            {editableBuyYn ? (
+                            {canToggleBuyYn ? (
                               <input
                                 type="checkbox"
                                 checked={isChecked}
                                 style={{
                                   ...nativeCheckboxCenterStyle,
-                                  cursor: isSaving ? "not-allowed" : "pointer",
+                                  cursor: isBuyYnSaving ? "not-allowed" : "pointer",
                                 }}
-                                disabled={isSaving}
+                                disabled={isBuyYnSaving}
                                 onChange={(e) => {
                                   if (typeof onToggleBuyYn !== "function") return;
                                   onToggleBuyYn(it, e.target.checked);
                                 }}
                               />
                             ) : (
-                              <MDBox component="span" sx={{ fontWeight: 700, color: isChecked ? "#1f4e79" : "#6b7280" }}>
+                              <MDBox component="span" sx={ynBadgeSx(isChecked, BUY_YES_TONE, BUY_NO_TONE)}>
                                 {toBuyYnText(it.buy_yn)}
                               </MDBox>
                             )}
@@ -242,6 +351,11 @@ ExpendableDetailModalContent.propTypes = {
   editableBuyYn: PropTypes.bool,
   buyYnSavingIdx: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   onToggleBuyYn: PropTypes.func,
+  showFpColumns: PropTypes.bool,
+  editableFpDecisionFields: PropTypes.bool,
+  fpDraftMap: PropTypes.object,
+  fpFieldsDisabled: PropTypes.bool,
+  onChangeFpDraft: PropTypes.func,
 };
 
 ExpendableDetailModalContent.defaultProps = {
@@ -249,8 +363,11 @@ ExpendableDetailModalContent.defaultProps = {
   editableBuyYn: false,
   buyYnSavingIdx: "",
   onToggleBuyYn: null,
+  showFpColumns: false,
+  editableFpDecisionFields: false,
+  fpDraftMap: {},
+  fpFieldsDisabled: false,
+  onChangeFpDraft: null,
 };
 
 export default React.memo(ExpendableDetailModalContent);
-
-

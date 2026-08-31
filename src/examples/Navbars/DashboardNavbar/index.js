@@ -618,7 +618,15 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     verticalAlign: "middle",
     background: "#fff",
   };
-  const inquiryActionButtonSx = { minWidth: 92, py: 0.15, px: 1, fontSize: 12, lineHeight: 1.2 };
+  const inquiryActionButtonSx = {
+    minWidth: 92,
+    minHeight: 0,
+    height: 24,
+    py: 0,
+    px: 1,
+    fontSize: 12,
+    lineHeight: 1.2,
+  };
 
   const approvalChangedAccentColor = "#d32f2f";
 
@@ -792,7 +800,9 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
                     onClick={() => openInquiryManagePage(row.id)}
                     sx={inquiryActionButtonSx}
                   >
-                    문의답변
+                    <MDBox component="span" color="inherit" sx={{ transform: "translateY(1px)" }}>
+                      문의답변
+                    </MDBox>
                   </MDButton>
                 )}
               </td>

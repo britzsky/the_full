@@ -279,6 +279,35 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
       return;
     }
 
+    // 품목별 필수값 검증 - 품목명/수량/금액/사용처·용도/결제 업체명은 필수, 링크·비고는 선택
+    const REQUIRED_ITEM_FIELDS = [
+      { key: "qty", label: "수량" },
+      { key: "price", label: "금액" },
+      { key: "use_note", label: "사용처/용도" },
+      { key: "use_name", label: "결제 업체명" },
+    ];
+    for (let i = 0; i < purchaseItems.length; i += 1) {
+      const row = purchaseItems[i];
+      const missingField = REQUIRED_ITEM_FIELDS.find((field) => {
+        const value = row[field.key];
+        return value === null || value === undefined || value === "";
+      });
+      if (missingField) {
+        Swal.fire({
+          title: "확인",
+          text: `${row.no || i + 1}번 품목의 ${missingField.label}을(를) 입력해주세요.`,
+          icon: "warning",
+        });
+        return;
+      }
+    }
+
+    // 요청 사유 필수값 검증
+    if (!clean(paymentNoteBufferRef.current)) {
+      Swal.fire({ title: "확인", text: "요청 사유를 입력해주세요.", icon: "warning" });
+      return;
+    }
+
     const submitConfirm = await Swal.fire({
       title: "상신하시겠습니까?",
       text: "상신 후에는 내용을 수정하기 어렵습니다.",
@@ -556,10 +585,10 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
             문서번호: {detail.payment_id}
           </MDBox>
           <MDBox sx={{ overflowX: "auto", maxHeight: "48vh", overflowY: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 850 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080 }}>
               <thead>
                 <tr>
-                  {["No", "품목명", "수량", "금액(원)", "사용처/용도", "결제 업체명", "구매링크", "비고"].map((label) => (
+                  {["No", "품목명", "수량", "금액(원)", "사용처/용도", "결제 업체명", "구매링크", "비고", "예산포함여부", "구매진행여부", "구매여부"].map((label) => (
                     <th key={label} style={historyThCell}>{label}</th>
                   ))}
                 </tr>
@@ -594,6 +623,21 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
                       ) : "-"}
                     </td>
                     <td style={historyTdCell}>{getHistoryItemValue(row, "note") || "-"}</td>
+                    <td style={historyTdCell}>
+                      <MDBox component="span" sx={getDecisionYnBadgeSx(getHistoryItemValue(row, "budget_yn"))}>
+                        {isHistoryYnTrue(getHistoryItemValue(row, "budget_yn")) ? "포함" : "미포함"}
+                      </MDBox>
+                    </td>
+                    <td style={historyTdCell}>
+                      <MDBox component="span" sx={getDecisionYnBadgeSx(getHistoryItemValue(row, "purchase_yn"))}>
+                        {isHistoryYnTrue(getHistoryItemValue(row, "purchase_yn")) ? "진행" : "미진행"}
+                      </MDBox>
+                    </td>
+                    <td style={historyTdCell}>
+                      <MDBox component="span" sx={getBuyYnBadgeSx(getHistoryItemValue(row, "buy_yn"))}>
+                        {isHistoryYnTrue(getHistoryItemValue(row, "buy_yn")) ? "구매" : "미구매"}
+                      </MDBox>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -644,6 +688,45 @@ const getHistoryItemValue = (row, key) => {
   return row[key] ?? row[key.toUpperCase()] ?? "";
 };
 
+// buy_yn 등 Y/N 컬럼 값을 boolean으로 정규화한다.
+const isHistoryYnTrue = (v) => String(v ?? "").trim().toUpperCase() === "Y";
+
+// 구매여부 배지 색상 - 구매: 하늘색, 미구매: 회색 (전자결재 관리 상세와 동일한 톤)
+const getBuyYnBadgeSx = (buyYn) => {
+  const isBuy = isHistoryYnTrue(buyYn);
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 46,
+    px: 1,
+    py: 0.35,
+    borderRadius: 1,
+    fontWeight: 700,
+    fontSize: 11,
+    color: isBuy ? "#1565c0" : "#546e7a",
+    backgroundColor: isBuy ? "#e3f2fd" : "#f1f3f5",
+  };
+};
+
+// 예산포함여부/구매진행여부 배지 색상 - 포함/진행: 초록, 미포함/미진행: 빨강 (전자결재 관리 상세와 동일한 톤)
+const getDecisionYnBadgeSx = (v) => {
+  const isYes = isHistoryYnTrue(v);
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 46,
+    px: 1,
+    py: 0.35,
+    borderRadius: 1,
+    fontWeight: 700,
+    fontSize: 11,
+    color: isYes ? "#1b5e20" : "#c62828",
+    backgroundColor: isYes ? "#dff3e0" : "#fdecea",
+  };
+};
+
 const getHistoryStatusText = (row) => {
   if (String(row?.progress_status_text || "").trim()) return row.progress_status_text;
   if (String(row?.status || "") === "3" || String(row?.tm_sign || "") === "3") return "반려";
@@ -689,7 +772,7 @@ const historyModalSx = (isMobile) => ({
   top: "50%",
   left: "50%",
   transform: "translate(-50%, -50%)",
-  width: isMobile ? "94vw" : 1050,
+  width: isMobile ? "94vw" : "min(1220px, 96vw)",
   maxHeight: "88vh",
   overflow: "auto",
   bgcolor: "#fff",

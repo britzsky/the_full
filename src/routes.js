@@ -548,8 +548,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/layouts/recordcommutesheet",
         component: <RecordCommuteManager />,
-        allowedDepartments: [5, 6],
-        allowedPositions: [0, 1],
+        allowedDepartments: [6],
+        // allowedPositions: [0, 1],
         accessMode: "OR",
       },
       {

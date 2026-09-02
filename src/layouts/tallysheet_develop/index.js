@@ -556,6 +556,7 @@ function TallySheet() {
     currentIndex: 0,
     revokeUrls: [],
   });
+  const floatingPreviewRef = useRef(floatingPreview);
 
   const releasePreviewBlobUrls = useCallback((previewState) => {
     (previewState?.revokeUrls || []).forEach((previewUrl) => {
@@ -564,64 +565,6 @@ function TallySheet() {
       }
     });
   }, []);
-
-  const openFloatingPreview = useCallback(
-    (src, title = "미리보기") => {
-      if (!src) return;
-
-      setFloatingPreview((prev) => {
-        releasePreviewBlobUrls(prev);
-        const revokeUrls = [];
-        const previewUrl =
-          typeof src === "object"
-            ? (() => {
-                const nextBlobUrl = URL.createObjectURL(src);
-                revokeUrls.push(nextBlobUrl);
-                return nextBlobUrl;
-              })()
-            : (() => {
-                const normalizedSrc = normalizeStoredPreviewPath(src);
-                if (!normalizedSrc) return String(src);
-                if (/^(blob:|data:|https?:\/\/)/i.test(normalizedSrc)) return normalizedSrc;
-                const base = String(API_BASE_URL || "").replace(/\/$/, "");
-                const params = new URLSearchParams();
-                params.set("file_path", normalizedSrc.startsWith("/") ? normalizedSrc : `/${normalizedSrc}`);
-                return `${base}/Account/AccountStoredFileView?${params.toString()}`;
-              })();
-
-        return {
-          open: true,
-          files: [
-            {
-              url: previewUrl,
-              name: title || extractDisplayFileName(src) || "미리보기",
-              kind: getPreviewFileKind(src),
-            },
-          ],
-          currentIndex: 0,
-          revokeUrls,
-        };
-      });
-    },
-    [releasePreviewBlobUrls]
-  );
-
-  const closeFloatingPreview = useCallback(() => {
-    setFloatingPreview((prev) => {
-      releasePreviewBlobUrls(prev);
-      return { ...prev, open: false, files: [], currentIndex: 0, revokeUrls: [] };
-    });
-  }, [releasePreviewBlobUrls]);
-
-  const handleFloatingPreviewIndexChange = useCallback((nextIndex) => {
-    setFloatingPreview((prev) => ({
-      ...prev,
-      currentIndex:
-        typeof nextIndex === "function" ? nextIndex(prev.currentIndex) : Number(nextIndex) || 0,
-    }));
-  }, []);
-
-  useEffect(() => () => releasePreviewBlobUrls(floatingPreview), [releasePreviewBlobUrls, floatingPreview]);
 
   // ======================== ✅ "클릭된 셀/행" 하이라이트 상태 (요청 반영) ========================
   const [activeCell, setActiveCell] = useState({
@@ -652,6 +595,78 @@ function TallySheet() {
     if (s.startsWith("data:")) return s;
     return toAbsolutePreviewUrl(s);
   }, [toAbsolutePreviewUrl]);
+
+  const openFloatingPreview = useCallback(
+    (src, title = "미리보기") => {
+      if (!src) return;
+
+      setFloatingPreview((prev) => {
+        releasePreviewBlobUrls(prev);
+        const revokeUrls = [];
+        // 단일 파일/경로와 다중 파일 목록 모두 공통 포맷으로 변환한다.
+        const sourceList = Array.isArray(src) ? src : [src];
+        const files = sourceList
+          .map((item, idx) => {
+            if (!item) return null;
+
+            const previewUrl =
+              typeof item === "object"
+                ? (() => {
+                  const nextBlobUrl = URL.createObjectURL(item);
+                  revokeUrls.push(nextBlobUrl);
+                  return nextBlobUrl;
+                })()
+                : toPreviewUrl(item) || String(item);
+
+            return {
+              url: previewUrl,
+              name:
+                sourceList.length > 1
+                  ? `${title || "미리보기"} ${idx + 1}`
+                  : title || extractDisplayFileName(item) || "미리보기",
+              kind: getPreviewFileKind(item),
+            };
+          })
+          .filter(Boolean);
+
+        if (!files.length) {
+          return { ...prev, open: false, files: [], currentIndex: 0, revokeUrls: [] };
+        }
+
+        return {
+          open: true,
+          files,
+          currentIndex: 0,
+          revokeUrls,
+        };
+      });
+    },
+    [releasePreviewBlobUrls, toPreviewUrl]
+  );
+
+  const closeFloatingPreview = useCallback(() => {
+    setFloatingPreview((prev) => {
+      releasePreviewBlobUrls(prev);
+      return { ...prev, open: false, files: [], currentIndex: 0, revokeUrls: [] };
+    });
+  }, [releasePreviewBlobUrls]);
+
+  const handleFloatingPreviewIndexChange = useCallback((nextIndex) => {
+    setFloatingPreview((prev) => ({
+      ...prev,
+      currentIndex:
+        typeof nextIndex === "function" ? nextIndex(prev.currentIndex) : Number(nextIndex) || 0,
+    }));
+  }, []);
+
+  useEffect(() => {
+    floatingPreviewRef.current = floatingPreview;
+  }, [floatingPreview]);
+
+  useEffect(
+    () => () => releasePreviewBlobUrls(floatingPreviewRef.current),
+    [releasePreviewBlobUrls]
+  );
 
   // ✅✅ FIX: 날짜는 항상 dayjs로 확정해서 YYYY-MM-DD 만들기
   const buildCellDate = useCallback((y, m, dayIdx) => {

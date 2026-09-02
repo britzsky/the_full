@@ -24,7 +24,7 @@ const getDistanceInMeters = (latitudeA, longitudeA, latitudeB, longitudeB) => {
 //    - ⚠️ 모바일앱(thefull-m)도 동일 엔드포인트(/Account/AccountCoordinateInfo, /Account/CommuteSave)를 쓰므로
 //      모바일 쪽 호출 경로도 함께 변경해야 한다 (이 저장소에는 없어 별도 반영 필요)
 //    - 식별 기준은 user_id(로그인 계정)가 아니라 account_id + user_name(이름)
-export default function useRecordCommuteSheetData() {
+export default function useRecordCommuteData() {
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [todayStatus, setTodayStatus] = useState(null);
   const [deviceRequestList, setDeviceRequestList] = useState([]);
@@ -214,7 +214,8 @@ export default function useRecordCommuteSheetData() {
     []
   );
 
-  // ✅ 출퇴근 기록 목록 조회
+  // ✅ 출퇴근 기록 목록 조회 - account_id만 넘기고 user_name을 생략하면 그 업장 전체 인원의
+  //    기록을 한 번에 받아온다(업장별 출퇴근 기록 탭에서 사용). account_id까지 생략하면 전체 업장.
   const fetchRecordList = useCallback(async (params) => {
     setLoading(true);
     try {

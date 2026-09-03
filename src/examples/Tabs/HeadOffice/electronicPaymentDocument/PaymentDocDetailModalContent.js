@@ -192,6 +192,21 @@ function PaymentDocDetailModalContent({
     },
     [asText, viewerUserId]
   );
+  const toDownloadFileUrl = useCallback(
+    (file) => {
+      const rawPath = asText(file?.image_path);
+      const imageIndex = rawPath.indexOf("/image/");
+      if (imageIndex < 0) return "";
+      const encodedPath = rawPath
+        .slice(imageIndex)
+        .split("/")
+        .map((segment) => (segment ? encodeURIComponent(segment) : ""))
+        .join("/");
+      const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
+      return `${apiBase}/download${encodedPath}`;
+    },
+    [asText]
+  );
   // 서버 첨부파일을 미리보기 목록으로 변환한다. (이미지/PDF/엑셀)
   const detailFilePreviewList = useMemo(
     () =>
@@ -226,7 +241,7 @@ function PaymentDocDetailModalContent({
     [detailFilePreviewList]
   );
   const handleDownloadFile = useCallback(async (file) => {
-    const fileUrl = toStoredFileUrl(file);
+    const fileUrl = toDownloadFileUrl(file);
     if (!fileUrl) return;
 
     const fallbackPath = asText(file?.image_path);
@@ -235,6 +250,10 @@ function PaymentDocDetailModalContent({
     try {
       const res = await fetch(fileUrl, { credentials: "include" });
       if (!res.ok) throw new Error(`첨부파일 요청 실패 (${res.status})`);
+      const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+      if (contentType.includes("xml") || contentType.includes("html") || contentType.includes("json")) {
+        throw new Error(`파일 대신 오류 응답을 받았습니다. (${contentType || "unknown"})`);
+      }
       const blobUrl = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = blobUrl;
@@ -252,7 +271,7 @@ function PaymentDocDetailModalContent({
       a.click();
       document.body.removeChild(a);
     }
-  }, [asText, toStoredFileUrl]);
+  }, [asText, toDownloadFileUrl]);
   const handleAttachmentPreview = useCallback((file) => {
     const previewKind = getHeadOfficeDocumentPreviewKind({
       image_name: file?.image_name,

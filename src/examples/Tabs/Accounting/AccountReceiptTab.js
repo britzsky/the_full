@@ -108,6 +108,20 @@ const getUniqueDownloadFileName = (fileName, usedFileNameMap) => {
   return `${safeName.slice(0, dotIndex)} (${usedCount + 1})${safeName.slice(dotIndex)}`;
 };
 
+const buildFileDownloadUrl = (path) => {
+  const rawPath = String(path || "").trim();
+  if (!rawPath) return "";
+  const imageIndex = rawPath.indexOf("/image/");
+  const imagePath = imageIndex >= 0 ? rawPath.slice(imageIndex) : rawPath;
+  const encodedPath = imagePath
+    .split("/")
+    .map((segment) => (segment ? encodeURIComponent(segment) : ""))
+    .join("/");
+  const normalizedPath = encodedPath.startsWith("/") ? encodedPath : `/${encodedPath}`;
+  const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
+  return `${apiBase}/download${normalizedPath}`;
+};
+
 // =====================================================================
 // 메인 컴포넌트
 // =====================================================================
@@ -401,31 +415,20 @@ function AccountReceiptTab() {
     setViewerOpen(true);
   };
 
-  // 영수증 파일 Blob 다운로드 — 경로 인코딩 후 정적 URL로 시도, 실패 시 AccountStoredFileView로 재시도
+  // 다운로드 전용 API에서 매번 새 presigned URL을 발급받아 Blob으로 내려받는다.
   const fetchReceiptBlob = async (item) => {
-    const rawPath = String(item.path || "").trim();
-    const encodedPath = rawPath
-      .split("/")
-      .map((seg) => (seg ? encodeURIComponent(seg) : ""))
-      .join("/");
-    const normalizedPath = encodedPath.startsWith("/") ? encodedPath : `/${encodedPath}`;
-    const staticUrl = `${API_BASE_URL}${normalizedPath}`;
-
-    try {
-      const res = await fetch(staticUrl, { credentials: "include" });
-      if (!res.ok) throw new Error(`영수증 파일 요청 실패 (${res.status})`);
-      const blob = await res.blob();
-      if (blob instanceof Blob && blob.size > 0) return blob;
-    } catch {
-      // 정적 URL 실패 시 AccountStoredFileView로 재시도
+    const downloadUrl = buildFileDownloadUrl(item.path);
+    if (!downloadUrl) throw new Error("영수증 파일 경로가 없습니다.");
+    const res = await fetch(downloadUrl, { credentials: "include" });
+    if (!res.ok) throw new Error(`영수증 파일 요청 실패 (${res.status})`);
+    const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+    if (contentType.includes("xml") || contentType.includes("html") || contentType.includes("json")) {
+      throw new Error(`파일 대신 오류 응답을 받았습니다. (${contentType || "unknown"})`);
     }
-
-    const res2 = await fetch(item.previewUrl, { credentials: "include" });
-    if (!res2.ok) throw new Error(`영수증 파일 요청 실패 (${res2.status})`);
-    const blob2 = await res2.blob();
-    if (!(blob2 instanceof Blob) || blob2.size === 0)
+    const blob = await res.blob();
+    if (!(blob instanceof Blob) || blob.size === 0)
       throw new Error("영수증 파일을 불러오지 못했습니다.");
-    return blob2;
+    return blob;
   };
 
   const canChooseDownloadPath = () => Boolean(window.isSecureContext && window.showSaveFilePicker);
@@ -450,7 +453,8 @@ function AccountReceiptTab() {
       setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     } catch (error) {
       console.error("영수증 파일 다운로드 실패:", error);
-      triggerBrowserDownload(item.previewUrl, fileName);
+      const downloadUrl = buildFileDownloadUrl(item.path);
+      if (downloadUrl) triggerBrowserDownload(downloadUrl, fileName);
     }
   };
 

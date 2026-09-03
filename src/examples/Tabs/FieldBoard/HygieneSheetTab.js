@@ -19,6 +19,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 
 function HygieneSheetTab() {
   const theme = useTheme();
@@ -299,7 +300,7 @@ function HygieneSheetTab() {
   // ✅ 다운로드 (서버 경로 문자열일 때만)
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
-    const url = `${API_BASE_URL}${path}`;
+    const url = buildFileDownloadUrl(path);
     const filename = path.split("/").pop() || "download";
 
     const a = document.createElement("a");

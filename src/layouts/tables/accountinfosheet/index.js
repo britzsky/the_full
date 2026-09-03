@@ -33,6 +33,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 
 // =========================
 // ✅ 계약기간 직접입력 유틸
@@ -490,7 +491,7 @@ function AccountInfoSheet() {
 
       // 서버 path 다운로드: CorporateCardSheet 방식
       if (it.kind === "path" && it.path) {
-        const url = safeJoinUrl(it.path);
+        const url = buildFileDownloadUrl(it.path);
         const filename = it.name || String(it.path).split("/").pop() || filenameBase;
 
         const a = document.createElement("a");
@@ -517,7 +518,7 @@ function AccountInfoSheet() {
         document.body.removeChild(a);
       }
     },
-    [safeJoinUrl, getSrcOfItem]
+    [getSrcOfItem]
   );
 
   // 첨부파일 유형별 미리보기 열기

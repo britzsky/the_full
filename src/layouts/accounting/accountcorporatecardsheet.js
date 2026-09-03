@@ -37,6 +37,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountCorporateCardData from "./data/AccountCorporateCardData";
 import useAccountingMonthLock from "utils/useAccountingMonthLock";
 
@@ -462,9 +463,7 @@ function AccountCorporateCardSheet() {
 
   const handleDownload = useCallback(async (path) => {
     if (!path || typeof path !== "string") return;
-    const url = /^(https?:\/\/|blob:|data:)/i.test(path)
-      ? path
-      : `${String(API_BASE_URL || "").replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+    const url = /^(blob:|data:)/i.test(path) ? path : buildFileDownloadUrl(path);
     const rawFilename = path.split("?")[0].split("/").pop() || "receipt";
     let filename = rawFilename;
     try {

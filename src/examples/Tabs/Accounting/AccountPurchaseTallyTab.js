@@ -37,6 +37,7 @@ import Swal from "sweetalert2";
 import ExcelJS from "exceljs";
 import api from "api/api";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountPurchaseTallyData from "./accountPurchaseTallyData";
 
 // ✅ 연월 입력 로케일 설정
@@ -1064,7 +1065,7 @@ function AccountPurchaseTallyTab() {
   const handleDownload = useCallback(
     (path) => {
       if (!path || typeof path !== "string") return;
-      const url = buildFileUrl(path);
+      const url = buildFileDownloadUrl(path);
       const filename = path.split("/").pop() || "download";
 
       const a = document.createElement("a");

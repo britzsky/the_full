@@ -7,6 +7,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import * as XLSX from "xlsx";
 import MDBox from "components/MDBox";
 import api from "api/api";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 
 // 파일 종류별 미리보기 창 비율을 계산한다.
 function getViewerFrameRatio(isMobile, fileKind) {
@@ -741,7 +742,11 @@ function PreviewOverlay({
                 link.click();
                 document.body.removeChild(link);
               } else {
-                window.open(currentPreviewUrl, "_blank", "noopener,noreferrer");
+                const originalPath = currentFile?.path || currentFile?.image_path || "";
+                const downloadUrl = String(originalPath).includes("/image/")
+                  ? buildFileDownloadUrl(originalPath)
+                  : currentPreviewUrl;
+                window.open(downloadUrl, "_blank", "noopener,noreferrer");
               }
             }}
             disabled={!currentPreviewUrl}

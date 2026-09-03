@@ -23,6 +23,7 @@ import useAccountMemberRecSheetData, {
 } from "./accountMemberRecSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import {
   canEditSensitiveField,
   maskSensitiveFieldValue,
@@ -735,7 +736,7 @@ function AccountMemberRecSheet() {
 
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
-    const url = `${API_BASE_URL}${path}`;
+    const url = buildFileDownloadUrl(path);
     const filename = path.split("/").pop() || "download";
     const a = document.createElement("a");
     a.href = url;

@@ -8,6 +8,7 @@ import { Download, RotateCcw, Trash2 } from "lucide-react";
 import MDBox from "components/MDBox";
 import api from "api/api";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import {
   HEADOFFICE_DOCUMENT_FILE_ACCEPT,
   buildHeadOfficeDocumentFileUrl,
@@ -1114,6 +1115,7 @@ function PaymentDocWriteDocumentForm({
                           API_BASE_URL
                         );
                         const fileViewUrl = toHeadOfficeDocumentViewUrl(fileOpenUrl);
+                        const fileDownloadUrl = buildFileDownloadUrl(String(img?.image_path || ""));
                         return (
                           <MDBox
                             key={`saved-image-${imageOrder}`}
@@ -1315,7 +1317,7 @@ function PaymentDocWriteDocumentForm({
                               <IconButton
                                 size="small"
                                 component="a"
-                                href={fileViewUrl}
+                                href={fileDownloadUrl}
                                 download
                                 target="_blank"
                                 rel="noopener noreferrer"

@@ -28,6 +28,7 @@ import useAccountingMonthLock from "utils/useAccountingMonthLock";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useCorporateCardData from "./data/CorporateCardData";
 // -------------------------------------------------------------
 // 회계 - 본사 법인카드 시트
@@ -206,6 +207,8 @@ const buildReceiptUrl = (path, v) => {
   const vv = v || 0;
   return appendQuery(appendQuery(base, `v=${vv}`), `cb=${Date.now()}`);
 };
+
+const buildReceiptDownloadUrl = (path) => buildFileDownloadUrl(path);
 
 const parseNumMaybe = (v) => {
   if (v === null || v === undefined) return null;
@@ -617,7 +620,7 @@ function CorporateCardSheet() {
   const handleDownloadServerPath = useCallback(
     (path, v) => {
       if (!path || typeof path !== "string") return;
-      const url = buildReceiptUrl(path, v);
+      const url = buildReceiptDownloadUrl(path);
       const filename = path.split("/").pop() || "download";
       downloadBySrc(url, filename);
     },

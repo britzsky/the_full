@@ -21,6 +21,7 @@ import Swal from "sweetalert2";
 import ExcelJS from "exceljs";
 import dayjs from "dayjs";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 
 const RECEIPT_IMAGE_FIELDS = ["receipt_img", "receipt_img2", "receipt_img3"];
 const RECEIPT_IMAGE_MAX_COUNT = RECEIPT_IMAGE_FIELDS.length;
@@ -492,7 +493,7 @@ function PropertySheetTab() {
   // ✅ 다운로드 (서버 경로 문자열일 때만)
   const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
-    const url = `${API_BASE_URL}${path}`;
+    const url = buildFileDownloadUrl(path);
     const filename = path.split("/").pop() || "download";
 
     const a = document.createElement("a");

@@ -17,6 +17,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Chip, LinearProgress, TextField } from "@mui/material";
 import Swal from "sweetalert2";
 import PropTypes from "prop-types";
+import ExcelJS from "exceljs";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import api from "api/api";
@@ -185,6 +186,147 @@ function AdminSurveyView({ surveyPeriod }) {
     }
   };
 
+  // hex("#d32f2f") + alpha("33") → ExcelJS ARGB("33D32F2F")
+  const hexToArgb = (hex, alpha = "FF") => `${alpha}${String(hex).replace("#", "").toUpperCase()}`;
+
+  // 조회된 통계(연도/분기/전체평균/총 응답자/문항별 결과)를 화면과 동일한 색감으로 엑셀 다운로드
+  const handleExcelDownload = async () => {
+    if (!stats) return;
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const ws = workbook.addWorksheet("만족도 조사 결과");
+
+      const NAVY = "1F4E79";
+      const borderThin = {
+        top: { style: "thin", color: { argb: hexToArgb("#dde3ec") } },
+        left: { style: "thin", color: { argb: hexToArgb("#dde3ec") } },
+        bottom: { style: "thin", color: { argb: hexToArgb("#dde3ec") } },
+        right: { style: "thin", color: { argb: hexToArgb("#dde3ec") } },
+      };
+
+      const colCount = 3 + SCORE_OPTIONS.length; // 문항 + 평균 + 점수옵션들 + 응답자수
+
+      // ✅ 1행: 제목 (웹 상단 "ERP 만족도 조사" 배너와 동일한 네이비 배경 + 흰 글씨)
+      ws.mergeCells(1, 1, 1, colCount);
+      const titleCell = ws.getCell(1, 1);
+      titleCell.value = `ERP 만족도 조사 결과   ·   ${localYear}년 ${QUARTER_LABELS[localQuarter]}`;
+      titleCell.font = { bold: true, size: 14, color: { argb: hexToArgb("#ffffff") } };
+      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: hexToArgb(`#${NAVY}`) } };
+      titleCell.alignment = { vertical: "middle", horizontal: "center" };
+      ws.getRow(1).height = 30;
+
+      // ✅ 2행: 총 응답자 / 전체 평균 (웹의 연한 하늘색 요약 박스와 동일한 톤)
+      ws.mergeCells(2, 1, 2, colCount);
+      const summaryCell = ws.getCell(2, 1);
+      summaryCell.value = `총 응답자   ${stats.totalRespondents ?? 0}명        전체 평균   ${stats.overallAverage ?? "-"}점 / 20점`;
+      summaryCell.font = { bold: true, size: 11, color: { argb: hexToArgb(`#${NAVY}`) } };
+      summaryCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: hexToArgb("#f3f6fb") } };
+      summaryCell.alignment = { vertical: "middle", horizontal: "center" };
+      ws.getRow(2).height = 22;
+
+      // ✅ 3행: 헤더 (문항 컬럼은 좌측 정렬, 점수 옵션 컬럼은 각 옵션 색상으로 강조)
+      const headers = ["문항", "평균", ...SCORE_OPTIONS.map((o) => o.label), "응답자수"];
+      headers.forEach((header, idx) => {
+        const cell = ws.getCell(3, idx + 1);
+        cell.value = header;
+        cell.font = { bold: true, size: 11, color: { argb: hexToArgb("#ffffff") } };
+        cell.border = borderThin;
+        const isScoreCol = idx >= 2 && idx < 2 + SCORE_OPTIONS.length;
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: isScoreCol ? hexToArgb(SCORE_OPTIONS[idx - 2].color) : hexToArgb(`#${NAVY}`) },
+        };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      });
+      ws.getRow(3).height = 22;
+
+      // ✅ 4행~: 문항별 결과 — 점수 옵션 칸은 웹 Chip과 같은 옅은 색 배경 + 진한 글씨
+      (stats.questionStats || []).forEach((q, qIdx) => {
+        const rowNo = 4 + qIdx;
+        const total = stats.totalRespondents || 0;
+        const avg = Number(q.average || 0);
+
+        const questionCell = ws.getCell(rowNo, 1);
+        questionCell.value = `Q${qIdx + 1}. ${q.question_text || ""}`;
+        questionCell.font = { bold: true, size: 10.5, color: { argb: hexToArgb("#333333") } };
+        questionCell.border = borderThin;
+        questionCell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+
+        const avgCell = ws.getCell(rowNo, 2);
+        avgCell.value = avg;
+        avgCell.numFmt = "0.0";
+        avgCell.font = { bold: true, size: 11, color: { argb: hexToArgb(`#${NAVY}`) } };
+        avgCell.border = borderThin;
+        avgCell.alignment = { vertical: "middle", horizontal: "center" };
+
+        SCORE_OPTIONS.forEach((opt, optIdx) => {
+          const count = q.scoreDistribution?.[String(opt.value)] ?? q.scoreDistribution?.[opt.value] ?? 0;
+          const cell = ws.getCell(rowNo, 3 + optIdx);
+          cell.value = count;
+          cell.font = { bold: true, size: 10.5, color: { argb: hexToArgb(opt.color) } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: hexToArgb(opt.color, "22") } };
+          cell.border = borderThin;
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+        });
+
+        const totalCell = ws.getCell(rowNo, colCount);
+        totalCell.value = total;
+        totalCell.font = { size: 10.5, color: { argb: hexToArgb("#888888") } };
+        totalCell.border = borderThin;
+        totalCell.alignment = { vertical: "middle", horizontal: "center" };
+
+        ws.getRow(rowNo).height = 20;
+      });
+
+      // ✅ 문항 통계 아래: 추가 의견 (작성자 비노출, "추가의견 N" 형태로 순서대로 나열)
+      const comments = stats.comments || [];
+      if (comments.length > 0) {
+        let rowNo = 4 + (stats.questionStats || []).length + 1; // 문항 표와 한 줄 띄우고 시작
+
+        ws.mergeCells(rowNo, 1, rowNo, colCount);
+        const commentTitleCell = ws.getCell(rowNo, 1);
+        commentTitleCell.value = `💬 추가 의견 (${comments.length}건)`;
+        commentTitleCell.font = { bold: true, size: 11, color: { argb: hexToArgb("#333333") } };
+        ws.getRow(rowNo).height = 20;
+        rowNo += 1;
+
+        comments.forEach((c, i) => {
+          ws.mergeCells(rowNo, 1, rowNo, colCount);
+          const cell = ws.getCell(rowNo, 1);
+          cell.value = `추가의견 ${i + 1}   ${c}`;
+          cell.font = { size: 10.5, color: { argb: hexToArgb("#444444") } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: hexToArgb("#f3f6fb") } };
+          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+          cell.border = borderThin;
+          ws.getRow(rowNo).height = 20;
+          rowNo += 1;
+        });
+      }
+
+      ws.getColumn(1).width = 42;
+      ws.getColumn(2).width = 9;
+      SCORE_OPTIONS.forEach((_, i) => { ws.getColumn(3 + i).width = 11; });
+      ws.getColumn(colCount).width = 11;
+      ws.views = [{ state: "frozen", ySplit: 3 }];
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ERP만족도조사_${localYear}_${localQuarter}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
+    }
+  };
+
   const yearOptions = Array.from({ length: 5 }, (_, i) => String(new Date().getFullYear() - i)); // 연도 드롭다운: 올해 포함 최근 5년
 
   return (
@@ -234,6 +376,14 @@ function AdminSurveyView({ surveyPeriod }) {
               sx={{ fontSize: 12 }}
             >
               조회
+            </MDButton>
+            <MDButton
+              variant="outlined" color="success" size="small"
+              onClick={handleExcelDownload}
+              disabled={!stats || statsLoading}
+              sx={{ fontSize: 12 }}
+            >
+              📥 엑셀 다운로드
             </MDButton>
           </MDBox>
 
@@ -314,6 +464,29 @@ function AdminSurveyView({ surveyPeriod }) {
                   </MDBox>
                 );
               })}
+
+              {/* 추가 의견 — 작성자 구분 없이 등록 순서대로 "추가의견 N" 형태로 노출 */}
+              {(stats.comments || []).length > 0 && (
+                <MDBox sx={{ mt: 3, p: 2, border: "1px solid #e8ecf0", borderRadius: 2 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: "#333" }}>
+                    💬 추가 의견 ({stats.comments.length}건)
+                  </div>
+                  {stats.comments.map((c, i) => (
+                    <MDBox
+                      key={i}
+                      sx={{
+                        mb: 1, p: 1.5, background: "#f3f6fb", borderRadius: 1.5,
+                        fontSize: 13, color: "#444",
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: "#1f4e79", marginRight: 6 }}>
+                        추가의견 {i + 1}
+                      </span>
+                      <span style={{ whiteSpace: "pre-wrap" }}>{c}</span>
+                    </MDBox>
+                  ))}
+                </MDBox>
+              )}
             </MDBox>
           )}
         </MDBox>
@@ -385,6 +558,7 @@ AdminSurveyView.propTypes = {
 function UserSurveyView({ surveyPeriod, loginUserId }) {
   const [questions, setQuestions] = useState([]);          // 이번 분기 설문 문항 목록
   const [answers, setAnswers] = useState({});               // { [question_idx]: score } — 선택한 점수 누적
+  const [comment, setComment] = useState("");                // 추가 의견 (선택 입력)
   const [alreadySubmitted, setAlreadySubmitted] = useState(false); // 이미 제출했으면 완료 화면으로 대체
   const [loading, setLoading] = useState(true);             // 문항/제출여부 초기 로딩 여부
   const [submitting, setSubmitting] = useState(false);      // 제출 API 호출 중 (버튼 비활성화용)
@@ -448,6 +622,7 @@ function UserSurveyView({ surveyPeriod, loginUserId }) {
           question_idx: q.idx,
           score: answers[q.idx],
         })),
+        comment: comment.trim(),
       });
       if (res.data?.code === 200) {
         await Swal.fire({
@@ -530,6 +705,22 @@ function UserSurveyView({ surveyPeriod, loginUserId }) {
           </MDBox>
         );
       })}
+
+      {/* 추가 의견 — 선택 입력, 제출 시 그대로 저장됨 (관리자 화면엔 작성자 없이 노출) */}
+      <MDBox sx={{ mb: 3, p: 2, border: "1px solid #e8ecf0", borderRadius: 2 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 10, color: "#333" }}>
+          💬 추가 의견 <span style={{ fontWeight: 400, fontSize: 12, color: "#aaa" }}>(선택)</span>
+        </div>
+        <TextField
+          fullWidth
+          multiline
+          minRows={3}
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          placeholder="자유롭게 의견을 남겨주세요."
+          size="small"
+        />
+      </MDBox>
 
       <MDBox sx={{ mb: 2, p: 1.5, background: "#f3f6fb", borderRadius: 2, fontSize: 12, color: "#555" }}>
         답변 현황: {Object.keys(answers).length} / {questions.length}문항 완료

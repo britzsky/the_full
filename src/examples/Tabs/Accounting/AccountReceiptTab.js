@@ -27,7 +27,6 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
-import api from "api/api";
 import { API_BASE_URL } from "config";
 import useAccountReceiptTabData, {
   buildFilePreviewUrl,
@@ -413,15 +412,17 @@ function AccountReceiptTab() {
     const staticUrl = `${API_BASE_URL}${normalizedPath}`;
 
     try {
-      const res = await api.get(staticUrl, { responseType: "blob" });
-      const blob = res?.data;
+      const res = await fetch(staticUrl, { credentials: "include" });
+      if (!res.ok) throw new Error(`영수증 파일 요청 실패 (${res.status})`);
+      const blob = await res.blob();
       if (blob instanceof Blob && blob.size > 0) return blob;
     } catch {
       // 정적 URL 실패 시 AccountStoredFileView로 재시도
     }
 
-    const res2 = await api.get(item.previewUrl, { responseType: "blob", withCredentials: true });
-    const blob2 = res2?.data;
+    const res2 = await fetch(item.previewUrl, { credentials: "include" });
+    if (!res2.ok) throw new Error(`영수증 파일 요청 실패 (${res2.status})`);
+    const blob2 = await res2.blob();
     if (!(blob2 instanceof Blob) || blob2.size === 0)
       throw new Error("영수증 파일을 불러오지 못했습니다.");
     return blob2;

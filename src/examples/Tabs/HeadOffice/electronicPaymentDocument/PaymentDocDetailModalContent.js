@@ -4,7 +4,6 @@ import { Download } from "lucide-react";
 
 import MDBox from "components/MDBox";
 import { API_BASE_URL } from "config";
-import api from "api/api";
 import {
   getHeadOfficeDocumentPreviewKind,
 } from "utils/headOfficeDocumentImageUtils";
@@ -234,8 +233,9 @@ function PaymentDocDetailModalContent({
     const filename = asText(file?.image_name) || fallbackPath.split("/").pop() || "download";
 
     try {
-      const res = await api.get(fileUrl, { responseType: "blob" });
-      const blobUrl = URL.createObjectURL(res.data);
+      const res = await fetch(fileUrl, { credentials: "include" });
+      if (!res.ok) throw new Error(`첨부파일 요청 실패 (${res.status})`);
+      const blobUrl = URL.createObjectURL(await res.blob());
       const a = document.createElement("a");
       a.href = blobUrl;
       a.download = filename;

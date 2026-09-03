@@ -119,14 +119,18 @@ export default function useRecordCommuteData() {
   }, []);
 
   // ✅ (관리자) 등록기기 승인/반려 - phone_last4까지 같이 보내야 동명이인 중 정확한 대상 행을 찾는다
+  //    이름이 같은 다른 phone_last4 행이 이미 승인되어 있으면 서버가 code="428"(needs_confirm)로
+  //    먼저 확인을 요청한다(응답에 same_device로 같은 기기인지도 같이 내려줌) - 관리자가 판단한
+  //    결과를 stale_decision: "SAME_PERSON" | "DIFFERENT_PERSON"으로 다시 보내야 실제로 처리된다.
   const approveDevice = useCallback(
-    async ({ account_id, user_name, phone_last4, approve, approve_user_id }) => {
+    async ({ account_id, user_name, phone_last4, approve, approve_user_id, stale_decision }) => {
       const res = await api.post("/Account/CommuteDeviceApprove", {
         account_id,
         user_name,
         phone_last4,
         approve,
         approve_user_id,
+        stale_decision,
       });
       return res.data;
     },

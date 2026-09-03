@@ -11,10 +11,13 @@ export default function useRecordCommuteHistoryData() {
   const fetchAccountList = useCallback(async () => {
     try {
       const res = await api.get("/Account/AccountList", { params: { account_type: "0" } });
-      const rows = (res.data || []).map((item) => ({
-        account_id: item.account_id,
-        account_name: item.account_name,
-      }));
+      const rows = (res.data || [])
+        .map((item) => ({
+          account_id: item.account_id,
+          account_name: item.account_name,
+        }))
+        // ✅ 가나다순 정렬 - API가 정렬해서 안 주므로 프론트에서 처리
+        .sort((a, b) => String(a.account_name || "").localeCompare(String(b.account_name || ""), "ko"));
       setAccountList(rows);
       return rows;
     } catch (e) {

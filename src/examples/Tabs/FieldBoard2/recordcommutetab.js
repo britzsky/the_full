@@ -60,7 +60,7 @@ function RecordCommuteTab() {
     refreshAll().finally(() => setInitialLoading(false));
   }, []);
 
-  const handleApprove = async (row, approve) => {
+  const handleApprove = async (row, approve, staleDecision) => {
     try {
       const res = await approveDevice({
         account_id: row.account_id,
@@ -68,7 +68,50 @@ function RecordCommuteTab() {
         phone_last4: row.phone_last4,
         approve,
         approve_user_id: userId,
+        stale_decision: staleDecision,
       });
+
+      // ✅ 이름이 같은 다른 phone_last4 행이 이미 승인되어 있어, 관리자 확인이 필요한 경우.
+      if (res?.code === "428") {
+        if (res?.same_device) {
+          // 같은 기기까지 같으면 본인(번호 오타/변경)일 가능성이 높다. "다른 사람"이라는
+          // 선택지는 주지 않는다 - 그러면 같은 기기가 두 사람에게 동시에 승인되어버리기 때문에,
+          // 서버도 그 조합은 어차피 거부한다.
+          const confirmResult = await Swal.fire({
+            title: "확인 필요",
+            text: res?.msg || "",
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "같은 사람 맞음 - 계속 진행",
+            cancelButtonText: "취소",
+          });
+
+          if (confirmResult.isConfirmed) {
+            await handleApprove(row, approve, "SAME_PERSON");
+          }
+        } else {
+          // 기기가 다르면 동명이인(진짜 다른 사람)일 가능성이 높다 - 어느 쪽이든 안전하게
+          // 처리 가능하므로 세 가지 선택지를 모두 준다.
+          const confirmResult = await Swal.fire({
+            title: "확인 필요",
+            text: res?.msg || "",
+            icon: "question",
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: "같은 사람 - 기기변경(예전 기기 해제)",
+            denyButtonText: "다른 사람 - 이번 요청만 승인",
+            cancelButtonText: "취소",
+          });
+
+          if (confirmResult.isConfirmed) {
+            await handleApprove(row, approve, "SAME_PERSON");
+          } else if (confirmResult.isDenied) {
+            await handleApprove(row, approve, "DIFFERENT_PERSON");
+          }
+        }
+        return;
+      }
+
       await Swal.fire({
         title: res?.code === "200" ? "처리 완료" : "처리 실패",
         text: res?.msg || "",
@@ -245,9 +288,23 @@ function RecordCommuteTab() {
         overflow: "hidden",
       }}
     >
-      <MDTypography variant="h6" mb={2}>
-        등록기기 승인 대기 목록
-      </MDTypography>
+      <MDBox display="flex" alignItems="center" justifyContent="space-between" mb={2}>
+        <MDTypography variant="h6">등록기기 승인 대기 목록</MDTypography>
+        <MDButton
+          size="small"
+          variant="gradient"
+          color="warning"
+          onClick={refreshAll}
+          sx={{
+            fontSize: "0.75rem",
+            minWidth: "unset !important",
+            padding: "4px 14px !important",
+            whiteSpace: "nowrap",
+          }}
+        >
+          새로고침
+        </MDButton>
+      </MDBox>
       <Divider sx={{ mb: 2 }} />
       {deviceRequestList.length === 0 ? (
         <MDTypography variant="button" color="text">

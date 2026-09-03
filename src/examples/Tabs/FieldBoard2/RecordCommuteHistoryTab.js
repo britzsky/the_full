@@ -13,10 +13,6 @@ import useRecordCommuteHistoryData from "./RecordCommuteHistorydata";
 
 const KOREAN_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-// ✅ 더미(예시) 직원명 - 실제 조회 결과가 없을 때 화면이 어떻게 보일지 미리 확인할 수 있도록
-//    보여주는 샘플 데이터용. 실제 데이터가 있으면 이 더미는 전혀 쓰이지 않는다.
-const DUMMY_EMPLOYEE_NAMES = ["홍길동", "김철수", "이영희"];
-
 // ✅ 거래처 검색(Autocomplete, height: 40 강제)과 년/월 Select의 높이를 맞추기 위한 스타일.
 //    이 프로젝트 테마(inputOutlined.js)가 size="small" 입력창 padding을 10px로 커스텀하고
 //    있어서, 강제로 안 맞추면 Select만 더 짧게 렌더링된다.
@@ -150,22 +146,8 @@ function RecordCommuteHistoryTab() {
     [daysInMonth, year, month]
   );
 
-  // ✅ 예시(더미) 달력 - 조회했는데 실제 기록이 없을 때, 화면이 어떻게 보일지 미리 볼 수 있도록
-  //    보여준다. 실제 기록이 하나라도 있으면 이 더미는 쓰이지 않는다.
-  const dummyCalendarRows = useMemo(
-    () =>
-      DUMMY_EMPLOYEE_NAMES.map((name, idx) => {
-        const days = {};
-        for (let d = 1 + idx; d <= daysInMonth; d += 3) {
-          days[d] = { start_time: "09:00:00", end_time: "18:00:00" };
-        }
-        return { name, days };
-      }),
-    [daysInMonth]
-  );
-
-  const isShowingDummy = searched && calendarRows.length === 0;
-  const displayRows = isShowingDummy ? dummyCalendarRows : calendarRows;
+  const isEmpty = searched && calendarRows.length === 0;
+  const displayRows = calendarRows;
 
   const tableSx = {
     maxHeight: "560px",
@@ -316,13 +298,12 @@ function RecordCommuteHistoryTab() {
           <MDTypography variant="button" color="text">
             불러오는 중...
           </MDTypography>
+        ) : isEmpty ? (
+          <MDTypography variant="button" color="text">
+            조회된 출퇴근 기록이 없습니다.
+          </MDTypography>
         ) : (
           <>
-            {isShowingDummy && (
-              <MDTypography variant="caption" color="text" display="block" mb={1}>
-                조회된 출퇴근 기록이 없어, 화면이 어떻게 보이는지 예시 데이터로 보여드립니다.
-              </MDTypography>
-            )}
             <MDBox sx={tableSx}>
               <table>
                 <thead>

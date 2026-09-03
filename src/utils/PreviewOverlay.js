@@ -65,6 +65,24 @@ function decodeUriRepeatedly(value) {
   return current;
 }
 
+// tallysheet처럼 미리보기 API URL만 전달된 경우에도 file_path를 복원해
+// 다운로드 전용 API(/download/image/...)를 사용할 수 있게 한다.
+function resolveOriginalDownloadPath(file, previewUrl) {
+  const explicitPath = String(file?.path || file?.image_path || "").trim();
+  if (explicitPath.includes("/image/")) return explicitPath;
+
+  try {
+    const baseUrl = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+    const parsed = new URL(String(previewUrl || ""), baseUrl);
+    const filePath = String(parsed.searchParams.get("file_path") || "").trim();
+    if (filePath.includes("/image/")) return filePath;
+  } catch {
+    // URL 파싱이 불가능하면 기존 미리보기 URL을 그대로 사용한다.
+  }
+
+  return explicitPath;
+}
+
 // 전자결재 상세와 동일하게 PDF는 좌측 페이지 패널을 접은 기본 뷰로 연다.
 function buildPdfViewerUrl(url) {
   const targetUrl = String(url ?? "").trim();
@@ -742,7 +760,7 @@ function PreviewOverlay({
                 link.click();
                 document.body.removeChild(link);
               } else {
-                const originalPath = currentFile?.path || currentFile?.image_path || "";
+                const originalPath = resolveOriginalDownloadPath(currentFile, currentPreviewUrl);
                 const downloadUrl = String(originalPath).includes("/image/")
                   ? buildFileDownloadUrl(originalPath)
                   : currentPreviewUrl;

@@ -9,7 +9,7 @@ import Swal from "sweetalert2";
 import MDBox from "components/MDBox";
 import MDTypography from "components/MDTypography";
 import MDButton from "components/MDButton";
-import useRecordCommuteData from "./recordcommutedata";
+import useRecordCommuteHistoryData from "./RecordCommuteHistorydata";
 
 const KOREAN_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -40,7 +40,7 @@ const formatHM = (timeStr) => (timeStr ? String(timeStr).slice(0, 5) : "");
 //    업장 하나를 고르면 그 업장 전 직원의 한 달치 출퇴근 기록을 달력 테이블로 한눈에 보여준다.
 //    (recordsheet는 근무타입을 "입력"하는 화면이고, 여기는 모바일 GPS 체크인 기록을 "조회"만 하는 화면)
 function RecordCommuteHistoryTab() {
-  const { accountList, fetchAccountList, fetchRecordList, loading } = useRecordCommuteData();
+  const { accountList, fetchAccountList, fetchRecordList, loading } = useRecordCommuteHistoryData();
 
   const today = dayjs();
   const [selectedAccountId, setSelectedAccountId] = useState("");

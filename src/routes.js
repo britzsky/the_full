@@ -78,7 +78,7 @@ import HumanResourceEvaluation from "layouts/humanresource/humanresourcetab_2";
 // 현장
 import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
-import RecordCommuteManager from "layouts/recordcommutesheet";
+import RecordCommuteManager from "examples/Tabs/FieldBoardTabs_2";
 import DinersManager from "layouts/dinersnumbersheet";
 import MenuManagement from "layouts/menumanagement";
 
@@ -546,7 +546,7 @@ const routes = [
         name: "📍 출·퇴근 관리",
         key: "commute",
         //icon: <Icon fontSize="small">*</Icon>,
-        route: "/layouts/recordcommutesheet",
+        route: "/FieldBoardTabs_2",
         component: <RecordCommuteManager />,
         allowedDepartments: [6],
         // allowedPositions: [0, 1],

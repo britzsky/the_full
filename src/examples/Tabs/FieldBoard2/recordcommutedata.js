@@ -29,25 +29,7 @@ export default function useRecordCommuteData() {
   const [todayStatus, setTodayStatus] = useState(null);
   const [deviceRequestList, setDeviceRequestList] = useState([]);
   const [deviceList, setDeviceList] = useState([]);
-  const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
-
-  // ✅ 근무지(거래처) 검색용 목록 - "거래처 검색" 화면(recordsheet)과 동일한 API
-  const fetchAccountList = useCallback(async () => {
-    try {
-      const res = await api.get("/Account/AccountList", { params: { account_type: "0" } });
-      const rows = (res.data || []).map((item) => ({
-        account_id: item.account_id,
-        account_name: item.account_name,
-      }));
-      setAccountList(rows);
-      return rows;
-    } catch (e) {
-      console.error("거래처 목록 조회 실패:", e);
-      setAccountList([]);
-      return [];
-    }
-  }, []);
 
   // ✅ 내 등록기기(승인/요청) 상태 조회 (account_id + user_name + phone_last4 기준 - 동명이인 구분용)
   const fetchDeviceInfo = useCallback(async (account_id, user_name, phone_last4) => {
@@ -234,9 +216,7 @@ export default function useRecordCommuteData() {
     todayStatus,
     deviceRequestList,
     deviceList,
-    accountList,
     loading,
-    fetchAccountList,
     fetchDeviceInfo,
     fetchTodayStatus,
     fetchAccountCoordinate,

@@ -28,6 +28,7 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { API_BASE_URL } from "config";
 import { fetchAccountListByName } from "api/accountQueryApi";
 import useSiteCorpCardReceiptArchiveData, {
   buildCorpCardFilePreviewUrl,
@@ -69,6 +70,19 @@ const RECEIPT_TYPE_COLORS = {
   COUPANG_APP: "#e74c3c",
 };
 const FALLBACK_COLOR = "#9ca3af";
+
+const buildFileDownloadUrl = (path) => {
+  const rawPath = String(path || "").trim();
+  const imageIndex = rawPath.indexOf("/image/");
+  if (imageIndex < 0) return "";
+  const encodedPath = rawPath
+    .slice(imageIndex)
+    .split("/")
+    .map((segment) => (segment ? encodeURIComponent(segment) : ""))
+    .join("/");
+  const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
+  return `${apiBase}/download${encodedPath}`;
+};
 
 const sanitizeFileName = (name) =>
   String(name || "receipt").replace(/[\\/:*?"<>|]/g, "_").trim() || "receipt";
@@ -203,8 +217,14 @@ function SiteCorpCardReceiptArchiveTab() {
   };
 
   const fetchBlob = async (item) => {
-    const res = await fetch(item.previewUrl, { credentials: "include" });
+    const downloadUrl = buildFileDownloadUrl(item.receipt_image);
+    if (!downloadUrl) throw new Error("영수증 파일 경로가 없습니다.");
+    const res = await fetch(downloadUrl, { credentials: "include" });
     if (!res.ok) throw new Error("영수증 파일을 불러오지 못했습니다.");
+    const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+    if (contentType.includes("xml") || contentType.includes("html") || contentType.includes("json")) {
+      throw new Error(`파일 대신 오류 응답을 받았습니다. (${contentType || "unknown"})`);
+    }
     return res.blob();
   };
 
@@ -231,7 +251,8 @@ function SiteCorpCardReceiptArchiveTab() {
         triggerBrowserDownload(objectUrl, fileName);
         setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
       } catch {
-        triggerBrowserDownload(item.previewUrl, fileName);
+        const downloadUrl = buildFileDownloadUrl(item.receipt_image);
+        if (downloadUrl) triggerBrowserDownload(downloadUrl, fileName);
       }
       return;
     }
@@ -259,7 +280,8 @@ function SiteCorpCardReceiptArchiveTab() {
         triggerBrowserDownload(objectUrl, fileName);
         setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
       } catch {
-        triggerBrowserDownload(item.previewUrl, fileName);
+        const downloadUrl = buildFileDownloadUrl(item.receipt_image);
+        if (downloadUrl) triggerBrowserDownload(downloadUrl, fileName);
       }
     }
   };

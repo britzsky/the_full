@@ -37,7 +37,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
-import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import { buildFileDownloadUrl, isFileDownloadErrorResponse } from "utils/fileDownloadUrl";
 import useAccountCorporateCardData from "./data/AccountCorporateCardData";
 import useAccountingMonthLock from "utils/useAccountingMonthLock";
 
@@ -474,7 +474,9 @@ function AccountCorporateCardSheet() {
 
     try {
       const response = await fetch(url, { credentials: "include" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (isFileDownloadErrorResponse(response)) {
+        throw new Error(`Invalid download response: HTTP ${response.status}`);
+      }
 
       const blob = await response.blob();
       const objectUrl = URL.createObjectURL(blob);

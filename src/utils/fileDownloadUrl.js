@@ -23,3 +23,14 @@ export const buildFileDownloadUrl = (path) => {
   const base = String(API_BASE_URL || "").replace(/\/+$/, "");
   return `${base}/download${encodePath(normalizedPath)}`;
 };
+
+export const isFileDownloadErrorResponse = (response) => {
+  const contentType = String(response?.headers?.get("content-type") || "").toLowerCase();
+  return (
+    !response?.ok ||
+    contentType.includes("application/xml") ||
+    contentType.includes("text/xml") ||
+    contentType.includes("text/html") ||
+    contentType.includes("application/json")
+  );
+};

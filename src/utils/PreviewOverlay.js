@@ -207,14 +207,20 @@ function PreviewOverlay({
   const currentFile = previewFiles[safeIndex] || null;
   // 첨부파일 URL은 image_path 기준으로 이미 한 번 인코딩된 값이 들어올 수 있으므로
   // decode -> encode 한 번만 적용해 %25 형태의 이중 인코딩을 막는다.
+  // 단, AccountStoredFileView?file_path=%2Fimage%2F... 처럼 쿼리스트링 자체가
+  // 이미 정상 인코딩된 경우까지 다시 encodeURI로 감싸면 %2F -> %252F로 또
+  // 이중 인코딩되어 file_path가 깨지므로, 쿼리스트링은 건드리지 않고 경로만 처리한다.
   const currentFileViewUrl = useMemo(() => {
     const rawUrl = String(currentFile?.url ?? "").trim();
     if (!rawUrl) return "";
     if (/^(blob:|data:)/i.test(rawUrl)) return rawUrl;
+    const queryIndex = rawUrl.indexOf("?");
+    const pathPart = queryIndex >= 0 ? rawUrl.slice(0, queryIndex) : rawUrl;
+    const queryPart = queryIndex >= 0 ? rawUrl.slice(queryIndex) : "";
     try {
-      return encodeURI(decodeUriRepeatedly(rawUrl));
+      return `${encodeURI(decodeUriRepeatedly(pathPart))}${queryPart}`;
     } catch {
-      return encodeURI(rawUrl);
+      return `${encodeURI(pathPart)}${queryPart}`;
     }
   }, [currentFile?.url]);
   const canGoPrev = safeIndex > 0;
@@ -749,22 +755,40 @@ function PreviewOverlay({
 
           <button
             type="button"
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
               if (!currentPreviewUrl) return;
-              if (/^blob:/i.test(currentPreviewUrl)) {
+
+              const triggerBlobDownload = (blobUrl) => {
                 const link = document.createElement("a");
-                link.href = currentPreviewUrl;
+                link.href = blobUrl;
                 link.download = currentFile?.name || "preview";
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-              } else {
-                const originalPath = resolveOriginalDownloadPath(currentFile, currentPreviewUrl);
-                const downloadUrl = String(originalPath).includes("/image/")
-                  ? buildFileDownloadUrl(originalPath)
-                  : currentPreviewUrl;
-                window.open(downloadUrl, "_blank", "noopener,noreferrer");
+              };
+
+              if (/^blob:/i.test(currentPreviewUrl)) {
+                triggerBlobDownload(currentPreviewUrl);
+                return;
+              }
+
+              const originalPath = resolveOriginalDownloadPath(currentFile, currentPreviewUrl);
+              // 서버 프록시(/image/...) 경로가 확인되면 기존 다운로드 전용 API를 사용한다.
+              if (String(originalPath).includes("/image/")) {
+                window.open(buildFileDownloadUrl(originalPath), "_blank", "noopener,noreferrer");
+                return;
+              }
+
+              // S3 등 외부 URL은 Content-Disposition이 없어 새 탭으로 열려버리므로
+              // blob으로 직접 받아 강제 다운로드시킨다. 실패하면 새 탭 열기로 폴백.
+              try {
+                const fileBlob = await fetchPreviewBlob(currentPreviewUrl);
+                const blobUrl = URL.createObjectURL(fileBlob);
+                triggerBlobDownload(blobUrl);
+                URL.revokeObjectURL(blobUrl);
+              } catch {
+                window.open(currentPreviewUrl, "_blank", "noopener,noreferrer");
               }
             }}
             disabled={!currentPreviewUrl}

@@ -37,7 +37,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
-import { buildFileDownloadUrl, isFileDownloadErrorResponse } from "utils/fileDownloadUrl";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountCorporateCardData from "./data/AccountCorporateCardData";
 import useAccountingMonthLock from "utils/useAccountingMonthLock";
 
@@ -461,9 +461,10 @@ function AccountCorporateCardSheet() {
   const fileIconSx = { color: "#1e88e5" };
   const [cardNoEditingIndex, setCardNoEditingIndex] = useState(null);
 
-  const handleDownload = useCallback(async (path) => {
+  const handleDownload = useCallback((path) => {
     if (!path || typeof path !== "string") return;
     const url = /^(blob:|data:)/i.test(path) ? path : buildFileDownloadUrl(path);
+    if (!url) return;
     const rawFilename = path.split("?")[0].split("/").pop() || "receipt";
     let filename = rawFilename;
     try {
@@ -472,25 +473,16 @@ function AccountCorporateCardSheet() {
       filename = rawFilename;
     }
 
-    try {
-      const response = await fetch(url, { credentials: "include" });
-      if (isFileDownloadErrorResponse(response)) {
-        throw new Error(`Invalid download response: HTTP ${response.status}`);
-      }
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    } catch (error) {
-      console.error("영수증 다운로드 실패:", error);
-      Swal.fire("오류", "영수증 파일을 다운로드하지 못했습니다.", "error");
-    }
+    // 다운로드 API는 S3 presigned URL로 redirect하므로 fetch로 응답을 읽으면
+    // S3 CORS 정책에 막힌다. 브라우저 탐색으로 위임하면 CORS 대상이 아니다.
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }, []);
 
   // ============================================================

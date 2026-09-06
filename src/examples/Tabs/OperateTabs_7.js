@@ -4,9 +4,8 @@ import MDBox from "components/MDBox";
 import LoadingScreen from "layouts/loading/loadingscreen";
 
 // 탭용 서브 컴포넌트 import
-import AccountMemberCardSheetTab from "./Operate/AccountMemberCardSheetTab";
-import AccountMemberRecSheetTab from "./Operate/AccountMemberRecSheetTab";
-import PersonCostBudgetTab from "./Operate/PersonCostBudgetTab";
+import MenuMasterTab from "./Operate/MenuMasterTab";
+import RecipeManageTab from "./Operate/RecipeManageTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
@@ -46,7 +45,7 @@ const hasAccess = (tab, deptCode, posCode) => {
   }
 };
 
-function OperateTabs_2() {
+function OperateTabs_7() {
   const [tabIndex, setTabIndex] = useState(0);
   const [contentTabIndex, setContentTabIndex] = useState(0);
   const [tabSwitchLoading, setTabSwitchLoading] = useState(false);
@@ -69,77 +68,29 @@ function OperateTabs_2() {
     }, TAB_SWITCH_DELAY_MS);
   };
 
-  // ✅ 숫자 이모지 아이콘
-  const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
-
   // 부서코드: 0:대표, 1:신사업, 2:회계, 3:인사, 4:영업, 5:운영, 6:개발, 7:현장
   // 직책코드: 0:대표, 1:팀장, 2:부장, 3:차장, 4:과장, 5:대리, 6:주임, 7:사원
 
   // 🔹 탭 설정 + 권한 정의
   const tabConfig = [
     {
-      key: "fieldstaff",
-      label: "👥 현장 직원목록",
+      key: "menuMaster",
+      label: "🍚 메뉴 관리",
       iconIndex: 0,
-      component: <AccountMemberCardSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
-      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
-      accessMode: "AND",
-    },
-    {
-      key: "property",
-      label: "📦 현장 채용현황",
-      iconIndex: 1,
-      component: <AccountMemberRecSheetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9], // 🔹 부서권한
-      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7], // 🔹 직책권한
-      accessMode: "AND",
-    },
-    {
-      key: "personCostBudget",
-      label: "🧑‍🤝‍🧑 인건비 예산관리",
-      iconIndex: 2,
-      component: <PersonCostBudgetTab />,
+      component: <MenuMasterTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
       accessMode: "AND",
     },
-    // {
-    //   key: "retail",
-    //   label: "🏢 거래처관리",
-    //   iconIndex: 2,
-    //   component: <RetailBusinessTab />,
-    //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
-    //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
-    //   accessMode: "AND",
-    // },
-    // {
-    //   key: "subRestaurant",
-    //   label: "🏢 대체업체관리",
-    //   iconIndex: 3,
-    //   component: <SubRestaurantTab />,
-    //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
-    //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
-    //   accessMode: "AND",
-    // },
-    // {
-    //   key: "handover",
-    //   label: "🔁 인수인계 관리",
-    //   iconIndex: 4,
-    //   component: <HandOverSheetTab />,
-    //   allowedDepartments: [0, 2, 3, 4, 5, 6, 7],   // 🔹 부서권한
-    //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
-    //   accessMode: "AND",
-    // },
-    // {
-    //   key: "accountFiles",
-    //   label: "📋 면허증 및 자격증 관리",
-    //   iconIndex: 5,
-    //   component: <AccountMembersFilesTab />,
-    //   allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
-    //   allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
-    //   accessMode: "AND",
-    // },
+    {
+      key: "recipeManage",
+      label: "📖 레시피 관리",
+      iconIndex: 1,
+      component: <RecipeManageTab />,
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+      allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+      accessMode: "AND",
+    },
   ];
 
   // 🔹 현재 유저 기준으로 보여줄 탭만 필터링
@@ -172,16 +123,26 @@ function OperateTabs_2() {
   if (visibleTabs.length === 0) {
     return (
       <Card sx={{ borderRadius: "16px", padding: 3 }}>
-        <MDBox textAlign="center">조회 가능한 운영 탭이 없습니다. (권한 확인 필요)</MDBox>
+        <MDBox textAlign="center">조회 가능한 메뉴/레시피 관리 탭이 없습니다. (권한 확인 필요)</MDBox>
       </Card>
     );
   }
   const activeTabComponent = visibleTabs[contentTabIndex]?.component ?? visibleTabs[tabIndex]?.component;
 
   return (
-    <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}>
+    <Card
+      sx={{
+        borderRadius: "16px",
+        boxShadow: "0px 5px 15px rgba(0,0,0,0.1)",
+        // ✅ 남은 화면 높이를 그대로 채워서 내부 표만 스크롤되게(브라우저 자체 스크롤 방지)
+        height: "calc(100vh - 40px)",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
       <MDBox
         sx={{
+          flexShrink: 0,
           position: "sticky",
           top: 0, // 상단 고정 위치 (필요하면 56, 64 등으로 조절 가능)
           zIndex: 10,
@@ -190,8 +151,7 @@ function OperateTabs_2() {
         }}
       >
         {/* 🔹 공통 헤더 사용 */}
-        {/* <HeaderWithLogout showMenuButton title="📁고객사 관리" /> */}
-        <DashboardNavbar title="🧑‍🔧채용관리" />
+        <DashboardNavbar title="🍽️ 메뉴/레시피 관리" />
         {/* 탭 상단 */}
         <Tabs
           value={tabIndex}
@@ -213,7 +173,6 @@ function OperateTabs_2() {
               key={tab.key}
               label={
                 <Box display="flex" alignItems="center" gap={1}>
-                  {/* <span>{numberIcons[tab.iconIndex]}</span> */}
                   <span>{tab.label}</span>
                 </Box>
               }
@@ -233,8 +192,19 @@ function OperateTabs_2() {
           ))}
         </Tabs>
       </MDBox>
-      {/* 탭 내용 */}
-      <MDBox p={2} sx={{ position: "relative" }}>
+      {/* 탭 내용 (남은 공간을 채우고, 내부에서만 스크롤) */}
+      <MDBox
+        pt={1}
+        pb={2}
+        px={2}
+        sx={{
+          position: "relative",
+          flex: 1,
+          minHeight: 0,
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
         {activeTabComponent}
         {tabSwitchLoading && (
           <MDBox
@@ -255,4 +225,4 @@ function OperateTabs_2() {
   );
 }
 
-export default OperateTabs_2;
+export default OperateTabs_7;

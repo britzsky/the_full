@@ -1324,6 +1324,7 @@ export default function ProfitLossTableTab() {
       firstKey,
       labelGetter,
       applyExcelSales2Merge = false,
+      blankValueKeys = [],
     }
   ) => {
     const existingSheet = workbook.getWorksheet(sheetName);
@@ -1337,6 +1338,7 @@ export default function ProfitLossTableTab() {
 
     const ratioRowNumbers = new Set();
     const totalRowNumbers = new Set();
+    const blankKeySet = new Set(blankValueKeys);
 
     rows.forEach((r) => {
       const rowLabel = labelGetter(r);
@@ -1349,7 +1351,9 @@ export default function ProfitLossTableTab() {
       filteredHeaders.forEach((h) => {
         h.cols.forEach((col) => {
           const key = fieldMap[col]?.value || col;
-          valueObj[key] = getExcelDisplayValue(r, key, rowAccountId, applyExcelSales2Merge) ?? "";
+          valueObj[key] = blankKeySet.has(key)
+            ? ""
+            : getExcelDisplayValue(r, key, rowAccountId, applyExcelSales2Merge) ?? "";
         });
       });
 
@@ -1486,6 +1490,9 @@ export default function ProfitLossTableTab() {
       firstKey: "__month",
       labelGetter: (r) =>
         r.__isCalculatedTotal ? "합계" : `${r.month ?? r.mm ?? r.mon ?? ""}월`,
+      // 월-전체(전 거래처 합계) 시트의 비고는 특정 거래처 한 곳의 메모가
+      // 섞여 나오는 것이라 의미가 없으므로 항상 빈 값으로 표시한다.
+      blankValueKeys: ["utility_bills_note"],
     });
   };
 

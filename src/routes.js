@@ -62,6 +62,7 @@ import OperateTab_5 from "layouts/operate/operatetab_5";
 import AccountIssueManager2 from "layouts/operate/accountissuesheet2";
 import BudgetManager from "layouts/operate/budgettablesheet";
 // import Operate_6 from "layouts/operate/operatetab_6"; // 예산탭(인건비 예산 탭 주석처리)
+import Operate_7 from "layouts/operate/operatetab_7";
 // 회계
 import AccountSales from "layouts/accountsales/accountsales";
 import PurchaseDeadLineTally from "examples/Tabs/Accounting/AccountPurchaseDeadlineTab";
@@ -339,6 +340,17 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/Operate/accountissuesheet2",
         component: <AccountIssueManager2 />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+        accessMode: "AND",
+      },
+      {
+        type: "collapse",
+        name: "🍽️ 메뉴/레시피 관리",
+        key: "menurecipe",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/Operate/MenuRecipe",
+        component: <Operate_7 />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",

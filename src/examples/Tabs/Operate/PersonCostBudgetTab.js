@@ -37,8 +37,8 @@ export default function PersonCostBudgetTab() {
     return { year: Math.floor(total / 12), month: (total % 12) + 1 };
   };
   const thisYm = { year, month };
-  const lastYm = getPrevYm(year, month, 1);
-  const last2Ym = getPrevYm(year, month, 2);
+  // const lastYm = getPrevYm(year, month, 1);
+  // const last2Ym = getPrevYm(year, month, 2);
 
   // ✅ 어떤 달이든 person_total/sales_total만 있으면 비율 계산 (없으면 null)
   const getRatio = (person, sales) =>
@@ -61,8 +61,8 @@ export default function PersonCostBudgetTab() {
     { key: "sales_total", label: "매출액", width: 130 },
     { key: "budget_45", label: "인건비 예산(45%)", width: 130 }, // 매출액 * 45% (인건비 예산 상한선)
     { key: "over_amount", label: "초과금액", width: 130 }, // 인건비 - 예산(45%). 이번월 인건비 금액 자체는 "이번월" 컬럼에서 확인
-    { key: "prev_prev_ratio", label: `${last2Ym.month}월 인건비(비율)`, width: 190, monthOffset: 2 },
-    { key: "prev_ratio", label: `${lastYm.month}월 인건비(비율)`, width: 190, monthOffset: 1 },
+    // { key: "prev_prev_ratio", label: `${last2Ym.month}월 인건비(비율)`, width: 190, monthOffset: 2 },
+    // { key: "prev_ratio", label: `${lastYm.month}월 인건비(비율)`, width: 190, monthOffset: 1 },
     { key: "person_ratio", label: `${thisYm.month}월 인건비(비율)`, width: 190, monthOffset: 0 },
   ];
 
@@ -427,12 +427,12 @@ export default function PersonCostBudgetTab() {
                 <td style={{ textAlign: "right" }}>
                   {formatNumber(Math.round(summaryTotals[2].person - summaryTotals[2].sales * 0.45))}
                 </td>
-                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                {/* <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   {formatNumber(Math.round(summaryTotals[0].person))} ({summaryTotals[0].ratio.toFixed(1)}%)
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   {formatNumber(Math.round(summaryTotals[1].person))} ({summaryTotals[1].ratio.toFixed(1)}%)
-                </td>
+                </td> */}
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   {formatNumber(Math.round(summaryTotals[2].person))} ({summaryTotals[2].ratio.toFixed(1)}%)
                 </td>

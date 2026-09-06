@@ -312,6 +312,7 @@ function SiteCorpCardReceiptArchiveTab() {
       text: `0 / ${total} 처리 중...`,
       allowOutsideClick: false,
       allowEscapeKey: false,
+      showConfirmButton: false,
       didOpen: () => Swal.showLoading(),
     });
 
@@ -325,7 +326,9 @@ function SiteCorpCardReceiptArchiveTab() {
         chunk.map(async (item) => {
           const blob = await fetchBlob(item);
           done += 1;
-          Swal.update({ text: `${done} / ${total} 처리 중...` });
+          // showConfirmButton을 다시 지정해야 스피너가 유지된다 (안 하면 확인 버튼이 다시 나타난다).
+          Swal.update({ text: `${done} / ${total} 처리 중...`, showConfirmButton: false });
+          Swal.showLoading();
           return { item, blob };
         })
       );

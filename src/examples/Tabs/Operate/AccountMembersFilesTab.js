@@ -1,18 +1,18 @@
 ﻿// ✅ src/layouts/membersFiles/AccountMembersFilesTab.js
-import React, { useMemo, useState, useEffect, useCallback } from "react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import { TextField, useTheme, useMediaQuery, IconButton, Tooltip } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useMembersFilesData from "./accountMembersFilesData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import PreviewOverlay from "utils/PreviewOverlay";
 
 function AccountMembersFilesTab() {
   const { membersFilesListRows, accountList, loading, fetcMembersFilesList } =
@@ -22,7 +22,9 @@ function AccountMembersFilesTab() {
   const [accountInput, setAccountInput] = useState("");
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
-  const [viewFile, setViewFile] = useState({ src: null, isPdf: false });
+  const [previewFiles, setPreviewFiles] = useState([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
+  const previewObjectUrlRef = useRef("");
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -247,47 +249,69 @@ function AccountMembersFilesTab() {
     return clean.includes(".") ? clean.split(".").pop().toLowerCase() : "";
   };
 
-  const toAbsoluteUrl = (p) => {
+  const toPreviewUrl = (p) => {
     if (!p) return "";
     if (/^https?:\/\//i.test(p)) return p;
     const base = String(API_BASE_URL || "").replace(/\/$/, "");
-    let path = String(p);
-    if (!path.startsWith("/")) path = `/${path}`;
-    if (base.endsWith("/api") && path.startsWith("/api/")) {
-      path = path.replace(/^\/api/, "");
-    }
-    return `${base}${path}`;
+    const params = new URLSearchParams();
+    const path = String(p).startsWith("/") ? String(p) : `/${p}`;
+    params.set("file_path", path);
+    return `${base}/Account/AccountStoredFileView?${params.toString()}`;
   };
 
-  // ✅ 미리보기
-  const handlePreview = useCallback(async (value) => {
+  // 파일 확장자와 MIME 타입을 기준으로 공통 미리보기 형식을 구분하는 함수
+  const getPreviewKind = (value) => {
+    const mimeType = typeof value === "object" ? String(value?.type || "").toLowerCase() : "";
+    const extension = getExt(typeof value === "object" ? value?.name : value);
+
+    if (mimeType.includes("pdf") || extension === "pdf") return "pdf";
+    if (mimeType.includes("spreadsheet") || ["xls", "xlsx"].includes(extension)) return "excel";
+    return "image";
+  };
+
+  const clearPreviewObjectUrl = useCallback(() => {
+    if (!previewObjectUrlRef.current) return;
+    URL.revokeObjectURL(previewObjectUrlRef.current);
+    previewObjectUrlRef.current = "";
+  }, []);
+
+  // 선택한 문서를 공통 미리보기 오버레이로 표시하는 함수
+  const handlePreview = (value) => {
     if (!value) return;
+
+    clearPreviewObjectUrl();
 
     if (typeof value === "object") {
       const url = URL.createObjectURL(value);
-      const isPdf = String(value.type || "").toLowerCase().includes("pdf");
-      setViewFile({ src: url, isPdf });
-      return;
+      previewObjectUrlRef.current = url;
+      setPreviewFiles([
+        {
+          url,
+          name: value.name || "첨부파일",
+          kind: getPreviewKind(value),
+        },
+      ]);
+    } else {
+      const fileName = String(value).split("/").pop() || "첨부파일";
+      setPreviewFiles([
+        {
+          url: toPreviewUrl(value),
+          name: fileName,
+          kind: getPreviewKind(value),
+          path: value,
+        },
+      ]);
     }
+    setPreviewIndex(0);
+  };
 
-    try {
-      const absUrl = toAbsoluteUrl(value);
-      const res = await api.get(absUrl, { responseType: "blob" });
-      const contentType = String(res?.headers?.["content-type"] || "").toLowerCase();
-      const isPdf = contentType.includes("pdf") || getExt(value) === "pdf";
-      const blobUrl = URL.createObjectURL(res.data);
-      setViewFile({ src: blobUrl, isPdf });
-    } catch (err) {
-      console.error("미리보기 로드 실패:", err);
-      const fallbackUrl = toAbsoluteUrl(value);
-      if (fallbackUrl) {
-        const isPdf = getExt(value) === "pdf";
-        setViewFile({ src: fallbackUrl, isPdf });
-        return;
-      }
-      Swal.fire("미리보기 실패", "파일을 불러오지 못했습니다.", "error");
-    }
-  }, []);
+  const handleClosePreview = useCallback(() => {
+    setPreviewFiles([]);
+    setPreviewIndex(0);
+    clearPreviewObjectUrl();
+  }, [clearPreviewObjectUrl]);
+
+  useEffect(() => () => clearPreviewObjectUrl(), [clearPreviewObjectUrl]);
 
   // ✅ td 꽉 차는 입력 UI 스타일
   const inputLikeStyle = (color) => ({
@@ -635,45 +659,14 @@ function AccountMembersFilesTab() {
         </table>
       </MDBox>
 
-      {/* ✅ 확대 미리보기 */}
-      {viewFile?.src && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.8)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
-          }}
-          onClick={() => {
-            if (viewFile?.src?.startsWith("blob:")) URL.revokeObjectURL(viewFile.src);
-            setViewFile({ src: null, isPdf: false });
-          }}
-        >
-          <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-            <TransformComponent>
-              {viewFile.isPdf ? (
-                <iframe
-                  title="pdf-preview"
-                  src={`${viewFile.src}#view=FitH`}
-                  style={{ width: "90vw", height: "90vh", border: 0, borderRadius: 8 }}
-                />
-              ) : (
-                <img
-                  src={viewFile.src}
-                  alt="미리보기"
-                  style={{ maxWidth: "90%", maxHeight: "90%", borderRadius: 8 }}
-                />
-              )}
-            </TransformComponent>
-          </TransformWrapper>
-        </div>
-      )}
+      {/* 구성원 문서 공통 미리보기 오버레이 */}
+      <PreviewOverlay
+        open={previewFiles.length > 0}
+        files={previewFiles}
+        currentIndex={previewIndex}
+        onChangeIndex={setPreviewIndex}
+        onClose={handleClosePreview}
+      />
     </>
   );
 }

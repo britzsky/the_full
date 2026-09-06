@@ -870,9 +870,6 @@ export default function AccountIssueSheetTab() {
                 "& .MuiAutocomplete-input": {
                   padding: "0 8px !important",
                 },
-                "& .MuiAutocomplete-endAdornment": {
-                  top: `calc(50% - ${14}px)`,
-                },
               }}
             />
           )}

@@ -351,8 +351,8 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/Operate/MenuRecipe",
         component: <Operate_7 />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+        allowedDepartments: [6], // 🔹 부서권한
+        allowedPositions: [0, 1], // 🔹 직책권한
         accessMode: "AND",
       },
     ],

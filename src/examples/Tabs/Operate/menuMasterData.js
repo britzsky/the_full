@@ -57,7 +57,7 @@ export const labelOf = (options, value) =>
 // 🔹 메뉴 관리 탭 - tb_menu_master 데이터 훅
 export default function useMenuMasterData() {
   const [menuRows, setMenuRows] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // ✅ 메뉴 목록 조회
   const fetchMenuList = useCallback(async (filter = {}) => {

@@ -18,6 +18,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { useParams } from "react-router-dom";
 import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
+import { isEmployeeMealColumnPeriod, calculateTotal } from "utils/dinerTotalCalc";
 
 // 🔹 데이케어 컬럼이 보이는 account_id 목록 (기본 레이아웃용)
 const DAYCARE_ACCOUNT_IDS = [
@@ -75,168 +76,17 @@ const numericCols = [
 const employeeMealColumns = ["employ_breakfast", "employ_lunch", "employ_dinner"];
 const employeeMealHeaders = [{ label: "조식" }, { label: "중식" }, { label: "석식" }];
 
-// 2026년 8월부터 모든 업장에 직원 조식·중식·석식 컬럼을 적용
-const isEmployeeMealColumnPeriod = (year, month) =>
-  Number(year) > 2026 || (Number(year) === 2026 && Number(month) >= 8);
-
-// 🔹 학교 / 산업체 판별
-const isSchoolAccount = (accountType) =>
-  accountType === "학교" || accountType === "5" || accountType === 5;
-
-const isIndustryAccount = (accountType) =>
-  accountType === "산업체" || accountType === "4" || accountType === 4;
-
-// ✅ 평균(있는 항목만)
-// - "없으면 있는 항목들로 평균" 요구사항 반영 (0은 "없음"으로 취급)
-const avgOfExisting = (...vals) => {
-  let sum = 0;
-  let cnt = 0;
-
-  vals.forEach((v) => {
-    const n = parseNumber(v);
-    if (!Number.isNaN(n) && n > 0) {
-      sum += n;
-      cnt += 1;
-    }
-  });
-
-  return cnt > 0 ? sum / cnt : 0;
+// 🔹 "구분" 날짜 표시: 출근부(recordsheet)와 동일하게 요일을 같이 표기 + 주말 배경색
+const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
+const formatDinerDateLabel = (date) => {
+  const d = dayjs(date);
+  return `${d.format("YYYY-MM-DD")} (${WEEKDAY_LABELS[d.day()]})`;
 };
-
-// ✅ 합계 계산 (account_id 별 분기 포함)
-const calculateTotal = (row, accountType, extraDietCols, accountId, year, month) => {
-  const extras = Array.isArray(extraDietCols) ? extraDietCols : [];
-  const useEmployeeMealColumns = isEmployeeMealColumnPeriod(year, month);
-
-  // =========================================================
-  // ✅ account_id별 특수 합계 규칙
-  // =========================================================
-
-  // 해당 업장의 이용자와 직원 식수를 식사별 평균으로 합산
-  if (accountId === "20250819193617") {
-    const avgMeals = avgOfExisting(row.breakfast, row.lunch, row.dinner);
-    if (!useEmployeeMealColumns) return Math.round(avgMeals + parseNumber(row.employ));
-
-    const avgEmployeeMeals = avgOfExisting(
-      row.employ_breakfast,
-      row.employ_lunch,
-      row.employ_dinner
-    );
-    return Math.round(avgMeals + avgEmployeeMeals);
-  }
-
-  // ✅ 20250819193620: 기본 조/중/석 평균(있는 항목만) + 경관식
-  // - breakfast/lunch/dinner 값을 계(total) 계산 기준으로 사용 
-  // - (2026-04-09 데이케어 평균에서 요양원 평균으로 변경)
-  if (accountId === "20250819193620") {
-    const avgMeals = avgOfExisting(row.breakfast, row.lunch, row.dinner);
-    const ceremony = parseNumber(row.ceremony);
-    return Math.round(avgMeals + ceremony);
-  }
-
-  // ✅ 20250819193630: 평균값 + 2,3층 경관식 + 7층 경관식 (7층은 2026년 6월까지만)
-  if (accountId === "20250819193630") {
-    const avg23 = avgOfExisting(row.breakfast, row.lunch, row.dinner);
-    const ceremony23 = parseNumber(row.ceremony);
-    const show7F = !year || !month || year < 2026 || (year === 2026 && month <= 6);
-    const ceremony7 = show7F ? parseNumber(row.ceremony2) : 0;
-    return Math.round(avg23 + ceremony23 + ceremony7);
-  }
-
-  // ✅ 20250919162439: (조/중/석 평균) + 데이케어 중식
-  if (accountId === "20250919162439") {
-    const avgMeals = avgOfExisting(row.breakfast, row.lunch, row.dinner);
-    const daycareLunch = parseNumber(row.daycare_lunch);
-    return Math.round(avgMeals + daycareLunch);
-  }
-
-  // =========================================================
-  // 🏫 / 🏭 학교 & 산업체 공통
-  // =========================================================
-  if (isSchoolAccount(accountType) || isIndustryAccount(accountType)) {
-    // ✅ 20250819193651 전용:
-    // - TH에 "조식/중식*/석식"이 있을 때, (있는 값만) 평균을 계(total)에 사용
-    // - "중식", "중식(간편식)"처럼 "중식"으로 시작하면 전부 중식으로 인식
-    // - 그 외 extraDiet 컬럼들은 평균값에 더하지 않고 합산(otherSum)으로 더함
-    if (accountId === "20250819193651") {
-      const breakfastVal = parseNumber(row.breakfast);
-
-      const lunchCols = extras.filter((c) => ((c.name || "").trim() || "").startsWith("중식"));
-      const dinnerCols = extras.filter((c) => ((c.name || "").trim() || "").startsWith("석식"));
-
-      // 중식/석식이 여러 개면(혹시라도) 해당 값들을 합산해서 한 끼 값으로 처리
-      const lunchVal = lunchCols.reduce((sum, c) => sum + parseNumber(row[c.priceKey]), 0);
-      const dinnerVal = dinnerCols.reduce((sum, c) => sum + parseNumber(row[c.priceKey]), 0);
-
-      const avgMeals = avgOfExisting(breakfastVal, lunchVal, dinnerVal);
-      return Math.round(avgMeals);
-    }
-
-    // - ✅ special_yn 노출은 테이블에서만 제어, 합계 로직은 기존 유지
-    // - ✅ 20250819193651: 기본 칼럼을 중식(lunch) -> 조식(breakfast)로 사용(표시용)
-    const mainKey = accountId === "20250819193651" ? "breakfast" : "lunch";
-    const mainMeal = parseNumber(row[mainKey]);
-
-    // ✅ 20260609110526: 중식(mainMeal) + 석식(dinner) 단순 합산 + 특식합
-    if (accountId === "20260609110526") {
-      const dinnerMeal = parseNumber(row.dinner);
-      const extraSum = extras.reduce((sum, col) => sum + parseNumber(row[col.priceKey]), 0);
-      return mainMeal + dinnerMeal + extraSum;
-    }
-
-    // 🏭 산업체 중, TH에 "간편식"/"석식" 이 있는 특수 케이스
-    const hasSimpleMealCols = extras.some((col) =>
-      ["간편식", "석식"].includes((col.name || "").trim())
-    );
-
-    if (isIndustryAccount(accountType) && hasSimpleMealCols) {
-      const baseName = mainKey === "breakfast" ? "조식" : "중식";
-      const baseNames = [baseName, "간편식(포케)", "석식"];
-
-      const baseValues = [mainMeal];
-      let otherSum = 0;
-
-      extras.forEach((col) => {
-        const name = (col.name || "").trim();
-        const value = parseNumber(row[col.priceKey]);
-
-        if (baseNames.includes(name)) baseValues.push(value);
-        else otherSum += value;
-      });
-
-      const avgBase =
-        baseValues.length > 0 ? baseValues.reduce((sum, v) => sum + v, 0) / baseValues.length : 0;
-
-      return Math.round(avgBase + otherSum);
-    }
-
-    // 🏫 학교 + 일반 산업체 → "기본 + extraDiet 합"
-    const extraSum = extras.reduce((sum, col) => sum + parseNumber(row[col.priceKey]), 0);
-    return mainMeal + extraSum;
-  }
-
-  // =========================================================
-  // 🧓 그 외(요양원 등) 기본 로직 유지
-  // =========================================================
-  const breakfast = parseNumber(row.breakfast);
-  const lunch = parseNumber(row.lunch);
-  const dinner = parseNumber(row.dinner);
-  const ceremony = parseNumber(row.ceremony);
-
-  const baseAvgMeals = (breakfast + lunch + dinner) / 3;
-  const baseTotal = Math.round(baseAvgMeals + ceremony);
-
-  let total = baseTotal;
-
-  if (
-    (accountType === "4" || accountType === "5" || accountType === 4 || accountType === 5) &&
-    extras.length > 0
-  ) {
-    const extraSum = extras.reduce((sum, col) => sum + parseNumber(row[col.priceKey]), 0);
-    total += extraSum;
-  }
-
-  return total;
+const getDinerDateCellBg = (date, isHoliday) => {
+  const day = dayjs(date).day();
+  if (day === 0 || isHoliday) return "#ffe5e5"; // 일요일/공휴일
+  if (day === 6) return "#ddf0ff"; // 토요일
+  return undefined;
 };
 
 const defaultColumnLabels = {
@@ -1008,6 +858,19 @@ function DinersNumberSheet() {
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
 
+  // 🔹 "구분" 날짜 배경색(주말/공휴일)에 쓸 공휴일 목록 — 출근부(recordsheet)와 동일한 API
+  const [holidayDays, setHolidayDays] = useState(new Set());
+  useEffect(() => {
+    if (!year || !month) return;
+    api
+      .get("/Operate/HolidayList", { params: { year, month } })
+      .then((res) => {
+        const list = Array.isArray(res.data) ? res.data : [];
+        setHolidayDays(new Set(list.map((h) => Number(h.holiday_day))));
+      })
+      .catch(() => setHolidayDays(new Set()));
+  }, [year, month]);
+
   // 👉 라우트 파라미터에서 account_id 가져오기
   const { account_id } = useParams();
 
@@ -1589,9 +1452,25 @@ function DinersNumberSheet() {
       activeRows.forEach((row, rowIdx) => {
         const excelRow = dataStartRow + rowIdx;
 
-        ws.getCell(excelRow, 1).value = dayjs(row?.diner_date).format("YYYY-MM-DD");
+        const dinerDayOfWeek = dayjs(row?.diner_date).day();
+        const dinerIsHoliday = holidayDays.has(dayjs(row?.diner_date).date());
+        const dinerCellBgArgb =
+          dinerDayOfWeek === 0 || dinerIsHoliday
+            ? "FFFFE5E5"
+            : dinerDayOfWeek === 6
+            ? "FFDDF0FF"
+            : null;
+
+        ws.getCell(excelRow, 1).value = formatDinerDateLabel(row?.diner_date);
         ws.getCell(excelRow, 1).border = borderThin;
         ws.getCell(excelRow, 1).alignment = { vertical: "middle", horizontal: "center" };
+        if (dinerCellBgArgb) {
+          ws.getCell(excelRow, 1).fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: dinerCellBgArgb },
+          };
+        }
 
         visibleColumns.forEach((key, colIdx) => {
           const colNo = colIdx + 2;
@@ -1986,11 +1865,15 @@ function DinersNumberSheet() {
                           style={{
                             position: "sticky",
                             left: 0,
-                            background: "#ffffff",
+                            background:
+                              getDinerDateCellBg(
+                                row.diner_date,
+                                holidayDays.has(dayjs(row.diner_date).date())
+                              ) || "#ffffff",
                             zIndex: 8,
                           }}
                         >
-                          {dayjs(row.diner_date).format("YYYY-MM-DD")}
+                          {formatDinerDateLabel(row.diner_date)}
                         </td>
 
                         {visibleColumns.map((key, colIndex) => {

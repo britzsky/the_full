@@ -1,7 +1,8 @@
 /* eslint-disable react/function-component-definition */
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
+  Chip,
   TextField,
   MenuItem,
   Dialog,
@@ -9,13 +10,16 @@ import {
   DialogContent,
   DialogActions,
   IconButton,
+  TableSortLabel,
   Tooltip,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import CloseIcon from "@mui/icons-material/Close";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
+import RestaurantMenuIcon from "@mui/icons-material/RestaurantMenu";
 import Swal from "sweetalert2";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -61,6 +65,12 @@ const emptyForm = {
   menu_img: "",
 };
 
+// 메뉴 ID에서 목록에 표시하고 정렬할 순번 값을 가져오는 함수
+const getMenuSequence = (menuId) => {
+  const sequence = Number(String(menuId).replace(/^\D+/, ""));
+  return Number.isNaN(sequence) ? String(menuId) : sequence;
+};
+
 // 🔹 운영 > 메뉴/레시피 관리 > 메뉴 관리 탭 (OperateTabs_7에서 사용)
 export default function MenuMasterTab() {
   const { menuRows, loading, fetchMenuList, saveMenu, deleteMenu, uploadMenuImage } =
@@ -71,7 +81,8 @@ export default function MenuMasterTab() {
   const [menuTypeFilter, setMenuTypeFilter] = useState("");
   const [menuGubunFilter, setMenuGubunFilter] = useState("");
   const [mealPlanTypeFilter, setMealPlanTypeFilter] = useState("");
-  const [expandedMenuId, setExpandedMenuId] = useState(null);
+  const [sortDirection, setSortDirection] = useState("asc");
+  const [selectedMenu, setSelectedMenu] = useState(null);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -86,6 +97,21 @@ export default function MenuMasterTab() {
   useEffect(() => {
     fetchMenuList();
   }, [fetchMenuList]);
+
+  // 순번은 기본 오름차순으로 표시하고 헤더 클릭 시 정렬 방향을 전환한다.
+  const sortedMenuRows = useMemo(
+    () =>
+      [...menuRows].sort((a, b) => {
+        const first = getMenuSequence(a.menu_id);
+        const second = getMenuSequence(b.menu_id);
+        const comparison =
+          typeof first === "number" && typeof second === "number"
+            ? first - second
+            : String(first).localeCompare(String(second), "ko", { numeric: true });
+        return sortDirection === "asc" ? comparison : -comparison;
+      }),
+    [menuRows, sortDirection]
+  );
 
   const handleSearch = () =>
     fetchMenuList({
@@ -162,7 +188,10 @@ export default function MenuMasterTab() {
     }
   };
 
-  const toggleExpand = (menuId) => setExpandedMenuId((prev) => (prev === menuId ? null : menuId));
+  // 선택한 메뉴의 식재료 상세를 별도 모달에서 보여준다.
+  const openIngredientDialog = (row) => setSelectedMenu(row);
+
+  const closeIngredientDialog = () => setSelectedMenu(null);
 
   // ✅ 이미지 미리보기 (AccountMemberSheetTab과 동일 로직: File 객체 / 서버 경로 문자열 모두 지원)
   const clearPreviewObjectUrls = useCallback(() => {
@@ -251,6 +280,7 @@ export default function MenuMasterTab() {
               select
               size="small"
               sx={smallSelectSx}
+              SelectProps={{ displayEmpty: true }}
               value={foodTypeFilter}
               onChange={(e) => setFoodTypeFilter(e.target.value)}
             >
@@ -280,6 +310,7 @@ export default function MenuMasterTab() {
               select
               size="small"
               sx={smallSelectSx}
+              SelectProps={{ displayEmpty: true }}
               value={menuTypeFilter}
               onChange={(e) => setMenuTypeFilter(e.target.value)}
             >
@@ -298,6 +329,7 @@ export default function MenuMasterTab() {
               select
               size="small"
               sx={smallSelectSx}
+              SelectProps={{ displayEmpty: true }}
               value={menuGubunFilter}
               onChange={(e) => setMenuGubunFilter(e.target.value)}
             >
@@ -316,6 +348,7 @@ export default function MenuMasterTab() {
               select
               size="small"
               sx={smallSelectSx}
+              SelectProps={{ displayEmpty: true }}
               value={mealPlanTypeFilter}
               onChange={(e) => setMealPlanTypeFilter(e.target.value)}
             >
@@ -351,123 +384,377 @@ export default function MenuMasterTab() {
         <Box
           sx={{
             overflowX: "auto",
-            "& table": { borderCollapse: "collapse", width: "100%", minWidth: 900 },
+            border: "1px solid #e2e8f0",
+            borderRadius: 2,
+            backgroundColor: "#fff",
+            boxShadow: "0 4px 18px rgba(15, 23, 42, 0.06)",
+            "& table": {
+              borderCollapse: "separate",
+              borderSpacing: 0,
+              width: "100%",
+              minWidth: 1100,
+            },
             "& th, & td": {
-              border: "1px solid #ddd",
+              borderBottom: "1px solid #e2e8f0",
               fontSize: "12px",
-              padding: "6px 8px",
+              padding: "10px 8px",
               textAlign: "center",
             },
-            "& th": { backgroundColor: "#f5f5f5" },
+            "& th": {
+              backgroundColor: "#f8fafc",
+              color: "#475569",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            },
+            "& .menu-row": {
+              cursor: "pointer",
+              transition: "background-color 0.15s ease",
+            },
+            "& .menu-row:hover": { backgroundColor: "#f0f7ff" },
+            "& tbody tr:last-of-type td": { borderBottom: 0 },
           }}
         >
           <table>
             <thead>
               <tr>
-                <th style={{ width: 60 }}>순번</th>
+                <th style={{ width: 70 }}>
+                  <TableSortLabel
+                    active
+                    direction={sortDirection}
+                    onClick={() => setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))}
+                    sx={{
+                      color: "inherit !important",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      "& .MuiTableSortLabel-icon": { color: "#1976d2 !important" },
+                    }}
+                  >
+                    순번
+                  </TableSortLabel>
+                </th>
                 <th style={{ width: 200 }}>메뉴명</th>
-                <th style={{ width: 190 }}>이미지</th>
                 <th style={{ width: 80 }}>음식유형</th>
                 <th style={{ width: 90 }}>메뉴타입</th>
                 <th style={{ width: 110 }}>세부분류</th>
                 <th style={{ width: 100 }}>식단표타입</th>
                 <th style={{ width: 90 }}>열량(kcal)</th>
-                <th style={{ width: 100 }} />
+                <th style={{ width: 190 }}>이미지</th>
+                <th style={{ width: 60 }}>수정</th>
+                <th style={{ width: 60 }}>삭제</th>
               </tr>
             </thead>
             <tbody>
               {menuRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ color: "#999" }}>
+                  <td colSpan={10} style={{ color: "#94a3b8", padding: "32px 8px" }}>
                     등록된 메뉴가 없습니다.
                   </td>
                 </tr>
               )}
-              {menuRows.map((row) => (
-                <React.Fragment key={row.menu_id}>
-                  <tr
-                    style={{ cursor: "pointer", backgroundColor: expandedMenuId === row.menu_id ? "#f0f7ff" : undefined }}
-                    onClick={() => toggleExpand(row.menu_id)}
-                  >
-                    <td>{Number(String(row.menu_id).replace(/^\D+/, "")) || row.menu_id}</td>
-                    <td style={{ textAlign: "left", fontWeight: "bold" }}>{row.menu_name}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        id={`menu-img-upload-${row.menu_id}`}
-                        style={{ display: "none" }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          handleRowImageChange(row, file);
-                          e.target.value = ""; // 같은 파일 재선택 가능
-                        }}
-                      />
-                      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.5, flexWrap: "wrap" }}>
-                        <label htmlFor={`menu-img-upload-${row.menu_id}`}>
-                          <MDButton size="small" component="span" color="info" sx={{ fontSize: "10px" }}>
-                            {row.menu_img ? "재업로드" : "이미지 업로드"}
-                          </MDButton>
-                        </label>
-                        {row.menu_img && (
-                          <Tooltip title="다운로드">
-                            <IconButton size="small" color="info" onClick={() => handleDownload(row.menu_img)}>
-                              <DownloadIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                        {row.menu_img && (
-                          <Tooltip title="미리보기">
-                            <IconButton
-                              size="small"
-                              color="info"
-                              onClick={() => handleViewImage(row.menu_img, row.menu_name)}
-                            >
-                              <ImageSearchIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        )}
-                      </Box>
-                    </td>
-                    <td>{labelOf(FOOD_TYPE_OPTIONS, row.food_type)}</td>
-                    <td>{labelOf(MENU_TYPE_OPTIONS, row.menu_type)}</td>
-                    <td>{labelOf(MENU_GUBUN_OPTIONS, row.menu_gubun)}</td>
-                    <td>{labelOf(MEAL_PLAN_TYPE_OPTIONS, row.meal_plan_type)}</td>
-                    <td>{row.calories_per_serving ?? "-"}</td>
-                    <td onClick={(e) => e.stopPropagation()}>
+              {sortedMenuRows.map((row) => (
+                <tr
+                  key={row.menu_id}
+                  className="menu-row"
+                  onClick={() => openIngredientDialog(row)}
+                >
+                  <td>{getMenuSequence(row.menu_id)}</td>
+                  <td style={{ textAlign: "left", fontWeight: 700, color: "#1e293b" }}>
+                    {row.menu_name}
+                  </td>
+                  <td>{labelOf(FOOD_TYPE_OPTIONS, row.food_type)}</td>
+                  <td>{labelOf(MENU_TYPE_OPTIONS, row.menu_type)}</td>
+                  <td>{labelOf(MENU_GUBUN_OPTIONS, row.menu_gubun)}</td>
+                  <td>{labelOf(MEAL_PLAN_TYPE_OPTIONS, row.meal_plan_type)}</td>
+                  <td>{row.calories_per_serving ?? "-"}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      id={`menu-img-upload-${row.menu_id}`}
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        handleRowImageChange(row, file);
+                        e.target.value = ""; // 같은 파일을 다시 선택할 수 있도록 입력값을 초기화한다.
+                      }}
+                    />
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 0.5,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <label htmlFor={`menu-img-upload-${row.menu_id}`}>
+                        <MDButton
+                          size="small"
+                          component="span"
+                          color="info"
+                          sx={{ fontSize: "10px" }}
+                        >
+                          {row.menu_img ? "재업로드" : "이미지 업로드"}
+                        </MDButton>
+                      </label>
+                      {row.menu_img && (
+                        <Tooltip title="다운로드">
+                          <IconButton
+                            size="small"
+                            color="info"
+                            onClick={() => handleDownload(row.menu_img)}
+                          >
+                            <DownloadIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {row.menu_img && (
+                        <Tooltip title="미리보기">
+                          <IconButton
+                            size="small"
+                            color="info"
+                            onClick={() => handleViewImage(row.menu_img, row.menu_name)}
+                          >
+                            <ImageSearchIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Box>
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <Tooltip title="메뉴 수정">
                       <IconButton size="small" color="info" onClick={() => openEditDialog(row)}>
                         <EditIcon fontSize="small" />
                       </IconButton>
+                    </Tooltip>
+                  </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <Tooltip title="메뉴 삭제">
                       <IconButton size="small" color="error" onClick={() => handleDelete(row)}>
                         <DeleteIcon fontSize="small" />
                       </IconButton>
-                    </td>
-                  </tr>
-                  {expandedMenuId === row.menu_id && (
-                    <tr>
-                      <td colSpan={9} style={{ backgroundColor: "#fafafa", textAlign: "left" }}>
-                        <IngredientDetailEditor menuId={row.menu_id} />
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                    </Tooltip>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </table>
         </Box>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{form.menu_id ? "메뉴 수정" : "메뉴 신규 등록"}</DialogTitle>
+      {/* 선택한 메뉴의 식재료 상세를 확인하고 편집하는 모달 */}
+      <Dialog
+        open={Boolean(selectedMenu)}
+        onClose={closeIngredientDialog}
+        maxWidth="xl"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: "hidden",
+            maxHeight: "90vh",
+            boxShadow: "0 24px 70px rgba(15, 23, 42, 0.24)",
+          },
+        }}
+      >
+        <DialogTitle sx={{ p: 0 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+              px: 3,
+              py: 2.25,
+              color: "#fff",
+              background: "linear-gradient(135deg, #1565c0 0%, #0288d1 100%)",
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, minWidth: 0 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 42,
+                  height: 42,
+                  flexShrink: 0,
+                  borderRadius: "12px",
+                  backgroundColor: "rgba(255, 255, 255, 0.18)",
+                }}
+              >
+                <RestaurantMenuIcon />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ fontSize: 18, fontWeight: 700, lineHeight: 1.35 }}>메뉴 식재료 상세</Box>
+                <Box
+                  sx={{
+                    mt: 0.25,
+                    fontSize: 13,
+                    fontWeight: 400,
+                    opacity: 0.85,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {selectedMenu?.menu_name || "선택한 메뉴"}의 구성 식재료를 확인하고 관리합니다.
+                </Box>
+              </Box>
+            </Box>
+            <IconButton
+              aria-label="상세 모달 닫기"
+              onClick={closeIngredientDialog}
+              sx={{ color: "#fff", backgroundColor: "rgba(255, 255, 255, 0.12)" }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent
+          sx={{
+            p: "24px !important",
+            minHeight: 470,
+            backgroundColor: "#f8fafc",
+          }}
+        >
+          {selectedMenu && (
+            <>
+              {/* 선택한 메뉴의 주요 분류와 열량 정보 */}
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  mb: 2,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Box sx={{ mr: 1, color: "#0f172a", fontSize: 17, fontWeight: 700 }}>
+                  {selectedMenu.menu_name}
+                </Box>
+                <Chip
+                  size="small"
+                  label={labelOf(FOOD_TYPE_OPTIONS, selectedMenu.food_type)}
+                  sx={{ backgroundColor: "#e0f2fe", color: "#0369a1", fontWeight: 600 }}
+                />
+                <Chip
+                  size="small"
+                  label={labelOf(MENU_TYPE_OPTIONS, selectedMenu.menu_type)}
+                  sx={{ backgroundColor: "#eef2ff", color: "#4338ca", fontWeight: 600 }}
+                />
+                <Chip
+                  size="small"
+                  label={labelOf(MENU_GUBUN_OPTIONS, selectedMenu.menu_gubun)}
+                  sx={{ backgroundColor: "#f1f5f9", color: "#475569", fontWeight: 600 }}
+                />
+                <Chip
+                  size="small"
+                  label={`${selectedMenu.calories_per_serving ?? "-"} kcal`}
+                  sx={{ backgroundColor: "#fff7ed", color: "#c2410c", fontWeight: 600 }}
+                />
+              </Box>
+              <Box
+                sx={{
+                  p: 2,
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 2,
+                  backgroundColor: "#fff",
+                  boxShadow: "0 2px 10px rgba(15, 23, 42, 0.04)",
+                }}
+              >
+                <IngredientDetailEditor menuId={selectedMenu.menu_id} />
+              </Box>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 1.75, borderTop: "1px solid #e2e8f0" }}>
+          <MDButton
+            variant="outlined"
+            color="info"
+            onClick={closeIngredientDialog}
+            sx={{ minWidth: 88 }}
+          >
+            닫기
+          </MDButton>
+        </DialogActions>
+      </Dialog>
+
+      {/* 메뉴 기본 정보를 신규 등록하거나 수정하는 모달 */}
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            overflow: "hidden",
+            boxShadow: "0 20px 55px rgba(15, 23, 42, 0.2)",
+          },
+        }}
+      >
+        <DialogTitle sx={{ p: 0 }}>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 2,
+              px: 3,
+              py: 2,
+              color: "#1e3a5f",
+              backgroundColor: "#e8f3fb",
+              borderBottom: "1px solid #bfdbfe",
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 38,
+                  height: 38,
+                  color: "#0288d1",
+                  borderRadius: "11px",
+                  backgroundColor: "rgba(255, 255, 255, 0.75)",
+                }}
+              >
+                <RestaurantMenuIcon fontSize="small" />
+              </Box>
+              <Box>
+                <Box sx={{ fontSize: 18, fontWeight: 700 }}>
+                  {form.menu_id ? "메뉴 수정" : "메뉴 신규 등록"}
+                </Box>
+                <Box sx={{ mt: 0.2, color: "#64748b", fontSize: 12, fontWeight: 400 }}>
+                  {form.menu_id
+                    ? "메뉴의 기본 정보와 이미지를 수정합니다."
+                    : "새로 등록할 메뉴의 기본 정보를 입력합니다."}
+                </Box>
+              </Box>
+            </Box>
+            <IconButton
+              aria-label="메뉴 등록 모달 닫기"
+              onClick={() => setDialogOpen(false)}
+              sx={{ color: "#475569" }}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
         <DialogContent
           sx={{
             display: "flex",
             flexDirection: "column",
             gap: 2,
+            px: "24px !important",
             // MuiDialogTitle-root + MuiDialogContent-root 조합엔 MUI가
             // padding-top:0을 강제 주입(특이도 더 높음)해서 !important로 이겨야 함
-            pt: "20px !important",
-            pb: "12px !important",
+            pt: "24px !important",
+            pb: "20px !important",
+            backgroundColor: "#f8fafc",
+            "& .MuiOutlinedInput-root": { backgroundColor: "#fff" },
           }}
         >
           <TextField
@@ -477,7 +764,7 @@ export default function MenuMasterTab() {
             value={form.menu_name}
             onChange={(e) => handleFormChange("menu_name", e.target.value)}
           />
-          <Box sx={{ display: "flex", gap: 2 }}>
+          <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
             <TextField
               select
               label="음식유형"
@@ -509,7 +796,7 @@ export default function MenuMasterTab() {
               ))}
             </TextField>
           </Box>
-          <Box sx={{ display: "flex", gap: 2 }}>
+          <Box sx={{ display: "flex", gap: 2, flexDirection: { xs: "column", sm: "row" } }}>
             <TextField
               select
               label="세부 분류"
@@ -556,12 +843,20 @@ export default function MenuMasterTab() {
             value={form.calories_per_serving}
             onChange={(e) => handleFormChange("calories_per_serving", e.target.value)}
           />
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-            {form.menu_img && !imageFile && (
-              <img src={form.menu_img} alt="menu" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 4 }} />
-            )}
-            <MDButton variant="outlined" color="dark" component="label" size="small">
-              이미지 업로드
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
+              p: 1.5,
+              flexWrap: "wrap",
+              border: "1px dashed #93c5fd",
+              borderRadius: 2,
+              backgroundColor: "#f0f9ff",
+            }}
+          >
+            <MDButton variant="outlined" color="info" component="label" size="small">
+              {imageFile || form.menu_img ? "이미지 재업로드" : "이미지 업로드"}
               <input
                 type="file"
                 accept="image/*"
@@ -569,7 +864,11 @@ export default function MenuMasterTab() {
                 onChange={(e) => setImageFile(e.target.files?.[0] || null)}
               />
             </MDButton>
-            {imageFile && <span style={{ fontSize: 12 }}>{imageFile.name}</span>}
+            {imageFile && (
+              <Box component="span" sx={{ color: "#475569", fontSize: 12 }}>
+                {imageFile.name}
+              </Box>
+            )}
             {(imageFile || form.menu_img) && (
               <Tooltip title="미리보기">
                 <IconButton
@@ -585,11 +884,10 @@ export default function MenuMasterTab() {
             )}
           </Box>
         </DialogContent>
-        <DialogActions>
-          <MDButton
-            onClick={() => setDialogOpen(false)}
-            sx={{ border: "1px solid currentColor" }}
-          >
+        <DialogActions
+          sx={{ px: 3, py: 2, gap: 0.75, borderTop: "1px solid #e2e8f0", backgroundColor: "#fff" }}
+        >
+          <MDButton variant="outlined" color="dark" onClick={() => setDialogOpen(false)}>
             취소
           </MDButton>
           <MDButton variant="contained" color="info" onClick={handleSave} disabled={saving}>

@@ -221,6 +221,7 @@ export default function useRecordsheetData(account_id, year, month, suspendAccou
         const rows = (list || []).map((item) => ({
           account_id: item.account_id,
           account_name: item.account_name,
+          account_type: item.account_type,
         }));
         setAccountList(rows);
       })

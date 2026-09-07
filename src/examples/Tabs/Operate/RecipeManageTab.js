@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Box, TextField } from "@mui/material";
 import Swal from "sweetalert2";
 import MDBox from "components/MDBox";
@@ -49,42 +49,68 @@ const textToJson = (text) => JSON.stringify({ text: text || "" });
 // 🔹 운영 > 메뉴/레시피 관리 > 레시피 관리 탭 (OperateTabs_7에서 사용)
 export default function RecipeManageTab() {
   const { menuRows, loading: menuLoading, fetchMenuList } = useMenuMasterData();
-  const { recipeInfo, loading: recipeLoading, fetchRecipeInfo, saveRecipeInfo } = useRecipeManageData();
+  const { loading: recipeLoading, fetchRecipeInfo, saveRecipeInfo } = useRecipeManageData();
 
   const [keyword, setKeyword] = useState("");
   const [selectedMenu, setSelectedMenu] = useState(null);
   const [content, setContent] = useState(emptyContent);
   const [saving, setSaving] = useState(false);
+  const [recipeReady, setRecipeReady] = useState(false);
+  const [ingredientReady, setIngredientReady] = useState(false);
 
   useEffect(() => {
     fetchMenuList();
   }, [fetchMenuList]);
 
   useEffect(() => {
+    let active = true;
+
     if (!selectedMenu) {
       setContent(emptyContent);
-      return;
+      setRecipeReady(false);
+      setIngredientReady(false);
+      return undefined;
     }
-    fetchRecipeInfo(selectedMenu.menu_id);
-  }, [selectedMenu, fetchRecipeInfo]);
 
-  useEffect(() => {
-    if (!recipeInfo) {
-      setContent(emptyContent);
-      return;
-    }
-    setContent({
-      title: recipeInfo.title || "",
-      summary: recipeInfo.summary || "",
-      stepsText: parseLines(recipeInfo.steps_json),
-      storageText: parseText(recipeInfo.storage_json),
-      allergensText: parseLines(recipeInfo.allergens_json),
-    });
-  }, [recipeInfo]);
+    const loadRecipe = async () => {
+      setRecipeReady(false);
+      const nextRecipeInfo = await fetchRecipeInfo(selectedMenu.menu_id);
+      if (!active) return;
+
+      setContent(
+        nextRecipeInfo
+          ? {
+              title: nextRecipeInfo.title || "",
+              summary: nextRecipeInfo.summary || "",
+              stepsText: parseLines(nextRecipeInfo.steps_json),
+              storageText: parseText(nextRecipeInfo.storage_json),
+              allergensText: parseLines(nextRecipeInfo.allergens_json),
+            }
+          : emptyContent
+      );
+      setRecipeReady(true);
+    };
+
+    loadRecipe();
+    return () => {
+      active = false;
+    };
+  }, [selectedMenu, fetchRecipeInfo]);
 
   const handleSearch = () => fetchMenuList({ keyword });
 
   const handleContentChange = (field, value) => setContent((prev) => ({ ...prev, [field]: value }));
+
+  // 선택한 메뉴의 레시피 조회가 끝난 뒤 편집 영역을 표시한다.
+  const handleSelectMenu = (row) => {
+    setRecipeReady(false);
+    setIngredientReady(false);
+    setSelectedMenu(row);
+  };
+
+  const handleIngredientInitialLoadComplete = useCallback(() => {
+    setIngredientReady(true);
+  }, []);
 
   const handleSave = async () => {
     if (!selectedMenu) return;
@@ -105,7 +131,10 @@ export default function RecipeManageTab() {
     }
   };
 
-  const isLoading = menuLoading || recipeLoading;
+  const isLoading =
+    menuLoading ||
+    recipeLoading ||
+    (!!selectedMenu && (!recipeReady || !ingredientReady));
 
   return (
     <Box sx={{ position: "relative", display: "flex", gap: 2, height: "100%", minHeight: 0 }}>
@@ -142,7 +171,7 @@ export default function RecipeManageTab() {
             menuRows.map((row) => (
               <Box
                 key={row.menu_id}
-                onClick={() => setSelectedMenu(row)}
+                onClick={() => handleSelectMenu(row)}
                 sx={{
                   p: 1.2,
                   cursor: "pointer",
@@ -162,7 +191,7 @@ export default function RecipeManageTab() {
       <MDBox sx={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
         {!selectedMenu ? (
           <MDBox sx={{ p: 2, color: "#999" }}>좌측 목록에서 메뉴를 선택해주세요.</MDBox>
-        ) : (
+        ) : !recipeReady ? null : (
           <>
             <MDBox sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1 }}>
               <MDBox sx={{ fontSize: 15, fontWeight: "bold" }}>{selectedMenu.menu_name}</MDBox>
@@ -216,7 +245,10 @@ export default function RecipeManageTab() {
                 onChange={(e) => handleContentChange("allergensText", e.target.value)}
               />
 
-              <IngredientDetailEditor menuId={selectedMenu.menu_id} />
+              <IngredientDetailEditor
+                menuId={selectedMenu.menu_id}
+                onInitialLoadComplete={handleIngredientInitialLoadComplete}
+              />
             </MDBox>
           </>
         )}

@@ -31,6 +31,7 @@ import {
   maskSensitiveFieldValue,
   shouldMaskSensitiveField,
 } from "utils/maskingUtils";
+import { getDinerColumnAverages } from "utils/dinerTotalCalc";
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -879,6 +880,56 @@ function RecordSheet() {
       })
       .catch(() => setHolidayDays(new Set()));
   }, [year, month]);
+
+  // 식수현황의 업장별 노출 컬럼과 동일한 기준으로, 조회 월의 조식/중식/석식 등 컬럼별 평균을 표시
+  // (하나로 합친 숫자 대신 식수현황 표 맨 아래 "평균" 행 값을 컬럼별로 그대로 보여준다)
+  const [mealColumnAverages, setMealColumnAverages] = useState([]);
+  useEffect(() => {
+    if (!selectedAccountId || !year || !month) {
+      setMealColumnAverages([]);
+      return;
+    }
+
+    let cancelled = false;
+    const accountType = (accountList || []).find(
+      (account) => String(account?.account_id) === String(selectedAccountId)
+    )?.account_type;
+
+    Promise.all([
+      api.get("/Operate/AccountDinnersNumberList", {
+        params: { account_id: selectedAccountId, year, month },
+      }),
+      api.get("/Business/AccountEctDietList", {
+        params: { account_id: selectedAccountId },
+      }),
+    ])
+      .then(([dinersRes, extraDietRes]) => {
+        if (cancelled) return;
+
+        const extraDietRow = Array.isArray(extraDietRes.data)
+          ? extraDietRes.data[0] || {}
+          : extraDietRes.data || {};
+        const extraDietCols = Array.from({ length: 5 }, (_, index) => {
+          const number = index + 1;
+          const name = extraDietRow[`extra_diet${number}_name`];
+          return name && String(name).trim()
+            ? { name, priceKey: `extra_diet${number}_price` }
+            : null;
+        }).filter(Boolean);
+        const dinersRows = Array.isArray(dinersRes.data) ? dinersRes.data : [];
+
+        setMealColumnAverages(
+          getDinerColumnAverages(dinersRows, accountType, extraDietCols, selectedAccountId, year, month)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMealColumnAverages([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAccountId, year, month, accountList]);
 
   // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
   const [employeeRowsView, setEmployeeRowsView] = useState([]);
@@ -3267,10 +3318,48 @@ function RecordSheet() {
               bgColor="info"
               borderRadius="lg"
               coloredShadow="info"
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                rowGap: 0.5,
+              }}
             >
               <MDTypography variant="h6" color="white">
                 출근 현황
               </MDTypography>
+              {!!selectedAccountId && (
+                <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                  <MDTypography variant="button" color="white" fontWeight="bold" sx={{ whiteSpace: "nowrap" }}>
+                    {year}년 {month}월 평균식수
+                  </MDTypography>
+                  {mealColumnAverages.length > 0 && (
+                    <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+                      <tbody>
+                        <tr>
+                          {mealColumnAverages.map((item) => (
+                            <td
+                              key={item.key}
+                              style={{
+                                border: "1px solid #ddd",
+                                padding: "2px 8px",
+                                background: "#fff",
+                                textAlign: "center",
+                                color: "#111",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, color: "#333" }}>{item.label}:</span>{" "}
+                              {item.average.toLocaleString()}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+                </MDBox>
+              )}
             </MDBox>
 
             <MDBox pt={0} sx={tableSx}>

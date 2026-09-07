@@ -142,6 +142,39 @@ const FILE_TYPES = [
 
 const ACCOUNT_TABLE_RESTORE_PAGINATION_KEY = "accountTableRestorePagination";
 
+// 태블릿과 작은 데스크톱에서도 표의 전체 열이 한 화면에 표시되도록 너비를 조정한다.
+const responsiveTableLayoutSx = {
+  "@media (min-width: 600px) and (max-width: 1535px)": {
+    "& table": {
+      width: "100%",
+      tableLayout: "fixed",
+    },
+    "& th, & td": {
+      width: "auto !important",
+      minWidth: "0 !important",
+      padding: "2px 1px",
+      fontSize: "clamp(9px, 0.8vw, 12px)",
+      whiteSpace: "normal",
+      wordBreak: "keep-all",
+    },
+    "& select": {
+      width: "100% !important",
+      minWidth: "0 !important",
+      fontSize: "inherit !important",
+    },
+  },
+};
+
+// 상단 기본정보의 라벨과 입력값도 화면 폭에 맞춰 읽을 수 있는 범위에서 축소한다.
+const responsiveTopInfoTextSx = {
+  "@media (min-width: 600px) and (max-width: 1535px)": {
+    "& .MuiTypography-root, & .MuiInputBase-input, & .MuiSelect-select": {
+      fontSize: "clamp(9px, 0.8vw, 12px) !important",
+      lineHeight: 1.25,
+    },
+  },
+};
+
 function AccountInfoSheet() {
   // 🔹 추가 식단가 모달 상태
   const [extraDietModalOpen, setExtraDietModalOpen] = useState(false);
@@ -1159,6 +1192,7 @@ function AccountInfoSheet() {
           },
           "& th": { backgroundColor: "#f0f0f0" },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
+          ...responsiveTableLayoutSx,
         }}
       >
         <table>
@@ -1421,6 +1455,7 @@ function AccountInfoSheet() {
             whiteSpace: "nowrap",
           },
           "& th": { backgroundColor: "#f0f0f0" },
+          ...responsiveTableLayoutSx,
         }}
       >
         <table>
@@ -1651,6 +1686,7 @@ function AccountInfoSheet() {
             whiteSpace: "nowrap",
           },
           "& th": { backgroundColor: "#f0f0f0" },
+          ...responsiveTableLayoutSx,
         }}
       >
         <table>
@@ -2244,10 +2280,16 @@ function AccountInfoSheet() {
         )}
 
         {/* 상단 기본 정보 */}
-        <Card sx={{ p: { xs: 1, sm: 1.5, lg: 2 }, mb: 1 }}>
-          <Grid container spacing={2}>
+        <Card
+          sx={{
+            p: { xs: 1, sm: 1.5, lg: 2 },
+            mb: 1,
+            ...responsiveTopInfoTextSx,
+          }}
+        >
+          <Grid container spacing={{ xs: 1, sm: 1.5, lg: 2 }}>
             {/* 왼쪽 */}
-            <Grid item xs={12} md={12} lg={6}>
+            <Grid item xs={12} md={6}>
               <Grid container spacing={{ xs: 1, sm: 1.25, lg: 2 }}>
                 {/* 업장명 + 계약기간 */}
                 <Grid
@@ -2394,7 +2436,7 @@ function AccountInfoSheet() {
                     display: "flex",
                     alignItems: "center",
                     gap: { xs: 0.75, sm: 1, lg: 2 },
-                    flexWrap: { xs: "wrap", sm: "nowrap" },
+                    flexWrap: { xs: "wrap", sm: "nowrap", md: "wrap", lg: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
@@ -2652,7 +2694,7 @@ function AccountInfoSheet() {
                     display: "flex",
                     alignItems: "center",
                     gap: { xs: 0.75, sm: 1, lg: 2 },
-                    flexWrap: { xs: "wrap", sm: "nowrap" },
+                    flexWrap: { xs: "wrap", sm: "nowrap", md: "wrap", lg: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
@@ -2759,7 +2801,7 @@ function AccountInfoSheet() {
                     display: "flex",
                     alignItems: { xs: "stretch", sm: "center" },
                     gap: { xs: 0.75, sm: 1, lg: 2 },
-                    flexWrap: { xs: "wrap", sm: "nowrap" },
+                    flexWrap: { xs: "wrap", sm: "nowrap", md: "wrap", lg: "nowrap" },
                     paddingTop: "10px !important",
                   }}
                 >
@@ -2822,7 +2864,7 @@ function AccountInfoSheet() {
             </Grid>
 
             {/* 오른쪽 */}
-            <Grid item xs={12} md={12} lg={6}>
+            <Grid item xs={12} md={6}>
               {priceData.some((p) => p.account_type === 4) ? (
                 <Grid container spacing={2}>
                   <Grid item xs={12} md={6}>
@@ -3007,7 +3049,8 @@ function AccountInfoSheet() {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            width: 500,
+            width: "calc(100% - 32px)",
+            maxWidth: 500,
             bgcolor: "background.paper",
             borderRadius: 2,
             boxShadow: 24,

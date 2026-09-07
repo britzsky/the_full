@@ -43,6 +43,7 @@ import {
   maskSensitiveFieldValue,
   shouldMaskSensitiveField,
 } from "utils/maskingUtils";
+import { getDinerColumnAverages } from "utils/dinerTotalCalc";
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -872,6 +873,8 @@ function RecordSheet() {
   // ✅ "유틸 출근부" 버튼 노출 권한: department 6, 또는 user_id가 si1/db1인 경우만
   const loginUserId = safeTrim(localStorage.getItem("user_id"), "");
   const canUseUtilRecord = loginDepartmentCode === "6" || ["si1", "db1"].includes(loginUserId);
+  // ✅ "통합 출근부" 버튼 노출 권한: department 6, 또는 user_id가 iy1인 경우만
+  const canUseIntegrationRecord = loginDepartmentCode === "6" || loginUserId === "iy1";
 
   const [open, setOpen] = useState(false);
   const [dispatchImportOpen, setDispatchImportOpen] = useState(false);
@@ -902,6 +905,32 @@ function RecordSheet() {
   // ✅ 이름이 동명이인인 경우, 입력된 날짜가 있으면 버리지 않고 실제 회원을 선택
   const [utilRecordDuplicateItems, setUtilRecordDuplicateItems] = useState([]);
   const utilRecordUploadContextRef = useRef(null);
+
+  // =========================================================
+  // ✅ 통합 출근부 모달 상태
+  //   - 왼쪽: 통합(position_type=7) 직원 목록
+  //   - 가운데: 매핑 목록(등록 전 임시 편집용 — tb_account_util_member_mapping에는 저장하지 않음)
+  //   - 오른쪽: 업장 목록(이미 매핑에 있는 업장은 제외하고 노출)
+  //   - "등록"을 누르면 가운데 목록에 있는 업장 각각에 대해, 조회 중인 연/월의
+  //     평일(공휴일 제외)만 골라 재택근무(type 20)를 tb_account_record에 등록한다.
+  //     ⚠ 통합(position_type=7) 직원의 실제 출근 데이터는 tb_account_util_record가 아니라
+  //        tb_account_record에 저장된다(AccountRecordSheetList의 통합 직원 UNION 브랜치 참고).
+  //        tb_account_util_member_mapping은 "이 직원이 이 업장에 노출될 수 있다"는 명단일 뿐이다.
+  //     (재등록 시 해당 직원의 그 연/월 기존 재택근무(type=20)만 먼저 삭제 후 재삽입하므로
+  //      다시 등록해도 중복되지 않고 최신 매핑 목록 기준으로 갱신되며, 다른 근무기록은 유지된다)
+  // =========================================================
+  const [integrationRecordOpen, setIntegrationRecordOpen] = useState(false);
+  const [integrationRecordLoading, setIntegrationRecordLoading] = useState(false);
+  const [integrationRecordRegistering, setIntegrationRecordRegistering] = useState(false);
+  const [integrationMemberRows, setIntegrationMemberRows] = useState([]);
+  const [integrationSelectedMember, setIntegrationSelectedMember] = useState(null);
+  const [integrationMappingRows, setIntegrationMappingRows] = useState([]);
+  // ✅ 가운데(매핑)/오른쪽(업장) 모두 다중선택 후 한 번에 이동 가능 — account_id 기준 Set으로 관리
+  const [integrationSelectedMappingIds, setIntegrationSelectedMappingIds] = useState(() => new Set());
+  const [integrationSelectedAccountIds, setIntegrationSelectedAccountIds] = useState(() => new Set());
+  // ✅ 이번 달에 이미 tb_account_util_record로 등록되어 있는 업장(확인용, 클릭 불가)
+  const [integrationMonthRecordRows, setIntegrationMonthRecordRows] = useState([]);
+  const [integrationMonthRecordLoading, setIntegrationMonthRecordLoading] = useState(false);
 
   // ✅ hook: dispatchRows는 여기서 쓰지 않고 "파출은 로컬 state + fetchDispatchOnly"로 통일
   const { memberRows, sheetRows, timesRows, accountList, fetchAllData, loading } =
@@ -968,6 +997,56 @@ function RecordSheet() {
       })
       .catch(() => setHolidayDays(new Set()));
   }, [year, month]);
+
+  // 식수현황의 업장별 노출 컬럼과 동일한 기준으로, 조회 월의 조식/중식/석식 등 컬럼별 평균을 표시
+  // (하나로 합친 숫자 대신 식수현황 표 맨 아래 "평균" 행 값을 컬럼별로 그대로 보여준다)
+  const [mealColumnAverages, setMealColumnAverages] = useState([]);
+  useEffect(() => {
+    if (!selectedAccountId || !year || !month) {
+      setMealColumnAverages([]);
+      return;
+    }
+
+    let cancelled = false;
+    const accountType = (accountList || []).find(
+      (account) => String(account?.account_id) === String(selectedAccountId)
+    )?.account_type;
+
+    Promise.all([
+      api.get("/Operate/AccountDinnersNumberList", {
+        params: { account_id: selectedAccountId, year, month },
+      }),
+      api.get("/Business/AccountEctDietList", {
+        params: { account_id: selectedAccountId },
+      }),
+    ])
+      .then(([dinersRes, extraDietRes]) => {
+        if (cancelled) return;
+
+        const extraDietRow = Array.isArray(extraDietRes.data)
+          ? extraDietRes.data[0] || {}
+          : extraDietRes.data || {};
+        const extraDietCols = Array.from({ length: 5 }, (_, index) => {
+          const number = index + 1;
+          const name = extraDietRow[`extra_diet${number}_name`];
+          return name && String(name).trim()
+            ? { name, priceKey: `extra_diet${number}_price` }
+            : null;
+        }).filter(Boolean);
+        const dinersRows = Array.isArray(dinersRes.data) ? dinersRes.data : [];
+
+        setMealColumnAverages(
+          getDinerColumnAverages(dinersRows, accountType, extraDietCols, selectedAccountId, year, month)
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setMealColumnAverages([]);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAccountId, year, month, accountList]);
 
   // ✅ 로딩화면 없이 "직원정보 테이블"만 쓱 새로고침
   const [employeeRowsView, setEmployeeRowsView] = useState([]);
@@ -1228,8 +1307,8 @@ function RecordSheet() {
         const toDay = endInMonth
           ? realEnd.date()
           : realEnd.isBefore(monthStart)
-          ? null
-          : daysInThisMonth;
+            ? null
+            : daysInThisMonth;
 
         if (fromDay == null || toDay == null) continue;
 
@@ -1298,8 +1377,8 @@ function RecordSheet() {
               ? paidCnt === totalCnt
                 ? "지급"
                 : paidCnt === 0
-                ? "미지급"
-                : "부분"
+                  ? "미지급"
+                  : "부분"
               : "-";
 
           return {
@@ -1882,9 +1961,8 @@ function RecordSheet() {
       memberSummary.set(r.member_id, cur);
     });
 
-    let html = `<div style="text-align:left; margin-bottom:10px; font-size:13px; color:#888;">총 ${
-      finalRows.length
-    }건 처리 &nbsp;|&nbsp; 등록: ${result.savedCount ?? finalRows.length}건</div>`;
+    let html = `<div style="text-align:left; margin-bottom:10px; font-size:13px; color:#888;">총 ${finalRows.length
+      }건 처리 &nbsp;|&nbsp; 등록: ${result.savedCount ?? finalRows.length}건</div>`;
     if (memberSummary.size > 0) {
       const summaryLines = Array.from(memberSummary.entries())
         .map(([mid, s]) => [memberIdToName?.get(mid) || mid, s])
@@ -1894,9 +1972,8 @@ function RecordSheet() {
       html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#555;">📋 등록 현황<br/>${summaryLines}</div>`;
     }
     if (skippedNoMemberRows.length > 0) {
-      html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#e67e22;">⚠ 회원ID 없음 - 건너뜀 (${
-        skippedNoMemberRows.length
-      }건)<br/>${skippedNoMemberRows.join(", ")}</div>`;
+      html += `<div style="text-align:left; margin-bottom:8px; font-size:13px; color:#e67e22;">⚠ 회원ID 없음 - 건너뜀 (${skippedNoMemberRows.length
+        }건)<br/>${skippedNoMemberRows.join(", ")}</div>`;
     }
     if (unmatchedAccountTexts.size > 0) {
       html += `<div style="text-align:left; font-size:13px; color:#e67e22;">⚠ 거래처를 선택하지 않아 저장되지 않고 건너뛴 값<br/>${Array.from(
@@ -2008,17 +2085,279 @@ function RecordSheet() {
     }
   };
 
+  // =========================================================
+  // ✅ 통합 출근부 로직
+  // =========================================================
+  const integrationAccountNameMap = useMemo(() => {
+    const m = new Map();
+    (accountList || []).forEach((a) => m.set(String(a.account_id), a.account_name));
+    return m;
+  }, [accountList]);
+
+  // ✅ 오른쪽 업장 목록: 가운데 매핑 목록에 이미 있는 업장은 제외하고 보여준다
+  const integrationAvailableAccountRows = useMemo(() => {
+    const mappedIds = new Set((integrationMappingRows || []).map((r) => String(r.account_id ?? "")));
+    return (accountList || []).filter((a) => !mappedIds.has(String(a.account_id ?? "")));
+  }, [accountList, integrationMappingRows]);
+
+  const fetchIntegrationMemberList = useCallback(async () => {
+    const res = await api.get("/Account/AccountUtilMemberList", { params: { position_type: 7 } });
+    return extractArray(res.data);
+  }, []);
+
+  const fetchIntegrationMappingList = useCallback(async (memberId) => {
+    if (!memberId) return [];
+    const res = await api.get("/Account/AccountUtilMappingList", { params: { member_id: memberId } });
+    return extractArray(res.data);
+  }, []);
+
+  // ✅ 선택한 직원이 "이번 달"(조회 중인 year/month)에 tb_account_record에 재택근무(20)로
+  //    이미 등록해 둔 업장을 확인용으로 조회(클릭/편집 불가, 참고 표시 전용)
+  const fetchIntegrationMonthRecordAccounts = useCallback(
+    async (memberId) => {
+      if (!memberId) return [];
+      const res = await api.get("/Account/AccountIntegrationHomeRecordMonthList", {
+        params: { member_id: memberId, year, month },
+      });
+      return extractArray(res.data);
+    },
+    [year, month]
+  );
+
+  // ✅ Set 토글 헬퍼: 같은 값이 있으면 빼고, 없으면 넣는다(다중선택 체크박스 동작)
+  const toggleSetValue = useCallback((set, value) => {
+    const next = new Set(set);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    return next;
+  }, []);
+
+  const openIntegrationRecordModal = useCallback(async () => {
+    setIntegrationRecordOpen(true);
+    setIntegrationSelectedMember(null);
+    setIntegrationMappingRows([]);
+    setIntegrationSelectedMappingIds(new Set());
+    setIntegrationSelectedAccountIds(new Set());
+    setIntegrationMonthRecordRows([]);
+    setIntegrationRecordLoading(true);
+    try {
+      const members = await fetchIntegrationMemberList();
+      setIntegrationMemberRows(members || []);
+    } catch (err) {
+      Swal.fire("조회 실패", err?.message || "오류가 발생했습니다.", "error");
+    } finally {
+      setIntegrationRecordLoading(false);
+    }
+  }, [fetchIntegrationMemberList]);
+
+  const closeIntegrationRecordModal = useCallback(() => {
+    setIntegrationRecordOpen(false);
+  }, []);
+
+  const handleSelectIntegrationMember = useCallback(
+    async (row) => {
+      setIntegrationSelectedMember(row);
+      setIntegrationSelectedMappingIds(new Set());
+      setIntegrationSelectedAccountIds(new Set());
+
+      const memberId = row?.member_id;
+      if (!memberId) {
+        setIntegrationMappingRows([]);
+        setIntegrationMonthRecordRows([]);
+        return;
+      }
+
+      setIntegrationMonthRecordLoading(true);
+      try {
+        const [mappings, monthRecords] = await Promise.all([
+          fetchIntegrationMappingList(memberId),
+          fetchIntegrationMonthRecordAccounts(memberId),
+        ]);
+        setIntegrationMappingRows(mappings || []);
+        setIntegrationMonthRecordRows(monthRecords || []);
+      } catch (err) {
+        Swal.fire("조회 실패", err?.message || "오류가 발생했습니다.", "error");
+      } finally {
+        setIntegrationMonthRecordLoading(false);
+      }
+    },
+    [fetchIntegrationMappingList, fetchIntegrationMonthRecordAccounts]
+  );
+
+  // ✅ 가운데(매핑) 목록 행 다중선택 토글
+  const handleToggleIntegrationMappingSelected = useCallback(
+    (accountId) => {
+      setIntegrationSelectedMappingIds((prev) => toggleSetValue(prev, String(accountId ?? "")));
+    },
+    [toggleSetValue]
+  );
+
+  // ✅ 오른쪽(업장) 목록 행 다중선택 토글
+  const handleToggleIntegrationAccountSelected = useCallback(
+    (accountId) => {
+      setIntegrationSelectedAccountIds((prev) => toggleSetValue(prev, String(accountId ?? "")));
+    },
+    [toggleSetValue]
+  );
+
+  // ✅ 오른쪽(업장)에서 선택된 항목 전부 → 가운데(매핑)로 이동
+  //    화면 표시용일 뿐, tb_account_util_member_mapping에는 저장하지 않는다
+  const handleIntegrationAddSelectedAccounts = useCallback(() => {
+    if (!integrationSelectedMember?.member_id) {
+      Swal.fire("안내", "왼쪽에서 통합 직원을 먼저 선택해주세요.", "info");
+      return;
+    }
+    if (!integrationSelectedAccountIds || integrationSelectedAccountIds.size === 0) {
+      Swal.fire("안내", "오른쪽에서 추가할 업장을 먼저 선택해주세요.", "info");
+      return;
+    }
+
+    // ✅ 오른쪽 목록은 이미 매핑에 없는 업장만 노출되므로 중복 걱정 없이 그대로 옮기면 되지만,
+    //    선택 이후 데이터가 바뀌었을 수도 있어 한 번 더 방어적으로 걸러낸다.
+    const existingIds = new Set((integrationMappingRows || []).map((r) => String(r.account_id ?? "")));
+    const toAdd = (accountList || []).filter(
+      (a) =>
+        integrationSelectedAccountIds.has(String(a.account_id ?? "")) &&
+        !existingIds.has(String(a.account_id ?? ""))
+    );
+
+    if (toAdd.length === 0) {
+      setIntegrationSelectedAccountIds(new Set());
+      return;
+    }
+
+    const newRows = toAdd.map((a) => ({
+      idx: null,
+      account_id: a.account_id,
+      member_id: integrationSelectedMember.member_id,
+      name: integrationSelectedMember.name ?? "",
+      position_type: integrationSelectedMember.position_type ?? "7",
+    }));
+
+    setIntegrationMappingRows((prev) => [...newRows, ...(prev || [])]);
+    setIntegrationSelectedAccountIds(new Set());
+  }, [integrationSelectedMember, integrationSelectedAccountIds, integrationMappingRows, accountList]);
+
+  // ✅ 가운데(매핑)에서 선택된 항목 전부 → 오른쪽(업장)으로 이동
+  //    마찬가지로 화면 표시만 바뀌고 저장되지 않는다
+  const handleIntegrationRemoveSelectedMappings = useCallback(() => {
+    if (!integrationSelectedMappingIds || integrationSelectedMappingIds.size === 0) {
+      Swal.fire("안내", "가운데 목록에서 뺄 업장을 먼저 선택해주세요.", "info");
+      return;
+    }
+    setIntegrationMappingRows((prev) =>
+      (prev || []).filter((r) => !integrationSelectedMappingIds.has(String(r.account_id ?? "")))
+    );
+    setIntegrationSelectedMappingIds(new Set());
+  }, [integrationSelectedMappingIds]);
+
+  // ✅ 등록: 가운데 매핑 목록의 업장마다, 조회 중인 연/월의 평일(공휴일 제외)에 재택근무(20) 등록
+  //    - 유틸 출근부와 동일한 API를 재사용하므로, 같은 직원+연/월 기존 데이터는 삭제 후 재삽입된다.
+  const handleIntegrationRegister = useCallback(async () => {
+    if (!integrationSelectedMember?.member_id) {
+      Swal.fire("안내", "왼쪽에서 통합 직원을 먼저 선택해주세요.", "info");
+      return;
+    }
+    if (!integrationMappingRows || integrationMappingRows.length === 0) {
+      Swal.fire("안내", "매핑 목록에 등록할 업장이 없습니다.", "info");
+      return;
+    }
+
+    const weekdayDays = [];
+    for (let d = 1; d <= daysInMonth; d += 1) {
+      const dow = dayjs(
+        `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+      ).day();
+      if (dow === 0 || dow === 6) continue; // 주말 제외
+      if (holidayDays.has(d)) continue; // 공휴일 제외
+      weekdayDays.push(d);
+    }
+
+    if (weekdayDays.length === 0) {
+      Swal.fire("안내", "등록할 평일이 없습니다.", "info");
+      return;
+    }
+
+    const confirm = await Swal.fire({
+      title: "통합 출근부 등록",
+      html: `${year}년 ${month}월, 선택된 <b>${integrationMappingRows.length}개 업장</b>에<br/>평일(공휴일 제외) 재택근무로 등록합니다.<br/><br/>이번 달 기존 등록 내용은 삭제되고 새로 등록됩니다.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "등록",
+      cancelButtonText: "취소",
+    });
+    if (!confirm.isConfirmed) return;
+
+    const memberId = integrationSelectedMember.member_id;
+
+    // ✅ tb_account_record insert(AccountMemberRecordSave)가 요구하는 컬럼만 채운다.
+    //    재택근무(20)는 출퇴근 시간 입력칸이 없는 타입이라 start/end_time은 비워둔다.
+    const rows = [];
+    integrationMappingRows.forEach((m) => {
+      weekdayDays.forEach((d) => {
+        rows.push({
+          record_year: year,
+          record_month: month,
+          record_date: d,
+          type: 20, // 재택근무
+          account_id: m.account_id,
+          member_id: memberId,
+          start_time: "",
+          end_time: "",
+          note: "",
+          salary: 0,
+        });
+      });
+    });
+
+    setIntegrationRecordRegistering(true);
+    try {
+      await api.post("/Account/AccountIntegrationHomeRecordSave", { rows });
+
+      Swal.fire(
+        "등록 완료",
+        `${integrationSelectedMember.name ?? ""} 님의 ${year}년 ${month}월 재택근무가 등록되었습니다.`,
+        "success"
+      );
+
+      // ✅ 등록 후에도 모달은 열어둔 채로 "이번달 등록된 업장"을 새로고침해서
+      //    방금 등록한 내용이 반영됐는지 바로 확인할 수 있게 한다.
+      setIntegrationMonthRecordLoading(true);
+      try {
+        const monthRecords = await fetchIntegrationMonthRecordAccounts(memberId);
+        setIntegrationMonthRecordRows(monthRecords || []);
+      } finally {
+        setIntegrationMonthRecordLoading(false);
+      }
+
+      await fetchAllData?.();
+    } catch (err) {
+      Swal.fire("등록 실패", err?.message || "오류가 발생했습니다.", "error");
+    } finally {
+      setIntegrationRecordRegistering(false);
+    }
+  }, [
+    integrationSelectedMember,
+    integrationMappingRows,
+    year,
+    month,
+    daysInMonth,
+    holidayDays,
+    fetchAllData,
+    fetchIntegrationMonthRecordAccounts,
+  ]);
+
   // ✅ 유형 키가 여러 이름으로 올 수 있어 통일
   const pickType = (src) =>
     safeTrim(
       src?.type ??
-        src?.record_type ??
-        src?.work_type ??
-        src?.recordType ??
-        src?.workType ??
-        src?.work_kind ??
-        src?.work_cd ??
-        "",
+      src?.record_type ??
+      src?.work_type ??
+      src?.recordType ??
+      src?.workType ??
+      src?.work_kind ??
+      src?.work_cd ??
+      "",
       ""
     );
 
@@ -2268,35 +2607,35 @@ function RecordSheet() {
 
         dayEntries[key] = source
           ? {
-              ...source,
-              type: t,
-              gubun: safeTrim(source.gubun, baseGubun),
-              cor_type: safeTrim(source?.cor_type ?? source?.corType ?? baseCorType, baseCorType),
-              position_type: safeTrim(source.position_type, basePt),
-              start: source.start_time || source.start || "",
-              end: source.end_time || source.end || "",
-              start_time: source.start_time || "",
-              end_time: source.end_time || "",
-              salary: source.salary || "",
-              note: source.note ?? source.note ?? "",
-              pay_yn:
-                safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
-            }
+            ...source,
+            type: t,
+            gubun: safeTrim(source.gubun, baseGubun),
+            cor_type: safeTrim(source?.cor_type ?? source?.corType ?? baseCorType, baseCorType),
+            position_type: safeTrim(source.position_type, basePt),
+            start: source.start_time || source.start || "",
+            end: source.end_time || source.end || "",
+            start_time: source.start_time || "",
+            end_time: source.end_time || "",
+            salary: source.salary || "",
+            note: source.note ?? source.note ?? "",
+            pay_yn:
+              safeTrim(source.pay_yn ?? source.payYn ?? "", "").toUpperCase() === "Y" ? "Y" : "N",
+          }
           : {
-              account_id: item.account_id,
-              member_id: memberId || item.member_id,
-              gubun: baseGubun,
-              cor_type: baseCorType,
-              position_type: basePt,
-              type: "",
-              start: "",
-              end: "",
-              start_time: "",
-              end_time: "",
-              salary: "",
-              note: "",
-              pay_yn: "N",
-            };
+            account_id: item.account_id,
+            member_id: memberId || item.member_id,
+            gubun: baseGubun,
+            cor_type: baseCorType,
+            position_type: basePt,
+            type: "",
+            start: "",
+            end: "",
+            start_time: "",
+            end_time: "",
+            salary: "",
+            note: "",
+            pay_yn: "N",
+          };
       }
 
       return { ...base, ...dayEntries };
@@ -2895,8 +3234,8 @@ function RecordSheet() {
           const toDay = endInMonth
             ? realEnd.date()
             : realEnd.isBefore(monthStart)
-            ? null
-            : daysInThisMonth;
+              ? null
+              : daysInThisMonth;
 
           if (fromDay == null || toDay == null) {
             continue;
@@ -2971,8 +3310,8 @@ function RecordSheet() {
               const personKey = rrnKey
                 ? `rrn:${rrnKey}`
                 : nameKey
-                ? `name:${nameKey}`
-                : `mid:${dedupMemberKey}`;
+                  ? `name:${nameKey}`
+                  : `mid:${dedupMemberKey}`;
               const dedupKey = `${personKey}_${y}_${m}_${d}_${t}`;
               if (validationSeenByDate.has(dedupKey)) continue;
               validationSeenByDate.add(dedupKey);
@@ -2982,9 +3321,9 @@ function RecordSheet() {
               const overHours =
                 noteHoursRaw === ""
                   ? calcDurationHours(
-                      cell?.start_time ?? cell?.start ?? "",
-                      cell?.end_time ?? cell?.end ?? ""
-                    )
+                    cell?.start_time ?? cell?.start ?? "",
+                    cell?.end_time ?? cell?.end ?? ""
+                  )
                   : Number(noteHoursRaw);
 
               if (t === "4") {
@@ -3171,21 +3510,21 @@ function RecordSheet() {
             const info = parseEmployeeDispatchInfo(row?.employ_dispatch);
             const origin = safeTrim(
               row?.origin_account_name ??
-                row?.origin_account ??
-                accountNameMap.get(originId) ??
-                info.origin ??
-                "",
+              row?.origin_account ??
+              accountNameMap.get(originId) ??
+              info.origin ??
+              "",
               ""
             );
             const dispatch = safeTrim(
               row?.dispatch_account_name ??
-                row?.dispatch_account ??
-                row?.dispatch_account_nm ??
-                row?.dispatch_accountName ??
-                accountNameMap.get(dispatchId) ??
-                info.dispatch ??
-                accName ??
-                "",
+              row?.dispatch_account ??
+              row?.dispatch_account_nm ??
+              row?.dispatch_accountName ??
+              accountNameMap.get(dispatchId) ??
+              info.dispatch ??
+              accName ??
+              "",
               ""
             );
             const name = safeTrim(row?.name ?? row?.member_name ?? stat?.name ?? "", "");
@@ -3308,9 +3647,8 @@ function RecordSheet() {
         const paidCnt = Number(d.paid_cnt || 0);
         const payStatus =
           totalCnt > 0
-            ? `${
-                paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
-              }(${paidCnt}/${totalCnt})`
+            ? `${paidCnt === totalCnt ? "지급" : paidCnt === 0 ? "미지급" : "부분"
+            }(${paidCnt}/${totalCnt})`
             : "";
 
         wsDispatch.addRow([
@@ -4864,21 +5202,21 @@ function RecordSheet() {
 
       const origin = safeTrim(
         row?.origin_account_name ??
-          row?.origin_account ??
-          accNameMap.get(originId) ??
-          info.origin ??
-          "",
+        row?.origin_account ??
+        accNameMap.get(originId) ??
+        info.origin ??
+        "",
         ""
       );
 
       const dispatch = safeTrim(
         row?.dispatch_account_name ??
-          row?.dispatch_account ??
-          row?.dispatch_account_nm ??
-          row?.dispatch_accountName ??
-          accNameMap.get(dispatchId) ??
-          info.dispatch ??
-          "",
+        row?.dispatch_account ??
+        row?.dispatch_account_nm ??
+        row?.dispatch_accountName ??
+        accNameMap.get(dispatchId) ??
+        info.dispatch ??
+        "",
         ""
       );
 
@@ -5226,8 +5564,8 @@ function RecordSheet() {
           const normalizedNote = shouldSendEmptyNoteForType(curType)
             ? ""
             : isNoteType
-            ? safeTrim(val?.note ?? "", "") || null
-            : null;
+              ? safeTrim(val?.note ?? "", "") || null
+              : null;
 
           if (cleared) {
             const recordObj = {
@@ -5549,6 +5887,22 @@ function RecordSheet() {
           onChange={handleUtilRecordUpload}
         />
 
+        {canUseIntegrationRecord && (
+          <MDButton
+            variant="gradient"
+            color="success"
+            onClick={openIntegrationRecordModal}
+            sx={{
+              fontSize: isMobile ? "0.7rem" : "0.8rem",
+              minWidth: "unset !important",
+              padding: isMobile ? "6px 10px !important" : "6px 14px !important",
+              whiteSpace: "nowrap",
+            }}
+          >
+            통합 출근부
+          </MDButton>
+        )}
+
         <MDButton
           variant="outlined"
           color={dispatchMaskingEnabled ? "dark" : "secondary"}
@@ -5639,10 +5993,48 @@ function RecordSheet() {
               bgColor="info"
               borderRadius="lg"
               coloredShadow="info"
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                rowGap: 0.5,
+              }}
             >
               <MDTypography variant="h6" color="white">
                 출근 현황
               </MDTypography>
+              {!!selectedAccountId && (
+                <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+                  <MDTypography variant="button" color="white" fontWeight="bold" sx={{ whiteSpace: "nowrap" }}>
+                    {year}년 {month}월 평균식수
+                  </MDTypography>
+                  {mealColumnAverages.length > 0 && (
+                    <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+                      <tbody>
+                        <tr>
+                          {mealColumnAverages.map((item) => (
+                            <td
+                              key={item.key}
+                              style={{
+                                border: "1px solid #ddd",
+                                padding: "2px 8px",
+                                background: "#fff",
+                                textAlign: "center",
+                                color: "#111",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              <span style={{ fontWeight: 700, color: "#333" }}>{item.label}:</span>{" "}
+                              {item.average.toLocaleString()}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+                </MDBox>
+              )}
             </MDBox>
 
             <MDBox pt={0} sx={tableSx}>
@@ -6217,6 +6609,358 @@ function RecordSheet() {
               닫기
             </Button>
           </Box>
+        </Box>
+      </Modal>
+      {/* ✅ 통합 출근부 모달 */}
+      <Modal open={integrationRecordOpen} onClose={closeIntegrationRecordModal}>
+        <Box
+          sx={{
+            position: "absolute",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: isMobile ? "98vw" : "92vw",
+            maxWidth: 1200,
+            height: isMobile ? "90vh" : "80vh",
+            bgcolor: "background.paper",
+            borderRadius: 2,
+            boxShadow: 24,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <MDBox
+            display="flex"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{
+              position: "sticky",
+              top: 0,
+              zIndex: 30,
+              bgcolor: "#fff",
+              px: 2,
+              py: 1,
+              borderBottom: "1px solid #e0e0e0",
+              boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+            }}
+          >
+            <MDBox>
+              <MDTypography variant="h6">통합 출근부</MDTypography>
+              <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                {year}년 {month}월 · 평일(공휴일 제외)만 재택근무로 등록됩니다.
+              </MDTypography>
+            </MDBox>
+
+            <MDBox display="flex" gap={1}>
+              <MDButton
+                variant="gradient"
+                color="info"
+                onClick={handleIntegrationRegister}
+                disabled={integrationRecordRegistering}
+              >
+                {integrationRecordRegistering ? "등록 중..." : "등록"}
+              </MDButton>
+              <MDButton variant="outlined" color="secondary" onClick={closeIntegrationRecordModal}>
+                닫기
+              </MDButton>
+            </MDBox>
+          </MDBox>
+
+          <MDBox
+            sx={{
+              flex: 1,
+              display: "flex",
+              gap: 1,
+              p: 1.5,
+              overflow: "hidden",
+              bgcolor: "#fff",
+            }}
+          >
+            {/* 왼쪽: 통합 직원 목록 */}
+            <MDBox
+              sx={{
+                flex: 0.6,
+                minWidth: 130,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  통합 직원 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  행 클릭 → 매핑 조회
+                </MDTypography>
+              </MDBox>
+
+              {/* ✅ 헤더를 스크롤 영역 밖(고정)으로 분리 — sticky th 사용 시 생기던
+                  트랜스폼 모달 특유의 상단 미세 틈 문제를 구조적으로 없앤다 */}
+              <MDBox
+                sx={{
+                  display: "flex",
+                  bgcolor: "#f7f7f7",
+                  borderBottom: "1px solid #eee",
+                }}
+              >
+                <MDBox sx={{ flex: 1, padding: "8px 6px", fontSize: 12, fontWeight: 700, textAlign: "center" }}>
+                  성명
+                </MDBox>
+              </MDBox>
+              <MDBox sx={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+                {integrationRecordLoading ? (
+                  <MDBox sx={{ padding: "8px 6px", fontSize: 12, textAlign: "center" }}>조회중...</MDBox>
+                ) : (
+                  (integrationMemberRows || []).map((r, i) => {
+                    const selected =
+                      String(integrationSelectedMember?.member_id ?? "") === String(r.member_id ?? "");
+                    return (
+                      <MDBox
+                        key={`${r.member_id ?? "m"}-${i}`}
+                        onClick={() => handleSelectIntegrationMember(r)}
+                        sx={{
+                          display: "flex",
+                          cursor: "pointer",
+                          borderBottom: "1px solid #eee",
+                          backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",
+                        }}
+                      >
+                        <MDBox
+                          sx={{
+                            flex: 1,
+                            padding: "8px 6px",
+                            fontSize: 12,
+                            textAlign: "center",
+                            fontWeight: selected ? 700 : 400,
+                          }}
+                        >
+                          {r.name ?? ""}
+                        </MDBox>
+                      </MDBox>
+                    );
+                  })
+                )}
+              </MDBox>
+            </MDBox>
+
+            {/* 이번달 등록된 업장: tb_account_util_record 확인용(클릭/편집 불가), 재등록 전 대조용 */}
+            <MDBox
+              sx={{
+                flex: 0.8,
+                minWidth: 170,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                bgcolor: "#fafafa",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  이번 달 이미 등록된 업장
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  {year}년 {month}월 · 확인용(클릭 불가)
+                </MDTypography>
+              </MDBox>
+
+              <MDBox sx={{ display: "flex", bgcolor: "#eee", borderBottom: "1px solid #ddd" }}>
+                <MDBox sx={{ flex: 1, padding: "8px 6px", fontSize: 12, fontWeight: 700, textAlign: "center" }}>
+                  고객사
+                </MDBox>
+                <MDBox sx={{ width: 50, padding: "8px 6px", fontSize: 12, fontWeight: 700, textAlign: "center" }}>
+                  일수
+                </MDBox>
+              </MDBox>
+              <MDBox sx={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+                {integrationMonthRecordLoading ? (
+                  <MDBox sx={{ padding: "8px 6px", fontSize: 12, textAlign: "center" }}>조회중...</MDBox>
+                ) : integrationMonthRecordRows.length === 0 ? (
+                  <MDBox sx={{ padding: "8px 6px", fontSize: 12, textAlign: "center", color: "#999" }}>
+                    없음
+                  </MDBox>
+                ) : (
+                  integrationMonthRecordRows.map((r, i) => {
+                    const accName =
+                      integrationAccountNameMap.get(String(r.account_id ?? "")) ?? String(r.account_id ?? "");
+                    return (
+                      <MDBox
+                        key={`${r.account_id ?? "a"}-${i}`}
+                        sx={{ display: "flex", borderBottom: "1px solid #eee" }}
+                      >
+                        <MDBox sx={{ flex: 1, padding: "8px 6px", fontSize: 12, textAlign: "left" }}>
+                          {accName}
+                        </MDBox>
+                        <MDBox sx={{ width: 50, padding: "8px 6px", fontSize: 12, textAlign: "center" }}>
+                          {r.reg_days ?? ""}
+                        </MDBox>
+                      </MDBox>
+                    );
+                  })
+                )}
+              </MDBox>
+            </MDBox>
+
+            {/* 가운데: 등록할 업장 목록 (등록 전 임시 편집용, tb_account_util_member_mapping에는 저장되지 않음) */}
+            <MDBox
+              sx={{
+                flex: 0.9,
+                minWidth: 220,
+                border: "1.5px solid #ffa726",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #ffe0b2", bgcolor: "#fff8ef" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  등록할 업장 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  선택된 통합 직원: <b>{integrationSelectedMember?.name ?? "-"}</b>
+                  <br />
+                  다중선택 후 &gt; 버튼으로 업장 취소
+                  <br />
+                  저장은 안 되고 등록 시에만 사용됩니다.
+                </MDTypography>
+              </MDBox>
+
+              <MDBox sx={{ display: "flex", bgcolor: "#fff3e0", borderBottom: "1px solid #ffe0b2" }}>
+                <MDBox sx={{ flex: 1, padding: "8px 6px", fontSize: 12, fontWeight: 700, textAlign: "center" }}>
+                  고객사
+                </MDBox>
+              </MDBox>
+              <MDBox sx={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+                {(integrationMappingRows || []).map((r, i) => {
+                  const accId = String(r.account_id ?? "");
+                  const selected = integrationSelectedMappingIds.has(accId);
+                  const accName = integrationAccountNameMap.get(accId) ?? "";
+                  return (
+                    <MDBox
+                      key={`${r.idx ?? "new"}-${accId || "a"}-${i}`}
+                      onClick={() => handleToggleIntegrationMappingSelected(accId)}
+                      sx={{
+                        display: "flex",
+                        cursor: "pointer",
+                        borderBottom: "1px solid #eee",
+                        backgroundColor: selected ? "rgba(255,193,7,0.18)" : "#fff",
+                      }}
+                    >
+                      <MDBox
+                        sx={{
+                          flex: 1,
+                          padding: "8px 6px",
+                          fontSize: 12,
+                          textAlign: "left",
+                          fontWeight: selected ? 700 : 400,
+                        }}
+                      >
+                        {accName}
+                      </MDBox>
+                    </MDBox>
+                  );
+                })}
+              </MDBox>
+            </MDBox>
+
+            {/* 가운데-오른쪽 컨트롤: < 추가 / > 제외 (선택된 항목 전부 이동, 화면 표시만 바뀌고 매핑 테이블엔 저장 안 함) */}
+            <MDBox
+              sx={{
+                width: isMobile ? 54 : 70,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexDirection: "column",
+                gap: 1,
+              }}
+            >
+              <MDButton
+                variant="gradient"
+                color="info"
+                onClick={handleIntegrationAddSelectedAccounts}
+                sx={{ minWidth: isMobile ? 46 : 56, px: 0 }}
+              >
+                {"<"}
+              </MDButton>
+              <MDButton
+                variant="outlined"
+                color="secondary"
+                onClick={handleIntegrationRemoveSelectedMappings}
+                sx={{ minWidth: isMobile ? 46 : 56, px: 0 }}
+              >
+                {">"}
+              </MDButton>
+              <MDTypography variant="caption" sx={{ color: "#666", textAlign: "center" }}>
+                업장 ↔ 목록
+                <br />
+                (다중선택)
+              </MDTypography>
+            </MDBox>
+
+            {/* 오른쪽: 업장 목록 (이미 매핑 목록에 있는 업장은 제외하고 노출, 다중선택 가능) */}
+            <MDBox
+              sx={{
+                flex: 1,
+                minWidth: 220,
+                border: "1px solid #e0e0e0",
+                borderRadius: 1.5,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <MDBox sx={{ px: 1.5, py: 1, borderBottom: "1px solid #eee" }}>
+                <MDTypography variant="button" fontWeight="bold">
+                  업장 목록
+                </MDTypography>
+                <MDTypography variant="caption" sx={{ display: "block", color: "#666" }}>
+                  다중선택 후 &lt; 으로 업장 추가
+                </MDTypography>
+              </MDBox>
+
+              <MDBox sx={{ display: "flex", bgcolor: "#f7f7f7", borderBottom: "1px solid #eee" }}>
+                <MDBox sx={{ flex: 1, padding: "8px 6px", fontSize: 12, fontWeight: 700, textAlign: "center" }}>
+                  고객사
+                </MDBox>
+              </MDBox>
+              <MDBox sx={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
+                {integrationAvailableAccountRows.map((r, i) => {
+                  const accId = String(r.account_id ?? "");
+                  const selected = integrationSelectedAccountIds.has(accId);
+                  return (
+                    <MDBox
+                      key={`${accId || "a"}-${i}`}
+                      onClick={() => handleToggleIntegrationAccountSelected(accId)}
+                      sx={{
+                        display: "flex",
+                        cursor: "pointer",
+                        borderBottom: "1px solid #eee",
+                        backgroundColor: selected ? "rgba(30,136,229,0.14)" : "#fff",
+                      }}
+                    >
+                      <MDBox
+                        sx={{
+                          flex: 1,
+                          padding: "8px 6px",
+                          fontSize: 12,
+                          textAlign: "left",
+                          fontWeight: selected ? 700 : 400,
+                        }}
+                      >
+                        {r.account_name ?? ""}
+                      </MDBox>
+                    </MDBox>
+                  );
+                })}
+              </MDBox>
+            </MDBox>
+          </MDBox>
         </Box>
       </Modal>
       <Modal open={utilRecordAmbiguousOpen} onClose={closeUtilRecordAmbiguousModal}>

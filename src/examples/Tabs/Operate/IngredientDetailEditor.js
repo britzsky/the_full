@@ -4,6 +4,7 @@ import PropTypes from "prop-types";
 import {
   Box,
   Checkbox,
+  CircularProgress,
   IconButton,
   TextField,
   Autocomplete,
@@ -35,8 +36,9 @@ function UnitCell({ value, onChange }) {
 
   if (customMode) {
     return (
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, width: "100%" }}>
         <TextField
+          fullWidth
           size="small"
           placeholder="단위 직접 입력"
           value={value ?? ""}
@@ -59,8 +61,47 @@ function UnitCell({ value, onChange }) {
   return (
     <TextField
       select
+      fullWidth
       size="small"
-      sx={{ "& .MuiSelect-icon": { display: "inline-block", right: 6 } }}
+      SelectProps={{
+        displayEmpty: true,
+        MenuProps: {
+          PaperProps: {
+            sx: {
+              minWidth: 180,
+              mt: 0.5,
+              borderRadius: 2,
+              boxShadow: "0 10px 30px rgba(15, 23, 42, 0.16)",
+            },
+          },
+          MenuListProps: {
+            sx: {
+              py: 0.75,
+              "& .MuiMenuItem-root": {
+                minHeight: 36,
+                mx: 0.75,
+                px: 1.25,
+                borderRadius: 1,
+                fontSize: 13,
+              },
+            },
+          },
+        },
+      }}
+      sx={{
+        minWidth: 100,
+        "& .MuiOutlinedInput-root": {
+          minHeight: 40,
+          backgroundColor: "#fff",
+        },
+        "&& .MuiSelect-select": {
+          display: "flex",
+          alignItems: "center",
+          minHeight: "unset !important",
+          padding: "9px 32px 9px 12px !important",
+        },
+        "& .MuiSelect-icon": { display: "inline-block", right: 8 },
+      }}
       value={isPreset ? value : ""}
       onChange={(e) => {
         if (e.target.value === OTHER_UNIT) {
@@ -96,7 +137,7 @@ UnitCell.defaultProps = {
 // 🔹 메뉴 관리 / 레시피 관리 탭이 공유하는 "식재료 상세" 편집 컴포넌트
 //    - menu_id를 받아 tb_recipe_detail 행을 조회/추가/수정/삭제한다.
 //    - 식재료는 tb_ingredient_master 자동완성 검색, 없으면 그 자리에서 즉석 등록한다.
-export default function IngredientDetailEditor({ menuId }) {
+export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }) {
   const {
     loading,
     fetchRecipeDetailList,
@@ -108,6 +149,7 @@ export default function IngredientDetailEditor({ menuId }) {
 
   const [rows, setRows] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
   // ✅ 행별 식재료 자동완성 옵션/입력값
   const [optionsByRow, setOptionsByRow] = useState({});
   const searchTimerRef = useRef(null);
@@ -123,9 +165,35 @@ export default function IngredientDetailEditor({ menuId }) {
   }, [fetchRecipeDetailList, menuId]);
 
   useEffect(() => {
-    if (menuId) loadRows();
-    else setRows([]);
-  }, [menuId, loadRows]);
+    let active = true;
+
+    if (menuId) {
+      setInitialLoading(true);
+      Swal.fire({
+        title: "식재료 조회 중",
+        text: "잠시만 기다려주세요.",
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => Swal.showLoading(),
+      });
+      loadRows().finally(() => {
+        if (active) {
+          setInitialLoading(false);
+          onInitialLoadComplete?.();
+          Swal.close();
+        }
+      });
+    } else {
+      setRows([]);
+      setInitialLoading(false);
+    }
+
+    return () => {
+      active = false;
+      Swal.close();
+    };
+  }, [menuId, loadRows, onInitialLoadComplete]);
 
   const makeEmptyRow = () => ({
     _rowKey: `new_${Math.random().toString(36).slice(2)}`,
@@ -214,49 +282,43 @@ export default function IngredientDetailEditor({ menuId }) {
     );
   };
 
-  // ✅ 자동완성 목록에 없는 이름을 입력한 채로 포커스를 벗어나면, 그 자리에서 즉석 등록을 제안
-  const handleIngredientBlur = async (rowKey) => {
-    const row = rows.find((r) => r._rowKey === rowKey);
-    if (!row || row.ingredient_id || !row.ingredient_name_std?.trim()) return;
-
-    const { value: baseUnit } = await Swal.fire({
-      title: `"${row.ingredient_name_std}" 신규 식재료 등록`,
-      text: "목록에 없는 식재료입니다. 기준단위를 입력하면 새로 등록합니다.",
-      input: "text",
-      inputPlaceholder: "예) g, ml, EA",
-      showCancelButton: true,
-      confirmButtonText: "등록",
-      cancelButtonText: "취소",
-    });
-    if (!baseUnit || !baseUnit.trim()) return;
-
-    try {
-      const created = await quickCreateIngredient({
-        ingredient_name_std: row.ingredient_name_std.trim(),
-        base_unit: baseUnit.trim(),
-      });
-      setRows((prev) =>
-        prev.map((r) =>
-          r._rowKey === rowKey
-            ? { ...r, ingredient_id: created.ingredient_id, base_unit: r.base_unit || created.base_unit }
-            : r
-        )
-      );
-    } catch (err) {
-      Swal.fire("등록 실패", err.message, "error");
-    }
-  };
-
   const handleSave = async () => {
-    const invalid = rows.find((r) => !r.ingredient_id);
-    if (invalid) {
-      Swal.fire("식재료 미선택", "목록에서 식재료를 선택하거나 새로 등록해주세요.", "warning");
+    const missingName = rows.find((r) => !r.ingredient_id && !r.ingredient_name_std?.trim());
+    if (missingName) {
+      Swal.fire("식재료 미입력", "식재료명을 입력하거나 목록에서 선택해주세요.", "warning");
+      return;
+    }
+
+    const missingBaseUnit = rows.find((r) => !r.ingredient_id && !r.base_unit?.trim());
+    if (missingBaseUnit) {
+      Swal.fire(
+        "기준단위 미선택",
+        `"${missingBaseUnit.ingredient_name_std}"의 기준단위를 드롭다운에서 선택해주세요.`,
+        "warning"
+      );
       return;
     }
 
     setSaving(true);
     try {
-      const payloadRows = rows.map((r) => ({
+      // 목록에 없는 식재료는 행에서 선택한 기준단위로 저장 시 함께 등록한다.
+      const resolvedRows = await Promise.all(
+        rows.map(async (row) => {
+          if (row.ingredient_id) return row;
+          const created = await quickCreateIngredient({
+            ingredient_name_std: row.ingredient_name_std.trim(),
+            base_unit: row.base_unit.trim(),
+          });
+          return {
+            ...row,
+            ingredient_id: created.ingredient_id,
+            base_unit: created.base_unit || row.base_unit,
+          };
+        })
+      );
+      setRows(resolvedRows);
+
+      const payloadRows = resolvedRows.map((r) => ({
         recipe_detail_id: r.recipe_detail_id,
         ingredient_id: r.ingredient_id,
         ingredient_name_raw: r.ingredient_name_raw || r.ingredient_name_std,
@@ -270,8 +332,8 @@ export default function IngredientDetailEditor({ menuId }) {
         review_flag: r.review_flag ? 1 : 0,
       }));
       await saveRecipeDetailRows(menuId, payloadRows);
+      await loadRows();
       Swal.fire("저장되었습니다.", "", "success");
-      loadRows();
     } catch (err) {
       Swal.fire("저장 실패", err.message, "error");
     } finally {
@@ -284,6 +346,9 @@ export default function IngredientDetailEditor({ menuId }) {
       <MDBox sx={{ p: 2, color: "#999", fontSize: 13 }}>메뉴를 먼저 등록하거나 선택해주세요.</MDBox>
     );
   }
+
+  // 최초 조회 중에는 인라인 요소를 만들지 않아 표 레이아웃이 바뀌지 않도록 한다.
+  if (initialLoading) return null;
 
   return (
     <MDBox sx={{ mt: 1 }}>
@@ -303,8 +368,14 @@ export default function IngredientDetailEditor({ menuId }) {
 
       <Box
         sx={{
+          position: "relative",
           overflowX: "auto",
-          "& table": { borderCollapse: "collapse", width: "100%", minWidth: 900 },
+          "& table": {
+            borderCollapse: "collapse",
+            tableLayout: "fixed",
+            width: "100%",
+            minWidth: 900,
+          },
           "& th, & td": {
             border: "1px solid #ddd",
             fontSize: "12px",
@@ -319,29 +390,24 @@ export default function IngredientDetailEditor({ menuId }) {
             <tr>
               <th style={{ width: 200 }}>식재료명</th>
               <th style={{ width: 90 }}>원본수량</th>
-              <th style={{ width: 80 }}>원본단위</th>
+              <th style={{ width: 110 }}>원본단위</th>
               <th style={{ width: 90 }}>인분수</th>
               <th style={{ width: 100 }}>전체필요량</th>
-              <th style={{ width: 90 }}>기준단위</th>
+              <th style={{ width: 110 }}>기준단위</th>
               <th style={{ width: 100 }}>1인 필요량</th>
               <th style={{ width: 60 }}>검토필요</th>
               <th style={{ width: 50 }} />
             </tr>
           </thead>
           <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={9}>조회 중...</td>
-              </tr>
-            )}
-            {!loading && rows.length === 0 && (
+            {rows.length === 0 && (
               <tr>
                 <td colSpan={9} style={{ color: "#999" }}>
                   등록된 식재료가 없습니다. &quot;식재료 추가&quot; 버튼으로 등록해주세요.
                 </td>
               </tr>
             )}
-            {!loading &&
+            {rows.length > 0 &&
               rows.map((row) => (
                 <tr key={row._rowKey}>
                   <td style={{ textAlign: "left" }}>
@@ -359,7 +425,6 @@ export default function IngredientDetailEditor({ menuId }) {
                         handleIngredientInputChange(row._rowKey, value);
                       }}
                       onChange={(_, option) => handleIngredientSelect(row._rowKey, option)}
-                      onBlur={() => handleIngredientBlur(row._rowKey)}
                       renderInput={(params) => (
                         <TextField
                           {...params}
@@ -422,6 +487,21 @@ export default function IngredientDetailEditor({ menuId }) {
               ))}
           </tbody>
         </table>
+        {loading && (
+          <Box
+            sx={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 2,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "rgba(255, 255, 255, 0.68)",
+            }}
+          >
+            <CircularProgress size={28} thickness={4} />
+          </Box>
+        )}
       </Box>
     </MDBox>
   );
@@ -429,8 +509,10 @@ export default function IngredientDetailEditor({ menuId }) {
 
 IngredientDetailEditor.propTypes = {
   menuId: PropTypes.string,
+  onInitialLoadComplete: PropTypes.func,
 };
 
 IngredientDetailEditor.defaultProps = {
   menuId: null,
+  onInitialLoadComplete: undefined,
 };

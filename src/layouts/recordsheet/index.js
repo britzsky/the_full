@@ -6007,7 +6007,7 @@ function RecordSheet() {
               {!!selectedAccountId && (
                 <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
                   <MDTypography variant="button" color="white" fontWeight="bold" sx={{ whiteSpace: "nowrap" }}>
-                    {year}년 {month}월 평균식수
+                    평균식수
                   </MDTypography>
                   {mealColumnAverages.length > 0 && (
                     <table style={{ borderCollapse: "collapse", fontSize: 11 }}>

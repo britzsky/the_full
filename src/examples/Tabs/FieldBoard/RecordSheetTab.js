@@ -3332,10 +3332,30 @@ function RecordSheet() {
               {!!selectedAccountId && (
                 <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
                   <MDTypography variant="button" color="white" fontWeight="bold" sx={{ whiteSpace: "nowrap" }}>
-                    {year}년 {month}월 평균식수
+                    평균식수
                   </MDTypography>
                   {mealColumnAverages.length > 0 && (
                     <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead>
+                        <tr>
+                          {mealColumnAverages.map((item) => (
+                            <th
+                              key={item.key}
+                              style={{
+                                border: "1px solid #ddd",
+                                padding: "2px 8px",
+                                background: "#288ebe",
+                                textAlign: "center",
+                                color: "#fff",
+                                fontWeight: 700,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {item.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
                       <tbody>
                         <tr>
                           {mealColumnAverages.map((item) => (
@@ -3350,7 +3370,6 @@ function RecordSheet() {
                                 whiteSpace: "nowrap",
                               }}
                             >
-                              <span style={{ fontWeight: 700, color: "#333" }}>{item.label}:</span>{" "}
                               {item.average.toLocaleString()}
                             </td>
                           ))}

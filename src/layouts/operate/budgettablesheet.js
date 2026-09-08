@@ -558,13 +558,14 @@ export default function BudgetTableTab() {
                               width: col.width,
                               minWidth: col.width,
                               maxWidth: col.width,
-                              // 모바일/태블릿은 거래처명만 좌측 고정하고 나머지는 스크롤에 따라 이동
-                              ...(isMobileTablet && col.key === stickyAccountColumnKey
+                              // 거래처명 컬럼은 항상 좌측 고정하고 나머지는 스크롤에 따라 이동
+                              ...(col.key === stickyAccountColumnKey
                                 ? {
                                   position: "sticky",
                                   left: 0,
                                   zIndex: 6,
                                   backgroundColor: "#f0f0f0",
+                                  boxShadow: "2px 0 0 #686D76",
                                 }
                                 : {}),
                             }}
@@ -671,7 +672,7 @@ export default function BudgetTableTab() {
                                       textAlign: "right",
                                       color: getRatioColor(field, current),
                                       fontWeight: getRatioColor(field, current) ? 800 : undefined,
-                                      ...(isMobileTablet && field === stickyAccountColumnKey
+                                      ...(field === stickyAccountColumnKey
                                         ? {
                                           position: "sticky",
                                           left: 0,
@@ -700,7 +701,7 @@ export default function BudgetTableTab() {
                                       field === "note" || field === "account_name"
                                         ? "left"
                                         : "center",
-                                    ...(isMobileTablet && field === stickyAccountColumnKey
+                                    ...(field === stickyAccountColumnKey
                                       ? {
                                         position: "sticky",
                                         left: 0,
@@ -724,7 +725,7 @@ export default function BudgetTableTab() {
                                   style={{
                                     ...baseCellStyle,
                                     textAlign: "left",
-                                    ...(isMobileTablet && field === stickyAccountColumnKey
+                                    ...(field === stickyAccountColumnKey
                                       ? {
                                         position: "sticky",
                                         left: 0,
@@ -774,7 +775,7 @@ export default function BudgetTableTab() {
                                 style={{
                                   ...baseCellStyle,
                                   textAlign: "right",
-                                  ...(isMobileTablet && field === stickyAccountColumnKey
+                                  ...(field === stickyAccountColumnKey
                                     ? {
                                       position: "sticky",
                                       left: 0,

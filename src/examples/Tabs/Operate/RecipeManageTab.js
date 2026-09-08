@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useCallback, useEffect, useState } from "react";
-import { Box, TextField } from "@mui/material";
+import { Box, MenuItem, TextField } from "@mui/material";
 import Swal from "sweetalert2";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -10,8 +10,21 @@ import useRecipeManageData from "./recipeManageData";
 import IngredientDetailEditor from "./IngredientDetailEditor";
 import RecipeMediaEditor from "./RecipeMediaEditor";
 
-// 🔹 좌측 메뉴 목록 한 페이지에 보여줄 개수
-const MENU_PAGE_SIZE = 20;
+// 🔹 좌측 메뉴 목록 한 페이지에 보여줄 개수 선택지 (20단위로 100까지)
+const MENU_PAGE_SIZE_OPTIONS = [20, 40, 60, 80, 100];
+const DEFAULT_MENU_PAGE_SIZE = MENU_PAGE_SIZE_OPTIONS[0];
+
+// 페이지 이동 바에서 쓰는 작은 드롭다운 보정
+// (전역 테마가 .MuiSelect-select 패딩을 0으로 만들고 화살표를 숨겨서 여기서 다시 살린다)
+const pageSizeSelectSx = {
+  width: 92,
+  "& .MuiOutlinedInput-root": { backgroundColor: "#fff" },
+  "&& .MuiSelect-select": {
+    fontSize: 12,
+    padding: "5px 24px 5px 8px !important",
+  },
+  "& .MuiSelect-icon": { display: "inline-block", right: 2 },
+};
 
 // 🔹 레시피 콘텐츠 입력 폼 초기값
 const emptyContent = {
@@ -69,21 +82,29 @@ export default function RecipeManageTab() {
   const [recipeReady, setRecipeReady] = useState(false); // 선택 메뉴의 레시피 조회 완료 여부
   const [ingredientReady, setIngredientReady] = useState(false); // 선택 메뉴의 식재료 상세 최초 조회 완료 여부
   const [menuPage, setMenuPage] = useState(1); // 좌측 메뉴 목록 현재 페이지
+  const [menuPageSize, setMenuPageSize] = useState(DEFAULT_MENU_PAGE_SIZE); // 한 페이지에 보여줄 개수
 
   // 메뉴가 수천 건이라 전체를 한 번에 조회하면 느려서, 목록은 항상 서버에서 페이지 단위로만 받아온다.
   // 최초 진입 시 메뉴 목록 1페이지 조회
   useEffect(() => {
-    fetchMenuList({ page: 1, pageSize: MENU_PAGE_SIZE });
+    fetchMenuList({ page: 1, pageSize: DEFAULT_MENU_PAGE_SIZE });
   }, [fetchMenuList]);
 
   // 전체 페이지 수 (서버가 내려준 검색 조건 기준 전체 건수로 계산)
-  const menuTotalPages = Math.max(1, Math.ceil(menuTotal / MENU_PAGE_SIZE));
+  const menuTotalPages = Math.max(1, Math.ceil(menuTotal / menuPageSize));
 
-  // 페이지 이동: 검색 조건은 유지한 채 해당 페이지만 다시 조회
+  // 페이지 이동: 검색 조건/페이지당 개수는 유지한 채 해당 페이지만 다시 조회
   const goToMenuPage = (page) => {
     const target = Math.min(Math.max(1, page), menuTotalPages);
     setMenuPage(target);
-    fetchMenuList({ keyword, page: target, pageSize: MENU_PAGE_SIZE });
+    fetchMenuList({ keyword, page: target, pageSize: menuPageSize });
+  };
+
+  // 페이지당 개수 변경: 보던 위치가 어긋나므로 1페이지부터 다시 조회
+  const handleChangePageSize = (size) => {
+    setMenuPageSize(size);
+    setMenuPage(1);
+    fetchMenuList({ keyword, page: 1, pageSize: size });
   };
 
   // 선택 메뉴 변경 시 레시피 정보 조회 및 화면 텍스트 변환
@@ -128,7 +149,7 @@ export default function RecipeManageTab() {
   // 메뉴명 검색 처리
   const handleSearch = () => {
     setMenuPage(1);
-    fetchMenuList({ keyword, page: 1, pageSize: MENU_PAGE_SIZE });
+    fetchMenuList({ keyword, page: 1, pageSize: menuPageSize });
   };
 
   // 레시피 콘텐츠 필드 값 변경 처리
@@ -234,79 +255,91 @@ export default function RecipeManageTab() {
             ))}
         </Box>
 
-        {/* 페이지 이동 바: 처음/이전/현재-전체 페이지수/다음/마지막 (메뉴가 있을 때만 표시) */}
+        {/* 페이지 이동 바: 처음/이전/현재-전체 페이지수/다음/마지막 + 총 건수/페이지당 개수 (메뉴가 있을 때만 표시) */}
         {!menuLoading && menuTotal > 0 && (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 0.5,
-              p: 1,
-              borderTop: "1px solid #eee",
-            }}
-          >
-            {/* 처음 페이지로 이동 */}
-            <MDButton
-              size="small"
-              variant="outlined"
-              color="info"
-              disabled={menuPage === 1}
-              onClick={() => goToMenuPage(1)}
-              sx={{ minWidth: 0, px: 1, fontSize: 12 }}
-            >
-              처음
-            </MDButton>
-            {/* 이전 페이지로 이동 */}
-            <MDButton
-              size="small"
-              variant="outlined"
-              color="info"
-              disabled={menuPage === 1}
-              onClick={() => goToMenuPage(menuPage - 1)}
-              sx={{ minWidth: 0, px: 1, fontSize: 12 }}
-            >
-              이전
-            </MDButton>
-            {/* 현재 페이지 / 전체 페이지 수 */}
-            <Box
-              sx={{
-                minWidth: 56,
-                textAlign: "center",
-                fontSize: 12,
-                fontWeight: 700,
-                color: "#475569",
-                backgroundColor: "#f8fafc",
-                border: "1px solid #eee",
-                borderRadius: 999,
-                px: 1,
-                py: 0.4,
-              }}
-            >
-              {menuPage} / {menuTotalPages}
+          <Box sx={{ borderTop: "1px solid #eee", p: 1, display: "flex", flexDirection: "column", gap: 0.75 }}>
+            {/* 1행: 처음/이전/현재-전체 페이지수/다음/마지막 (패널 폭이 좁아 버튼 줄을 따로 둠) */}
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 0.5 }}>
+              {/* 처음 페이지로 이동 */}
+              <MDButton
+                size="small"
+                variant="outlined"
+                color="info"
+                disabled={menuPage === 1}
+                onClick={() => goToMenuPage(1)}
+                sx={{ minWidth: 0, px: 1, fontSize: 12 }}
+              >
+                처음
+              </MDButton>
+              {/* 이전 페이지로 이동 */}
+              <MDButton
+                size="small"
+                variant="outlined"
+                color="info"
+                disabled={menuPage === 1}
+                onClick={() => goToMenuPage(menuPage - 1)}
+                sx={{ minWidth: 0, px: 1, fontSize: 12 }}
+              >
+                이전
+              </MDButton>
+              {/* 현재 페이지 / 전체 페이지 수 */}
+              <Box
+                sx={{
+                  minWidth: 52,
+                  textAlign: "center",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "#475569",
+                  backgroundColor: "#f8fafc",
+                  border: "1px solid #eee",
+                  borderRadius: 999,
+                  px: 1,
+                  py: 0.4,
+                }}
+              >
+                {menuPage} / {menuTotalPages}
+              </Box>
+              {/* 다음 페이지로 이동 */}
+              <MDButton
+                size="small"
+                variant="outlined"
+                color="info"
+                disabled={menuPage === menuTotalPages}
+                onClick={() => goToMenuPage(menuPage + 1)}
+                sx={{ minWidth: 0, px: 1, fontSize: 12 }}
+              >
+                다음
+              </MDButton>
+              {/* 마지막 페이지로 이동 */}
+              <MDButton
+                size="small"
+                variant="outlined"
+                color="info"
+                disabled={menuPage === menuTotalPages}
+                onClick={() => goToMenuPage(menuTotalPages)}
+                sx={{ minWidth: 0, px: 1, fontSize: 12 }}
+              >
+                마지막
+              </MDButton>
             </Box>
-            {/* 다음 페이지로 이동 */}
-            <MDButton
-              size="small"
-              variant="outlined"
-              color="info"
-              disabled={menuPage === menuTotalPages}
-              onClick={() => goToMenuPage(menuPage + 1)}
-              sx={{ minWidth: 0, px: 1, fontSize: 12 }}
-            >
-              다음
-            </MDButton>
-            {/* 마지막 페이지로 이동 */}
-            <MDButton
-              size="small"
-              variant="outlined"
-              color="info"
-              disabled={menuPage === menuTotalPages}
-              onClick={() => goToMenuPage(menuTotalPages)}
-              sx={{ minWidth: 0, px: 1, fontSize: 12 }}
-            >
-              마지막
-            </MDButton>
+
+            {/* 2행: 좌측 총 건수 / 우측 페이지당 개수 선택 (20단위로 100까지) */}
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <Box sx={{ fontSize: 11, color: "#94a3b8" }}>총 {menuTotal}건</Box>
+              <TextField
+                select
+                size="small"
+                sx={pageSizeSelectSx}
+                value={menuPageSize}
+                onChange={(e) => handleChangePageSize(Number(e.target.value))}
+              >
+                {MENU_PAGE_SIZE_OPTIONS.map((size) => (
+                  <MenuItem key={size} value={size} sx={{ fontSize: 12 }}>
+                    {size}개씩
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
           </Box>
         )}
       </MDBox>

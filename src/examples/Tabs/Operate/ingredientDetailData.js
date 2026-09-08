@@ -4,8 +4,8 @@ import api from "api/api";
 
 // 🔹 메뉴 관리 / 레시피 관리 탭이 공유하는 "식재료 상세(tb_recipe_detail)" 데이터 훅
 export default function useIngredientDetailData() {
-  const [detailRows, setDetailRows] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [detailRows, setDetailRows] = useState([]); // 식재료 상세 목록
+  const [loading, setLoading] = useState(false); // 목록 조회 진행 여부
 
   // ✅ menu_id 기준 식재료 상세 목록 조회
   const fetchRecipeDetailList = useCallback(async (menuId) => {
@@ -75,6 +75,22 @@ export default function useIngredientDetailData() {
     return res.data;
   }, []);
 
+  // ✅ 식재료 단건 상세 조회 (분류/보관방법/안전재고 등 tb_ingredient_master 전체 필드)
+  const getIngredient = useCallback(async (ingredientId) => {
+    if (!ingredientId) return null;
+    const res = await api.get("/MenuRecipe/IngredientGet", {
+      params: { ingredient_id: ingredientId },
+    });
+    return res.data && Object.keys(res.data).length > 0 ? res.data : null;
+  }, []);
+
+  // ✅ 식재료 상세정보 수정
+  const updateIngredient = useCallback(async (payload) => {
+    const user_id = localStorage.getItem("user_id") || "";
+    const res = await api.post("/MenuRecipe/IngredientUpdate", { ...payload, user_id });
+    return res.data;
+  }, []);
+
   return {
     detailRows,
     setDetailRows,
@@ -84,5 +100,7 @@ export default function useIngredientDetailData() {
     deleteRecipeDetailRow,
     searchIngredients,
     quickCreateIngredient,
+    getIngredient,
+    updateIngredient,
   };
 }

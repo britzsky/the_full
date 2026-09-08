@@ -526,30 +526,42 @@ function PurchaseRequestHistoryList({ rows, loading, onSelect }) {
 
   return (
     <MDBox sx={{ overflowX: "auto", maxHeight: "65vh", overflowY: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 650 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960, tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "19%" }} />
+          <col style={{ width: "15%" }} />
+          <col style={{ width: "15%" }} />
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "38%" }} />
+        </colgroup>
         <thead>
           <tr>
             <th style={historyThCell}>문서번호</th>
             <th style={historyThCell}>기안일자</th>
             <th style={historyThCell}>시행일자</th>
             <th style={historyThCell}>진행상태</th>
+            <th style={historyThCell}>반려사유</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td style={historyEmptyCell} colSpan={4}>상신한 구매요청서가 없습니다.</td></tr>
-          ) : rows.map((row, index) => (
-            <tr key={`${row.payment_id}-${index}`} onClick={() => onSelect(row)} style={{ cursor: "pointer" }}>
-              <td style={historyTdLink}>{row.payment_id || "-"}</td>
-              <td style={historyTdCell}>{row.draft_dt || "-"}</td>
-              <td style={historyTdCell}>{row.start_dt || "-"}</td>
-              <td style={historyTdCell}>
-                <MDBox component="span" sx={getHistoryStatusSx(getHistoryStatusText(row))}>
-                  {getHistoryStatusText(row)}
-                </MDBox>
-              </td>
-            </tr>
-          ))}
+            <tr><td style={historyEmptyCell} colSpan={5}>상신한 구매요청서가 없습니다.</td></tr>
+          ) : rows.map((row, index) => {
+            const rejectReason = getHistoryRejectReasonText(row);
+            return (
+              <tr key={`${row.payment_id}-${index}`} onClick={() => onSelect(row)} style={{ cursor: "pointer" }}>
+                <td style={historyTdLink}>{row.payment_id || "-"}</td>
+                <td style={historyTdCell}>{row.draft_dt || "-"}</td>
+                <td style={historyTdCell}>{row.start_dt || "-"}</td>
+                <td style={historyTdCell}>
+                  <MDBox component="span" sx={getHistoryStatusSx(getHistoryStatusText(row))}>
+                    {getHistoryStatusText(row)}
+                  </MDBox>
+                </td>
+                <td style={{ ...historyTdCell, textAlign: "left" }}>{rejectReason || "-"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </MDBox>
@@ -558,6 +570,15 @@ function PurchaseRequestHistoryList({ rows, loading, onSelect }) {
 
 // 선택한 구매요청서의 품목과 요청 사유를 읽기 전용으로 표시한다.
 function PurchaseRequestHistoryDetail({ detail, loading }) {
+  const mainRow = detail?.main || {};
+  // 결재자가 배정된 단계는 전부 노출 (FP는 보통 1차/2차만 사용)
+  const approvalStages = HISTORY_APPROVAL_STAGES.filter((stage) =>
+    String(mainRow?.[stage.userKey] || "").trim()
+  );
+  // 앞 단계에서 반려된 이후 단계는 실제로 진행되지 않았으므로 상태/의견을 "-"로 표시한다.
+  const rejectedStageIndex = approvalStages.findIndex(
+    (stage) => String(mainRow?.[stage.signKey] || "") === "3"
+  );
   const items = Array.isArray(detail?.items) ? detail.items : [];
   const paymentNoteRow = items.find((row) => String(getHistoryItemValue(row, "payment_note")).trim());
   const paymentNote = getHistoryItemValue(paymentNoteRow, "payment_note") || "-";
@@ -584,6 +605,69 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
           <MDBox sx={{ mb: 1, fontSize: 13, fontWeight: 700 }}>
             문서번호: {detail.payment_id}
           </MDBox>
+
+          {/* 결재 진행상황 - 단계별 상태는 그대로(결재/반려/검토중/결재대기),
+              내용 칸은 상태가 결재면 "결재사유", 반려면 "반려사유"로 라벨을 붙여 노출한다. */}
+          {approvalStages.length > 0 && (
+            <MDBox sx={{ mb: 1.5, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560, tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "16%" }} />
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "18%" }} />
+                  <col style={{ width: "48%" }} />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th style={historyThCell}>결재단계</th>
+                    <th style={historyThCell}>결재자</th>
+                    <th style={historyThCell}>상태</th>
+                    <th style={historyThCell}>결재/반려 의견</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvalStages.map((stage, index) => {
+                    // 앞 단계 반려로 이 단계까지 진행되지 못한 경우
+                    const isUnreachable = rejectedStageIndex !== -1 && index > rejectedStageIndex;
+                    const sign = mainRow?.[stage.signKey];
+                    const statusText = isUnreachable ? "-" : getHistoryStageStatusText(sign);
+                    const reasonLabel = getHistoryStageReasonLabel(sign);
+                    const reasonText = String(mainRow?.[stage.commentKey] || "").trim();
+                    return (
+                      <tr key={stage.label}>
+                        <td style={historyTdCell}>{stage.label}</td>
+                        <td style={historyTdCell}>
+                          {mainRow?.[stage.nameKey] || mainRow?.[stage.userKey] || "-"}
+                        </td>
+                        <td style={historyTdCell}>
+                          {isUnreachable ? (
+                            "-"
+                          ) : (
+                            <MDBox component="span" sx={getHistoryStatusSx(statusText)}>
+                              {statusText}
+                            </MDBox>
+                          )}
+                        </td>
+                        <td style={{ ...historyTdCell, textAlign: "left" }}>
+                          {!isUnreachable && (statusText === "반려" || statusText === "결재") ? (
+                            <>
+                              <MDBox sx={{ fontSize: 11, fontWeight: 800, color: "#5f6b7a", mb: 0.25 }}>
+                                {reasonLabel}
+                              </MDBox>
+                              <MDBox sx={{ fontSize: 12 }}>{reasonText || "-"}</MDBox>
+                            </>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </MDBox>
+          )}
+
           <MDBox sx={{ overflowX: "auto", maxHeight: "48vh", overflowY: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080 }}>
               <thead>
@@ -666,6 +750,7 @@ PurchaseRequestHistoryDetail.propTypes = {
   detail: PropTypes.shape({
     payment_id: PropTypes.string,
     items: PropTypes.arrayOf(PropTypes.object),
+    main: PropTypes.object,
   }).isRequired,
   loading: PropTypes.bool.isRequired,
 };
@@ -734,13 +819,41 @@ const getHistoryStatusText = (row) => {
   return "결재대기";
 };
 
+// 결재 단계(1차/2차/최종)별 결재자/사인값/의견 컬럼 쌍
+// - 의견(comment) 컬럼은 입력하지 않으면 null일 수 있다.
+const HISTORY_APPROVAL_STAGES = [
+  { label: "1차 결재", userKey: "tm_user", nameKey: "tm_user_name", signKey: "tm_sign", commentKey: "tm_comment" },
+  { label: "2차 결재", userKey: "payer_user", nameKey: "payer_user_name", signKey: "payer_sign", commentKey: "payer_comment" },
+  { label: "최종 결재", userKey: "ceo_user", nameKey: "ceo_user_name", signKey: "ceo_sign", commentKey: "ceo_comment" },
+];
+
+// 결재 단계 사인값을 상태 문구로 변환 - 반려(3)/결재(4)/검토중(2)/결재대기(그 외)
+const getHistoryStageStatusText = (sign) => {
+  const s = String(sign || "");
+  if (s === "3") return "반려";
+  if (s === "4") return "결재";
+  if (s === "2") return "검토중";
+  return "결재대기";
+};
+
+// 결재 단계 사유 라벨 - 상태가 반려면 "반려사유", 결재면 "결재사유"
+const getHistoryStageReasonLabel = (sign) => (String(sign || "") === "3" ? "반려사유" : "결재사유");
+
+// 반려된 경우, 실제로 반려 처리한 결재 단계의 사유를 반환한다(반려가 아니면 빈 문자열)
+const getHistoryRejectReasonText = (row) => {
+  const rejectedStage = HISTORY_APPROVAL_STAGES.find(
+    (stage) => String(row?.[stage.signKey] || "") === "3"
+  );
+  return rejectedStage ? String(row?.[rejectedStage.commentKey] || "").trim() : "";
+};
+
 // 요청내역의 진행 단계를 완료·반려·검토·대기 색상으로 구분한다.
 const getHistoryStatusSx = (status) => {
   const statusText = String(status || "");
   let color = "#1565c0";
   let backgroundColor = "#e3f2fd";
 
-  if (statusText === "승인완료") {
+  if (statusText === "승인완료" || statusText === "결재") {
     color = "#2e7d32";
     backgroundColor = "#e8f5e9";
   } else if (statusText.includes("반려")) {

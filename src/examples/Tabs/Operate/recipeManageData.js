@@ -4,8 +4,8 @@ import api from "api/api";
 
 // 🔹 레시피 관리 탭 - tb_recipe_info 데이터 훅
 export default function useRecipeManageData() {
-  const [recipeInfo, setRecipeInfo] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [recipeInfo, setRecipeInfo] = useState(null); // 조회된 레시피 정보
+  const [loading, setLoading] = useState(false); // 조회 진행 여부
 
   // ✅ menu_id 기준 레시피 정보 조회
   const fetchRecipeInfo = useCallback(async (menuId) => {

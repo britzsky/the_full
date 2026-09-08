@@ -366,6 +366,8 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   // - actionStatus: 결재 선택 값("" | "4" | "3")
   const [openDetail, setOpenDetail] = useState(false);
   const [actionStatus, setActionStatus] = useState("");
+  // actionComment: 결재/반려 처리 시 함께 저장할 의견(결재 사유/반려 사유)
+  const [actionComment, setActionComment] = useState("");
   const [listStatusFilter, setListStatusFilter] = useState("all");
   const [checkedExpenseMap, setCheckedExpenseMap] = useState({});
   const [contextMenu, setContextMenu] = useState({
@@ -417,6 +419,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       if (!paymentId) return;
       setOpenDetail(true);
       setActionStatus("");
+      setActionComment("");
       setFpItemDraftMap({});
       await fetchManageDetail(paymentId, loginUserId);
     },
@@ -868,11 +871,12 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       }
     }
 
-    // 현재 문서 기준으로 결재 처리 저장
+    // 현재 문서 기준으로 결재 처리 저장 (의견 미입력 시 null로 저장)
     const ok = await saveSign({
       payment_id: detailMain.payment_id,
       user_id: loginUserId,
       action_status: selectedActionSign,
+      comment: actionComment,
     });
 
     if (!ok) {
@@ -892,6 +896,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
 
     // 저장 성공 후 목록을 최신화하고 상세를 닫은 뒤 관리 탭으로 복귀
     setFpItemDraftMap({});
+    setActionComment("");
     await loadList();
     setOpenDetail(false);
     moveToManageTab();
@@ -1232,6 +1237,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                               movePayerToTmSlot ? detailMain.payer_user : detailMain.tm_user
                             )}
                             signedAt={movePayerToTmSlot ? detailMain.payer_dt : detailMain.tm_dt}
+                            comment={movePayerToTmSlot ? detailMain.payer_comment : detailMain.tm_comment}
                           />
                         </td>
                       </tr>
@@ -1247,6 +1253,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                           <SignStatusCell
                             text={movePayerToTmSlot ? "-" : getSignTextByUser(detailMain.payer_sign, detailMain.payer_user)}
                             signedAt={movePayerToTmSlot ? "" : detailMain.payer_dt}
+                            comment={movePayerToTmSlot ? "" : detailMain.payer_comment}
                           />
                         </td>
                       </tr>
@@ -1258,6 +1265,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                           <SignStatusCell
                             text={getSignTextByUser(detailMain.ceo_sign, detailMain.ceo_user)}
                             signedAt={detailMain.ceo_dt}
+                            comment={detailMain.ceo_comment}
                           />
                         </td>
                       </tr>
@@ -1386,39 +1394,52 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                   </MDBox>
 
                   {canAction && (
-                    <MDBox
-                      sx={{
-                        display: "flex",
-                        gap: 1,
-                        alignItems: "center",
-                        flexWrap: "wrap",
-                        mt: 1,
-                        justifyContent: "flex-end",
-                      }}
-                    >
-                      {/* 결재 결과 선택: 4=결재, 3=반려 */}
+                    <MDBox sx={{ mt: 1 }}>
+                      {/* 결재 의견: 결재/반려 사유를 함께 저장(미입력 시 null) */}
                       <TextField
-                        select
+                        fullWidth
+                        multiline
+                        minRows={2}
                         size="small"
-                        value={actionStatus}
-                        onChange={(e) => setActionStatus(e.target.value)}
-                        SelectProps={{ native: true }}
-                        sx={{ minWidth: 140 }}
-                      >
-                        <option value="">선택</option>
-                        <option value="4">결재</option>
-                        <option value="3">반려</option>
-                      </TextField>
+                        value={actionComment}
+                        onChange={(e) => setActionComment(e.target.value)}
+                        placeholder="결재/반려 의견을 입력해주세요."
+                        sx={{ mb: 1 }}
+                      />
 
-                      {/* 저장 중에는 버튼 비활성화 + 텍스트 변경 */}
-                      <MDButton
-                        variant="gradient"
-                        color={actionStatus === "3" ? "error" : actionStatus === "4" ? "success" : "info"}
-                        onClick={handleSaveAction}
-                        disabled={saving || !selectedActionSign}
+                      <MDBox
+                        sx={{
+                          display: "flex",
+                          gap: 1,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          justifyContent: "flex-end",
+                        }}
                       >
-                        {saving ? "저장중..." : "저장"}
-                      </MDButton>
+                        {/* 결재 결과 선택: 4=결재, 3=반려 */}
+                        <TextField
+                          select
+                          size="small"
+                          value={actionStatus}
+                          onChange={(e) => setActionStatus(e.target.value)}
+                          SelectProps={{ native: true }}
+                          sx={{ minWidth: 140 }}
+                        >
+                          <option value="">선택</option>
+                          <option value="4">결재</option>
+                          <option value="3">반려</option>
+                        </TextField>
+
+                        {/* 저장 중에는 버튼 비활성화 + 텍스트 변경 */}
+                        <MDButton
+                          variant="gradient"
+                          color={actionStatus === "3" ? "error" : actionStatus === "4" ? "success" : "info"}
+                          onClick={handleSaveAction}
+                          disabled={saving || !selectedActionSign}
+                        >
+                          {saving ? "저장중..." : "저장"}
+                        </MDButton>
+                      </MDBox>
                     </MDBox>
                   )}
                 </MDBox>
@@ -1461,10 +1482,15 @@ ElectronicPaymentManageTab.propTypes = {
   initialOpenToken: PropTypes.string,
 };
 
-// 결재 상태 + 결재시각 표시 셀
-function SignStatusCell({ text, signedAt }) {
+// 결재 상태 + 결재시각 + 의견(결재사유/반려사유) 표시 셀
+function SignStatusCell({ text, signedAt, comment }) {
+  const safeText = String(text ?? "");
   const timeText = toSecondPrecisionText(signedAt);
-  const showTime = isFinishedSign(text) && !!timeText;
+  const showTime = isFinishedSign(safeText) && !!timeText;
+  const trimmedComment = String(comment ?? "").trim();
+  // 반려 상태면 "반려사유", 결재 완료 상태면 "결재사유" 라벨로 노출
+  const commentLabel = safeText.includes("반려") ? "반려사유" : "결재사유";
+  const showComment = isFinishedSign(safeText) && !!trimmedComment;
 
   return (
     <MDBox
@@ -1496,6 +1522,22 @@ function SignStatusCell({ text, signedAt }) {
             {timeText}
           </MDBox>
         )}
+        {showComment && (
+          <MDBox
+            component="div"
+            sx={{
+              fontSize: 11,
+              color: "#3c4858",
+              lineHeight: 1.3,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+              textAlign: "center",
+              mt: 0.25,
+            }}
+          >
+            {commentLabel}: {trimmedComment}
+          </MDBox>
+        )}
       </MDBox>
     </MDBox>
   );
@@ -1504,6 +1546,11 @@ function SignStatusCell({ text, signedAt }) {
 SignStatusCell.propTypes = {
   text: PropTypes.string,
   signedAt: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  comment: PropTypes.string,
+};
+
+SignStatusCell.defaultProps = {
+  comment: "",
 };
 
 SignStatusCell.defaultProps = {

@@ -249,13 +249,20 @@ export default function useElectronicPaymentManageData() {
 
   // 결재(4)/반려(3) 처리 저장
   // 성공 시 true, 실패 시 false를 반환해 UI에서 안내 문구를 분기한다.
-  const saveSign = useCallback(async ({ payment_id, user_id, action_status }) => {
+  const saveSign = useCallback(async ({ payment_id, user_id, action_status, comment }) => {
     if (!payment_id || !user_id || !action_status) return false;
 
     try {
       setSaving(true);
       // action_status: "4" = 결재, "3" = 반려
-      await api.post(MANAGE_SIGN_SAVE_API, { payment_id, user_id, action_status });
+      // comment: 해당 결재 단계의 의견(결재 사유/반려 사유) - 입력하지 않으면 null로 저장
+      const trimmedComment = String(comment ?? "").trim();
+      await api.post(MANAGE_SIGN_SAVE_API, {
+        payment_id,
+        user_id,
+        action_status,
+        comment: trimmedComment || null,
+      });
       return true;
     } catch (err) {
       console.error("전자결재 승인/반려 저장 실패:", err);

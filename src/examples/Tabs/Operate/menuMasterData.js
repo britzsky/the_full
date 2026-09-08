@@ -51,25 +51,34 @@ export const MEAL_PLAN_TYPE_OPTIONS = [
   { value: 5, label: "프리미엄식단" },
 ];
 
+// 코드값 -> 라벨 텍스트 변환
 export const labelOf = (options, value) =>
   options.find((o) => String(o.value) === String(value))?.label ?? "";
 
 // 🔹 메뉴 관리 탭 - tb_menu_master 데이터 훅
 export default function useMenuMasterData() {
-  const [menuRows, setMenuRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [menuRows, setMenuRows] = useState([]); // 메뉴 목록 (filter.pageSize를 넘기면 해당 페이지만)
+  const [menuTotal, setMenuTotal] = useState(0); // 검색 조건 기준 전체 건수 (페이지네이션 표시용)
+  const [loading, setLoading] = useState(true); // 목록 조회 진행 여부
 
-  // ✅ 메뉴 목록 조회
+  // ✅ 메뉴 목록 조회 (filter에 page/pageSize를 넘기면 서버에서 그 페이지만 잘라서 내려줌 —
+  //    메뉴가 수천 건이라 전체를 한 번에 내려받으면 느려서, 목록/건수 조회를 서버 페이지네이션으로 처리한다)
   const fetchMenuList = useCallback(async (filter = {}) => {
     setLoading(true);
     try {
-      const res = await api.get("/operate/menulist", { params: filter });
-      const rows = Array.isArray(res.data) ? res.data : [];
+      const needsCount = filter.pageSize != null && filter.pageSize !== "";
+      const [listRes, countRes] = await Promise.all([
+        api.get("/operate/menulist", { params: filter }),
+        needsCount ? api.get("/operate/menulistcount", { params: filter }) : Promise.resolve(null),
+      ]);
+      const rows = Array.isArray(listRes.data) ? listRes.data : [];
       setMenuRows(rows);
+      setMenuTotal(needsCount ? Number(countRes?.data) || 0 : rows.length);
       return rows;
     } catch (err) {
       console.error("데이터 조회 실패 (MenuList):", err);
       setMenuRows([]);
+      setMenuTotal(0);
       return [];
     } finally {
       setLoading(false);
@@ -107,6 +116,7 @@ export default function useMenuMasterData() {
   return {
     menuRows,
     setMenuRows,
+    menuTotal,
     loading,
     fetchMenuList,
     saveMenu,

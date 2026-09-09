@@ -16,7 +16,7 @@ export default function usePersonCostBudgetData(year, month) {
   const fetchPersonCostBudgetList = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/Operate/PersonCostBudgetList", {
+      const res = await api.get("/Operate/PersonCostBudgetProjectionList", {
         params: {
           year,
           month,
@@ -29,7 +29,7 @@ export default function usePersonCostBudgetData(year, month) {
         setPersonCostRows([]);
       }
     } catch (err) {
-      console.error("데이터 조회 실패 (PersonCostBudgetList):", err);
+      console.error("데이터 조회 실패 (PersonCostBudgetProjectionList):", err);
       setPersonCostRows([]);
     } finally {
       setLoading(false);

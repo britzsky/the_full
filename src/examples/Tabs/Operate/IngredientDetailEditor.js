@@ -23,40 +23,49 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
 import useIngredientDetailData from "./ingredientDetailData";
+import {
+  STORAGE_TYPE_PRESETS,
+  OTHER_STORAGE_TYPE,
+  INGREDIENT_CATEGORY_OPTIONS,
+  UNIT_PRESETS,
+  OTHER_UNIT,
+  normalizeUnit,
+} from "./ingredientMasterData";
 
-// 🔹 tb_ingredient_master 보관방법 프리셋 — 목록에 없는 값은 "기타"로 직접 입력
-const STORAGE_TYPE_PRESETS = ["냉장", "냉동", "실온"];
-const OTHER_STORAGE_TYPE = "기타";
-
-// 🔹 식재료 상세정보 보완 다이얼로그 입력값 초기값
-const emptyIngredientDetailForm = {
-  ingredient_id: "",
-  ingredient_name_std: "",
-  category_name: "",
-  base_unit: "",
-  order_unit: "",
-  convert_value: 1,
-  storage_type: "",
-  needs_review: 0,
-  note: "",
-  menu_usage_count: 0,
+// 전역 테마(assets/theme/components/form/select.js)가 .MuiSelect-select에
+// padding: 0 12px !important 를 걸어놔서 세로 패딩이 0이 되어버리는 실제 버그 보정.
+// + 실측 결과, 패딩·line-height를 옆 TextField와 똑같이 맞춰도 <input>과 <div role="combobox">는
+//   브라우저에서 서로 다른 높이로 그려진다 — <input>은 line-height를 무시하고 MUI 기본값인
+//   1.4375em(폰트 12px 기준 17.25px)으로 렌더링되는데, <div>인 select는 상속받은 line-height를
+//   그대로 반영해 20.125px가 되면서 select만 약 3px 더 커진다. 그래서 select의 line-height도
+//   1.4375em으로 강제로 맞춰야 실제 렌더링 높이가 완전히 같아진다(패딩만 맞추는 걸로는 부족함).
+// IngredientMasterTab.js도 같은 보정이 필요해서 여기서 export해 같이 쓴다.
+export const smallSelectSx = {
+  "&& .MuiSelect-select": {
+    paddingTop: "10px !important",
+    paddingBottom: "10px !important",
+    paddingRight: "28px !important",
+    lineHeight: "1.4375em !important",
+  },
+  "& .MuiSelect-icon": {
+    display: "inline-block",
+    right: 6,
+  },
 };
 
-// 🔹 기준단위/원본단위 공통 프리셋 — 목록에 없는 단위는 "기타"로 직접 입력
-const UNIT_PRESETS = ["g", "mL", "EA", "팩"];
-const OTHER_UNIT = "기타";
-
-// 프리셋 선택 + "기타" 선택 시 자유 텍스트 입력으로 전환되는 단위 입력 셀
-function UnitCell({ value, onChange }) {
-  const isPreset = UNIT_PRESETS.includes(value); // 현재 값이 프리셋 목록에 있는지 여부
+// 🔹 단위 입력 셀 (기준단위/발주단위/원본단위 공용) — 프리셋 선택 + "기타" 선택 시 직접입력으로 전환.
+//    IngredientMasterTab.js(식재료 관리 탭)도 기준단위 입력에 그대로 재사용한다.
+export function UnitCell({ value, onChange }) {
+  const normalizedValue = normalizeUnit(value);
+  const isPreset = UNIT_PRESETS.includes(normalizedValue); // 대소문자를 통일한 현재 값이 프리셋 목록에 있는지 여부
   const [customMode, setCustomMode] = useState(!!value && !isPreset); // 직접입력 모드 여부
 
   // 식재료 선택 등으로 외부에서 프리셋 밖의 값이 채워지면 자동으로 직접입력 모드로 전환
   useEffect(() => {
-    if (value && !UNIT_PRESETS.includes(value) && !customMode) {
+    if (value && !UNIT_PRESETS.includes(normalizedValue) && !customMode) {
       setCustomMode(true);
     }
-  }, [value, customMode]);
+  }, [value, normalizedValue, customMode]);
 
   // 직접입력 모드: 텍스트 입력 + 프리셋 모드로 되돌리는 닫기 버튼
   if (customMode) {
@@ -116,19 +125,12 @@ function UnitCell({ value, onChange }) {
       }}
       sx={{
         minWidth: 100,
-        "& .MuiOutlinedInput-root": {
-          minHeight: 40,
-          backgroundColor: "#fff",
-        },
-        "&& .MuiSelect-select": {
-          display: "flex",
-          alignItems: "center",
-          minHeight: "unset !important",
-          padding: "9px 32px 9px 12px !important",
-        },
+        "& .MuiOutlinedInput-root": { backgroundColor: "#fff" },
+        // 옆 일반 TextField(size="small")와 세로 패딩(10px)을 맞춰 높이를 정확히 일치시킨다.
+        ...smallSelectSx,
         "& .MuiSelect-icon": { display: "inline-block", right: 8 },
       }}
-      value={isPreset ? value : ""}
+      value={isPreset ? normalizedValue : ""}
       onChange={(e) => {
         if (e.target.value === OTHER_UNIT) {
           setCustomMode(true);
@@ -158,6 +160,20 @@ UnitCell.propTypes = {
 
 UnitCell.defaultProps = {
   value: "",
+};
+
+// 🔹 식재료 상세정보 보완 다이얼로그 입력값 초기값
+const emptyIngredientDetailForm = {
+  ingredient_id: "",
+  ingredient_name_std: "",
+  category_name: "",
+  base_unit: "",
+  order_unit: "",
+  convert_value: 1,
+  storage_type: "",
+  needs_review: 0,
+  note: "",
+  menu_usage_count: 0,
 };
 
 // 🔹 메뉴 관리 / 레시피 관리 탭이 공유하는 "식재료 상세" 편집 컴포넌트
@@ -196,7 +212,7 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
         _rowKey: row.recipe_detail_id ?? `new_${Math.random().toString(36).slice(2)}`,
         category_name: row.category_name || "",
         qty_num: row.qty_num ?? row.qty_base ?? "",
-        qty_unit: row.qty_unit || row.base_unit || row.ingredient_base_unit || "",
+        qty_unit: normalizeUnit(row.qty_unit || row.base_unit || row.ingredient_base_unit || ""),
       }))
     );
   }, [fetchRecipeDetailList, menuId]);
@@ -302,7 +318,7 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
               ingredient_id: option.ingredient_id,
               ingredient_name_std: option.ingredient_name_std,
               category_name: row.category_name || option.category_name || "",
-              qty_unit: row.qty_unit || option.base_unit || "",
+              qty_unit: normalizeUnit(row.qty_unit || option.base_unit || ""),
             }
           : row
       )
@@ -394,7 +410,7 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
           if (row.ingredient_id) return row;
           const created = await quickCreateIngredient({
             ingredient_name_std: row.ingredient_name_std.trim(),
-            base_unit: row.qty_unit.trim(),
+            base_unit: normalizeUnit(row.qty_unit),
           });
           return {
             ...row,
@@ -411,10 +427,10 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
         ingredient_name_raw: r.ingredient_name_std,
         qty_raw: r.qty_num === "" ? "" : String(r.qty_num),
         qty_num: r.qty_num === "" ? null : Number(r.qty_num),
-        qty_unit: r.qty_unit,
+        qty_unit: normalizeUnit(r.qty_unit),
         recipe_yield_servings: 1,
         qty_base: Number(r.qty_num) || 0,
-        base_unit: r.qty_unit,
+        base_unit: normalizeUnit(r.qty_unit),
         qty_per_person: Number(r.qty_num) || 0,
         review_flag: 0,
       }));
@@ -621,44 +637,40 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
                 value={detailForm.ingredient_name_std || ""}
                 onChange={(e) => handleDetailFieldChange("ingredient_name_std", e.target.value)}
               />
-              {/* 분류명 입력 (선택) */}
+              {/* 분류명 선택 (고정 목록, 가나다순) */}
               <TextField
+                select
                 label="분류명"
                 size="small"
                 fullWidth
-                placeholder="예: 채소류, 육류(선택)"
+                sx={smallSelectSx}
+                SelectProps={{
+                  displayEmpty: true,
+                  // 목록이 길어서 선택된 항목 위치로 자동 스크롤되면 맨 위가 아니라 중간부터 열려 보인다.
+                  anchorOrigin: { vertical: "bottom", horizontal: "left" },
+                  transformOrigin: { vertical: "top", horizontal: "left" },
+                }}
                 InputLabelProps={{ shrink: true }}
                 value={detailForm.category_name || ""}
                 onChange={(e) => handleDetailFieldChange("category_name", e.target.value)}
-              />
-              {/* 발주 단위 + 환산값을 나란히 배치하는 행 Box */}
-              <Box sx={{ display: "flex", gap: 2 }}>
-                {/* 발주 단위 입력 (선택) */}
-                <TextField
-                  label="발주 단위"
-                  size="small"
-                  fullWidth
-                  placeholder="예: 박스, 봉(선택)"
-                  InputLabelProps={{ shrink: true }}
-                  value={detailForm.order_unit || ""}
-                  onChange={(e) => handleDetailFieldChange("order_unit", e.target.value)}
-                />
-                {/* 발주 단위 -> 기준단위 환산값 입력 */}
-                <TextField
-                  label="발주→기준단위 환산값"
-                  size="small"
-                  fullWidth
-                  type="number"
-                  value={detailForm.convert_value ?? 1}
-                  onChange={(e) => handleDetailFieldChange("convert_value", e.target.value)}
-                />
-              </Box>
+              >
+                <MenuItem value="">
+                  <em>카테고리 선택</em>
+                </MenuItem>
+                {INGREDIENT_CATEGORY_OPTIONS.map((c) => (
+                  <MenuItem key={c} value={c}>
+                    {c}
+                  </MenuItem>
+                ))}
+              </TextField>
+              {/* 발주단위/환산값은 일단 화면에서 숨김 (order_unit/convert_value는 DB 기본값 그대로 유지) */}
               {/* 보관방법 선택 ("기타" 선택 시 아래 직접입력 필드 노출) */}
               <TextField
                 select
                 label="보관방법"
                 size="small"
                 fullWidth
+                sx={smallSelectSx}
                 SelectProps={{ displayEmpty: true }}
                 InputLabelProps={{ shrink: true }}
                 value={

@@ -563,6 +563,27 @@ export default function MenuMasterTab() {
                         flexWrap: "wrap",
                       }}
                     >
+                      {/* 등록된 이미지가 있으면 작은 썸네일로 보여주고, 클릭하면 미리보기가 뜬다 (행 높이에 영향 없도록 작게) */}
+                      {row.menu_img && (
+                        <Tooltip title="미리보기">
+                          <Box
+                            component="img"
+                            src={`${API_BASE_URL}${row.menu_img}`}
+                            alt={row.menu_name}
+                            onClick={() => handleViewImage(row.menu_img, row.menu_name)}
+                            sx={{
+                              // 옆 "재업로드" 버튼(MDButton size="small")과 높이를 맞춤(실측 32px)
+                              width: 32,
+                              height: 32,
+                              borderRadius: 1,
+                              objectFit: "cover",
+                              cursor: "pointer",
+                              border: "1px solid #e2e8f0",
+                              flexShrink: 0,
+                            }}
+                          />
+                        </Tooltip>
+                      )}
                       {/* 이미지 업로드/재업로드 버튼 (숨김 input을 감싸는 label) */}
                       <label htmlFor={`menu-img-upload-${row.menu_id}`}>
                         <MDButton
@@ -583,18 +604,6 @@ export default function MenuMasterTab() {
                             onClick={() => handleDownload(row.menu_img)}
                           >
                             <DownloadIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                      {/* 이미지가 등록된 경우에만 미리보기 버튼 표시 */}
-                      {row.menu_img && (
-                        <Tooltip title="미리보기">
-                          <IconButton
-                            size="small"
-                            color="info"
-                            onClick={() => handleViewImage(row.menu_img, row.menu_name)}
-                          >
-                            <ImageSearchIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                       )}

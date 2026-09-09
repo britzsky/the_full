@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Box, MenuItem, TextField } from "@mui/material";
 import Swal from "sweetalert2";
 import MDBox from "components/MDBox";
@@ -83,6 +83,7 @@ export default function RecipeManageTab() {
   const [ingredientReady, setIngredientReady] = useState(false); // 선택 메뉴의 식재료 상세 최초 조회 완료 여부
   const [menuPage, setMenuPage] = useState(1); // 좌측 메뉴 목록 현재 페이지
   const [menuPageSize, setMenuPageSize] = useState(DEFAULT_MENU_PAGE_SIZE); // 한 페이지에 보여줄 개수
+  const recipePanelRef = useRef(null); // 우측 레시피 편집 영역의 스크롤 위치를 관리하는 참조
 
   // 메뉴가 수천 건이라 전체를 한 번에 조회하면 느려서, 목록은 항상 서버에서 페이지 단위로만 받아온다.
   // 최초 진입 시 메뉴 목록 1페이지 조회
@@ -157,6 +158,7 @@ export default function RecipeManageTab() {
 
   // 메뉴 선택 처리: 선택한 메뉴의 레시피 조회가 끝난 뒤 편집 영역을 표시한다.
   const handleSelectMenu = (row) => {
+    if (recipePanelRef.current) recipePanelRef.current.scrollTop = 0;
     setRecipeReady(false);
     setIngredientReady(false);
     setSelectedMenu(row);
@@ -345,7 +347,7 @@ export default function RecipeManageTab() {
       </MDBox>
 
       {/* 우측 패널: 선택된 메뉴의 레시피 콘텐츠 입력 폼 + 식재료 상세 + 레시피 영상/이미지 */}
-      <MDBox sx={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+      <MDBox ref={recipePanelRef} sx={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
         {!selectedMenu ? (
           // 메뉴 미선택 시 안내 문구
           <MDBox sx={{ p: 2, color: "#999" }}>좌측 목록에서 메뉴를 선택해주세요.</MDBox>
@@ -389,16 +391,7 @@ export default function RecipeManageTab() {
                 value={content.stepsText}
                 onChange={(e) => handleContentChange("stepsText", e.target.value)}
               />
-              {/* 조리 팁 입력 (줄바꿈 = 항목 구분, 저장 시 JSON 배열로 변환) */}
-              <TextField
-                label="조리 팁 (한 줄에 한 항목씩)"
-                size="small"
-                multiline
-                minRows={2}
-                InputLabelProps={{ shrink: true }}
-                value={content.tipsText}
-                onChange={(e) => handleContentChange("tipsText", e.target.value)}
-              />
+              {/* 조리 팁은 일단 화면에서 숨김 (tips_json은 DB에 그대로 유지) */}
               {/* 보관 방법 입력 (저장 시 { text } 형태 JSON으로 변환) */}
               <TextField
                 label="보관 방법"

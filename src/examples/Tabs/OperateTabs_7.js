@@ -6,6 +6,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 // 탭용 서브 컴포넌트 import
 import MenuMasterTab from "./Operate/MenuMasterTab";
 import RecipeManageTab from "./Operate/RecipeManageTab";
+import IngredientMasterTab from "./Operate/IngredientMasterTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
@@ -87,6 +88,15 @@ function OperateTabs_7() {
       label: "📖 레시피 관리",
       iconIndex: 1,
       component: <RecipeManageTab />,
+      allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+      allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+      accessMode: "AND",
+    },
+    {
+      key: "ingredientMaster",
+      label: "🧂 식재료 관리",
+      iconIndex: 2,
+      component: <IngredientMasterTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
       accessMode: "AND",

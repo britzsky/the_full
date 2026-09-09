@@ -10,14 +10,10 @@ import Swal from "sweetalert2";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 
-// 🔹 인건비 예산 관리 탭 (OperateTabs_6 에서 사용)
-// - 매출 대비 인건비 45% 이상인 업장만 조회 (당월 실적이 없으면 2개월 전 실적으로 대체, 백엔드 PersonCostBudgetList 처리)
-// - "매출액"/"인건비 예산(45%)" 컬럼: 조회월 기준 2개월 전(salesYm) 매출 실적 사용 (base_month 대체 로직, 매출 반영이 2개월 지연되기 때문)
-// - "N월 인건비(비율)"/"N월 파출비" 컬럼: 조회월 기준 1개월 전(laborYm, 전월) tb_account_managerment_table의 person_cost/dispatch_cost를 그대로 사용
-//   (급여 마감이 전월까지만 끝나 있어 매출과 별도로 1개월만 늦춰서 조회, 백엔드에서 recent_month_person_cost/recent_month_dispatch_cost로 내려줌)
-// - "초과금액" 컬럼과 그 색상강조는 기존 그대로 base_month 기준 person_total(인건비+파출비 합계 컬럼) 사용
-// - 각 셀 안의 실제 값/월은 그 행 자신의 base_year/base_month(대체 로직) 기준으로 계산해서 보여준다 (getMonthInfo, offset 0은 laborYm 기준으로 별도 처리)
-// - 맨 아래 "합계" 행에는 전체 업장 합계·비율을 같은 컬럼 구성으로 표시
+// 인건비 예산 관리 탭
+// - 매출 대비 기존 인건비 비율이 45% 이상인 업장을 조회한다.
+// - 당월 인건비는 일반 직원 급여와 유틸·통합 배부액을 합산한 신규 API 계산값을 사용한다.
+// - 금일 기준 인건비와 당월 예상 인건비는 후속 급여체계 계산을 위한 컬럼으로 유지한다.
 export default function PersonCostBudgetTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
@@ -34,87 +30,58 @@ export default function PersonCostBudgetTab() {
   const handleYearChange = (e) => setYear(Number(e.target.value));
   const handleMonthChange = (e) => setMonth(Number(e.target.value));
 
-  // ✅ 컬럼 헤더 라벨용: 조회월(화면에서 고른 연/월) 기준 이번월/전월/전전월
+  // 매출 반영 시차에 맞춰 조회 월보다 2개월 전의 헤더 월을 계산한다.
   const getPrevYm = (y, m, back) => {
     const total = y * 12 + (m - 1) - back;
     return { year: Math.floor(total / 12), month: (total % 12) + 1 };
   };
-  // const lastYm = getPrevYm(year, month, 1);
-  // ✅ 매출은 2개월 전 실적으로 대체되므로("2개월 전 기준"), 매출/예산 관련 헤더는 조회월 기준 2개월 전 달로 표시
   const salesYm = getPrevYm(year, month, 2);
-  // ✅ 인건비·파출비는 급여 마감 시점상 1개월 전(전월)까지만 입력되어 있어, 조회월이 9월이면 8월(전월) 데이터를 사용
-  const laborYm = getPrevYm(year, month, 1);
-
-  // ✅ 어떤 달이든 person_total/sales_total만 있으면 비율 계산 (없으면 null)
-  const getRatio = (person, sales) =>
-    person == null || sales == null || Number(sales) === 0 ? null : (Number(person) / Number(sales)) * 100;
-
-  // ✅ offset: 0=전월(laborYm, base_month 아님) 인건비 비율, 1=전월, 2=전전월(현재 미사용) → { month, person, ratio } 반환
-  //    - offset 0(person_ratio 컬럼)은 매출만 base_month(2개월 전 대체) 값을 쓰고,
-  //      인건비는 tb_account_managerment_table의 전월(laborYm) person_cost를 그대로 사용 (파출비 제외, 별도 컬럼으로 표시)
-  //    - offset 1/2(현재 미사용, 합계 로직 참고용)는 기존처럼 그 행의 base_year/base_month 대체 로직을 따른다
-  const getMonthInfo = (row, offset) => {
-    if (offset === 0) {
-      const person = row.recent_month_person_cost != null ? Number(row.recent_month_person_cost) : null;
-      const sales = row.sales_total;
-      return { month: laborYm.month, person, ratio: getRatio(person, sales) };
-    }
-    const by = Number(row.base_year) || year;
-    const bm = Number(row.base_month) || month;
-    const ym = getPrevYm(by, bm, offset);
-    const person = offset === 1 ? row.prev_month_person_total : row.prev_prev_month_person_total;
-    const sales = offset === 1 ? row.prev_month_sales_total : row.prev_prev_month_sales_total;
-    return { month: ym.month, person: person != null ? Number(person) : null, ratio: getRatio(person, sales) };
-  };
-
-  // ✅ "N월 파출비" 컬럼용: 전월(laborYm) 파출비 raw 값 (비율 계산 없이 금액만 표시)
-  const getRecentDispatchCost = (row) =>
-    row.recent_month_dispatch_cost != null ? Number(row.recent_month_dispatch_cost) : null;
 
   const columns = [
     { key: "no", label: "순번", width: 50 },
     { key: "account_name", label: "업장", width: 200 },
     { key: "sales_total", label: `${salesYm.month}월 매출액`, width: 130 }, // 매출은 2개월 전(base_month) 실적으로 대체
     { key: "budget_45", label: `${salesYm.month}월 매출 기준 인건비 예산(45%)`, width: 170 }, // 매출액 * 45% (인건비 예산 상한선)
-    { key: "over_amount", label: "초과금액", width: 130 }, // 인건비 - 예산(45%). 이번월 인건비 금액 자체는 "이번월" 컬럼에서 확인 (기존 base_month 기준 유지)
-    // { key: "prev_prev_ratio", label: `${last2Ym.month}월 인건비(비율)`, width: 190, monthOffset: 2 },
-    // { key: "prev_ratio", label: `${lastYm.month}월 인건비(비율)`, width: 190, monthOffset: 1 },
-    { key: "person_ratio", label: `${salesYm.month}월 매출 기준 ${laborYm.month}월 인건비(비율)`, width: 220, monthOffset: 0 },
-    { key: "current_dispatch", label: `${laborYm.month}월 파출비`, width: 130 }, // 전월 파출비(raw 금액, 비율 없음)
+    { key: "current_month_person_cost", label: "당월 인건비", width: 130 },
+    { key: "today_person_cost", label: "금일 기준 인건비", width: 140 },
+    { key: "estimated_month_person_cost", label: "당월 예상 인건비", width: 140 },
+    { key: "note", label: "비고", width: 200 },
   ];
 
-  const numericFields = ["sales_total", "budget_45", "over_amount", "current_dispatch"];
-  const monthCellFields = ["prev_prev_ratio", "prev_ratio", "person_ratio"]; // 월+금액+비율을 한 셀에 표시
-
-  // ✅ 예산(45%)/초과금액은 실데이터가 아니라 매출액 기준 계산값
+  const numericFields = [
+    "sales_total",
+    "budget_45",
+    "current_month_person_cost",
+    "today_person_cost",
+    "estimated_month_person_cost",
+  ];
+  // 매출 기준 인건비 예산은 화면과 엑셀에서 같은 계산식을 사용한다.
   const getBudget45 = (row) => (Number(row.sales_total) || 0) * 0.45;
-  const getOverAmount = (row) => (Number(row.person_total) || 0) - getBudget45(row);
   const getComputedValue = (row, field) => {
     if (field === "budget_45") return getBudget45(row);
-    if (field === "over_amount") return getOverAmount(row);
-    if (field === "current_dispatch") return getRecentDispatchCost(row);
     return row[field];
   };
+  // 2개월 전 매출액 대비 당월 인건비 비율(%) - 화면 표시 전용
+  const getPersonCostRatio = (row) => {
+    const sales = Number(row.sales_total) || 0;
+    const cost = Number(row.current_month_person_cost) || 0;
+    if (sales <= 0) return null;
+    return Math.round((cost / sales) * 100);
+  };
+  // 비율 구간별 경고 색상: 45% 이상 빨강, 40% 이상 노랑
+  const getPersonCostColor = (ratio) => {
+    if (ratio == null) return undefined;
+    if (ratio >= 45) return "#d32f2f";
+    if (ratio >= 40) return "#f9a825";
+    return undefined;
+  };
 
-  // ✅ 맨 아래 합계 행: 필터된 업장들의 전전월/전월/이번월 인건비·매출·비율 합계
-  //    (업장마다 기준월이 다를 수 있어 합계 행엔 특정 월을 표시하지 않고 금액·비율만 보여준다)
-  //    - 세 번째 행(index 2)은 person_ratio 컬럼과 같은 기준으로 맞추기 위해 person_total 대신 전월 person_cost 합계 사용
-  const summaryMonths = [
-    { personKey: "prev_prev_month_person_total", salesKey: "prev_prev_month_sales_total" },
-    { personKey: "prev_month_person_total", salesKey: "prev_month_sales_total" },
-    { personKey: "recent_month_person_cost", salesKey: "sales_total" },
-  ];
-  const summaryTotals = summaryMonths.map(({ personKey, salesKey }) => {
-    const person = personCostRows.reduce((sum, row) => sum + (Number(row[personKey]) || 0), 0);
-    const sales = personCostRows.reduce((sum, row) => sum + (Number(row[salesKey]) || 0), 0);
-    const ratio = sales > 0 ? (person / sales) * 100 : 0;
-    return { person, sales, ratio };
-  });
-  // ✅ "N월 파출비" 컬럼 합계
-  const dispatchTotal = personCostRows.reduce((sum, row) => sum + (Number(row.recent_month_dispatch_cost) || 0), 0);
-  // ✅ "초과금액" 합계용: over_amount 컬럼은 기존 그대로(base_month 기준 person_total) 유지하므로 별도 합계 필요
-  const personTotalSum = personCostRows.reduce((sum, row) => sum + (Number(row.person_total) || 0), 0);
-
+  const salesTotal = personCostRows.reduce((sum, row) => sum + (Number(row.sales_total) || 0), 0);
+  // 업장별 일반 직원 급여와 유틸·통합 배부액을 합산한 당월 인건비 합계
+  const currentMonthPersonCostTotal = personCostRows.reduce(
+    (sum, row) => sum + (Number(row.current_month_person_cost) || 0),
+    0
+  );
   const handleExcelDownload = async () => {
     try {
       const wb = new ExcelJS.Workbook();
@@ -144,10 +111,6 @@ export default function PersonCostBudgetTab() {
         columns.forEach((col) => {
           if (col.key === "no") {
             rowData[col.key] = rowIdx + 1;
-          } else if (monthCellFields.includes(col.key)) {
-            const info = getMonthInfo(row, col.monthOffset);
-            rowData[col.key] =
-              info.ratio == null ? "-" : `${info.month}월 기준 ${formatNumber(info.person)}(${info.ratio.toFixed(1)}%)`;
           } else if (numericFields.includes(col.key)) {
             const v = getComputedValue(row, col.key);
             rowData[col.key] = v != null ? Number(v) : "";
@@ -166,41 +129,22 @@ export default function PersonCostBudgetTab() {
           if (numericFields.includes(col.key)) {
             cell.alignment = { horizontal: "right" };
             cell.numFmt = "#,##0";
-          } else if (monthCellFields.includes(col.key)) {
-            cell.alignment = { horizontal: "right" }; // 텍스트("N월 기준 금액(비율%)")라 numFmt는 안 먹임
           } else {
             cell.alignment = { horizontal: "center" };
-          }
-          // 인건비 비율 폰트색(3개월 컬럼 전부): >=60 빨강, >=45 주황
-          if (monthCellFields.includes(col.key)) {
-            const num = getMonthInfo(row, col.monthOffset).ratio;
-            if (num != null && num >= 60) {
-              cell.font = { bold: true, color: { argb: "FFF44336" } };
-            } else if (num != null && num >= 45) {
-              cell.font = { bold: true, color: { argb: "FFFF9800" } };
-            }
-          }
-          // 초과금액: 0보다 크면(예산 초과) 빨강 강조
-          if (col.key === "over_amount") {
-            const over = getOverAmount(row);
-            if (over > 0) {
-              cell.font = { bold: true, color: { argb: "FFF44336" } };
-            }
           }
         });
       });
 
-      // 🔹 합계 행 (조회월/조회월-1/조회월-2 기준 3개월 합계, 월 표시는 헤더에 이미 있어 금액·비율만)
+      // 현재 화면에 조회된 업장의 매출·예산·당월 인건비 합계
       {
         const totalRow = {
           account_name: "합계",
-          sales_total: summaryTotals[2].sales,
-          budget_45: summaryTotals[2].sales * 0.45,
-          over_amount: personTotalSum - summaryTotals[2].sales * 0.45, // 기존 그대로: base_month 기준 person_total 합계
-          prev_prev_ratio: `${formatNumber(Math.round(summaryTotals[0].person))}(${summaryTotals[0].ratio.toFixed(1)}%)`,
-          prev_ratio: `${formatNumber(Math.round(summaryTotals[1].person))}(${summaryTotals[1].ratio.toFixed(1)}%)`,
-          person_ratio: `${formatNumber(Math.round(summaryTotals[2].person))}(${summaryTotals[2].ratio.toFixed(1)}%)`,
-          current_dispatch: dispatchTotal,
+          sales_total: salesTotal,
+          budget_45: salesTotal * 0.45,
+          current_month_person_cost: currentMonthPersonCostTotal,
+          today_person_cost: "",
+          estimated_month_person_cost: "",
+          note: "",
         };
         const excelRow = ws.addRow(totalRow);
         excelRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
@@ -215,8 +159,6 @@ export default function PersonCostBudgetTab() {
           if (numericFields.includes(col.key)) {
             cell.alignment = { horizontal: "right" };
             cell.numFmt = "#,##0";
-          } else if (monthCellFields.includes(col.key)) {
-            cell.alignment = { horizontal: "right" }; // 텍스트("N월 기준 금액(비율%)")라 numFmt는 안 먹임
           } else {
             cell.alignment = { horizontal: "center" };
           }
@@ -386,42 +328,11 @@ export default function PersonCostBudgetTab() {
                       );
                     }
 
-                    // 🔹 전전월/전월/이번월: 조회월 기준 고정 달력월로 "N월 금액(비율%)" 표시 (그 달 실적 없으면 "-")
-                    if (monthCellFields.includes(field)) {
-                      const info = getMonthInfo(row, col.monthOffset);
-                      const ratioColor =
-                        info.ratio != null && info.ratio >= 45 ? (info.ratio >= 60 ? "#f44336" : "#ff9800") : undefined;
-                      return (
-                        <td
-                          key={field}
-                          style={{
-                            width: col.width,
-                            minWidth: col.width,
-                            maxWidth: col.width,
-                            textAlign: "right",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {info.ratio == null ? (
-                            "-"
-                          ) : (
-                            <>
-                              <span style={{ color: "#888", fontSize: "11px" }}>{info.month}월 기준</span>{" "}
-                              {formatNumber(info.person)}
-                              <span style={{ color: ratioColor, fontWeight: ratioColor ? 800 : undefined }}>
-                                ({info.ratio.toFixed(1)}%)
-                              </span>
-                            </>
-                          )}
-                        </td>
-                      );
-                    }
-
                     const value = getComputedValue(row, field);
                     const isNumeric = numericFields.includes(field);
-                    const isOverAmount = field === "over_amount";
 
-                    const ratioColor = isOverAmount && Number(value) > 0 ? "#f44336" : undefined;
+                    const ratio = field === "current_month_person_cost" ? getPersonCostRatio(row) : null;
+                    const ratioColor = getPersonCostColor(ratio);
 
                     return (
                       <td
@@ -431,36 +342,32 @@ export default function PersonCostBudgetTab() {
                           minWidth: col.width,
                           maxWidth: col.width,
                           textAlign: isNumeric ? "right" : field === "account_name" ? "left" : "center",
-                          color: ratioColor,
-                          fontWeight: ratioColor ? 800 : undefined,
+                          ...(ratioColor && { color: ratioColor, fontWeight: "bold" }),
                         }}
                       >
-                        {value == null ? "" : isNumeric ? formatNumber(Math.round(value)) : value}
+                        {value == null
+                          ? ""
+                          : isNumeric
+                          ? ratio != null
+                            ? `${formatNumber(Math.round(value))}(${ratio}%)`
+                            : formatNumber(Math.round(value))
+                          : value}
                       </td>
                     );
                   })}
                 </tr>
               ))
             )}
-            {/* 🔹 합계 행: 지금 목록에 뜬 업장 전체의 3개월 합계 (위쪽 개별 행과 같은 컬럼 구성으로 바로 비교) */}
+            {/* 현재 목록에 조회된 업장 전체 합계 */}
             {personCostRows.length > 0 && (
               <tr style={{ backgroundColor: "#eef1f5", fontWeight: "bold" }}>
                 <td colSpan={2}>합계</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(summaryTotals[2].sales))}</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(summaryTotals[2].sales * 0.45))}</td>
-                <td style={{ textAlign: "right" }}>
-                  {formatNumber(Math.round(personTotalSum - summaryTotals[2].sales * 0.45))}
-                </td>
-                {/* <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  {formatNumber(Math.round(summaryTotals[0].person))} ({summaryTotals[0].ratio.toFixed(1)}%)
-                </td>
-                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  {formatNumber(Math.round(summaryTotals[1].person))} ({summaryTotals[1].ratio.toFixed(1)}%)
-                </td> */}
-                <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  {formatNumber(Math.round(summaryTotals[2].person))} ({summaryTotals[2].ratio.toFixed(1)}%)
-                </td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(dispatchTotal))}</td>
+                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(salesTotal))}</td>
+                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(salesTotal * 0.45))}</td>
+                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(currentMonthPersonCostTotal))}</td>
+                <td />
+                <td />
+                <td />
               </tr>
             )}
           </tbody>

@@ -73,7 +73,7 @@ const textToJson = (text) => JSON.stringify({ text: text || "" });
 // 🔹 운영 > 메뉴/레시피 관리 > 레시피 관리 탭 (OperateTabs_7에서 사용)
 export default function RecipeManageTab() {
   const { menuRows, menuTotal, loading: menuLoading, fetchMenuList } = useMenuMasterData();
-  const { loading: recipeLoading, fetchRecipeInfo, saveRecipeInfo } = useRecipeManageData();
+  const { loading: recipeLoading, fetchRecipeBundle, saveRecipeInfo } = useRecipeManageData();
 
   const [keyword, setKeyword] = useState(""); // 메뉴명 검색어
   const [selectedMenu, setSelectedMenu] = useState(null); // 좌측 목록에서 선택한 메뉴
@@ -81,6 +81,11 @@ export default function RecipeManageTab() {
   const [saving, setSaving] = useState(false); // 레시피 저장 진행 여부
   const [recipeReady, setRecipeReady] = useState(false); // 선택 메뉴의 레시피 조회 완료 여부
   const [ingredientReady, setIngredientReady] = useState(false); // 선택 메뉴의 식재료 상세 최초 조회 완료 여부
+  // RecipeBundleGet으로 한 번에 받아온 식재료 상세/영상/이미지 목록
+  // (하위 컴포넌트에 그대로 내려줘서 각자 다시 조회하지 않게 한다 — API 호출 횟수 절감)
+  const [bundleDetails, setBundleDetails] = useState([]);
+  const [bundleVideos, setBundleVideos] = useState([]);
+  const [bundleImages, setBundleImages] = useState([]);
   const [menuPage, setMenuPage] = useState(1); // 좌측 메뉴 목록 현재 페이지
   const [menuPageSize, setMenuPageSize] = useState(DEFAULT_MENU_PAGE_SIZE); // 한 페이지에 보여줄 개수
   const recipePanelRef = useRef(null); // 우측 레시피 편집 영역의 스크롤 위치를 관리하는 참조
@@ -116,15 +121,20 @@ export default function RecipeManageTab() {
       setContent(emptyContent);
       setRecipeReady(false);
       setIngredientReady(false);
+      setBundleDetails([]);
+      setBundleVideos([]);
+      setBundleImages([]);
       return undefined;
     }
 
-    // 레시피 정보 조회 후 JSON 컬럼을 화면 텍스트로 변환
+    // 레시피 정보 + 식재료 상세 + 영상 + 이미지를 한 번에 조회(RecipeBundleGet)한 뒤
+    // 정보는 화면 텍스트로 변환하고, 나머지는 하위 컴포넌트에 그대로 내려준다.
     const loadRecipe = async () => {
       setRecipeReady(false);
-      const nextRecipeInfo = await fetchRecipeInfo(selectedMenu.menu_id);
+      const bundle = await fetchRecipeBundle(selectedMenu.menu_id);
       if (!active) return;
 
+      const nextRecipeInfo = bundle.info;
       setContent(
         nextRecipeInfo
           ? {
@@ -138,6 +148,9 @@ export default function RecipeManageTab() {
             }
           : emptyContent
       );
+      setBundleDetails(bundle.details);
+      setBundleVideos(bundle.videos);
+      setBundleImages(bundle.images);
       setRecipeReady(true);
     };
 
@@ -145,7 +158,7 @@ export default function RecipeManageTab() {
     return () => {
       active = false;
     };
-  }, [selectedMenu, fetchRecipeInfo]);
+  }, [selectedMenu, fetchRecipeBundle]);
 
   // 메뉴명 검색 처리
   const handleSearch = () => {
@@ -422,13 +435,19 @@ export default function RecipeManageTab() {
               />
 
               {/* 식재료 상세 편집 컴포넌트 (menu_id 기준 tb_recipe_detail 관리) */}
+              {/* RecipeBundleGet으로 이미 조회해둔 목록을 넘겨 자체 조회를 생략시킨다 */}
               <IngredientDetailEditor
                 menuId={selectedMenu.menu_id}
+                initialRows={bundleDetails}
                 onInitialLoadComplete={handleIngredientInitialLoadComplete}
               />
 
-              {/* 레시피 영상(유튜브 링크)/이미지 편집 컴포넌트 */}
-              <RecipeMediaEditor menuId={selectedMenu.menu_id} />
+              {/* 레시피 영상(유튜브 링크)/이미지 편집 컴포넌트 (마찬가지로 조회 결과를 그대로 전달) */}
+              <RecipeMediaEditor
+                menuId={selectedMenu.menu_id}
+                initialVideoRows={bundleVideos}
+                initialImageRows={bundleImages}
+              />
             </MDBox>
           </>
         )}

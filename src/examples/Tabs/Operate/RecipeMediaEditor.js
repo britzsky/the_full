@@ -33,10 +33,14 @@ const extractYoutubeId = (url) => {
 };
 
 // 🔹 메뉴/레시피 관리 탭이 공유하는 "레시피 영상(유튜브 링크) + 레시피 이미지" 편집 컴포넌트
-export default function RecipeMediaEditor({ menuId }) {
+//    initialVideoRows/initialImageRows가 주어지면(부모가 RecipeBundleGet으로 이미 조회해둔 경우)
+//    자체 조회를 건너뛰어 메뉴 선택 시 발생하는 API 호출 횟수를 줄인다.
+export default function RecipeMediaEditor({ menuId, initialVideoRows, initialImageRows }) {
   const {
     videoRows,
     imageRows,
+    setVideoRows,
+    setImageRows,
     fetchVideoList,
     saveVideo,
     deleteVideo,
@@ -57,10 +61,17 @@ export default function RecipeMediaEditor({ menuId }) {
     fetchImageList(menuId);
   }, [menuId, fetchVideoList, fetchImageList]);
 
-  // menuId 변경 시 영상/이미지 목록 초기 로드
+  // menuId 변경 시 영상/이미지 목록 로드
+  //   initialVideoRows/initialImageRows가 주어진 경우는 그 목록을 그대로 채워 넣고 조회를 생략한다.
   useEffect(() => {
+    if (!menuId) return;
+    if (initialVideoRows || initialImageRows) {
+      setVideoRows(initialVideoRows || []);
+      setImageRows(initialImageRows || []);
+      return;
+    }
     loadAll();
-  }, [loadAll]);
+  }, [menuId, initialVideoRows, initialImageRows, loadAll, setVideoRows, setImageRows]);
 
   // ✅ 영상 등록 처리
   const handleAddVideo = async () => {
@@ -350,8 +361,14 @@ export default function RecipeMediaEditor({ menuId }) {
 
 RecipeMediaEditor.propTypes = {
   menuId: PropTypes.string,
+  // eslint-disable-next-line react/forbid-prop-types
+  initialVideoRows: PropTypes.array,
+  // eslint-disable-next-line react/forbid-prop-types
+  initialImageRows: PropTypes.array,
 };
 
 RecipeMediaEditor.defaultProps = {
   menuId: null,
+  initialVideoRows: null,
+  initialImageRows: null,
 };

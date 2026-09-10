@@ -375,14 +375,8 @@ export default function HandoverSheetTab() {
     FileSaver.saveAs(blob, `${accountName}_인수인계서.xlsx`);
   };
 
-  // ✅ 모바일 대응 테이블 스타일
-  const tableSx = {
-    flex: 1,
-    mt: 1,
-    maxHeight: isMobile ? "60vh" : "none",
-    overflowX: "auto",
-    overflowY: isMobile ? "auto" : "visible",
-    WebkitOverflowScrolling: "touch",
+  // ✅ 셀 스타일 — 타이틀 테이블/본문 테이블 공통
+  const sharedCellSx = {
     "& table": {
       borderCollapse: "collapse",
       width: "100%",
@@ -399,9 +393,31 @@ export default function HandoverSheetTab() {
       backgroundColor: "#f0f0f0",
       fontWeight: "bold",
       textAlign: "center",
-      position: "sticky",
-      top: 0,
-      zIndex: 1,
+    },
+  };
+
+  // ✅ 타이틀+본문을 하나의 스크롤 박스에 같이 넣어서 스크롤바가 타이틀 옆까지 이어지게 함.
+  //    타이틀은 그 안에서 position:sticky를 "테이블 셀"이 아니라 감싸는 div(MDBox)에 줘서 고정
+  //    — sticky를 th/thead에 직접 주면 스크롤 중 테두리가 떨리는 브라우저 버그가 있어 회피함
+  const scrollBoxSx = {
+    ...sharedCellSx,
+    flex: 1,
+    mt: 1,
+    maxHeight: isMobile ? "55vh" : "75vh",
+    overflowX: "auto",
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
+  };
+
+  // ✅ 타이틀 테이블을 감싸는 div — 여기에 sticky를 줌(테이블 셀에는 안 줌)
+  const stickyTitleWrapSx = {
+    position: "sticky",
+    top: 0,
+    zIndex: 10,
+    backgroundColor: "#ffffff",
+    // ✅ 타이틀 테이블 아래 테두리가 본문 테이블 위 테두리와 겹쳐 두 배로 굵어 보이는 것 방지
+    "& th": {
+      borderBottom: "none",
     },
   };
 
@@ -473,13 +489,21 @@ export default function HandoverSheetTab() {
         </MDButton>
       </MDBox>
 
-      {/* 메인 테이블 */}
-      <MDBox sx={tableSx}>
+      {/* 타이틀+본문을 한 스크롤 박스 안에 같이 둬서 스크롤바가 타이틀 옆까지 이어지게 함 */}
+      <MDBox pb={3} sx={scrollBoxSx}>
+        {/* 타이틀 — 이 박스 안에서 div(sticky)로 고정, 테이블 셀에는 sticky를 안 줌 */}
+        <MDBox sx={stickyTitleWrapSx}>
+          <table>
+            <tbody>
+              <tr>
+                <th colSpan={6}>업 무 인 수 인 계 서</th>
+              </tr>
+            </tbody>
+          </table>
+        </MDBox>
+
         <table>
-          <thead>
-            <tr>
-              <th colSpan={6}>업 무 인 수 인 계 서</th>
-            </tr>
+          <tbody>
             <tr>
               <th colSpan={2}>인계자</th>
               <th colSpan={2}>인수자</th>
@@ -509,8 +533,7 @@ export default function HandoverSheetTab() {
               <td>인계장소</td>
               <td>{renderInput("handover_location")}</td>
             </tr>
-          </thead>
-          <tbody>
+
             {/* 1. 업무 현황 */}
             <tr>
               <th colSpan={6}>1. 업무 현황</th>

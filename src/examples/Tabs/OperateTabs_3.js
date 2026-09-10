@@ -100,8 +100,8 @@ function OperateTabs_2() {
       label: "🧑‍🤝‍🧑 인건비 예산관리",
       iconIndex: 2,
       component: <PersonCostBudgetTab />,
-      allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
-      allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+      allowedDepartments: [6], // 🔹 부서권한
+      allowedPositions: [], // 🔹 직책권한
       accessMode: "AND",
     },
     // {

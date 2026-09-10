@@ -104,6 +104,8 @@ export default function useRecipeMediaData() {
   return {
     videoRows,
     imageRows,
+    setVideoRows,
+    setImageRows,
     loading,
     setLoading,
     fetchVideoList,

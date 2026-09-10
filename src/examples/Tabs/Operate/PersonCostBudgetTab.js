@@ -13,7 +13,9 @@ import { saveAs } from "file-saver";
 // 인건비 예산 관리 탭
 // - 매출 대비 기존 인건비 비율이 45% 이상인 업장을 조회한다.
 // - 당월 인건비는 일반 직원 급여와 유틸·통합 배부액을 합산한 신규 API 계산값을 사용한다.
-// - 금일 기준 인건비와 당월 예상 인건비는 후속 급여체계 계산을 위한 컬럼으로 유지한다.
+// - 금일 기준 인건비는 당월 인건비와 같은 방식으로 "오늘까지"만 일할 계산한 값이며,
+//   출근부(초과/결근/파출·직원파출/유틸) 상세 내역을 괄호로 함께 보여준다. (근무체계별 세부 계산은 후속 작업)
+// - 당월 예상 인건비는 후속 급여체계 계산을 위한 컬럼으로 유지한다.
 export default function PersonCostBudgetTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
@@ -43,7 +45,7 @@ export default function PersonCostBudgetTab() {
     { key: "sales_total", label: `${salesYm.month}월 매출액`, width: 130 }, // 매출은 2개월 전(base_month) 실적으로 대체
     { key: "budget_45", label: `${salesYm.month}월 매출 기준 인건비 예산(45%)`, width: 170 }, // 매출액 * 45% (인건비 예산 상한선)
     { key: "current_month_person_cost", label: "당월 인건비", width: 130 },
-    { key: "today_person_cost", label: "금일 기준 인건비", width: 140 },
+    { key: "today_person_cost", label: "금일 기준 인건비", width: 260 },
     { key: "estimated_month_person_cost", label: "당월 예상 인건비", width: 140 },
     { key: "note", label: "비고", width: 200 },
   ];
@@ -74,6 +76,25 @@ export default function PersonCostBudgetTab() {
     if (ratio >= 45) return "#d32f2f";
     if (ratio >= 40) return "#f9a825";
     return undefined;
+  };
+
+  // 금일 기준 인건비 괄호 안 상세 내역: 초과(시간) / 결근(횟수) / 파출·직원파출(금액) / 유틸(횟수)
+  // - 값이 0인 항목은 굳이 표시하지 않는다 (해당 없는 업장에서 괄호가 계속 떠 있으면 오히려 지저분함)
+  const getTodayPersonCostDetail = (row) => {
+    const overtimeHours = Number(row.overtime_hours) || 0;
+    const absenceCount = Number(row.absence_count) || 0;
+    const dispatchTotal = Number(row.dispatch_total_amount) || 0;
+    const employeeDispatch = Number(row.employee_dispatch_amount) || 0;
+    const utilCount = Number(row.util_count) || 0;
+
+    const parts = [];
+    if (overtimeHours > 0) parts.push(`초과: ${overtimeHours}시간`);
+    if (absenceCount > 0) parts.push(`결근: ${absenceCount}회`);
+    if (dispatchTotal > 0)
+      parts.push(`파출(직원파출):${formatNumber(dispatchTotal)}(${formatNumber(employeeDispatch)})원`);
+    if (utilCount > 0) parts.push(`유틸: ${utilCount}회`);
+
+    return parts.length > 0 ? `(${parts.join(", ")})` : "";
   };
 
   const salesTotal = personCostRows.reduce((sum, row) => sum + (Number(row.sales_total) || 0), 0);
@@ -334,6 +355,9 @@ export default function PersonCostBudgetTab() {
                     const ratio = field === "current_month_person_cost" ? getPersonCostRatio(row) : null;
                     const ratioColor = getPersonCostColor(ratio);
 
+                    // 🔹 금일 기준 인건비 셀은 숫자 아래에 초과/결근/파출/유틸 상세를 줄바꿈으로 덧붙인다
+                    const todayDetail = field === "today_person_cost" ? getTodayPersonCostDetail(row) : "";
+
                     return (
                       <td
                         key={field}
@@ -342,6 +366,7 @@ export default function PersonCostBudgetTab() {
                           minWidth: col.width,
                           maxWidth: col.width,
                           textAlign: isNumeric ? "right" : field === "account_name" ? "left" : "center",
+                          whiteSpace: todayDetail ? "normal" : undefined,
                           ...(ratioColor && { color: ratioColor, fontWeight: "bold" }),
                         }}
                       >
@@ -352,6 +377,14 @@ export default function PersonCostBudgetTab() {
                             ? `${formatNumber(Math.round(value))}(${ratio}%)`
                             : formatNumber(Math.round(value))
                           : value}
+                        {todayDetail && (
+                          <>
+                            <br />
+                            <span style={{ fontSize: "10px", color: "#777", fontWeight: "normal" }}>
+                              {todayDetail}
+                            </span>
+                          </>
+                        )}
                       </td>
                     );
                   })}

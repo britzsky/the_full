@@ -11,6 +11,8 @@ import HandoverSheetTab from "./FieldBoard/HandoverSheetTab";
 import HygieneSheetTab from "./FieldBoard/HygieneSheetTab";
 import PropertySheetTab from "./FieldBoard/PropertySheetTab";
 import MenuManagementTab from "./FieldBoard/MenuManagementTab";
+// 자격/보건 서류 관리 탭 (면허증/보건증/위생교육/보수교육)
+import AccountMembersFilesTab from "./FieldBoard/AccountMembersFilesTab";
 // 구입요청 탭 (현장 영양사 구입요청서 작성)
 import PurchaseRequestTab from "./FieldBoard/PurchaseRequestTab";
 import FieldBoardPurchaseNotificationButton from "utils/FieldBoardPurchaseNotificationButton";
@@ -87,6 +89,7 @@ function FieldBoardTabs() {
     "🧹 위생점검",
     "📦 기물관리",
     // "🍽️ 식단표 관리",
+    "📋 자격/보건 서류 관리",
     "🛒 구매요청",
   ];
 
@@ -102,6 +105,7 @@ function FieldBoardTabs() {
     <HygieneSheetTab key="hygiene" />,
     <PropertySheetTab key="property" />,
     // <MenuManagementTab key="menu-management" />,
+    <AccountMembersFilesTab key="account-files" />,
     <PurchaseRequestTab
       key="purchase-request"
       isActive={tabIndex === PURCHASE_TAB_INDEX}

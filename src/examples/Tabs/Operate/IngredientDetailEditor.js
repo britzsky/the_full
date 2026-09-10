@@ -176,10 +176,22 @@ const emptyIngredientDetailForm = {
   menu_usage_count: 0,
 };
 
+// 조회된 식재료 상세 원본 배열을 화면 행 형태로 변환 (필요 수량 = qty_num 우선, 없으면 qty_base)
+const toDisplayRows = (list) =>
+  list.map((row) => ({
+    ...row,
+    _rowKey: row.recipe_detail_id ?? `new_${Math.random().toString(36).slice(2)}`,
+    category_name: row.category_name || "",
+    qty_num: row.qty_num ?? row.qty_base ?? "",
+    qty_unit: normalizeUnit(row.qty_unit || row.base_unit || row.ingredient_base_unit || ""),
+  }));
+
 // 🔹 메뉴 관리 / 레시피 관리 탭이 공유하는 "식재료 상세" 편집 컴포넌트
 //    - menu_id를 받아 tb_recipe_detail 행을 조회/추가/수정/삭제한다.
 //    - 식재료는 tb_ingredient_master 자동완성 검색, 없으면 그 자리에서 즉석 등록한다.
-export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }) {
+//    - initialRows가 주어지면(부모가 RecipeBundleGet으로 이미 조회해둔 경우) 자체 조회를 건너뛰어
+//      메뉴 선택 시 발생하는 API 호출 횟수를 줄인다.
+export default function IngredientDetailEditor({ menuId, onInitialLoadComplete, initialRows }) {
   const {
     loading,
     fetchRecipeDetailList,
@@ -203,51 +215,53 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
   const [detailLoading, setDetailLoading] = useState(false); // 상세정보 조회 진행 여부
   const [detailSaving, setDetailSaving] = useState(false); // 상세정보 저장 진행 여부
 
-  // 식재료 상세 목록 조회 및 행 키 부여 (필요 수량 = qty_num 우선, 없으면 qty_base)
+  // 식재료 상세 목록 조회 및 행 키 부여
   const loadRows = useCallback(async () => {
     const list = await fetchRecipeDetailList(menuId);
-    setRows(
-      list.map((row) => ({
-        ...row,
-        _rowKey: row.recipe_detail_id ?? `new_${Math.random().toString(36).slice(2)}`,
-        category_name: row.category_name || "",
-        qty_num: row.qty_num ?? row.qty_base ?? "",
-        qty_unit: normalizeUnit(row.qty_unit || row.base_unit || row.ingredient_base_unit || ""),
-      }))
-    );
+    setRows(toDisplayRows(list));
   }, [fetchRecipeDetailList, menuId]);
 
   // menuId 변경 시 식재료 상세 최초 조회 (로딩 모달 표시)
+  //   initialRows가 주어진 경우(부모가 이미 RecipeBundleGet으로 조회해둔 경우)는
+  //   그 목록을 그대로 사용하고 별도 조회는 생략한다.
   useEffect(() => {
     let active = true;
 
-    if (menuId) {
-      setInitialLoading(true);
-      Swal.fire({
-        title: "식재료 조회 중",
-        text: "잠시만 기다려주세요.",
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        showConfirmButton: false,
-        didOpen: () => Swal.showLoading(),
-      });
-      loadRows().finally(() => {
-        if (active) {
-          setInitialLoading(false);
-          onInitialLoadComplete?.();
-          Swal.close();
-        }
-      });
-    } else {
+    if (!menuId) {
       setRows([]);
       setInitialLoading(false);
+      return undefined;
     }
+
+    if (initialRows) {
+      setRows(toDisplayRows(initialRows));
+      setInitialLoading(false);
+      onInitialLoadComplete?.();
+      return undefined;
+    }
+
+    setInitialLoading(true);
+    Swal.fire({
+      title: "식재료 조회 중",
+      text: "잠시만 기다려주세요.",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      showConfirmButton: false,
+      didOpen: () => Swal.showLoading(),
+    });
+    loadRows().finally(() => {
+      if (active) {
+        setInitialLoading(false);
+        onInitialLoadComplete?.();
+        Swal.close();
+      }
+    });
 
     return () => {
       active = false;
       Swal.close();
     };
-  }, [menuId, loadRows, onInitialLoadComplete]);
+  }, [menuId, initialRows, loadRows, onInitialLoadComplete]);
 
   // 식재료 상세 신규 행 초기값 생성
   const makeEmptyRow = () => ({
@@ -751,9 +765,12 @@ export default function IngredientDetailEditor({ menuId, onInitialLoadComplete }
 IngredientDetailEditor.propTypes = {
   menuId: PropTypes.string,
   onInitialLoadComplete: PropTypes.func,
+  // eslint-disable-next-line react/forbid-prop-types
+  initialRows: PropTypes.array,
 };
 
 IngredientDetailEditor.defaultProps = {
   menuId: null,
   onInitialLoadComplete: undefined,
+  initialRows: null,
 };

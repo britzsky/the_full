@@ -2100,6 +2100,23 @@ function RecordSheet() {
     return (accountList || []).filter((a) => !mappedIds.has(String(a.account_id ?? "")));
   }, [accountList, integrationMappingRows]);
 
+  // ✅ "이번 달 이미 등록된 업장" / "등록할 업장 목록" 표시용 정렬(account_name 오름차순)
+  const integrationMonthRecordRowsSorted = useMemo(() => {
+    return [...(integrationMonthRecordRows || [])].sort((a, b) => {
+      const nameA = integrationAccountNameMap.get(String(a.account_id ?? "")) ?? String(a.account_id ?? "");
+      const nameB = integrationAccountNameMap.get(String(b.account_id ?? "")) ?? String(b.account_id ?? "");
+      return nameA.localeCompare(nameB, "ko");
+    });
+  }, [integrationMonthRecordRows, integrationAccountNameMap]);
+
+  const integrationMappingRowsSorted = useMemo(() => {
+    return [...(integrationMappingRows || [])].sort((a, b) => {
+      const nameA = integrationAccountNameMap.get(String(a.account_id ?? "")) ?? "";
+      const nameB = integrationAccountNameMap.get(String(b.account_id ?? "")) ?? "";
+      return nameA.localeCompare(nameB, "ko");
+    });
+  }, [integrationMappingRows, integrationAccountNameMap]);
+
   const fetchIntegrationMemberList = useCallback(async () => {
     const res = await api.get("/Account/AccountUtilMemberList", { params: { position_type: 7 } });
     return extractArray(res.data);
@@ -6799,12 +6816,12 @@ function RecordSheet() {
               <MDBox sx={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
                 {integrationMonthRecordLoading ? (
                   <MDBox sx={{ padding: "8px 6px", fontSize: 12, textAlign: "center" }}>조회중...</MDBox>
-                ) : integrationMonthRecordRows.length === 0 ? (
+                ) : integrationMonthRecordRowsSorted.length === 0 ? (
                   <MDBox sx={{ padding: "8px 6px", fontSize: 12, textAlign: "center", color: "#999" }}>
                     없음
                   </MDBox>
                 ) : (
-                  integrationMonthRecordRows.map((r, i) => {
+                  integrationMonthRecordRowsSorted.map((r, i) => {
                     const accName =
                       integrationAccountNameMap.get(String(r.account_id ?? "")) ?? String(r.account_id ?? "");
                     return (
@@ -6856,7 +6873,7 @@ function RecordSheet() {
                 </MDBox>
               </MDBox>
               <MDBox sx={{ flex: 1, overflow: "auto", WebkitOverflowScrolling: "touch" }}>
-                {(integrationMappingRows || []).map((r, i) => {
+                {integrationMappingRowsSorted.map((r, i) => {
                   const accId = String(r.account_id ?? "");
                   const selected = integrationSelectedMappingIds.has(accId);
                   const accName = integrationAccountNameMap.get(accId) ?? "";

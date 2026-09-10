@@ -12,16 +12,37 @@ const toDateStr = (v) => {
   return s.length >= 10 ? s.slice(0, 10) : s;
 };
 
+// ✅ 직급(position_type) 코드 → 라벨 매핑 (다른 Operate 탭과 동일한 코드 체계)
+const positionOptions = [
+  { value: "1", label: "영양사" },
+  { value: "2", label: "조리팀장" },
+  { value: "3", label: "조리장" },
+  { value: "4", label: "조리사" },
+  { value: "5", label: "조리원" },
+  { value: "6", label: "유틸" },
+  { value: "7", label: "통합" },
+];
+
+// ✅ 직급 표시는 position_type 우선, 없으면 서버 문자열(position)로 폴백
+const getPositionLabel = (positionType, positionText) => {
+  const key = String(positionType ?? "").trim();
+  if (key) {
+    return positionOptions.find((p) => String(p.value) === key)?.label ?? key;
+  }
+  return String(positionText ?? "").trim();
+};
+
 export default function useMembersFilesData() {
   const [membersFilesListRows, setMembersFilesListRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // ✅ 공통 row 표준화
+  // ✅ 공통 row(문서 1건) 표준화 — 회원당 문서종류별로 여러 행이 내려옴
   const normalizeRow = (item) => ({
     member_id: toStr(item.member_id),
     name: toStr(item.name),
-    position: toStr(item.position),
+    position_type: toStr(item.position_type), // ✅ 직급 코드 원본 보관
+    position: getPositionLabel(item.position_type, item.position), // ✅ position_type 우선으로 직급 라벨 계산
     doc_type_id: toStr(item.doc_type_id), // ✅ 문자열로
     doc_id: toStr(item.doc_id),
     file_path: toStr(item.file_path),
@@ -30,7 +51,38 @@ export default function useMembersFilesData() {
     note: toStr(item.note), // ✅ 반드시 포함
   });
 
-  // ✅ 현장 직원 파일 조회
+  // ✅ 회원당 여러 건으로 내려오는 flat rows를 member 단위로 묶어
+  //    docs: { [doc_type_id]: { doc_id, file_path, issue_dt, expiry_dt, note } } 형태로 변환
+  const groupByMember = (flatRows) => {
+    const order = [];
+    const map = new Map();
+
+    flatRows.forEach((r) => {
+      if (!map.has(r.member_id)) {
+        map.set(r.member_id, {
+          member_id: r.member_id,
+          name: r.name,
+          position_type: r.position_type,
+          position: r.position,
+          docs: {},
+        });
+        order.push(r.member_id);
+      }
+      if (r.doc_type_id) {
+        map.get(r.member_id).docs[r.doc_type_id] = {
+          doc_id: r.doc_id,
+          file_path: r.file_path,
+          issue_dt: r.issue_dt,
+          expiry_dt: r.expiry_dt,
+          note: r.note,
+        };
+      }
+    });
+
+    return order.map((id) => map.get(id));
+  };
+
+  // ✅ 현장 직원 파일 조회 (회원 × 문서종류 전체를 묶어서 세팅)
   const fetcMembersFilesList = async (account_id) => {
     setLoading(true);
     try {
@@ -38,8 +90,8 @@ export default function useMembersFilesData() {
         params: { account_id },
       });
 
-      const rows = (res.data || []).map(normalizeRow);
-      setMembersFilesListRows(rows.map((r) => ({ ...r })));
+      const flatRows = (res.data || []).map(normalizeRow);
+      setMembersFilesListRows(groupByMember(flatRows));
     } catch (err) {
       console.error("직원 파일 조회 실패:", err);
       setMembersFilesListRows([]);

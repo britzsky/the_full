@@ -2325,8 +2325,8 @@ function TallySheet() {
   }, [otherListOpen, otherRows, otherSelectedRow]);
 
   // ✅ 직접 입력은 type=1만 허용
-  // ✅ 직접 입력 허용 타입 (1~4)
-  const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4"]), []);
+  // ✅ 직접 입력 허용 타입 (1~4, 1042)
+  const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4", "1042"]), []);
 
   // ======================== ✅ 직접 입력이 아닌 타입별 모달 라우팅 ========================
   const handleSpecialCellClick = useCallback(
@@ -2477,7 +2477,7 @@ function TallySheet() {
   const suppliesBudgetForTab = tabValue === 1 ? supplies2Budget : suppliesBudget;
   const suppliesUsedForTab = tabValue === 1 ? supplies2Used : suppliesUsed;
 
-  // ✅ 직접 입력은 type=1~4 허용
+  // ✅ 직접 입력은 type=1~4, 1042 허용
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
     const rows = isSecond ? data2Rows : dataRows;
     const row = rows?.[rowIndex];
@@ -4882,7 +4882,10 @@ function TallySheet() {
                       }
                     />
                   )}
-                  <Typography variant="caption" sx={{ fontSize: "11px" }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ fontSize: "11px", flex: 1, minWidth: 0, wordBreak: "break-all" }}
+                  >
                     {extractDisplayFileName(formData.bank_image) || "업로드 완료"}
                   </Typography>
                 </Box>
@@ -4962,7 +4965,10 @@ function TallySheet() {
                       }
                     />
                   )}
-                  <Typography variant="caption" sx={{ fontSize: "11px" }}>
+                  <Typography
+                    variant="caption"
+                    sx={{ fontSize: "11px", flex: 1, minWidth: 0, wordBreak: "break-all" }}
+                  >
                     {extractDisplayFileName(formData.biz_image) || "업로드 완료"}
                   </Typography>
                 </Box>

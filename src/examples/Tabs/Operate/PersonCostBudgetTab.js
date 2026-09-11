@@ -63,10 +63,10 @@ export default function PersonCostBudgetTab() {
     if (field === "budget_45") return getBudget45(row);
     return row[field];
   };
-  // 2개월 전 매출액 대비 당월 인건비 비율(%) - 화면 표시 전용
-  const getPersonCostRatio = (row) => {
+  // 2개월 전 매출액 대비 인건비 비율(%) - 화면 표시 전용. field로 당월/금일 인건비 둘 다 계산
+  const getPersonCostRatio = (row, field = "current_month_person_cost") => {
     const sales = Number(row.sales_total) || 0;
-    const cost = Number(row.current_month_person_cost) || 0;
+    const cost = Number(row[field]) || 0;
     if (sales <= 0) return null;
     return Math.round((cost / sales) * 100);
   };
@@ -352,7 +352,10 @@ export default function PersonCostBudgetTab() {
                     const value = getComputedValue(row, field);
                     const isNumeric = numericFields.includes(field);
 
-                    const ratio = field === "current_month_person_cost" ? getPersonCostRatio(row) : null;
+                    const ratio =
+                      field === "current_month_person_cost" || field === "today_person_cost"
+                        ? getPersonCostRatio(row, field)
+                        : null;
                     const ratioColor = getPersonCostColor(ratio);
 
                     // 🔹 금일 기준 인건비 셀은 숫자 아래에 초과/결근/파출/유틸 상세를 줄바꿈으로 덧붙인다

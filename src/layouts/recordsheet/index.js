@@ -6099,10 +6099,9 @@ function RecordSheet() {
                           row.original?.member_id ?? row.original?.memberId ?? "",
                           ""
                         );
-                        const fallbackRetire =
-                          (memberId && memberRetireMap.get(memberId)) ||
-                          memberRetireMap.get(safeTrim(row.original?.name ?? "", "")) ||
-                          null;
+                        // ⚠ 예전엔 member_id 불일치 시 이름으로도 찾았으나, 동명이인/재입사(새 member_id)
+                        //   케이스에서 남의 퇴사기록을 잘못 표시하는 오탐이 있어 이름 폴백 제거함(2026-09-15).
+                        const fallbackRetire = (memberId && memberRetireMap.get(memberId)) || null;
                         const isRetired = rowRetired || isRetiredByDelInfo(fallbackRetire);
                         const isJoinLocked =
                           cell.column.id.startsWith("day_") &&

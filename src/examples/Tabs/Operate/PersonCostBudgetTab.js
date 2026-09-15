@@ -9,13 +9,16 @@ import usePersonCostBudgetData, { formatNumber } from "./personCostBudgetData";
 import Swal from "sweetalert2";
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import api from "api/api";
 
 // 인건비 예산 관리 탭
-// - 매출 대비 기존 인건비 비율이 45% 이상인 업장을 조회한다.
-// - 당월 인건비는 일반 직원 급여와 유틸·통합 배부액을 합산한 신규 API 계산값을 사용한다.
-// - 금일 기준 인건비는 당월 인건비와 같은 방식으로 "오늘까지"만 일할 계산한 값이며,
-//   출근부(초과/결근/파출·직원파출/유틸) 상세 내역을 괄호로 함께 보여준다. (근무체계별 세부 계산은 후속 작업)
-// - 당월 예상 인건비는 후속 급여체계 계산을 위한 컬럼으로 유지한다.
+// - 매출 대비 기존 인건비 비율(전전월 매출 기준)이 45% 이상인 업장을 기본으로 조회하되,
+//   비율이 45% 미만이어도 금일 기준으로 초과/결근/파출/직원파출/유틸 중 하나라도 찍혀 있으면 함께 보여준다.
+// - 당월 인건비는 결근/초과/조퇴 같은 출근부 조정 없이 salary(중도입퇴사만 반영)만 합산한 값이다.
+// - 금일 기준 인건비는 당월 인건비에 결근/초과/조퇴(오늘까지) + 파출비/직원파출비를 더한 값이며,
+//   출근부(초과/결근/파출·직원파출/유틸) 상세 내역을 괄호로 함께 보여준다.
+// - 당월 예상 인건비는 금일 기준과 같은 계산이지만 "오늘" 캡 없이 이번 달 전체 출근부(월초에 미리 입력되는 방식)
+//   기준으로 계산한 값이며, 마찬가지로 상세 내역을 괄호로 보여준다.
 export default function PersonCostBudgetTab() {
   const today = dayjs();
   const [year, setYear] = useState(today.year());
@@ -27,7 +30,73 @@ export default function PersonCostBudgetTab() {
 
   useEffect(() => {
     fetchPersonCostBudgetList();
+    setNoteEdits({}); // 🔹 조회 월이 바뀌면 이전 달 편집 중이던 비고 임시값은 버린다
   }, [year, month, fetchPersonCostBudgetList]);
+
+  // 🔹 비고(note) 입력창 임시 편집값. account_id별로 타이핑 중인 내용을 들고 있다가 blur 시 저장한다.
+  //    (personCostRows는 조회 API 응답 그대로라 여기 없이 직접 수정하면 다음 새로고침 때 덮어써짐)
+  const [noteEdits, setNoteEdits] = useState({});
+  const [noteSaving, setNoteSaving] = useState({});
+
+  const handleNoteChange = (accountId, value) => {
+    setNoteEdits((prev) => ({ ...prev, [accountId]: value }));
+  };
+
+  // 🔹 포커스 아웃(blur)으로 저장하지 않고, 상단 "비고 저장" 버튼을 눌렀을 때 수정된(dirty) 비고를 한번에 저장한다.
+  const hasDirtyNotes = personCostRows.some(
+    (row) => noteEdits[row.account_id] !== undefined && noteEdits[row.account_id] !== (row.note ?? "")
+  );
+  const isNoteSavingAny = Object.values(noteSaving).some(Boolean);
+
+  const handleNoteSaveAll = async () => {
+    const dirtyRows = personCostRows.filter(
+      (row) => noteEdits[row.account_id] !== undefined && noteEdits[row.account_id] !== (row.note ?? "")
+    );
+    if (dirtyRows.length === 0) return;
+
+    setNoteSaving((prev) => {
+      const next = { ...prev };
+      dirtyRows.forEach((row) => {
+        next[row.account_id] = true;
+      });
+      return next;
+    });
+
+    const results = await Promise.allSettled(
+      dirtyRows.map((row) =>
+        api
+          .post("/Operate/PersonCostBudgetNoteSave", {
+            account_id: row.account_id,
+            year,
+            month,
+            note: noteEdits[row.account_id],
+            user_id: localStorage.getItem("user_id") || "",
+          })
+          .then(() => {
+            row.note = noteEdits[row.account_id]; // 성공한 건만 원본에도 반영(다음 렌더에서 dirty 해제)
+          })
+      )
+    );
+
+    setNoteSaving((prev) => {
+      const next = { ...prev };
+      dirtyRows.forEach((row) => {
+        next[row.account_id] = false;
+      });
+      return next;
+    });
+
+    const failedCount = results.filter((r) => r.status === "rejected").length;
+    if (failedCount > 0) {
+      console.error(
+        "비고 저장 실패:",
+        results.filter((r) => r.status === "rejected")
+      );
+      Swal.fire("일부 실패", `${dirtyRows.length}건 중 ${failedCount}건 저장에 실패했습니다.`, "warning");
+    } else {
+      Swal.fire("저장 완료", `비고 ${dirtyRows.length}건이 저장되었습니다.`, "success");
+    }
+  };
 
   const handleYearChange = (e) => setYear(Number(e.target.value));
   const handleMonthChange = (e) => setMonth(Number(e.target.value));
@@ -46,7 +115,7 @@ export default function PersonCostBudgetTab() {
     { key: "budget_45", label: `${salesYm.month}월 매출 기준 인건비 예산(45%)`, width: 170 }, // 매출액 * 45% (인건비 예산 상한선)
     { key: "current_month_person_cost", label: "당월 인건비", width: 130 },
     { key: "today_person_cost", label: "금일 기준 인건비", width: 260 },
-    { key: "estimated_month_person_cost", label: "당월 예상 인건비", width: 140 },
+    { key: "estimated_month_person_cost", label: "당월 예상 인건비", width: 260 }, // 🔹 today_person_cost와 같은 상세 텍스트가 붙어서 폭도 맞춤(3줄로 줄바꿈되는 것 방지)
     { key: "note", label: "비고", width: 200 },
   ];
 
@@ -83,15 +152,37 @@ export default function PersonCostBudgetTab() {
   const getTodayPersonCostDetail = (row) => {
     const overtimeHours = Number(row.overtime_hours) || 0;
     const absenceCount = Number(row.absence_count) || 0;
-    const dispatchTotal = Number(row.dispatch_total_amount) || 0;
+    // 🔹 dispatch_total_amount는 파출+직원파출 "합계"라서 괄호 안 두 숫자가 같아 보이는 문제가 있었음
+    //    (예: 파출 0원 + 직원파출 175,000원 → "175,000(175,000)원"으로 표시).
+    //    파출/직원파출을 각각 구분해서 보여주려면 합계가 아니라 각 원본 금액을 써야 한다.
+    const dispatchAmount = Number(row.dispatch_amount) || 0;
     const employeeDispatch = Number(row.employee_dispatch_amount) || 0;
     const utilCount = Number(row.util_count) || 0;
 
     const parts = [];
     if (overtimeHours > 0) parts.push(`초과: ${overtimeHours}시간`);
     if (absenceCount > 0) parts.push(`결근: ${absenceCount}회`);
-    if (dispatchTotal > 0)
-      parts.push(`파출(직원파출):${formatNumber(dispatchTotal)}(${formatNumber(employeeDispatch)})원`);
+    if (dispatchAmount > 0 || employeeDispatch > 0)
+      parts.push(`파출(직원파출):${formatNumber(dispatchAmount)}(${formatNumber(employeeDispatch)})원`);
+    if (utilCount > 0) parts.push(`유틸: ${utilCount}회`);
+
+    return parts.length > 0 ? `(${parts.join(", ")})` : "";
+  };
+
+  // 당월 예상 인건비 괄호 안 상세 내역: 금일 기준과 같은 항목이지만, 오늘 캡 없이 출근부에 이미 입력된
+  // 이번 달 전체(월초에 미리 채워두는 방식) 초과/결근/파출/직원파출/유틸을 그대로 집계한 값이다.
+  const getEstimatedMonthPersonCostDetail = (row) => {
+    const overtimeHours = Number(row.overtime_hours_month) || 0;
+    const absenceCount = Number(row.absence_count_month) || 0;
+    const dispatchAmount = Number(row.dispatch_amount_month) || 0;
+    const employeeDispatch = Number(row.employee_dispatch_amount_month) || 0;
+    const utilCount = Number(row.util_count_month) || 0;
+
+    const parts = [];
+    if (overtimeHours > 0) parts.push(`초과: ${overtimeHours}시간`);
+    if (absenceCount > 0) parts.push(`결근: ${absenceCount}회`);
+    if (dispatchAmount > 0 || employeeDispatch > 0)
+      parts.push(`파출(직원파출):${formatNumber(dispatchAmount)}(${formatNumber(employeeDispatch)})원`);
     if (utilCount > 0) parts.push(`유틸: ${utilCount}회`);
 
     return parts.length > 0 ? `(${parts.join(", ")})` : "";
@@ -101,6 +192,16 @@ export default function PersonCostBudgetTab() {
   // 업장별 일반 직원 급여와 유틸·통합 배부액을 합산한 당월 인건비 합계
   const currentMonthPersonCostTotal = personCostRows.reduce(
     (sum, row) => sum + (Number(row.current_month_person_cost) || 0),
+    0
+  );
+  // 금일 기준 인건비 합계
+  const todayPersonCostTotal = personCostRows.reduce(
+    (sum, row) => sum + (Number(row.today_person_cost) || 0),
+    0
+  );
+  // 당월 예상 인건비 합계
+  const estimatedMonthPersonCostTotal = personCostRows.reduce(
+    (sum, row) => sum + (Number(row.estimated_month_person_cost) || 0),
     0
   );
   const handleExcelDownload = async () => {
@@ -156,15 +257,15 @@ export default function PersonCostBudgetTab() {
         });
       });
 
-      // 현재 화면에 조회된 업장의 매출·예산·당월 인건비 합계
+      // 현재 화면에 조회된 업장의 매출·예산·당월/금일/당월예상 인건비 합계
       {
         const totalRow = {
           account_name: "합계",
           sales_total: salesTotal,
           budget_45: salesTotal * 0.45,
           current_month_person_cost: currentMonthPersonCostTotal,
-          today_person_cost: "",
-          estimated_month_person_cost: "",
+          today_person_cost: todayPersonCostTotal,
+          estimated_month_person_cost: estimatedMonthPersonCostTotal,
           note: "",
         };
         const excelRow = ws.addRow(totalRow);
@@ -270,6 +371,15 @@ export default function PersonCostBudgetTab() {
           >
             새로고침
           </MDButton>
+          <MDButton
+            variant="gradient"
+            color="warning"
+            size="small"
+            disabled={!hasDirtyNotes || isNoteSavingAny}
+            onClick={handleNoteSaveAll}
+          >
+            저장
+          </MDButton>
         </Box>
       </MDBox>
 
@@ -349,17 +459,59 @@ export default function PersonCostBudgetTab() {
                       );
                     }
 
+                    // 🔹 비고는 입력 가능한 텍스트필드로만 렌더링 (개별 저장 버튼 없음).
+                    //    커서 뗀다고(blur) 저장하지 않고, 상단 "비고 저장" 버튼을 눌러야 한번에 저장된다.
+                    //    저장 전까지는 빨간색으로 dirty 표시.
+                    if (field === "note") {
+                      const noteValue =
+                        noteEdits[row.account_id] !== undefined ? noteEdits[row.account_id] : row.note ?? "";
+                      const isNoteDirty =
+                        noteEdits[row.account_id] !== undefined && noteEdits[row.account_id] !== (row.note ?? "");
+                      const isNoteSaving = !!noteSaving[row.account_id];
+                      return (
+                        <td
+                          key={field}
+                          style={{
+                            width: col.width,
+                            minWidth: col.width,
+                            maxWidth: col.width,
+                            textAlign: "center",
+                          }}
+                        >
+                          <TextField
+                            size="small"
+                            variant="standard"
+                            fullWidth
+                            value={noteValue}
+                            disabled={isNoteSaving}
+                            onChange={(e) => handleNoteChange(row.account_id, e.target.value)}
+                            InputProps={{
+                              disableUnderline: true,
+                              style: { fontSize: "12px", color: isNoteDirty ? "#d32f2f" : undefined },
+                            }}
+                          />
+                        </td>
+                      );
+                    }
+
                     const value = getComputedValue(row, field);
                     const isNumeric = numericFields.includes(field);
 
                     const ratio =
-                      field === "current_month_person_cost" || field === "today_person_cost"
+                      field === "current_month_person_cost" ||
+                        field === "today_person_cost" ||
+                        field === "estimated_month_person_cost"
                         ? getPersonCostRatio(row, field)
                         : null;
                     const ratioColor = getPersonCostColor(ratio);
 
-                    // 🔹 금일 기준 인건비 셀은 숫자 아래에 초과/결근/파출/유틸 상세를 줄바꿈으로 덧붙인다
-                    const todayDetail = field === "today_person_cost" ? getTodayPersonCostDetail(row) : "";
+                    // 🔹 금일 기준/당월 예상 인건비 셀은 숫자 아래에 초과/결근/파출/유틸 상세를 줄바꿈으로 덧붙인다
+                    const detailText =
+                      field === "today_person_cost"
+                        ? getTodayPersonCostDetail(row)
+                        : field === "estimated_month_person_cost"
+                          ? getEstimatedMonthPersonCostDetail(row)
+                          : "";
 
                     return (
                       <td
@@ -369,22 +521,22 @@ export default function PersonCostBudgetTab() {
                           minWidth: col.width,
                           maxWidth: col.width,
                           textAlign: isNumeric ? "right" : field === "account_name" ? "left" : "center",
-                          whiteSpace: todayDetail ? "normal" : undefined,
+                          whiteSpace: detailText ? "normal" : undefined,
                           ...(ratioColor && { color: ratioColor, fontWeight: "bold" }),
                         }}
                       >
                         {value == null
                           ? ""
                           : isNumeric
-                          ? ratio != null
-                            ? `${formatNumber(Math.round(value))}(${ratio}%)`
-                            : formatNumber(Math.round(value))
-                          : value}
-                        {todayDetail && (
+                            ? ratio != null
+                              ? `${formatNumber(Math.round(value))}(${ratio}%)`
+                              : formatNumber(Math.round(value))
+                            : value}
+                        {detailText && (
                           <>
                             <br />
                             <span style={{ fontSize: "10px", color: "#777", fontWeight: "normal" }}>
-                              {todayDetail}
+                              {detailText}
                             </span>
                           </>
                         )}
@@ -401,8 +553,8 @@ export default function PersonCostBudgetTab() {
                 <td style={{ textAlign: "right" }}>{formatNumber(Math.round(salesTotal))}</td>
                 <td style={{ textAlign: "right" }}>{formatNumber(Math.round(salesTotal * 0.45))}</td>
                 <td style={{ textAlign: "right" }}>{formatNumber(Math.round(currentMonthPersonCostTotal))}</td>
-                <td />
-                <td />
+                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(todayPersonCostTotal))}</td>
+                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(estimatedMonthPersonCostTotal))}</td>
                 <td />
               </tr>
             )}

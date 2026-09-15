@@ -112,8 +112,8 @@ export default function PersonCostBudgetTab() {
     { key: "no", label: "순번", width: 50 },
     { key: "account_name", label: "업장", width: 200 },
     { key: "sales_total", label: `${salesYm.month}월 매출액`, width: 130 }, // 매출은 2개월 전(base_month) 실적으로 대체
-    { key: "budget_45", label: `${salesYm.month}월 매출 기준 인건비 예산(45%)`, width: 170 }, // 매출액 * 45% (인건비 예산 상한선)
-    { key: "current_month_person_cost", label: "당월 인건비", width: 130 },
+    { key: "budget_45", label: `${salesYm.month}월 매출 기준 인건비 예산(45%)`, width: 170 }, // 라벨은 그대로 45%, 값은 (매출액×1.2)×45%로 계산(인건비 확보금액과 같은 120% 반영)
+    { key: "current_month_person_cost", label: "당월 인건비", width: 170 }, // 🔹 확보금액(120%) 줄이 붙어서 폭 넓힘
     { key: "today_person_cost", label: "금일 기준 인건비", width: 260 },
     { key: "estimated_month_person_cost", label: "당월 예상 인건비", width: 260 }, // 🔹 today_person_cost와 같은 상세 텍스트가 붙어서 폭도 맞춤(3줄로 줄바꿈되는 것 방지)
     { key: "note", label: "비고", width: 200 },
@@ -127,15 +127,25 @@ export default function PersonCostBudgetTab() {
     "estimated_month_person_cost",
   ];
   // 매출 기준 인건비 예산은 화면과 엑셀에서 같은 계산식을 사용한다.
-  const getBudget45 = (row) => (Number(row.sales_total) || 0) * 0.45;
+  // 🔹 (매출액 × 1.2) × 45% : 다른 인건비 확보금액(×120%)들과 같은 맥락으로, 매출도 먼저 1.2배 한 뒤 45%를 곱한다.
+  //    (매출×0.45)×1.2와 수학적으로 완전히 같은 값(=매출×0.54)이지만, 코드를 이 순서로 써서 의도를 명확히 한다.
+  const getBudget45 = (row) => (Number(row.sales_total) || 0) * 1.2 * 0.45;
+  // 🔹 당월/금일 기준/당월 예상 인건비는 인건비 확보금액(인건비×120%, 직원 개인별로 계산해서 합산한 값)을
+  //    그대로 금액으로 쓴다 (화면·엑셀·합계 전부 동일하게 이 값을 사용).
+  const SECURED_FIELD_MAP = {
+    current_month_person_cost: "current_month_person_cost_secured",
+    today_person_cost: "today_person_cost_secured",
+    estimated_month_person_cost: "estimated_month_person_cost_secured",
+  };
   const getComputedValue = (row, field) => {
     if (field === "budget_45") return getBudget45(row);
+    if (SECURED_FIELD_MAP[field]) return row[SECURED_FIELD_MAP[field]];
     return row[field];
   };
-  // 2개월 전 매출액 대비 인건비 비율(%) - 화면 표시 전용. field로 당월/금일 인건비 둘 다 계산
+  // 2개월 전 매출액 대비 인건비 비율(%) - 화면 표시 전용. field로 당월/금일/당월예상 인건비 다 계산 가능
   const getPersonCostRatio = (row, field = "current_month_person_cost") => {
     const sales = Number(row.sales_total) || 0;
-    const cost = Number(row[field]) || 0;
+    const cost = Number(getComputedValue(row, field)) || 0;
     if (sales <= 0) return null;
     return Math.round((cost / sales) * 100);
   };
@@ -163,7 +173,7 @@ export default function PersonCostBudgetTab() {
     if (overtimeHours > 0) parts.push(`초과: ${overtimeHours}시간`);
     if (absenceCount > 0) parts.push(`결근: ${absenceCount}회`);
     if (dispatchAmount > 0 || employeeDispatch > 0)
-      parts.push(`파출(직원파출):${formatNumber(dispatchAmount)}(${formatNumber(employeeDispatch)})원`);
+      parts.push(`파출(직원파출): ${formatNumber(dispatchAmount)}(${formatNumber(employeeDispatch)})원`);
     if (utilCount > 0) parts.push(`유틸: ${utilCount}회`);
 
     return parts.length > 0 ? `(${parts.join(", ")})` : "";
@@ -182,7 +192,7 @@ export default function PersonCostBudgetTab() {
     if (overtimeHours > 0) parts.push(`초과: ${overtimeHours}시간`);
     if (absenceCount > 0) parts.push(`결근: ${absenceCount}회`);
     if (dispatchAmount > 0 || employeeDispatch > 0)
-      parts.push(`파출(직원파출):${formatNumber(dispatchAmount)}(${formatNumber(employeeDispatch)})원`);
+      parts.push(`파출(직원파출): ${formatNumber(dispatchAmount)}(${formatNumber(employeeDispatch)})원`);
     if (utilCount > 0) parts.push(`유틸: ${utilCount}회`);
 
     return parts.length > 0 ? `(${parts.join(", ")})` : "";
@@ -191,17 +201,17 @@ export default function PersonCostBudgetTab() {
   const salesTotal = personCostRows.reduce((sum, row) => sum + (Number(row.sales_total) || 0), 0);
   // 업장별 일반 직원 급여와 유틸·통합 배부액을 합산한 당월 인건비 합계
   const currentMonthPersonCostTotal = personCostRows.reduce(
-    (sum, row) => sum + (Number(row.current_month_person_cost) || 0),
+    (sum, row) => sum + (Number(getComputedValue(row, "current_month_person_cost")) || 0),
     0
   );
   // 금일 기준 인건비 합계
   const todayPersonCostTotal = personCostRows.reduce(
-    (sum, row) => sum + (Number(row.today_person_cost) || 0),
+    (sum, row) => sum + (Number(getComputedValue(row, "today_person_cost")) || 0),
     0
   );
   // 당월 예상 인건비 합계
   const estimatedMonthPersonCostTotal = personCostRows.reduce(
-    (sum, row) => sum + (Number(row.estimated_month_person_cost) || 0),
+    (sum, row) => sum + (Number(getComputedValue(row, "estimated_month_person_cost")) || 0),
     0
   );
   const handleExcelDownload = async () => {
@@ -494,6 +504,8 @@ export default function PersonCostBudgetTab() {
                       );
                     }
 
+                    // 🔹 당월/금일 기준/당월 예상 인건비 세 컬럼은 인건비 확보금액(인건비×120%, 직원 개인별로
+                    //    계산해서 합산한 값)을 그대로 금액으로 보여준다 (getComputedValue가 알아서 _secured로 치환)
                     const value = getComputedValue(row, field);
                     const isNumeric = numericFields.includes(field);
 

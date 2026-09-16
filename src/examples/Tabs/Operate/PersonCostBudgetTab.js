@@ -336,33 +336,42 @@ export default function PersonCostBudgetTab() {
           whiteSpace: "nowrap",
         }}
       >
-        {/* 🔹 업장명 빨간색 범례 — TallySheetTab의 PointLegend(범례 동그라미 + 라벨)와 같은 스타일 */}
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            gap: 0.6,
-            px: 0.8,
-            py: 0.3,
-            borderRadius: 999,
-            bgcolor: "rgba(0,0,0,0.03)",
-            border: "1px solid rgba(0,0,0,0.08)",
-            userSelect: "none",
-          }}
-        >
-          <Box
-            sx={{
-              width: 10,
-              height: 10,
-              borderRadius: "50%",
-              bgcolor: "#d32f2f",
-              border: "1px solid rgba(0,0,0,0.25)",
-              boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
-            }}
-          />
-          <MDBox component="span" sx={{ fontSize: 12, fontWeight: "bold", color: "#333" }}>
-            전전월 매출 대비 인건비 45% 이상
-          </MDBox>
+        {/* 🔹 업장명 색상 범례 — TallySheetTab의 PointLegend(범례 동그라미 + 라벨)와 같은 스타일.
+            빨간색: 45% 이상 / 무색: 45% 미만이지만 결근·초과·파출·직원파출·유틸 중 하나라도 있어서 뜬 업장 */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          {[
+            { color: "#d32f2f", label: "전전월 매출 대비 인건비 45% 이상" },
+            { color: "transparent", label: "45% 미만이지만 결근·초과·파출·직원파출·유틸 있음" },
+          ].map((it) => (
+            <Box
+              key={it.label}
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 0.6,
+                px: 0.8,
+                py: 0.3,
+                borderRadius: 999,
+                bgcolor: "rgba(0,0,0,0.03)",
+                border: "1px solid rgba(0,0,0,0.08)",
+                userSelect: "none",
+              }}
+            >
+              <Box
+                sx={{
+                  width: 10,
+                  height: 10,
+                  borderRadius: "50%",
+                  bgcolor: it.color,
+                  border: "1px solid rgba(0,0,0,0.25)",
+                  boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
+                }}
+              />
+              <MDBox component="span" sx={{ fontSize: 12, fontWeight: "bold", color: "#333" }}>
+                {it.label}
+              </MDBox>
+            </Box>
+          ))}
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>

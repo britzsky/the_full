@@ -11,6 +11,14 @@ import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import api from "api/api";
 
+// 🔹 하단 합계 행을 스크롤 시에도 바닥에 고정하기 위한 셀 스타일 (헤더의 sticky th와 대칭)
+const totalRowCellStyle = {
+  position: "sticky",
+  bottom: 0,
+  backgroundColor: "#eef1f5",
+  zIndex: 2,
+};
+
 // 인건비 예산 관리 탭
 // - 매출 대비 기존 인건비 비율(전전월 매출 기준)이 45% 이상인 업장을 기본으로 조회하되,
 //   비율이 45% 미만이어도 금일 기준으로 초과/결근/파출/직원파출/유틸 중 하나라도 찍혀 있으면 함께 보여준다.
@@ -328,12 +336,34 @@ export default function PersonCostBudgetTab() {
           whiteSpace: "nowrap",
         }}
       >
-        <MDBox
-          component="span"
-          sx={{ fontSize: 12, fontWeight: "bold", color: "#555" }}
+        {/* 🔹 업장명 빨간색 범례 — TallySheetTab의 PointLegend(범례 동그라미 + 라벨)와 같은 스타일 */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 0.6,
+            px: 0.8,
+            py: 0.3,
+            borderRadius: 999,
+            bgcolor: "rgba(0,0,0,0.03)",
+            border: "1px solid rgba(0,0,0,0.08)",
+            userSelect: "none",
+          }}
         >
-          {/* 📌 매출 대비 인건비 45% 이상 업장만 조회됩니다. (당월 실적이 없으면 2개월 전 실적 기준) */}
-        </MDBox>
+          <Box
+            sx={{
+              width: 10,
+              height: 10,
+              borderRadius: "50%",
+              bgcolor: "#d32f2f",
+              border: "1px solid rgba(0,0,0,0.25)",
+              boxShadow: "0 0 0 2px rgba(255,255,255,0.9) inset",
+            }}
+          />
+          <MDBox component="span" sx={{ fontSize: 12, fontWeight: "bold", color: "#333" }}>
+            전전월 매출 대비 인건비 45% 이상
+          </MDBox>
+        </Box>
 
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <TextField
@@ -394,11 +424,16 @@ export default function PersonCostBudgetTab() {
       </MDBox>
 
       {/* 메인 테이블 */}
+      {/* 🔹 flex:1/minHeight:0만으로는 상위 레이아웃이 실제로 높이를 못 잡아줘서 이 Box가 절대 스크롤되지
+          않고(콘텐츠만큼 늘어남) 페이지 자체가 스크롤되는 바람에 sticky 헤더가 무용지물이었음.
+          같은 탭그룹의 AccountIssueSheetTab과 동일하게 calc(100vh - 220px)로 실제 높이를 못박아서
+          이 Box 안에서 스크롤이 생기게 한다 — 그래야 th의 position:sticky가 실제로 동작한다. */}
       <Box
         sx={{
-          flex: 1,
-          minHeight: 0,
+          height: "calc(100vh - 220px)",
+          maxHeight: "calc(100vh - 220px)",
           overflowY: "auto",
+          overflowX: "auto",
           "& table": {
             borderCollapse: "collapse",
             width: "max-content",
@@ -517,6 +552,10 @@ export default function PersonCostBudgetTab() {
                         : null;
                     const ratioColor = getPersonCostColor(ratio);
 
+                    // 🔹 업장명 강조 : 전전월 매출 기준 인건비 비율이 45% 이상인 업장(is_ratio_over_45)은 빨간색.
+                    //    비율 미달이지만 초과/결근/파출 등 특이사항 때문에 목록에 뜬 업장은 강조하지 않는다.
+                    const isRatioOver45 = field === "account_name" && Number(row.is_ratio_over_45) === 1;
+
                     // 🔹 금일 기준/당월 예상 인건비 셀은 숫자 아래에 초과/결근/파출/유틸 상세를 줄바꿈으로 덧붙인다
                     const detailText =
                       field === "today_person_cost"
@@ -535,6 +574,7 @@ export default function PersonCostBudgetTab() {
                           textAlign: isNumeric ? "right" : field === "account_name" ? "left" : "center",
                           whiteSpace: detailText ? "normal" : undefined,
                           ...(ratioColor && { color: ratioColor, fontWeight: "bold" }),
+                          ...(isRatioOver45 && { color: "#d32f2f", fontWeight: "bold" }),
                         }}
                       >
                         {value == null
@@ -559,15 +599,17 @@ export default function PersonCostBudgetTab() {
               ))
             )}
             {/* 현재 목록에 조회된 업장 전체 합계 */}
+            {/* 🔹 헤더와 같은 이유로 합계 행도 position:sticky는 tr이 아니라 각 td에 걸어야 하고,
+                sticky 뒤로 다른 행이 비쳐 보이지 않도록 td마다 배경색을 직접 채워줘야 한다. */}
             {personCostRows.length > 0 && (
-              <tr style={{ backgroundColor: "#eef1f5", fontWeight: "bold" }}>
-                <td colSpan={2}>합계</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(salesTotal))}</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(salesTotal * 0.45))}</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(currentMonthPersonCostTotal))}</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(todayPersonCostTotal))}</td>
-                <td style={{ textAlign: "right" }}>{formatNumber(Math.round(estimatedMonthPersonCostTotal))}</td>
-                <td />
+              <tr style={{ fontWeight: "bold" }}>
+                <td colSpan={2} style={{ ...totalRowCellStyle }}>합계</td>
+                <td style={{ ...totalRowCellStyle, textAlign: "right" }}>{formatNumber(Math.round(salesTotal))}</td>
+                <td style={{ ...totalRowCellStyle, textAlign: "right" }}>{formatNumber(Math.round(salesTotal * 0.45))}</td>
+                <td style={{ ...totalRowCellStyle, textAlign: "right" }}>{formatNumber(Math.round(currentMonthPersonCostTotal))}</td>
+                <td style={{ ...totalRowCellStyle, textAlign: "right" }}>{formatNumber(Math.round(todayPersonCostTotal))}</td>
+                <td style={{ ...totalRowCellStyle, textAlign: "right" }}>{formatNumber(Math.round(estimatedMonthPersonCostTotal))}</td>
+                <td style={{ ...totalRowCellStyle }} />
               </tr>
             )}
           </tbody>

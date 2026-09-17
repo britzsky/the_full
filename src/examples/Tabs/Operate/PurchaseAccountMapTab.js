@@ -29,6 +29,8 @@ const SimpleTable = React.memo(function SimpleTable({
   rows,
   selectedRowKey,
   onRowClick,
+  onRowMouseDown,
+  onRowMouseEnter,
   scrollRef,
   onBeforeAction,
   isMobile,
@@ -166,6 +168,8 @@ const SimpleTable = React.memo(function SimpleTable({
                 <tr
                   key={stableKey}
                   onMouseDownCapture={(e) => onBeforeAction?.(e)}
+                  onMouseDown={(e) => onRowMouseDown?.(r, idx, e)}
+                  onMouseEnter={(e) => onRowMouseEnter?.(r, idx, e)}
                   onClick={(e) => onRowClick?.(r, idx, e)}
                   style={{
                     background: isSelected ? "rgba(255, 215, 0, 0.38)" : "transparent",
@@ -196,6 +200,8 @@ SimpleTable.propTypes = {
   rows: PropTypes.array.isRequired,
   selectedRowKey: PropTypes.func,
   onRowClick: PropTypes.func,
+  onRowMouseDown: PropTypes.func,
+  onRowMouseEnter: PropTypes.func,
   scrollRef: PropTypes.oneOfType([PropTypes.func, PropTypes.shape({ current: PropTypes.any })]),
   onBeforeAction: PropTypes.func,
   isMobile: PropTypes.bool.isRequired,
@@ -220,6 +226,12 @@ export default function PurchaseAccountMapTab() {
   const [selectedAccountIds, setSelectedAccountIds] = useState(new Set());
   // 매핑 저장 진행 중 여부
   const [mapSaving, setMapSaving] = useState(false);
+  // 이번 세션에서 새로 추가되어 아직 저장되지 않은 매핑 거래처 Set (노란색 강조)
+  const [pendingAddedIds, setPendingAddedIds] = useState(new Set());
+
+  // 오른쪽 거래처 Shift+드래그 범위 선택 미리보기 (인덱스 구간)
+  const [dragPreviewRange, setDragPreviewRange] = useState(null);
+  const accountDragRef = useRef({ selecting: false, anchor: null, end: null });
 
   // 스크롤 위치 복원용 ref
   const leftScrollRef = useRef(null);
@@ -282,6 +294,7 @@ export default function PurchaseAccountMapTab() {
   const handleClickManager = useCallback(async (manager) => {
     setSelectedManager(manager);
     setSelectedAccountIds(new Set());
+    setPendingAddedIds(new Set());
     setMapRows([]);
 
     if (middleScrollRef.current) middleScrollRef.current.scrollTop = 0;
@@ -307,6 +320,57 @@ export default function PurchaseAccountMapTab() {
     });
   }, []);
 
+  // 오른쪽 목록: 이미 매핑된 거래처는 전체 거래처 목록에서 제외
+  const unmappedAccountRows = useMemo(() => {
+    const mappedIds = new Set(mapRows.map((r) => String(r.account_id ?? "")));
+    return (accountRows || []).filter((acc) => !mappedIds.has(String(acc.account_id ?? "")));
+  }, [accountRows, mapRows]);
+
+  // Shift+드래그 범위 선택 종료 → 구간 내 거래처를 선택 Set에 추가
+  const finishAccountDrag = useCallback(() => {
+    const s = accountDragRef.current;
+    if (!s.selecting) return;
+    s.selecting = false;
+
+    const r1 = Math.min(s.anchor, s.end);
+    const r2 = Math.max(s.anchor, s.end);
+
+    setSelectedAccountIds((prev) => {
+      const next = new Set(prev);
+      for (let i = r1; i <= r2; i += 1) {
+        const id = String(unmappedAccountRows[i]?.account_id ?? "");
+        if (id) next.add(id);
+      }
+      return next;
+    });
+
+    setDragPreviewRange(null);
+  }, [unmappedAccountRows]);
+
+  // 오른쪽 거래처 행 mousedown → Shift 누른 상태면 드래그 선택 시작
+  const handleAccountRowMouseDown = useCallback(
+    (r, idx, e) => {
+      if (!e.shiftKey) return;
+      e.preventDefault();
+
+      accountDragRef.current = { selecting: true, anchor: idx, end: idx };
+      setDragPreviewRange({ r1: idx, r2: idx });
+
+      window.addEventListener("mouseup", finishAccountDrag, { once: true });
+    },
+    [finishAccountDrag]
+  );
+
+  // 오른쪽 거래처 행 mouseenter → 드래그 중이면 선택 구간 미리보기 갱신
+  const handleAccountRowMouseEnter = useCallback((r, idx) => {
+    if (!accountDragRef.current.selecting) return;
+    accountDragRef.current.end = idx;
+    setDragPreviewRange({
+      r1: Math.min(accountDragRef.current.anchor, idx),
+      r2: Math.max(accountDragRef.current.anchor, idx),
+    });
+  }, []);
+
   // ← 버튼 클릭 → 선택된 거래처를 가운데 매핑 목록에 추가
   const handlePushToMap = useCallback(() => {
     if (!selectedManager?.user_id || selectedAccountIds.size === 0) return;
@@ -323,6 +387,12 @@ export default function PurchaseAccountMapTab() {
 
     if (toAdd.length > 0) {
       setMapRows((prev) => [...prev, ...toAdd]);
+      // 새로 추가된 거래처는 저장 전까지 매핑 거래처 목록에서 노란색으로 표시
+      setPendingAddedIds((prev) => {
+        const next = new Set(prev);
+        toAdd.forEach((acc) => next.add(String(acc.account_id ?? "")));
+        return next;
+      });
     }
 
     // 오른쪽 선택 전체 해제
@@ -334,6 +404,19 @@ export default function PurchaseAccountMapTab() {
     if (!selectedManager?.user_id) {
       Swal.fire("안내", "관리자를 먼저 선택하세요.", "info");
       return;
+    }
+
+    // 오른쪽에서 선택만 하고 ← 버튼으로 매핑에 반영하지 않은 거래처가 있으면 확인
+    if (selectedAccountIds.size > 0) {
+      const { isConfirmed } = await Swal.fire({
+        title: "확인",
+        text: "매핑되지 않은 선택된 거래처가 있습니다. 그래도 저장하시겠습니까?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "저장",
+        cancelButtonText: "취소",
+      });
+      if (!isConfirmed) return;
     }
 
     setMapSaving(true);
@@ -354,15 +437,16 @@ export default function PurchaseAccountMapTab() {
         confirmButtonText: "확인",
       });
 
-      // 저장 후 최신 매핑 재조회
+      // 저장 후 최신 매핑 재조회 (신규 추가 표시 초기화)
       const list = await fetchMapList(selectedManager.user_id);
       setMapRows(list);
+      setPendingAddedIds(new Set());
     } catch (e) {
       Swal.fire("실패", e?.message || "저장 중 오류", "error");
     } finally {
       setMapSaving(false);
     }
-  }, [selectedManager, mapRows, saveMap, fetchMapList]);
+  }, [selectedManager, mapRows, selectedAccountIds, saveMap, fetchMapList]);
 
 
   // ─── 컬럼 정의 ──────────────────────────────────────────────────────────────
@@ -454,6 +538,7 @@ export default function PurchaseAccountMapTab() {
             }
             columns={mapColumns}
             rows={mapRows || []}
+            selectedRowKey={(r) => pendingAddedIds.has(String(r?.account_id ?? ""))}
             scrollRef={middleScrollRef}
             onBeforeAction={null}
             getRowKey={(r, idx) => `map-${String(r?.account_id ?? "")}-${idx}`}
@@ -491,16 +576,19 @@ export default function PurchaseAccountMapTab() {
             title={
               selectedAccountIds.size > 0
                 ? `전체 거래처 (${selectedAccountIds.size}개 선택됨)`
-                : "전체 거래처 (클릭하여 복수 선택)"
+                : "전체 거래처 (클릭하여 복수 선택, Shift+드래그로 범위 선택)"
             }
             columns={accountColumns}
-            rows={accountRows || []}
-            selectedRowKey={(r) =>
-              selectedAccountIds.has(String(r?.account_id ?? ""))
+            rows={unmappedAccountRows}
+            selectedRowKey={(r, idx) =>
+              selectedAccountIds.has(String(r?.account_id ?? "")) ||
+              (dragPreviewRange && idx >= dragPreviewRange.r1 && idx <= dragPreviewRange.r2)
             }
             onBeforeAction={null}
             scrollRef={rightScrollRef}
             onRowClick={(r) => handleClickAccount(r)}
+            onRowMouseDown={handleAccountRowMouseDown}
+            onRowMouseEnter={handleAccountRowMouseEnter}
             getRowKey={(r, idx) => `account-${String(r?.account_id ?? idx)}`}
           />
         </Grid>

@@ -8,13 +8,13 @@ import { useState, useCallback, useEffect } from "react";
 import api from "api/api";
 
 // 관리자 목록 조회 API 경로
-const MANAGER_LIST_API = "/FieldBoard/PurchaseManagerList";
+const MANAGER_LIST_API = "/Account/PurchaseManagerList";
 // 전체 거래처 목록 조회 API 경로
-const ACCOUNT_LIST_API = "/FieldBoard/PurchaseAccountList";
+const ACCOUNT_LIST_API = "/Account/PurchaseAccountList";
 // 관리자별 매핑 거래처 조회 API 경로
-const MAP_LIST_API = "/FieldBoard/PurchaseManagerAccountMapList";
+const MAP_LIST_API = "/Account/PurchaseManagerAccountMapList";
 // 매핑 저장 API 경로
-const MAP_SAVE_API = "/FieldBoard/PurchaseManagerAccountMapSave";
+const MAP_SAVE_API = "/Account/PurchaseManagerAccountMapSave";
 
 // ─── 구입 업장관리 데이터 훅 ─────────────────────────────────────────────────
 // - managerRows: 운영팀 부장/차장 목록

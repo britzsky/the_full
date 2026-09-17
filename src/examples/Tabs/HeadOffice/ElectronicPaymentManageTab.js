@@ -21,7 +21,7 @@ import useElectronicPaymentManageData, {
 const EXPENDABLE_SPECIAL_USER_ID = "iy1";
 // 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID
 // - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자는 실제 구매완료 여부(구매여부)만 체크한다.
-const FP_BUY_YN_USER_ID = "si1";
+const FP_BUY_YN_USER_ID = "sh9";
 const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
   largeType: "공통",
   middleType: "결의서",
@@ -716,7 +716,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     asText(detailMain?.ceo_sign) === "3";
   // 구매여부 수정 가능 여부
   // - 소모품 구매 품의서: 소모품 특수 사용자(iy1)
-  // - 현장 구매요청서(FP): 구매진행 담당자(si1) - 결재 완료 이후에도 실제 구매완료 여부를 계속 체크할 수 있어야 한다.
+  // - 현장 구매요청서(FP): 구매진행 담당자(sh9) - 결재 완료 이후에도 실제 구매완료 여부를 계속 체크할 수 있어야 한다.
   const canEditBuyYn =
     (isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE) &&
       isExpendableSpecialUser &&

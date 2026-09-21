@@ -1762,6 +1762,8 @@ const requestNoteBodySx = {
   lineHeight: 1.5,
   minHeight: 56,
   whiteSpace: "pre-wrap",
+  overflowWrap: "break-word",
+  wordBreak: "break-word",
   borderBottom: "1px solid #cfd8e3",
   background: "#fff",
 };

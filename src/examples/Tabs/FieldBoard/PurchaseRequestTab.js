@@ -5,7 +5,7 @@
 /* eslint-disable react/function-component-definition */
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { Box, Modal, TextField, useTheme, useMediaQuery } from "@mui/material";
+import { Box, Modal, TextField, Tooltip, useTheme, useMediaQuery } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
@@ -568,6 +568,52 @@ function PurchaseRequestHistoryList({ rows, loading, onSelect }) {
   );
 }
 
+// 구매링크를 5줄까지만 보여주고, 실제로 잘렸을 때만 호버 시 전체 내용을 툴팁으로 노출한다.
+function LinkClampText({ value }) {
+  const ref = useRef(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+  }, [value]);
+
+  const textBox = (
+    <MDBox
+      ref={ref}
+      component="span"
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        wordBreak: "break-all",
+        overflow: "hidden",
+        display: "-webkit-box",
+        WebkitLineClamp: 5,
+        WebkitBoxOrient: "vertical",
+        cursor: isTruncated ? "help" : "default",
+      }}
+    >
+      {value}
+    </MDBox>
+  );
+
+  if (!isTruncated) return textBox;
+
+  return (
+    <Tooltip
+      title={value}
+      arrow
+      componentsProps={{ tooltip: { sx: { fontSize: 12, userSelect: "text", maxWidth: 320, wordBreak: "break-all" } } }}
+    >
+      {textBox}
+    </Tooltip>
+  );
+}
+
+LinkClampText.propTypes = {
+  value: PropTypes.string.isRequired,
+};
+
 // 선택한 구매요청서의 품목과 요청 사유를 읽기 전용으로 표시한다.
 function PurchaseRequestHistoryDetail({ detail, loading }) {
   const mainRow = detail?.main || {};
@@ -688,18 +734,16 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
                     </td>
                     <td style={historyTdCell}>{getHistoryItemValue(row, "use_note") || "-"}</td>
                     <td style={historyTdCell}>{getHistoryItemValue(row, "use_name") || "-"}</td>
-                    <td style={historyTdCell}>
+                    <td style={{ ...historyTdCell, maxWidth: 220 }}>
                       {getHistoryItemValue(row, "link") ? (
-                        <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                          <MDBox component="span" sx={{ flex: 1, wordBreak: "break-all" }}>
-                            {getHistoryItemValue(row, "link")}
-                          </MDBox>
+                        <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
+                          <LinkClampText value={getHistoryItemValue(row, "link")} />
                           <MDButton
                             variant="gradient"
                             color="info"
                             size="small"
                             onClick={() => openHistoryLink(getHistoryItemValue(row, "link"))}
-                            sx={{ minWidth: 56, px: 1, fontSize: 11 }}
+                            sx={{ minWidth: 56, px: 1, fontSize: 11, flexShrink: 0, ml: "auto" }}
                           >
                             열기
                           </MDButton>
@@ -730,8 +774,21 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
           <MDBox sx={{ textAlign: "right", fontWeight: 800, color: "#1f4e79", p: 1 }}>
             합계 금액: {total.toLocaleString("ko-KR")} 원
           </MDBox>
-          <MDBox sx={sectionTitleSx}>요청 사유</MDBox>
-          <MDBox sx={{ minHeight: 70, p: 1.5, whiteSpace: "pre-wrap", border: "1px solid #cfd8e3" }}>
+          <MDBox sx={{ border: "1px solid #cfd8e3", borderBottom: "none" }}>
+            <MDBox sx={{ ...sectionTitleSx, fontSize: 12 }}>요청 사유</MDBox>
+          </MDBox>
+          <MDBox
+            sx={{
+              minHeight: 70,
+              p: 1.5,
+              fontSize: 12,
+              whiteSpace: "pre-wrap",
+              overflowWrap: "break-word",
+              wordBreak: "break-word",
+              border: "1px solid #cfd8e3",
+              borderTop: "none",
+            }}
+          >
             {paymentNote}
           </MDBox>
         </>

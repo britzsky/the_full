@@ -346,9 +346,69 @@ export default function ProfitLossTableTab() {
     return row?.[field];
   };
 
-  // 화면과 엑셀에 표시할 비율 값을 가져오는 함수
+  // 그룹별 개별 항목 비율(4자리 정밀도)과, 그 항목들의 합이 맞아야 할 소계 비율 필드.
+  // payback_ratio(판장금)는 매출소계에 포함되지 않으므로 매출 그룹에서 제외한다.
+  const RATIO_GROUPS = [
+    { items: ["living_estimate_ratio", "basic_estimate_ratio"], target: "estimate_total_ratio" },
+    {
+      items: [
+        "living_ratio2", "basic_ratio2", "employ_ratio2",
+        "living_ratio", "basic_ratio", "employ_ratio",
+        "daycare_ratio", "daycare_emp_ratio", "integrity_ratio", "return_ratio",
+      ],
+      target: "sales_total_ratio",
+    },
+    {
+      items: [
+        "food_trash_ratio", "dishwasher_ratio", "cesco_ratio", "water_ratio",
+        "food_ratio", "etc_ratio", "event_ratio", "not_budget_ratio", "upfront_cost_ratio",
+      ],
+      target: "purchase_total_ratio",
+    },
+    { items: ["person_ratio", "dispatch_ratio"], target: "person_total_ratio" },
+    { items: ["utility_ratio", "duty_secure_ratio", "etc_indirect_ratio"], target: "indirect_total_ratio" },
+  ];
+  const RATIO_GROUP_BY_ITEM = {};
+  RATIO_GROUPS.forEach((g) => g.items.forEach((k) => { RATIO_GROUP_BY_ITEM[k] = g; }));
+
+  // 최대잔여법: 그룹 내 항목들을 1자리로 버림(내림)한 뒤, 원래 값에서 버려진 나머지가 큰 항목부터
+  // 0.1%p씩 얹어서 표시값의 합이 정확히 소계 비율과 같아지도록 보정한다(DB 원본값은 건드리지 않음).
+  const largestRemainderAdjust = (row, group) => {
+    const target = Math.round((Number(row?.[group.target]) || 0) * 10) / 10;
+    const items = group.items.map((key) => {
+      const raw = Number(row?.[key]) || 0;
+      const base = Math.floor(raw * 10) / 10;
+      return { key, base, remainder: raw - base };
+    });
+    const baseSum = Math.round(items.reduce((s, it) => s + it.base, 0) * 10) / 10;
+    let deficit = Math.round((target - baseSum) * 10);
+    const order = [...items].sort((a, b) => b.remainder - a.remainder);
+    const bump = new Set();
+    for (let i = 0; i < order.length && deficit > 0; i++, deficit--) {
+      bump.add(order[i].key);
+    }
+    const out = {};
+    items.forEach((it) => {
+      out[it.key] = Math.round((it.base + (bump.has(it.key) ? 0.1 : 0)) * 10) / 10;
+    });
+    return out;
+  };
+
+  // 화면과 엑셀에 표시할 비율 값을 가져오는 함수.
+  // 소계에 포함되는 개별 항목은 최대잔여법으로 보정된 값을, 그 외(소계 자체 등)는 원본값을 그대로 반환한다.
   const getDisplayRatio = (row, ratioField) => {
+    const group = RATIO_GROUP_BY_ITEM[ratioField];
+    if (group && row) {
+      return largestRemainderAdjust(row, group)[ratioField];
+    }
     return row?.[ratioField];
+  };
+
+  // 개별 항목 비율은 DB에 소수점 4자리 정밀도로 저장돼 있다 — 화면에는 1자리로 "표시만" 반올림한다.
+  const formatRatio = (v) => {
+    if (v == null || v === "") return "";
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(1) : "";
   };
 
   const filteredHeaders = headers
@@ -403,23 +463,10 @@ export default function ProfitLossTableTab() {
       result[field] = hasAny ? sum : null;
     });
 
-    // 매출소계는 구성 항목으로 다시 계산해 판장금(payback_price)을 완전히 제외한다.
-    const salesTotalFields = [
-      "living_cost",
-      "basic_cost",
-      "employ_cost",
-      "living_cost2",
-      "basic_cost2",
-      "employ_cost2",
-      "daycare_cost",
-      "daycare_emp_cost",
-      "integrity_cost",
-      "return_cost",
-    ];
-    result.sales_total = salesTotalFields.reduce(
-      (sum, field) => sum + (Number(result[field]) || 0),
-      0
-    );
+    // 매출소계(sales_total)는 재계산하지 않고, 각 월의 DB 저장값(판장금 제외 이미 반영됨)을 그대로 합산한
+    // result.sales_total(위 allValueFields 루프에서 계산됨)을 사용한다.
+    // 구성 항목으로 다시 계산하면 daycare 조건부 포함 등 프로시저 로직과 미세하게 어긋나
+    // 개별 월 행과 합계 행의 비율이 달라지는 문제가 있었다.
 
     // upfront_cost 합계 보정:
     // DB upfront_cost는 잔존가치(잔액)이므로 단순 합산 불가.
@@ -528,63 +575,58 @@ export default function ProfitLossTableTab() {
     }
 
     // 비율 계산 (프로시저 로직 동일하게 적용)
+    // 소계 비율(rnd)은 화면에 보이는 1자리로 반올림해 저장한다.
+    // 개별 항목 비율(rndFull)은 소수점 4자리 정밀도를 유지한다 — 화면/엑셀에서는 1자리로 "표시만" 반올림하므로,
+    // 화면에 보이는 항목들을 그대로 더해도 소계와 어긋나지 않는다(항목값 자체를 1자리로 잘라 저장하면 어긋남).
     const rnd = (v, d) => d ? Math.round((v / d) * 100 * 10) / 10 : 0;
+    const rndFull = (v, d) => d ? Math.round((v / d) * 100 * 10000) / 10000 : 0;
     const st = result.sales_total || 0;
     const et = result.estimate_total || 0;
 
     // 인원추산 (분모: estimate_total)
-    result.living_estimate_ratio = rnd(result.living_estimate || 0, et);
-    result.basic_estimate_ratio = rnd(result.basic_estimate || 0, et);
-    result.estimate_total_ratio = result.living_estimate_ratio + result.basic_estimate_ratio;
+    result.living_estimate_ratio = rndFull(result.living_estimate || 0, et);
+    result.basic_estimate_ratio = rndFull(result.basic_estimate || 0, et);
+    // 소계 비율은 항목 비율을 더하지 않고, 소계 금액 자체로 계산한다(프로시저와 동일).
+    result.estimate_total_ratio = rnd(et, et);
 
     // 매출 (분모: sales_total)
-    result.living_ratio = rnd(result.living_cost || 0, st);
-    result.basic_ratio = rnd(result.basic_cost || 0, st);
-    result.employ_ratio = rnd(result.employ_cost || 0, st);
-    result.living_ratio2 = rnd(result.living_cost2 || 0, st);
-    result.basic_ratio2 = rnd(result.basic_cost2 || 0, st);
-    result.employ_ratio2 = rnd(result.employ_cost2 || 0, st);
-    result.daycare_ratio = rnd(result.daycare_cost || 0, st);
-    result.daycare_emp_ratio = rnd(result.daycare_emp_cost || 0, st);
-    result.integrity_ratio = rnd(result.integrity_cost || 0, st);
-    result.return_ratio = rnd(result.return_cost || 0, st);
-    result.payback_ratio = rnd(result.payback_price || 0, st);
-    // 매출소계 비율에서도 판장금을 제외한다.
-    result.sales_total_ratio = Math.round((
-      result.living_ratio + result.basic_ratio + result.employ_ratio +
-      result.living_ratio2 + result.basic_ratio2 + result.employ_ratio2 +
-      result.daycare_ratio + result.daycare_emp_ratio +
-      result.integrity_ratio + result.return_ratio
-    ) * 10) / 10;
+    result.living_ratio = rndFull(result.living_cost || 0, st);
+    result.basic_ratio = rndFull(result.basic_cost || 0, st);
+    result.employ_ratio = rndFull(result.employ_cost || 0, st);
+    result.living_ratio2 = rndFull(result.living_cost2 || 0, st);
+    result.basic_ratio2 = rndFull(result.basic_cost2 || 0, st);
+    result.employ_ratio2 = rndFull(result.employ_cost2 || 0, st);
+    result.daycare_ratio = rndFull(result.daycare_cost || 0, st);
+    result.daycare_emp_ratio = rndFull(result.daycare_emp_cost || 0, st);
+    result.integrity_ratio = rndFull(result.integrity_cost || 0, st);
+    result.return_ratio = rndFull(result.return_cost || 0, st);
+    result.payback_ratio = rndFull(result.payback_price || 0, st);
+    // 매출소계 비율은 항목 비율을 더하지 않고, 매출소계 금액(판장금 제외) 자체로 계산한다(프로시저와 동일).
+    result.sales_total_ratio = rnd(st, st);
 
     // 매입 (분모: sales_total)
-    result.food_ratio = rnd(result.food_cost || 0, st);
-    result.etc_ratio = rnd(result.etc_cost || 0, st);
-    result.food_trash_ratio = rnd(result.food_process || 0, st);
-    result.dishwasher_ratio = rnd(result.dishwasher || 0, st);
-    result.cesco_ratio = rnd(result.cesco || 0, st);
-    result.water_ratio = rnd(result.water_puri || 0, st);
-    result.event_ratio = rnd(result.event_cost || 0, st);
-    result.not_budget_ratio = rnd(result.not_budget_cost || 0, st);
-    result.upfront_cost_ratio = rnd(result["upfront_cost"] || 0, st);
-    result.purchase_total_ratio = Math.round((
-      result.food_trash_ratio + result.dishwasher_ratio + result.cesco_ratio +
-      result.water_ratio + result.food_ratio + result.etc_ratio +
-      result.event_ratio + result.not_budget_ratio + result.upfront_cost_ratio
-    ) * 10) / 10;
+    result.food_ratio = rndFull(result.food_cost || 0, st);
+    result.etc_ratio = rndFull(result.etc_cost || 0, st);
+    result.food_trash_ratio = rndFull(result.food_process || 0, st);
+    result.dishwasher_ratio = rndFull(result.dishwasher || 0, st);
+    result.cesco_ratio = rndFull(result.cesco || 0, st);
+    result.water_ratio = rndFull(result.water_puri || 0, st);
+    result.event_ratio = rndFull(result.event_cost || 0, st);
+    result.not_budget_ratio = rndFull(result.not_budget_cost || 0, st);
+    result.upfront_cost_ratio = rndFull(result["upfront_cost"] || 0, st);
+    // 매입소계 비율도 항목 비율 합산이 아닌 매입소계 금액 자체로 계산한다(프로시저와 동일).
+    result.purchase_total_ratio = rnd(result.purchase_total || 0, st);
 
     // 인건 (분모: sales_total)
-    result.person_ratio = rnd(result.person_cost || 0, st);
-    result.dispatch_ratio = rnd(result.dispatch_cost || 0, st);
-    result.person_total_ratio = Math.round((result.person_ratio + result.dispatch_ratio) * 10) / 10;
+    result.person_ratio = rndFull(result.person_cost || 0, st);
+    result.dispatch_ratio = rndFull(result.dispatch_cost || 0, st);
+    result.person_total_ratio = rnd(result.person_total || 0, st);
 
     // 간접 (분모: sales_total)
-    result.utility_ratio = rnd(result.utility_bills || 0, st);
-    result.duty_secure_ratio = rnd(result.duty_secure || 0, st);
-    result.etc_indirect_ratio = rnd(result.etc_indirect_cost || 0, st);
-    result.indirect_total_ratio = Math.round((
-      result.utility_ratio + result.duty_secure_ratio + result.etc_indirect_ratio
-    ) * 10) / 10;
+    result.utility_ratio = rndFull(result.utility_bills || 0, st);
+    result.duty_secure_ratio = rndFull(result.duty_secure || 0, st);
+    result.etc_indirect_ratio = rndFull(result.etc_indirect_cost || 0, st);
+    result.indirect_total_ratio = rnd(result.indirect_total || 0, st);
 
     // 예외: 빼기 방식 (프로시저와 동일)
     result.business_profit_ratio = Math.round((
@@ -826,28 +868,19 @@ export default function ProfitLossTableTab() {
     return n / 100;
   };
 
-  const excelSalesTotalFields = [
-    "living_cost",
-    "basic_cost",
-    "employ_cost",
-    "living_cost2",
-    "basic_cost2",
-    "employ_cost2",
-    "daycare_cost",
-    "daycare_emp_cost",
-    "integrity_cost",
-    "return_cost",
-  ];
-
   // 모든 클라이언트 생성 엑셀에 동일한 판장금 제외 기준을 적용한다.
   const normalizeProfitLossRowForExcel = (sourceRow) => {
     const row = { ...(sourceRow || {}) };
     const amount = (field) => Number(row[field]) || 0;
     const rnd = (value, denominator) =>
       denominator ? Math.round((value / denominator) * 100 * 10) / 10 : 0;
+    // 개별 항목 비율은 4자리 정밀도로 유지(표시만 1자리로 반올림) — 화면에 보이는 항목 합이 소계와 어긋나지 않도록.
+    const rndFull = (value, denominator) =>
+      denominator ? Math.round((value / denominator) * 100 * 10000) / 10000 : 0;
 
-    row.sales_total = excelSalesTotalFields.reduce((sum, field) => sum + amount(field), 0);
-    const salesTotal = row.sales_total || 0;
+    // sales_total은 구성 항목으로 다시 계산하지 않고 DB 저장값을 그대로 쓴다(단일 행이라 재계산 불필요,
+    // 재계산하면 daycare 조건부 포함 등 프로시저 로직과 어긋날 위험만 있음).
+    const salesTotal = amount("sales_total");
 
     [
       ["living_cost", "living_ratio"],
@@ -875,29 +908,14 @@ export default function ProfitLossTableTab() {
       ["duty_secure", "duty_secure_ratio"],
       ["etc_indirect_cost", "etc_indirect_ratio"],
     ].forEach(([valueKey, ratioKey]) => {
-      row[ratioKey] = rnd(amount(valueKey), salesTotal);
+      row[ratioKey] = rndFull(amount(valueKey), salesTotal);
     });
 
-    row.sales_total_ratio = Math.round(
-      (
-        row.living_ratio + row.basic_ratio + row.employ_ratio +
-        row.living_ratio2 + row.basic_ratio2 + row.employ_ratio2 +
-        row.daycare_ratio + row.daycare_emp_ratio +
-        row.integrity_ratio + row.return_ratio
-      ) * 10
-    ) / 10;
-    row.purchase_total_ratio = Math.round(
-      (
-        row.food_ratio + row.etc_ratio + row.food_trash_ratio +
-        row.dishwasher_ratio + row.cesco_ratio + row.water_ratio +
-        row.event_ratio + row.not_budget_ratio
-      ) * 10
-    ) / 10;
-    row.person_total_ratio =
-      Math.round((row.person_ratio + row.dispatch_ratio) * 10) / 10;
-    row.indirect_total_ratio = Math.round(
-      (row.utility_ratio + row.duty_secure_ratio + row.etc_indirect_ratio) * 10
-    ) / 10;
+    // 소계 비율은 항목 비율을 더하지 않고, 소계 금액 자체로 계산한다(프로시저와 동일).
+    row.sales_total_ratio = rnd(salesTotal, salesTotal);
+    row.purchase_total_ratio = rnd(row.purchase_total, salesTotal);
+    row.person_total_ratio = rnd(row.person_total, salesTotal);
+    row.indirect_total_ratio = rnd(row.indirect_total, salesTotal);
     // 영업이익/총 영업이익은 값과 비율 모두 재계산하지 않고 DB 값을 그대로 사용한다.
 
     return row;
@@ -2584,13 +2602,13 @@ export default function ProfitLossTableTab() {
                       {filteredHeaders.flatMap((h) =>
                         h.cols.map((col) => {
                           const ratioField = fieldMap[col]?.ratio;
-                          const value = ratioField ? totalRow[ratioField] : null;
+                          const value = ratioField ? getDisplayRatio(totalRow, ratioField) : null;
                           return (
                             <td
                               key={`total_${col}_ratio`}
                               style={{ fontSize: "11px", color: "#CD2C58" }}
                             >
-                              {value != null && value !== 0 ? `${formatNumber(value)}%` : "-"}
+                              {value != null && value !== 0 ? `${formatRatio(value)}%` : "-"}
                             </td>
                           );
                         })
@@ -2740,7 +2758,7 @@ export default function ProfitLossTableTab() {
                                 ...(isNote ? { textAlign: "left" } : {}),
                               }}
                             >
-                              {value ? `${formatNumber(value)}%` : "-"}
+                              {value ? `${formatRatio(value)}%` : "-"}
                             </td>
                           );
                         })

@@ -1,8 +1,55 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
+import { Tooltip } from "@mui/material";
 
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
+
+// 구매링크를 5줄까지만 보여주고, 실제로 잘렸을 때만 호버 시 전체 내용을 툴팁으로 노출한다.
+function LinkClampText({ value }) {
+  const ref = useRef(null);
+  const [isTruncated, setIsTruncated] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (el) setIsTruncated(el.scrollHeight > el.clientHeight + 1);
+  }, [value]);
+
+  const textBox = (
+    <MDBox
+      ref={ref}
+      component="span"
+      sx={{
+        flex: 1,
+        minWidth: 0,
+        wordBreak: "break-all",
+        overflow: "hidden",
+        display: "-webkit-box",
+        WebkitLineClamp: 5,
+        WebkitBoxOrient: "vertical",
+        cursor: isTruncated ? "help" : "default",
+      }}
+    >
+      {value}
+    </MDBox>
+  );
+
+  if (!isTruncated) return textBox;
+
+  return (
+    <Tooltip
+      title={value}
+      arrow
+      componentsProps={{ tooltip: { sx: { fontSize: 12, userSelect: "text", maxWidth: 320, wordBreak: "break-all" } } }}
+    >
+      {textBox}
+    </Tooltip>
+  );
+}
+
+LinkClampText.propTypes = {
+  value: PropTypes.string.isRequired,
+};
 
 // 금액 문자열을 숫자로 안전 변환한다.
 // - 콤마 제거
@@ -217,18 +264,16 @@ function ExpendableDetailModalContent({
                       <td style={td2CellCenter}>{toAmountText(it.price)}</td>
                       <td style={td2CellWrap}>{asText(it.use_note) || "-"}</td>
                       <td style={td2CellWrap}>{asText(it.use_name) || "-"}</td>
-                      <td style={td2CellLink}>
+                      <td style={{ ...td2CellLink, maxWidth: 220 }}>
                         {asText(it.link) ? (
-                          <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                            <MDBox component="span" sx={{ flex: 1, wordBreak: "break-all" }}>
-                              {asText(it.link)}
-                            </MDBox>
+                          <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
+                            <LinkClampText value={asText(it.link)} />
                             <MDButton
                               variant="gradient"
                               color="info"
                               size="small"
                               onClick={() => openLink(it.link)}
-                              sx={{ minWidth: 56, px: 1, fontSize: 11 }}
+                              sx={{ minWidth: 56, px: 1, fontSize: 11, flexShrink: 0, ml: "auto" }}
                             >
                               열기
                             </MDButton>

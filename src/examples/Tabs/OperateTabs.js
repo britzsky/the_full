@@ -9,6 +9,7 @@ import PropertySheetTab from "./Operate/PropertySheetTab";
 import RetailBusinessTab from "./Operate/RetailBusinessTab";
 import SubRestaurantTab from "./Operate/SubRestaurantTab";
 import HandOverSheetTab from "./Operate/HandoverSheetTab";
+import AccountMembersFilesTab from "./Operate/AccountMembersFilesTab";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
@@ -130,6 +131,15 @@ function OperateTabs() {
       iconIndex: 4,
       component: <HandOverSheetTab />,
       allowedDepartments: [0, 2, 3, 4, 5, 6, 7, 8, 9],   // 🔹 부서권한
+      allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
+      accessMode: "AND",
+    },
+    {
+      key: "accountFiles",
+      label: "📋 자격/보건 서류 관리",
+      iconIndex: 5,
+      component: <AccountMembersFilesTab />,
+      allowedDepartments: [0, 2, 3, 4, 5, 6],   // 🔹 부서권한
       allowedPositions: [0, 1, 2, 3, 4, 5, 6, 7,],   // 🔹 직책권한
       accessMode: "AND",
     },

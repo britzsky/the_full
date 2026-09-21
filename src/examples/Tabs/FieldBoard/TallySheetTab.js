@@ -2368,7 +2368,7 @@ function TallySheet() {
   const suppliesBudgetForTab = tabValue === 1 ? supplies2Budget : suppliesBudget;
   const suppliesUsedForTab = tabValue === 1 ? supplies2Used : suppliesUsed;
 
-  // ✅ 직접 입력은 type=1~4 허용
+  // ✅ 직접 입력은 type=1042만 허용 (1~4는 잠금)
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
     const rows = isSecond ? data2Rows : dataRows;
     const row = rows?.[rowIndex];
@@ -2381,7 +2381,8 @@ function TallySheet() {
     // ✅ 추가: input_yn=1이면 입력 차단
     if (isTypeLocked(y, m, String(row.type ?? ""))) return;
 
-    if (!INLINE_EDIT_TYPES.has(String(row.type ?? ""))) return;
+    const rowTypeStr = String(row.type ?? "");
+    if (!INLINE_EDIT_TYPES.has(rowTypeStr) || ["1", "2", "3", "4"].includes(rowTypeStr)) return;
 
     const setter = isSecond ? setData2Rows : setDataRows;
     const newValue = parseNumber(value);
@@ -3471,7 +3472,9 @@ function TallySheet() {
 
                 const yForRow = isSecond ? prevYear : year;
                 const mForRow = isSecond ? prevMonth : month;
-                const rowLocked = !isTotalRow && isTypeLocked(yForRow, mForRow, rowType);
+                const rowLocked =
+                  !isTotalRow &&
+                  (isTypeLocked(yForRow, mForRow, rowType) || ["1", "2", "3", "4"].includes(rowType));
 
                 // ✅ 포인트 색상 계산(여기서!)
                 const dayNo = isBaseCell ? Number(String(colKey).replace("day_", "")) : null;

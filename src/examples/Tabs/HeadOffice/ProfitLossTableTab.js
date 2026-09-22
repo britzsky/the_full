@@ -356,8 +356,10 @@ export default function ProfitLossTableTab() {
   // "전체"는 백엔드에서 강남의 living_cost2/basic_cost2/employ_cost2를 이미
   // living_cost/basic_cost/employ_cost에 합산해서 내려주므로, living_ratio2 등을
   // 여기서 또 더하면 그 만큼 이중으로 잡혀 100%를 넘어간다 — ALL일 때는 제외한다.
+  // 매입/인건/간접 소계 비율도 백엔드에서 2자리(ROUND(...,2))로 저장하도록 맞춰서,
+  // 모든 그룹을 0.01% 단위 최대잔여법으로 통일한다.
   const RATIO_GROUPS = [
-    { items: ["living_estimate_ratio", "basic_estimate_ratio"], target: "estimate_total_ratio" },
+    { items: ["living_estimate_ratio", "basic_estimate_ratio"], target: "estimate_total_ratio", precision: 2 },
     {
       items: [
         ...(selectedAccountId === "ALL" ? [] : ["living_ratio2", "basic_ratio2", "employ_ratio2"]),
@@ -365,6 +367,7 @@ export default function ProfitLossTableTab() {
         "daycare_ratio", "daycare_emp_ratio", "integrity_ratio", "return_ratio",
       ],
       target: "sales_total_ratio",
+      precision: 2,
     },
     {
       items: [
@@ -372,24 +375,28 @@ export default function ProfitLossTableTab() {
         "food_ratio", "etc_ratio", "event_ratio", "not_budget_ratio", "upfront_cost_ratio",
       ],
       target: "purchase_total_ratio",
+      precision: 2,
     },
-    { items: ["person_ratio", "dispatch_ratio"], target: "person_total_ratio" },
-    { items: ["utility_ratio", "duty_secure_ratio", "etc_indirect_ratio"], target: "indirect_total_ratio" },
+    { items: ["person_ratio", "dispatch_ratio"], target: "person_total_ratio", precision: 2 },
+    { items: ["utility_ratio", "duty_secure_ratio", "etc_indirect_ratio"], target: "indirect_total_ratio", precision: 2 },
   ];
   const RATIO_GROUP_BY_ITEM = {};
   RATIO_GROUPS.forEach((g) => g.items.forEach((k) => { RATIO_GROUP_BY_ITEM[k] = g; }));
 
-  // 최대잔여법: 그룹 내 항목들을 1자리로 버림(내림)한 뒤, 원래 값에서 버려진 나머지가 큰 항목부터
-  // 0.1%p씩 얹어서 표시값의 합이 정확히 소계 비율과 같아지도록 보정한다(DB 원본값은 건드리지 않음).
+  // 최대잔여법: 그룹 내 항목들을 정해진 자리수(precision, 기본 1자리)로 버림(내림)한 뒤,
+  // 원래 값에서 버려진 나머지가 큰 항목부터 최소단위씩 얹어서 표시값의 합이 정확히
+  // 소계 비율과 같아지도록 보정한다(DB 원본값은 건드리지 않음).
   const largestRemainderAdjust = (row, group) => {
-    const target = Math.round((Number(row?.[group.target]) || 0) * 10) / 10;
+    const precision = group.precision || 1;
+    const step = Math.pow(10, precision);
+    const target = Math.round((Number(row?.[group.target]) || 0) * step) / step;
     const items = group.items.map((key) => {
       const raw = Number(row?.[key]) || 0;
-      const base = Math.floor(raw * 10) / 10;
+      const base = Math.floor(raw * step) / step;
       return { key, base, remainder: raw - base };
     });
-    const baseSum = Math.round(items.reduce((s, it) => s + it.base, 0) * 10) / 10;
-    let deficit = Math.round((target - baseSum) * 10);
+    const baseSum = Math.round(items.reduce((s, it) => s + it.base, 0) * step) / step;
+    let deficit = Math.round((target - baseSum) * step);
     const order = [...items].sort((a, b) => b.remainder - a.remainder);
     const bump = new Set();
     for (let i = 0; i < order.length && deficit > 0; i++, deficit--) {
@@ -397,7 +404,7 @@ export default function ProfitLossTableTab() {
     }
     const out = {};
     items.forEach((it) => {
-      out[it.key] = Math.round((it.base + (bump.has(it.key) ? 0.1 : 0)) * 10) / 10;
+      out[it.key] = Math.round((it.base + (bump.has(it.key) ? 1 / step : 0)) * step) / step;
     });
     return out;
   };
@@ -412,11 +419,17 @@ export default function ProfitLossTableTab() {
     return row?.[ratioField];
   };
 
-  // 개별 항목 비율은 DB에 소수점 4자리 정밀도로 저장돼 있다 — 화면에는 1자리로 "표시만" 반올림한다.
+  // 개별 항목 비율은 DB에 소수점 4자리 정밀도로 저장돼 있다 — 화면에는 2자리로 "표시만" 반올림한다.
   const formatRatio = (v) => {
     if (v == null || v === "") return "";
     const n = Number(v);
-    return Number.isFinite(n) ? n.toFixed(1) : "";
+    return Number.isFinite(n) ? n.toFixed(2) : "";
+  };
+
+  const formatRatioCell = (row, ratioField) => {
+    if (!ratioField) return "-";
+    const value = getDisplayRatio(row, ratioField);
+    return value ? `${formatRatio(value)}%` : "-";
   };
 
   const filteredHeaders = headers
@@ -583,10 +596,10 @@ export default function ProfitLossTableTab() {
     }
 
     // 비율 계산 (프로시저 로직 동일하게 적용)
-    // 소계 비율(rnd)은 화면에 보이는 1자리로 반올림해 저장한다.
-    // 개별 항목 비율(rndFull)은 소수점 4자리 정밀도를 유지한다 — 화면/엑셀에서는 1자리로 "표시만" 반올림하므로,
-    // 화면에 보이는 항목들을 그대로 더해도 소계와 어긋나지 않는다(항목값 자체를 1자리로 잘라 저장하면 어긋남).
-    const rnd = (v, d) => d ? Math.round((v / d) * 100 * 10) / 10 : 0;
+    // 소계 비율(rnd)은 백엔드와 동일하게 2자리로 반올림해 저장한다.
+    // 개별 항목 비율(rndFull)은 소수점 4자리 정밀도를 유지한다 — 화면/엑셀에서는 2자리로 "표시만" 반올림하므로,
+    // 화면에 보이는 항목들을 그대로 더해도 소계와 어긋나지 않는다(항목값 자체를 자리 잘라 저장하면 어긋남).
+    const rnd = (v, d) => d ? Math.round((v / d) * 100 * 100) / 100 : 0;
     const rndFull = (v, d) => d ? Math.round((v / d) * 100 * 10000) / 10000 : 0;
     const st = result.sales_total || 0;
     const et = result.estimate_total || 0;
@@ -640,11 +653,11 @@ export default function ProfitLossTableTab() {
     result.business_profit_ratio = Math.round((
       result.sales_total_ratio -
       result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
-    ) * 10) / 10;
+    ) * 100) / 100;
     result.total_business_profit_ratio = Math.round((
       result.sales_total_ratio + result.payback_ratio -
       result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
-    ) * 10) / 10;
+    ) * 100) / 100;
 
     return result;
   }, [editRows, selectedAccountId, accountList, year]);
@@ -881,8 +894,8 @@ export default function ProfitLossTableTab() {
     const row = { ...(sourceRow || {}) };
     const amount = (field) => Number(row[field]) || 0;
     const rnd = (value, denominator) =>
-      denominator ? Math.round((value / denominator) * 100 * 10) / 10 : 0;
-    // 개별 항목 비율은 4자리 정밀도로 유지(표시만 1자리로 반올림) — 화면에 보이는 항목 합이 소계와 어긋나지 않도록.
+      denominator ? Math.round((value / denominator) * 100 * 100) / 100 : 0;
+    // 개별 항목 비율은 4자리 정밀도로 유지(표시만 2자리로 반올림) — 화면에 보이는 항목 합이 소계와 어긋나지 않도록.
     const rndFull = (value, denominator) =>
       denominator ? Math.round((value / denominator) * 100 * 10000) / 10000 : 0;
 
@@ -2616,13 +2629,12 @@ export default function ProfitLossTableTab() {
                       {filteredHeaders.flatMap((h) =>
                         h.cols.map((col) => {
                           const ratioField = fieldMap[col]?.ratio;
-                          const value = ratioField ? getDisplayRatio(totalRow, ratioField) : null;
                           return (
                             <td
                               key={`total_${col}_ratio`}
                               style={{ fontSize: "11px", color: "#CD2C58" }}
                             >
-                              {value != null && value !== 0 ? `${formatRatio(value)}%` : "-"}
+                              {formatRatioCell(totalRow, ratioField)}
                             </td>
                           );
                         })
@@ -2761,7 +2773,6 @@ export default function ProfitLossTableTab() {
                       {filteredHeaders.flatMap((h) =>
                         h.cols.map((col) => {
                           const ratioField = fieldMap[col]?.ratio;
-                          const value = getDisplayRatio(r, ratioField);
                           const isNote = fieldMap[col]?.value === noteField;
                           return (
                             <td
@@ -2772,7 +2783,7 @@ export default function ProfitLossTableTab() {
                                 ...(isNote ? { textAlign: "left" } : {}),
                               }}
                             >
-                              {value ? `${formatRatio(value)}%` : "-"}
+                              {formatRatioCell(r, ratioField)}
                             </td>
                           );
                         })

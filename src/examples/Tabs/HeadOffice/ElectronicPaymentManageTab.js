@@ -1,5 +1,5 @@
 ﻿/* eslint-disable react/function-component-definition */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TextField, Modal, Box, useTheme, useMediaQuery } from "@mui/material";
 import PropTypes from "prop-types";
 import Swal from "sweetalert2";
@@ -15,6 +15,7 @@ import useElectronicPaymentManageData, {
   getDocNameByType,
   getDocTypeByKind,
   isDocKind,
+  toDocTypeKey,
 } from "./electronicPaymentManageData";
 
 // TODO: 소모품 고정 결재자/특수 조회 사용자 ID는 운영 정책에 맞춰 변경 가능
@@ -369,6 +370,15 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   // actionComment: 결재/반려 처리 시 함께 저장할 의견(결재 사유/반려 사유)
   const [actionComment, setActionComment] = useState("");
   const [listStatusFilter, setListStatusFilter] = useState("all");
+  // 검색: 상신자/부서(거래처) 통합 검색어, 문서타입 드롭다운 필터
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [docTypeFilter, setDocTypeFilter] = useState("all");
+  // 목록 페이징: 남는 공간/빈 화면 없이 카드 안에 딱 맞는 행 수를 실측해서 페이지당 건수로 사용
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const listBoxRef = useRef(null);
+  const theadRef = useRef(null);
+  const firstRowRef = useRef(null);
   const [checkedExpenseMap, setCheckedExpenseMap] = useState({});
   const [contextMenu, setContextMenu] = useState({
     open: false,
@@ -470,15 +480,30 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     [detailMain?.doc_type, docTypeList, detailItems]
   );
 
-  // 목록 상태 필터 + 기안일자 내림차순 정렬 적용
+  // 목록 상태 필터 + 문서타입 필터 + 상신자/부서(거래처) 통합 검색 + 기안일자 내림차순 정렬 적용
   const filteredRows = useMemo(() => {
     const source = Array.isArray(rows) ? rows : [];
-    const filtered =
+    const byStatus =
       listStatusFilter === "all"
         ? source
         : listStatusFilter === "done"
           ? source.filter((row) => isCompletedRow(row, docTypeList))
           : source.filter((row) => !isCompletedRow(row, docTypeList));
+
+    const byDocType =
+      docTypeFilter === "all"
+        ? byStatus
+        : byStatus.filter((row) => toDocTypeKey(row?.doc_type) === docTypeFilter);
+
+    // 상신자 또는 부서(거래처) 중 하나라도 검색어를 포함하면 매칭(OR)
+    const keyword = asText(searchKeyword).toLowerCase();
+    const filtered = keyword
+      ? byDocType.filter((row) => {
+        const regUserText = (asText(row?.reg_user_name) || getUserLabel(row?.reg_user_id)).toLowerCase();
+        const deptText = getDepartmentText(row).toLowerCase();
+        return regUserText.includes(keyword) || deptText.includes(keyword);
+      })
+      : byDocType;
 
     return [...filtered].sort((a, b) => {
       const dtA = String(a?.draft_dt || "");
@@ -487,7 +512,63 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       if (dtB < dtA) return -1;
       return String(b?.payment_id || "").localeCompare(String(a?.payment_id || ""));
     });
-  }, [rows, listStatusFilter, docTypeList]);
+  }, [rows, listStatusFilter, docTypeFilter, searchKeyword, docTypeList, getUserLabel]);
+
+  // 필터/페이지당 행 수 변경 시 1페이지로 복귀
+  useEffect(() => {
+    setPage(1);
+  }, [listStatusFilter, docTypeFilter, searchKeyword, rowsPerPage]);
+
+  // 페이징 적용된 목록 행 (usermanagement.js 페이징 UI와 동일한 방식)
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  const paginatedRows = useMemo(
+    () => filteredRows.slice((page - 1) * rowsPerPage, page * rowsPerPage),
+    [filteredRows, page, rowsPerPage]
+  );
+  const maxPageButtons = 5;
+  const visiblePageNumbers = useMemo(() => {
+    if (totalPages <= maxPageButtons) {
+      return Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    }
+
+    const half = Math.floor(maxPageButtons / 2);
+    let start = page - half;
+    let end = page + half;
+
+    if (start < 1) {
+      end += 1 - start;
+      start = 1;
+    }
+    if (end > totalPages) {
+      start -= end - totalPages;
+      end = totalPages;
+    }
+    start = Math.max(1, start);
+
+    return Array.from({ length: end - start + 1 }, (_, idx) => start + idx);
+  }, [page, totalPages]);
+
+  // 카드 영역 실측 높이로 페이지당 행 수를 계산 → 빈 여백/스크롤 없이 딱 맞게 표시
+  useEffect(() => {
+    const container = listBoxRef.current;
+    if (!container) return undefined;
+
+    const recalcRowsPerPage = () => {
+      const headerHeight = theadRef.current?.getBoundingClientRect().height || 0;
+      const rowHeight = firstRowRef.current?.getBoundingClientRect().height || 0;
+      if (!rowHeight) return;
+
+      const availableHeight = container.clientHeight - headerHeight;
+      const nextRowsPerPage = Math.max(3, Math.floor(availableHeight / rowHeight));
+      setRowsPerPage((prev) => (prev === nextRowsPerPage ? prev : nextRowsPerPage));
+    };
+
+    recalcRowsPerPage();
+    const observer = new ResizeObserver(recalcRowsPerPage);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [paginatedRows.length]);
+
   // 소모품 특수 사용자 여부 판정
   const isExpendableSpecialUser = loginUserId === EXPENDABLE_SPECIAL_USER_ID;
 
@@ -906,13 +987,14 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   if (loading) return <LoadingScreen />;
 
   return (
-    <>
+    <MDBox sx={{ display: "flex", flexDirection: "column", flex: 1 }}>
       {/* 상단 제목/새로고침 액션 바 */}
       <MDBox
         pt={0}
         pb={1}
         px={1}
         sx={{
+          flexShrink: 0,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
@@ -924,7 +1006,29 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
           전자결재 관리
         </MDBox>
 
-        <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+          <TextField
+            size="small"
+            placeholder="상신자/부서(거래처) 검색"
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            sx={{ minWidth: isMobile ? 140 : 190 }}
+          />
+          <TextField
+            select
+            size="small"
+            value={docTypeFilter}
+            onChange={(e) => setDocTypeFilter(e.target.value)}
+            SelectProps={{ native: true }}
+            sx={{ minWidth: isMobile ? 112 : 140 }}
+          >
+            <option value="all">문서타입 전체</option>
+            {docTypeList.map((type) => (
+              <option key={type.doc_type} value={type.doc_type}>
+                {type.doc_name}
+              </option>
+            ))}
+          </TextField>
           <TextField
             select
             size="small"
@@ -948,10 +1052,10 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
         </MDBox>
       </MDBox>
 
-      {/* 목록 영역: 내가 확인 가능한 문서와 진행상태 표시 */}
+      {/* 목록 영역: 내가 확인 가능한 문서와 진행상태 표시. 카드 실측 높이에 맞는 행 수만 보여줘서 빈 여백/스크롤 없이 표시 */}
       <MDBox sx={sheetWrapSx(isMobile)}>
-        <MDBox sx={sectionTitleSx}>목록</MDBox>
-        <MDBox sx={{ overflowX: "auto" }}>
+        <MDBox sx={{ ...sectionTitleSx, flexShrink: 0 }}>목록</MDBox>
+        <MDBox ref={listBoxRef} sx={{ flex: 1, minHeight: 0, overflowX: "auto", overflowY: "auto" }}>
           <table
             style={{
               width: "100%",
@@ -972,7 +1076,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
               <col style={{ width: isMobile ? "10%" : "12%" }} />
               <col style={{ width: isMobile ? "10%" : "12%" }} />
             </colgroup>
-            <thead>
+            <thead ref={theadRef}>
               <tr>
                 {isExpendableSpecialUser && <th style={th2Cell}>구분</th>}
                 <th style={th2Cell}>문서번호</th>
@@ -988,7 +1092,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
             </thead>
             <tbody>
               {/* 목록이 비었을 때 안내 행 */}
-              {filteredRows.length === 0 ? (
+              {paginatedRows.length === 0 ? (
                 <tr>
                   <td
                     style={{ ...td2CellCenter, padding: "16px" }}
@@ -998,7 +1102,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row, idx) => {
+                paginatedRows.map((row, idx) => {
                   const rowRequiredFlags = getRowRequiredRoleFlags(row, docTypeList);
                   const statusText = getRowProgressStatusText(row, docTypeList);
                   const moveRowPayerToTmSlot = !rowRequiredFlags.needTM && rowRequiredFlags.needPayer;
@@ -1025,6 +1129,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                     // 행 클릭 시 상세 모달 오픈
                     <tr
                       key={`${row.payment_id}-${idx}`}
+                      ref={idx === 0 ? firstRowRef : null}
                       onClick={() => openDetailModal(row.payment_id)}
                       onContextMenu={(e) => handleExpenseRowContextMenu(e, row)}
                       style={{
@@ -1084,6 +1189,71 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
             </tbody>
           </table>
         </MDBox>
+
+        {/* 페이징: usermanagement.js와 동일한 이전/번호/다음 버튼 방식 */}
+        {filteredRows.length > 0 && (
+          <MDBox
+            px={2}
+            py={1}
+            sx={{
+              flexShrink: 0,
+              borderTop: "1px solid #eceff3",
+              display: "flex",
+              flexWrap: isMobile ? "wrap" : "nowrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 1,
+            }}
+          >
+            <MDBox
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "32px 1fr 32px",
+                alignItems: "center",
+                gap: 0.5,
+                width: isMobile ? "100%" : 220,
+              }}
+            >
+              <MDButton
+                size="small"
+                variant="outlined"
+                color="dark"
+                disabled={page <= 1}
+                onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                sx={{ minWidth: 32, px: 0 }}
+              >
+                {"<"}
+              </MDButton>
+              <MDBox sx={{ display: "flex", justifyContent: "center", gap: 0.5 }}>
+                {visiblePageNumbers.map((pageNum) => (
+                  <MDButton
+                    key={pageNum}
+                    size="small"
+                    variant={pageNum === page ? "contained" : "outlined"}
+                    color={pageNum === page ? "info" : "dark"}
+                    onClick={() => setPage(pageNum)}
+                    sx={{ minWidth: 32, px: 0 }}
+                  >
+                    {pageNum}
+                  </MDButton>
+                ))}
+              </MDBox>
+              <MDButton
+                size="small"
+                variant="outlined"
+                color="dark"
+                disabled={page >= totalPages}
+                onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
+                sx={{ minWidth: 32, px: 0 }}
+              >
+                {">"}
+              </MDButton>
+            </MDBox>
+            <MDBox sx={{ fontSize: 12, color: "#6b7280" }}>
+              총 {filteredRows.length}건 - {page}/{totalPages}페이지
+            </MDBox>
+          </MDBox>
+        )}
       </MDBox>
 
       {contextMenu.open && (
@@ -1465,7 +1635,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
           </MDBox>
         </Box>
       </Modal>
-    </>
+    </MDBox>
   );
 }
 
@@ -1649,6 +1819,9 @@ const modalSx = (isMobile) => ({
 
 // 목록 래퍼 스타일 (작성 탭 톤과 유사한 테이블 박스)
 const sheetWrapSx = (isMobile) => ({
+  display: "flex",
+  flexDirection: "column",
+  flex: 1,
   border: "1px solid #cfd8e3",
   borderRadius: 2,
   overflow: "hidden",

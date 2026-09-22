@@ -58,7 +58,15 @@ function HeadOfficeTab_2() {
     />,
   ];
   return (
-    <Card sx={{ borderRadius: "16px", boxShadow: "0px 5px 15px rgba(0,0,0,0.1)", minHeight: "calc(100vh - 34px)" }}>
+    <Card
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        borderRadius: "16px",
+        boxShadow: "0px 5px 15px rgba(0,0,0,0.1)",
+        minHeight: "calc(100vh - 34px)",
+      }}
+    >
       <MDBox
         sx={{
           position: "sticky",
@@ -112,8 +120,15 @@ function HeadOfficeTab_2() {
           ))}
         </Tabs>
       </MDBox>
-      {/* 탭 내용 */}
-      <MDBox px={2} pb={2} pt={2} sx={{ minHeight: 640 }}>{tabComponents[tabIndex]}</MDBox>
+      {/* 탭 내용: 남은 카드 높이를 그대로 채우도록 flex로 연결 */}
+      <MDBox
+        px={2}
+        pb={2}
+        pt={2}
+        sx={{ flex: 1, display: "flex", flexDirection: "column" }}
+      >
+        {tabComponents[tabIndex]}
+      </MDBox>
     </Card>
   );
 }

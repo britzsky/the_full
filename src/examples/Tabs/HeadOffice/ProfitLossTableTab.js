@@ -176,11 +176,16 @@ export default function ProfitLossTableTab() {
   }, [accountOptions, selectedAccountId]);
 
   // ✅ account_type 이 "학교" 인 경우에만 반환금(=return_cost) 컬럼 표시
+  // "전체"는 여러 유형이 섞여 있으므로, 반환금이 실제로 매출소계에 반영된(0이 아닌) 달이
+  // 하나라도 있으면 표시한다 — 안 그러면 반환금이 매출소계에는 빠져 있는데 화면엔 안 보여서
+  // 생계비~보전 합계가 매출소계와 어긋나 보인다.
   const showReturnCost = useMemo(() => {
-    if (selectedAccountId === "ALL") return false;
+    if (selectedAccountId === "ALL") {
+      return (editRows || []).some((r) => Number(r?.return_cost) !== 0);
+    }
     const t = String(selectedAccount?.account_type ?? "").trim();
     return t === "학교";
-  }, [selectedAccountId, selectedAccount]);
+  }, [selectedAccountId, selectedAccount, editRows]);
 
   const selectAccountByInput = useCallback(() => {
     const q = String(accountInput || "").trim();
@@ -348,11 +353,14 @@ export default function ProfitLossTableTab() {
 
   // 그룹별 개별 항목 비율(4자리 정밀도)과, 그 항목들의 합이 맞아야 할 소계 비율 필드.
   // payback_ratio(판장금)는 매출소계에 포함되지 않으므로 매출 그룹에서 제외한다.
+  // "전체"는 백엔드에서 강남의 living_cost2/basic_cost2/employ_cost2를 이미
+  // living_cost/basic_cost/employ_cost에 합산해서 내려주므로, living_ratio2 등을
+  // 여기서 또 더하면 그 만큼 이중으로 잡혀 100%를 넘어간다 — ALL일 때는 제외한다.
   const RATIO_GROUPS = [
     { items: ["living_estimate_ratio", "basic_estimate_ratio"], target: "estimate_total_ratio" },
     {
       items: [
-        "living_ratio2", "basic_ratio2", "employ_ratio2",
+        ...(selectedAccountId === "ALL" ? [] : ["living_ratio2", "basic_ratio2", "employ_ratio2"]),
         "living_ratio", "basic_ratio", "employ_ratio",
         "daycare_ratio", "daycare_emp_ratio", "integrity_ratio", "return_ratio",
       ],
@@ -2550,6 +2558,12 @@ export default function ProfitLossTableTab() {
                               매출소계
                               <br />
                               (판장금제외)
+                            </>
+                          ) : c === "반환금" ? (
+                            <>
+                              반환금
+                              <br />
+                              (학교유형)
                             </>
                           ) : (
                             c

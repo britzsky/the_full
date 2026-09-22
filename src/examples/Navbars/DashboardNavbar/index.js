@@ -1123,7 +1123,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     const showEvaluationSection = evaluationNotifCount > 0;
     const showApprovalSection = isAdmin && pendingCount > 0;
     const showBirthdaySection = birthdayMemberCount > 0;
-    const showContractSection = false;
+    const showContractSection = notifications.length > 0;
     const hasAnyMenuItems =
       showPromotionSection ||
       showInquirySection ||
@@ -1331,7 +1331,7 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
         {showContractSection && (
           <MDBox px={2} pt={1} pb={0.5}>
             <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
-              계약 만료 알림
+              계약 만료 예정 업장
             </MDTypography>
           </MDBox>
         )}

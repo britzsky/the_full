@@ -93,20 +93,7 @@ export default function Tables() {
   );
 
   const [open, setOpen] = useState(false);
-  const [addrOpen, setAddrOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-
-  const [formData, setFormData] = useState({
-    account_name: "",
-    account_address: "",
-    account_address_detail: "",
-    phone: "",
-    account_rqd_member: "",
-    account_headcount: "",
-    account_type: "",
-    meal_type: "",
-    del_yn: "",
-  });
 
   // 고객사 목록 조회 훅
   const { columns, rows, loading } = useTableData(selectedType, refreshKey);
@@ -353,11 +340,6 @@ export default function Tables() {
     return filtered;
   }, [localRows, accountSortKey, selectedDelYn, toPlainText]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
   const handleModalOpen = () => setOpen(true);
 
   const keepHoverCursor = () => {
@@ -369,69 +351,7 @@ export default function Tables() {
     e.stopPropagation();
   };
 
-  const handleModalClose = () => {
-    setFormData({
-      account_name: "",
-      account_address: "",
-      account_address_detail: "",
-      phone: "",
-      account_rqd_member: "",
-      account_headcount: "",
-      account_type: "",
-      meal_type: "",
-      del_yn: "N", // ✅ 추가
-    });
-    setOpen(false);
-  };
-
-  const handleAddressSelect = (data) => {
-    setFormData((prev) => ({ ...prev, account_address: data.address }));
-    setAddrOpen(false);
-  };
-
-  const handleSubmit = () => {
-    if (
-      !formData.account_name ||
-      !formData.account_address ||
-      !formData.phone ||
-      formData.meal_type === "" ||
-      formData.account_type === ""
-    ) {
-      return Swal.fire({
-        title: "경고",
-        text: "필수항목을 확인하세요.",
-        icon: "error",
-        confirmButtonColor: "#d33",
-        confirmButtonText: "확인",
-      });
-    }
-
-    api
-      .post("/Account/AccountSave", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      .then((res) => {
-        if (res.data.code === 200)
-          Swal.fire({
-            title: "저장",
-            text: "저장되었습니다.",
-            icon: "success",
-            confirmButtonColor: "#d33",
-            confirmButtonText: "확인",
-          }).then((result) => {
-            if (result.isConfirmed) handleModalClose();
-          });
-      })
-      .catch(() =>
-        Swal.fire({
-          title: "실패",
-          text: "저장을 실패했습니다.",
-          icon: "error",
-          confirmButtonColor: "#d33",
-          confirmButtonText: "확인",
-        })
-      );
-  };
+  const handleModalClose = () => setOpen(false);
 
   // =========================
   // ✅ 편집 로직 (rowKey 기반)
@@ -1055,8 +975,87 @@ export default function Tables() {
         </Grid>
       </Grid>
 
+      {/* 거래처 등록 모달: 타이핑 중 재렌더가 전체 목록 테이블까지 번지지 않도록 별도 컴포넌트로 분리 */}
+      <AddAccountModal open={open} onClose={handleModalClose} />
+    </DashboardLayout>
+  );
+}
+
+// =========================
+// ✅ 거래처 등록 모달 (입력 상태를 Tables 본체와 분리해 타이핑 지연 방지)
+// =========================
+function AddAccountModal({ open, onClose }) {
+  const [addrOpen, setAddrOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    account_name: "",
+    account_address: "",
+    account_address_detail: "",
+    phone: "",
+    account_rqd_member: "",
+    account_headcount: "",
+    account_type: "",
+    meal_type: "",
+    del_yn: "",
+  });
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddressSelect = (data) => {
+    setFormData((prev) => ({ ...prev, account_address: data.address }));
+    setAddrOpen(false);
+  };
+
+  const handleSubmit = () => {
+    if (
+      !formData.account_name ||
+      !formData.account_address ||
+      !formData.phone ||
+      formData.meal_type === "" ||
+      formData.account_type === ""
+    ) {
+      return Swal.fire({
+        title: "경고",
+        text: "필수항목을 확인하세요.",
+        icon: "error",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+    }
+
+    api
+      .post("/Account/AccountSave", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      .then((res) => {
+        if (res.data.code === 200)
+          Swal.fire({
+            title: "저장",
+            text: "저장되었습니다.",
+            icon: "success",
+            confirmButtonColor: "#d33",
+            confirmButtonText: "확인",
+          }).then((result) => {
+            if (result.isConfirmed) onClose();
+          });
+      })
+      .catch(() =>
+        Swal.fire({
+          title: "실패",
+          text: "저장을 실패했습니다.",
+          icon: "error",
+          confirmButtonColor: "#d33",
+          confirmButtonText: "확인",
+        })
+      );
+  };
+
+  return (
+    <>
       {/* 등록 모달 */}
-      <Modal open={open} onClose={handleModalClose}>
+      <Modal open={open} onClose={onClose}>
         <Box
           sx={{
             position: "absolute",
@@ -1187,7 +1186,7 @@ export default function Tables() {
           <Box mt={3} display="flex" justifyContent="flex-end" gap={1}>
             <Button
               variant="contained"
-              onClick={handleModalClose}
+              onClick={onClose}
               sx={{
                 bgcolor: "#e8a500",
                 color: "#ffffff",
@@ -1218,6 +1217,11 @@ export default function Tables() {
           <DaumPostcode onComplete={handleAddressSelect} />
         </Box>
       </Modal>
-    </DashboardLayout>
+    </>
   );
 }
+
+AddAccountModal.propTypes = {
+  open: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+};

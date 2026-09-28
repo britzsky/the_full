@@ -512,9 +512,9 @@ function TallySheet() {
     [localDepartmentCode, localPositionCode]
   );
   // ✅ 집계표 메모 편집 권한:
-  //    부서(2:회계팀, 5:운영팀, 6:개발팀) 또는 직책(0:대표, 1:팀장) 중 하나라도 맞으면 허용(OR)
+  //    부서(2:회계팀, 4:영업팀, 5:운영팀, 6:개발팀) 또는 직책(0:대표, 1:팀장) 중 하나라도 맞으면 허용(OR)
   const canEditTallyNote = useMemo(
-    () => [2, 5, 6].includes(localDepartmentCode) || [0, 1].includes(localPositionCode),
+    () => [2, 4, 5, 6].includes(localDepartmentCode) || [0, 1].includes(localPositionCode),
     [localDepartmentCode, localPositionCode]
   );
   const isAccountLocked = useMemo(() => !!localAccountId, [localAccountId]);

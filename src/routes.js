@@ -61,6 +61,7 @@ import OperateTab_4 from "layouts/operate/operatetab_4";
 import OperateTab_5 from "layouts/operate/operatetab_5";
 import AccountIssueManager2 from "layouts/operate/accountissuesheet2";
 import BudgetManager from "layouts/operate/budgettablesheet";
+import VendorTallySheet from "layouts/operate/vendortallysheet";
 // import Operate_6 from "layouts/operate/operatetab_6"; // 예산탭(인건비 예산 탭 주석처리)
 import Operate_7 from "layouts/operate/operatetab_7";
 // 회계
@@ -285,6 +286,17 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/budget/budgetManager",
         component: <BudgetManager />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+        accessMode: "AND",
+      },
+      {
+        type: "collapse",
+        name: "🧾 거래처 집계표",
+        key: "vendortallysheet",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/budget/vendorTallySheet",
+        component: <VendorTallySheet />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",

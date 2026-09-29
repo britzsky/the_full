@@ -84,7 +84,7 @@ export default function VendorTallySheet() {
     { key: "vendor", label: "구분", width: 115 },
     ...Array.from({ length: daysInMonth }, (_, i) => ({
       key: `day_${i + 1}`,
-      label: `${i + 1}`,
+      label: `${i + 1}일`,
       isAmount: true,
     })),
     { key: "total", label: "합계", isAmount: true },

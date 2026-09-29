@@ -5531,6 +5531,8 @@ function RecordSheet() {
     const disRecords = [];
     const recRecords = [];
     const employeeDispatchMappingCandidates = [];
+    // ✅ 저장 이력에 남길 작성자
+    const loginUserId = safeTrim(localStorage.getItem("user_id"), "");
 
     const useDiffMode =
       originalAttendanceRows && originalAttendanceRows.length === attendanceRows.length;
@@ -5604,6 +5606,7 @@ function RecordSheet() {
               position: row.position || "",
               org_start_time,
               org_end_time,
+              user_id: loginUserId,
               // ✅ 기존 row 기준 update용 키(백엔드 보강 로직에서 사용)
               old_account_id: originalVal?.account_id ?? resolvedAccountId,
               old_member_id: originalVal?.member_id ?? (val?.member_id || row.member_id || ""),
@@ -5644,6 +5647,7 @@ function RecordSheet() {
             position: row.position || "",
             org_start_time,
             org_end_time,
+            user_id: loginUserId,
             // ✅ 기존 row 기준 update용 키(백엔드 보강 로직에서 사용)
             old_account_id: originalVal?.account_id ?? resolvedAccountId,
             old_member_id: originalVal?.member_id ?? (val.member_id || row.member_id || ""),

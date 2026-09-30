@@ -2609,7 +2609,7 @@ export default function ProfitLossTableTab() {
                                 value={isNote ? "" : formatNumber(totalRow[field] ?? 0)}
                                 disabled
                                 style={{
-                                  width: "80px",
+                                  width: "90px",
                                   height: "20px",
                                   fontSize: "12px",
                                   fontWeight: "bold",
@@ -2732,7 +2732,7 @@ export default function ProfitLossTableTab() {
                                       type="text"
                                       value={displayValue}
                                       style={{
-                                        width: "80px",
+                                        width: "110px",
                                         height: "20px",
                                         fontSize: "12px",
                                         fontWeight: "bold",
@@ -2751,7 +2751,7 @@ export default function ProfitLossTableTab() {
                                   value={editableTextFields.includes(field) ? (isAllAccount ? "" : (getDisplayValue(r, field) ?? "")) : formatNumber(getDisplayValue(r, field) ?? 0)}
                                   disabled
                                   style={{
-                                    width: "80px",
+                                    width: "90px",
                                     height: "20px",
                                     fontSize: "12px",
                                     fontWeight: "bold",

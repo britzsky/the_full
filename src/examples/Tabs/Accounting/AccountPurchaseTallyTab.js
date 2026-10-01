@@ -53,6 +53,12 @@ import { koKR } from "@mui/x-date-pickers/locales";
 
 const MONEY_REFORMAT_MAX_ROWS = 700;
 const WELLSTORY_TYPES = new Set(["1", "2", "3", "4"]);
+// 구매처 표시 우선순위: 삼성웰스토리 → 아워홈 → 나머지
+const getPurchaseRank = (type, name) => {
+  if (type === "wellstory") return 0;
+  if (String(name ?? "").includes("아워홈")) return 1;
+  return 2;
+};
 const TAX_TOTAL_KEY_TO_PREFIX = {
   expen_taxTotal: "expen",
   food_taxTotal: "food",
@@ -208,8 +214,8 @@ function AccountPurchaseTallyTab() {
     }
 
     uniq.sort((a, b) => {
-      if (a.value === "wellstory") return -1;
-      if (b.value === "wellstory") return 1;
+      const rankCmp = getPurchaseRank(a.value, a.label) - getPurchaseRank(b.value, b.label);
+      if (rankCmp !== 0) return rankCmp;
       const an = Number(a.value);
       const bn = Number(b.value);
       const aNum = Number.isFinite(an);
@@ -697,11 +703,9 @@ function AccountPurchaseTallyTab() {
     return Array.from(map.values()).sort((a, b) => {
       const accountCmp = String(a.account_name ?? "").localeCompare(String(b.account_name ?? ""), "ko");
       if (accountCmp !== 0) return accountCmp;
-      // 같은 거래처 내에서 wellstory 먼저, 나머지는 type 순
-      const aIsWell = a.type === "wellstory";
-      const bIsWell = b.type === "wellstory";
-      if (aIsWell && !bIsWell) return -1;
-      if (!aIsWell && bIsWell) return 1;
+      // 같은 거래처 내에서 wellstory → 아워홈 순, 나머지는 type 순
+      const rankCmp = getPurchaseRank(a.type, a.purchase_name || a.name) - getPurchaseRank(b.type, b.purchase_name || b.name);
+      if (rankCmp !== 0) return rankCmp;
       const an = Number(a.type);
       const bn = Number(b.type);
       if (Number.isFinite(an) && Number.isFinite(bn)) return an - bn;
@@ -781,10 +785,8 @@ function AccountPurchaseTallyTab() {
       g.scenic_total += toNum(r?.scenic_total);
     });
     return Array.from(map.values()).sort((a, b) => {
-      const aIsWell = a.type === "wellstory";
-      const bIsWell = b.type === "wellstory";
-      if (aIsWell && !bIsWell) return -1;
-      if (!aIsWell && bIsWell) return 1;
+      const rankCmp = getPurchaseRank(a.type, a.purchase_name) - getPurchaseRank(b.type, b.purchase_name);
+      if (rankCmp !== 0) return rankCmp;
       const an = Number(a.type);
       const bn = Number(b.type);
       if (Number.isFinite(an) && Number.isFinite(bn) && an !== bn) return an - bn;

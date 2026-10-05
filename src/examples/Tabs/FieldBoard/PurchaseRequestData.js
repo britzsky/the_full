@@ -17,21 +17,25 @@ const MANAGE_LIST_API = "/HeadOffice/ElectronicPaymentManageList";
 // 구매요청서 상세 조회 API
 const MANAGE_DETAIL_API = "/HeadOffice/ElectronicPaymentManageDetail";
 
-// FP 문서 타입 코드 (tb_electronic_payment_type.doc_type)
+// 온라인구매(FP) 문서 타입 코드 (tb_electronic_payment_type.doc_type)
 export const FP_DOC_TYPE = "FP";
+// 개인구매(FR) 문서 타입 코드 - 먼저 구매 후 영수증을 첨부해 올리는 후결재 문서
+export const FR_DOC_TYPE = "FR";
+// 구매요청서 탭에서 다루는 문서 타입 목록
+export const PURCHASE_REQUEST_DOC_TYPES = [FP_DOC_TYPE, FR_DOC_TYPE];
 
-// 문서번호 생성 (FP-YYYYMMDDHHmmss001 형식)
-function buildFpRequestNo(draftDt, sequence = 1) {
+// 문서번호 생성 (FP-YYYYMMDDHHmmss001 / FR-YYYYMMDDHHmmss001 형식)
+function buildFpRequestNo(draftDt, sequence = 1, docType = FP_DOC_TYPE) {
   const now = draftDt || new Date().toISOString();
   const dt = new Date(now);
-  if (isNaN(dt.getTime())) return `${FP_DOC_TYPE}-`;
+  if (isNaN(dt.getTime())) return `${docType}-`;
 
   const pad = (n, l = 2) => String(n).padStart(l, "0");
   const stamp =
     `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}` +
     `${pad(dt.getHours())}${pad(dt.getMinutes())}${pad(dt.getSeconds())}`;
   const seq = String(Math.max(1, Number(sequence) || 1)).padStart(3, "0");
-  return `${FP_DOC_TYPE}-${stamp}${seq}`;
+  return `${docType}-${stamp}${seq}`;
 }
 
 // ─── 구입요청서 데이터 훅 ─────────────────────────────────────────────────────
@@ -90,9 +94,9 @@ export default function usePurchaseRequestData() {
   }, []);
 
   // 문서번호 순번 조회 (기안일자 기준 동일 타입 문서 수 + 1)
-  const fetchNextRequestNo = useCallback(async (draftDt) => {
+  const fetchNextRequestNo = useCallback(async (draftDt, docType = FP_DOC_TYPE) => {
     const userId = localStorage.getItem("user_id") || "";
-    const fallback = buildFpRequestNo(draftDt, 1);
+    const fallback = buildFpRequestNo(draftDt, 1, docType);
     if (!userId) return fallback;
 
     try {
@@ -103,19 +107,19 @@ export default function usePurchaseRequestData() {
         : "";
 
       const sameDay = rows.filter((r) => {
-        const docType = String(r?.doc_type || "").toUpperCase();
+        const rowDocType = String(r?.doc_type || "").toUpperCase();
         const draft = String(r?.draft_dt || "");
         const dateKey = draft.slice(0, 10).replace(/-/g, "");
-        return docType === FP_DOC_TYPE && dateKey === draftDateKey;
+        return rowDocType === docType && dateKey === draftDateKey;
       });
 
-      return buildFpRequestNo(draftDt, sameDay.length + 1);
+      return buildFpRequestNo(draftDt, sameDay.length + 1, docType);
     } catch {
       return fallback;
     }
   }, []);
 
-  // 구입요청서 저장 (전자결재 시스템 FP 타입)
+  // 구입요청서 저장 (전자결재 시스템 FP/FR 타입)
   const savePurchaseRequest = useCallback(async (payload) => {
     const userId = localStorage.getItem("user_id") || "";
 
@@ -126,7 +130,7 @@ export default function usePurchaseRequestData() {
       {
         main: {
           payment_id: payload.payment_id || "",
-          doc_type: FP_DOC_TYPE,
+          doc_type: payload.doc_type || FP_DOC_TYPE,
           department,
           user_id: userId,
           reg_user_id: userId,
@@ -150,7 +154,7 @@ export default function usePurchaseRequestData() {
     );
   }, []);
 
-  // 로그인 사용자가 직접 기안한 FP 구매요청서 목록을 조회한다.
+  // 로그인 사용자가 직접 기안한 FP/FR 구매요청서 목록을 조회한다.
   const fetchPurchaseRequestHistory = useCallback(async () => {
     const userId = localStorage.getItem("user_id") || "";
     if (!userId) return [];
@@ -158,15 +162,15 @@ export default function usePurchaseRequestData() {
     const res = await api.get(MANAGE_LIST_API, { params: { user_id: userId } });
     const rows = Array.isArray(res.data) ? res.data : (res.data?.list || []);
     return rows.filter((row) =>
-      String(row?.doc_type || "").toUpperCase() === FP_DOC_TYPE &&
+      PURCHASE_REQUEST_DOC_TYPES.includes(String(row?.doc_type || "").toUpperCase()) &&
       String(row?.reg_user_id || row?.user_id || "") === userId
     );
   }, []);
 
-  // 선택한 구매요청서의 메인 정보와 품목 내역을 조회한다.
+  // 선택한 구매요청서의 메인 정보, 품목 내역, 첨부 영수증을 조회한다.
   const fetchPurchaseRequestDetail = useCallback(async (paymentId) => {
     const userId = localStorage.getItem("user_id") || "";
-    if (!userId || !paymentId) return { main: null, items: [] };
+    if (!userId || !paymentId) return { main: null, items: [], files: [] };
 
     const res = await api.get(MANAGE_DETAIL_API, {
       params: { user_id: userId, payment_id: paymentId },
@@ -174,6 +178,7 @@ export default function usePurchaseRequestData() {
     return {
       main: res.data?.main || null,
       items: Array.isArray(res.data?.items) ? res.data.items : [],
+      files: Array.isArray(res.data?.files) ? res.data.files : [],
     };
   }, []);
 

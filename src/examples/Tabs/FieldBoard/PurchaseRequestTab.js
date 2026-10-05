@@ -1,37 +1,69 @@
-// 구매요청서 작성 탭 (현장 영양사 → 전자결재 FP 타입 상신)
+// 구매요청서 작성 탭 (현장 영양사 → 전자결재 FP/FR 타입 상신)
+// - 구분: 온라인구매(FP, 결재 후 구매) / 개인구매(FR, 먼저 구매 후 영수증 첨부 후결재)
 // - 소모품 구매 품의서(ExpendableWriteDocumentForm)와 동일한 포맷 사용
 // - 헤더: 거래처/작성자/기안일자/시행일자/문서번호
 // - 바디: 품목 내역과 요청 사유
 /* eslint-disable react/function-component-definition */
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { Box, Modal, TextField, Tooltip, useTheme, useMediaQuery } from "@mui/material";
+import { Box, Button, Card, Modal, TextField, Tooltip, useTheme, useMediaQuery } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
 import dayjs from "dayjs";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import api from "api/api";
+import {
+  HEADOFFICE_DOCUMENT_FILE_ACCEPT,
+  MAX_HEADOFFICE_DOCUMENT_IMAGE_COUNT,
+  isHeadOfficeDocumentSupportedFile,
+  syncHeadOfficeDocumentImages,
+} from "utils/headOfficeDocumentImageUtils";
 
 // 소모품 구매 품의서와 동일한 품목 폼 컴포넌트 사용
 import ExpendableWriteDocumentForm from "../HeadOffice/electronicPaymentDocument/ExpendableWriteDocumentForm";
-import usePurchaseRequestData from "./PurchaseRequestData";
+import PreviewOverlay from "utils/PreviewOverlay";
+import ReceiptThumbnail, {
+  isPreviewableReceiptCard,
+  toPendingReceiptCard,
+  toSavedReceiptCards,
+} from "../HeadOffice/electronicPaymentDocument/ReceiptThumbnail";
+import usePurchaseRequestData, { FP_DOC_TYPE, FR_DOC_TYPE } from "./PurchaseRequestData";
+
+// 구매요청서 구분 선택 옵션 (doc_type 코드 → 구분 문구 / 문서 제목)
+const PURCHASE_TYPE_OPTIONS = [
+  { value: FP_DOC_TYPE, label: "온라인구매", title: "구매요청서" },
+  { value: FR_DOC_TYPE, label: "개인구매", title: "개인구매 결의서" },
+];
+
+// 문서타입 코드 또는 문서번호 접두어로 구분 문구를 만든다.
+const getPurchaseTypeLabel = (docTypeOrPaymentId) => {
+  const key = String(docTypeOrPaymentId || "").trim().toUpperCase().split("-")[0];
+  return PURCHASE_TYPE_OPTIONS.find((opt) => opt.value === key)?.label || "-";
+};
 
 // 시행일자 기본값 (기안일 + 1일)
 const getDefaultStartDt = () => dayjs().add(1, "day").format("YYYY-MM-DDTHH:mm:ss");
 
-// 소모품 구매 품의서와 동일한 10개 품목 행을 만든다.
+// 품목 기본 행 수 (부족하면 행 추가 버튼으로 늘린다)
+const DEFAULT_ITEM_ROW_COUNT = 5;
+
+// 품목 빈 행 1개를 만든다.
+const createEmptyItemRow = (no) => ({
+  no,
+  item_name: "",
+  qty: "",
+  price: "",
+  use_note: "",
+  use_name: "",
+  link: "",
+  note: "",
+  buy_yn: "N",
+});
+
+// 기본 행 수만큼 빈 품목 행을 만든다.
 const createEmptyItems = () =>
-  Array.from({ length: 10 }).map((_, i) => ({
-    no: i + 1,
-    item_name: "",
-    qty: "",
-    price: "",
-    use_note: "",
-    use_name: "",
-    link: "",
-    note: "",
-    buy_yn: "N",
-  }));
+  Array.from({ length: DEFAULT_ITEM_ROW_COUNT }).map((_, i) => createEmptyItemRow(i + 1));
 
 // ─── 스타일 상수 (ElectronicPaymentSheetTab 동일) ─────────────────────────────
 
@@ -125,6 +157,18 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
   const [draftDt, setDraftDt] = useState(() => dayjs().format("YYYY-MM-DDTHH:mm:ss"));
   // 시행일자
   const [startDt, setStartDt] = useState(getDefaultStartDt);
+  // 구분 (FP: 온라인구매, FR: 개인구매)
+  const [purchaseType, setPurchaseType] = useState(FP_DOC_TYPE);
+  const isPersonalPurchase = purchaseType === FR_DOC_TYPE;
+  // 구분에 따른 문서 제목 (온라인구매: 구매요청서, 개인구매: 개인구매 결의서)
+  const documentTitle =
+    PURCHASE_TYPE_OPTIONS.find((opt) => opt.value === purchaseType)?.title || "구매요청서";
+  // 개인구매 품목 행별 영수증 첨부 대기 파일 (key: 품목 no, value: { file, previewUrl })
+  const [receiptByRowNo, setReceiptByRowNo] = useState({});
+  const receiptByRowNoRef = useRef(receiptByRowNo);
+  // 작성 중 영수증 미리보기 팝업 열림 여부와 현재 보고 있는 파일 위치
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const [receiptPreviewIndex, setReceiptPreviewIndex] = useState(0);
   // 문서번호
   const [requestNo, setRequestNo] = useState("");
   // 구매 품목과 요청 사유 입력 상태
@@ -148,20 +192,141 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
   // 품목과 요청 사유의 최신 입력값을 상신 시점까지 유지한다.
   useEffect(() => { itemsBufferRef.current = items; }, [items]);
   useEffect(() => { paymentNoteBufferRef.current = paymentNote; }, [paymentNote]);
+  useEffect(() => { receiptByRowNoRef.current = receiptByRowNo; }, [receiptByRowNo]);
+  // 화면 이탈 시 영수증 미리보기 URL 해제
+  useEffect(() => () => {
+    Object.values(receiptByRowNoRef.current).forEach((p) => p?.previewUrl && URL.revokeObjectURL(p.previewUrl));
+  }, []);
 
   // 문서번호 자동 생성
   useEffect(() => {
     let cancelled = false;
-    fetchNextRequestNo(draftDt).then((no) => {
+    fetchNextRequestNo(draftDt, purchaseType).then((no) => {
       if (!cancelled) setRequestNo(no);
     });
     return () => { cancelled = true; };
-  }, [draftDt, fetchNextRequestNo]);
+  }, [draftDt, purchaseType, fetchNextRequestNo]);
+
+  // 영수증 첨부 대기 파일을 모두 비우는 함수 (미리보기 URL 해제 포함)
+  const clearReceiptFiles = useCallback(() => {
+    Object.values(receiptByRowNoRef.current).forEach((p) => p?.previewUrl && URL.revokeObjectURL(p.previewUrl));
+    receiptByRowNoRef.current = {};
+    setReceiptByRowNo({});
+  }, []);
+
+  // 구분 변경 - 온라인구매로 바꾸면 영수증 첨부 대기 파일은 비운다.
+  const handleChangePurchaseType = useCallback((nextType) => {
+    setPurchaseType(nextType);
+    if (nextType !== FR_DOC_TYPE) clearReceiptFiles();
+  }, [clearReceiptFiles]);
+
+  // 품목 행의 영수증 지정/교체/삭제 - 상신 전에는 브라우저 메모리에만 보관한다. (file이 없으면 삭제)
+  const setRowReceipt = useCallback((rowNo, file) => {
+    if (file && !isHeadOfficeDocumentSupportedFile(file)) {
+      Swal.fire("지원하지 않는 파일 형식", "이미지, PDF, Excel(xls/xlsx) 파일만 첨부할 수 있습니다.", "warning");
+      return;
+    }
+    const prev = receiptByRowNoRef.current[rowNo];
+    if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+    const next = { ...receiptByRowNoRef.current };
+    if (file) next[rowNo] = { file, previewUrl: URL.createObjectURL(file) };
+    else delete next[rowNo];
+    receiptByRowNoRef.current = next;
+    setReceiptByRowNo(next);
+  }, []);
+
+  // 작성 중 영수증 미리보기 목록 (행 순서) 과 썸네일 클릭 시 해당 영수증부터 미리보기 열기
+  const receiptPreviewList = useMemo(
+    () =>
+      items
+        .filter((row) => receiptByRowNo[row.no])
+        .map((row) => toPendingReceiptCard(receiptByRowNo[row.no], `row-${row.no}`))
+        .filter(isPreviewableReceiptCard),
+    [items, receiptByRowNo]
+  );
+  const openReceiptPreview = useCallback((card) => {
+    const idx = receiptPreviewList.findIndex((c) => c.key === card?.key);
+    if (idx < 0) return;
+    setReceiptPreviewIndex(idx);
+    setReceiptPreviewOpen(true);
+  }, [receiptPreviewList]);
+
+  // 개인구매일 때 품목 표의 링크 칸 대신 그리는 영수증 칸 (썸네일 또는 파일 선택 버튼)
+  const renderReceiptCell = useCallback((row) => {
+    const pending = receiptByRowNo[row.no];
+    if (pending) {
+      return (
+        <ReceiptThumbnail
+          card={toPendingReceiptCard(pending, `row-${row.no}`)}
+          onOpen={openReceiptPreview}
+          onRemove={() => setRowReceipt(row.no, null)}
+        />
+      );
+    }
+    return (
+      <MDBox sx={{ display: "flex", justifyContent: "center" }}>
+        <Button
+          variant="outlined"
+          component="label"
+          size="small"
+          sx={{ fontSize: 11, height: 28, color: "#1f4e79", borderColor: "#1f4e79" }}
+        >
+          영수증 첨부
+          <input
+            type="file"
+            hidden
+            accept={HEADOFFICE_DOCUMENT_FILE_ACCEPT}
+            onChange={(e) => {
+              setRowReceipt(row.no, e.target.files?.[0] || null);
+              e.target.value = "";
+            }}
+          />
+        </Button>
+      </MDBox>
+    );
+  }, [receiptByRowNo, openReceiptPreview, setRowReceipt]);
 
   // 품목 입력 버퍼 변경 콜백
   const onItemsBufferChange = useCallback((next) => {
     itemsBufferRef.current = Array.isArray(next) ? next : itemsBufferRef.current;
   }, []);
+
+  // 행 추가 버튼 - 입력 중인 값을 유지한 채 맨 아래에 빈 품목 행을 붙인다.
+  const handleAddItemRow = useCallback(() => {
+    const base = Array.isArray(itemsBufferRef.current) ? itemsBufferRef.current : [];
+    const next = [...base, createEmptyItemRow(base.length + 1)];
+    itemsBufferRef.current = next;
+    setItems(next);
+  }, []);
+
+  // 행 삭제 버튼 - 맨 아래 품목 행을 지운다. 입력된 값이 있으면 한 번 더 확인한다. (최소 1행 유지)
+  const handleRemoveItemRow = useCallback(async () => {
+    const base = Array.isArray(itemsBufferRef.current) ? itemsBufferRef.current : [];
+    if (base.length <= 1) return;
+
+    const lastRow = base[base.length - 1] || {};
+    const hasValue =
+      ["item_name", "qty", "price", "use_note", "use_name", "link", "note"].some(
+        (key) => String(lastRow[key] ?? "").trim() !== ""
+      ) || !!receiptByRowNoRef.current[lastRow.no];
+    if (hasValue) {
+      const confirm = await Swal.fire({
+        title: "행 삭제",
+        text: `${base.length}번 품목에 입력된 내용이 있습니다. 삭제하시겠습니까?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "삭제",
+        cancelButtonText: "취소",
+        confirmButtonColor: "#d33",
+      });
+      if (!confirm.isConfirmed) return;
+    }
+
+    const next = base.slice(0, -1);
+    itemsBufferRef.current = next;
+    setItems(next);
+    if (receiptByRowNoRef.current[lastRow.no]) setRowReceipt(lastRow.no, null);
+  }, [setRowReceipt]);
 
   // 구매링크를 새 창으로 연다.
   const openLink = useCallback((url) => {
@@ -182,7 +347,8 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
     paymentNoteBufferRef.current = "";
     setDraftDt(dayjs().format("YYYY-MM-DDTHH:mm:ss"));
     setStartDt(getDefaultStartDt());
-  }, []);
+    clearReceiptFiles();
+  }, [clearReceiptFiles]);
 
   // 목록에서 선택한 구매요청서의 품목 상세를 조회한다.
   const handleSelectHistory = useCallback(async (row) => {
@@ -258,6 +424,21 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
     const clean = (v) => String(v ?? "").trim();
     const toInt = (v) => { const n = Number(String(v ?? "").replace(/,/g, "")); return isFinite(n) ? n : null; };
 
+    // 개인구매에서 영수증만 첨부하고 품목명을 비워 둔 행이 있으면 상신하지 않는다.
+    if (isPersonalPurchase) {
+      const receiptOnlyRow = (currentItems || []).find(
+        (row) => receiptByRowNoRef.current[row.no] && clean(row.item_name) === ""
+      );
+      if (receiptOnlyRow) {
+        Swal.fire({
+          title: "확인",
+          text: `${receiptOnlyRow.no}번 행에 영수증이 첨부되어 있습니다. 품목명을 입력하거나 영수증을 삭제해주세요.`,
+          icon: "warning",
+        });
+        return;
+      }
+    }
+
     // 소모품 구매 품의서 품목 구조로 저장 데이터를 만든다.
     const purchaseItems = (currentItems || [])
       .map((row) => ({
@@ -308,6 +489,26 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
       return;
     }
 
+    // 개인구매는 후결재 문서이므로 품목마다 영수증 1장이 필수
+    // - 품목 순서대로 업로드하므로 n번째 품목 = n번째 첨부(image_order)로 연결된다.
+    let receiptFilesToUpload = [];
+    if (isPersonalPurchase) {
+      if (purchaseItems.length > MAX_HEADOFFICE_DOCUMENT_IMAGE_COUNT) {
+        Swal.fire({
+          title: "확인",
+          text: `개인구매는 품목을 최대 ${MAX_HEADOFFICE_DOCUMENT_IMAGE_COUNT}개까지 올릴 수 있습니다.`,
+          icon: "warning",
+        });
+        return;
+      }
+      const missingReceiptRow = purchaseItems.find((row) => !receiptByRowNoRef.current[row.no]);
+      if (missingReceiptRow) {
+        Swal.fire({ title: "확인", text: `${missingReceiptRow.no}번 품목의 영수증을 첨부해주세요.`, icon: "warning" });
+        return;
+      }
+      receiptFilesToUpload = purchaseItems.map((row) => receiptByRowNoRef.current[row.no]);
+    }
+
     const submitConfirm = await Swal.fire({
       title: "상신하시겠습니까?",
       text: "상신 후에는 내용을 수정하기 어렵습니다.",
@@ -323,6 +524,7 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
     try {
       const res = await savePurchaseRequest({
         payment_id: requestNo,
+        doc_type: purchaseType,
         draft_dt: dayjs(draftDt).format("YYYY-MM-DD HH:mm:ss"),
         start_dt: dayjs(startDt).format("YYYY-MM-DD HH:mm:ss"),
         tm_user: approver1st.user_id || "",
@@ -336,9 +538,29 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
         return;
       }
 
+      // 문서 저장이 끝난 뒤 개인구매 영수증을 업로드한다.
+      if (receiptFilesToUpload.length > 0) {
+        try {
+          await syncHeadOfficeDocumentImages({
+            api,
+            paymentId: requestNo,
+            deletedImages: [],
+            pendingFiles: receiptFilesToUpload,
+          });
+        } catch (uploadError) {
+          await Swal.fire({
+            title: "부분 성공",
+            text: `${documentTitle}는 상신되었지만 영수증 첨부 중 오류가 발생했습니다. 관리자에게 문의해 주세요.`,
+            icon: "warning",
+          });
+          handleReset();
+          return;
+        }
+      }
+
       await Swal.fire({
         title: "완료",
-        text: "구매요청서가 상신되었습니다.",
+        text: `${documentTitle}가 상신되었습니다.`,
         icon: "success",
         confirmButtonColor: "#d33",
         confirmButtonText: "확인",
@@ -349,13 +571,13 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
     } finally {
       setSaving(false);
     }
-  }, [items, requestNo, draftDt, startDt, approver1st, approver2nd, savePurchaseRequest, handleReset]);
+  }, [items, requestNo, purchaseType, isPersonalPurchase, documentTitle, draftDt, startDt, approver1st, approver2nd, savePurchaseRequest, handleReset]);
 
   if (loading) return <LoadingScreen />;
 
   return (
     <MDBox sx={{ width: "100%", px: isMobile ? 1 : 3 }}>
-      {/* 제목(가운데) + 상신 버튼(오른쪽) 한 줄 */}
+      {/* 구분(왼쪽) + 제목(가운데) + 요청내역·상신 버튼(오른쪽) 한 줄 */}
       <MDBox
         mb={2}
         pb={1.5}
@@ -369,6 +591,23 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
           pt: isMobile ? 5 : 0,
         }}
       >
+        {/* 구분 선택 영역 (온라인구매 / 개인구매) */}
+        <MDBox sx={{ position: "absolute", left: 0, top: isMobile ? 0 : "auto" }}>
+          <TextField
+            select
+            size="small"
+            value={purchaseType}
+            onChange={(e) => handleChangePurchaseType(e.target.value)}
+            SelectProps={{ native: true }}
+            sx={{ minWidth: isMobile ? 110 : 140 }}
+          >
+            {PURCHASE_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </TextField>
+        </MDBox>
         <MDBox
           sx={{
             fontSize: isMobile ? 16 : 20,
@@ -377,7 +616,7 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
             color: "#1f4e79",
           }}
         >
-          구매요청서
+          {documentTitle}
         </MDBox>
         <MDBox sx={{ position: "absolute", right: 0, top: isMobile ? 0 : "auto", display: "flex", gap: 1 }}>
           <MDButton
@@ -400,8 +639,18 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
         </MDBox>
       </MDBox>
 
+      {/* 문서 본문 카드 영역 - 기본 정보부터 영수증 첨부까지 하나의 카드로 감싸고 사방에 그림자를 준다. */}
+      <Card
+        sx={{
+          border: "1px solid #cfd8e3",
+          borderRadius: "8px",
+          overflow: "hidden",
+          boxShadow: "0 0 14px rgba(0,0,0,0.12)",
+          mb: 2,
+        }}
+      >
       {/* ── 기본 정보 헤더 (지출결의서 동일 구조) ──────────────────────────── */}
-      <MDBox sx={{ border: "1px solid #cfd8e3", mb: 0 }}>
+      <MDBox sx={{ mb: 0 }}>
         <MDBox sx={sectionTitleSx}>기본 정보</MDBox>
         <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: 12 }}>
           <colgroup>
@@ -449,7 +698,8 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
           sectionTitle="품목 내역"
           itemNameLabel="품목명"
           useNoteLabel="사용처/용도"
-          linkLabel="구매링크"
+          linkLabel={isPersonalPurchase ? "영수증" : "구매링크"}
+          renderLinkCell={isPersonalPurchase ? renderReceiptCell : null}
           items={items}
           setItems={setItems}
           onItemsBufferChange={onItemsBufferChange}
@@ -462,6 +712,29 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
           td2Cell={td2Cell}
           td2CellCenter={td2CellCenter}
         />
+      </MDBox>
+
+      {/* 품목 행 추가/삭제 버튼 영역 */}
+      <MDBox sx={{ display: "flex", justifyContent: "flex-end", gap: 1, p: 0.75, borderTop: "1px solid #cfd8e3" }}>
+        <MDButton
+          variant="outlined"
+          color="info"
+          size="small"
+          onClick={handleAddItemRow}
+          sx={{ fontSize: 12, minWidth: 82, height: 28, px: 1.5 }}
+        >
+          + 행 추가
+        </MDButton>
+        <MDButton
+          variant="outlined"
+          color="error"
+          size="small"
+          onClick={handleRemoveItemRow}
+          disabled={items.length <= 1}
+          sx={{ fontSize: 12, minWidth: 82, height: 28, px: 1.5 }}
+        >
+          - 행 삭제
+        </MDButton>
       </MDBox>
 
       {/* 구매 품목 전체에 적용되는 요청 사유 영역 */}
@@ -483,12 +756,24 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
         </MDBox>
       </MDBox>
 
+      </Card>
+
+      {/* 작성 중 개인구매 영수증 미리보기 팝업 */}
+      <PreviewOverlay
+        open={receiptPreviewOpen}
+        files={receiptPreviewList}
+        currentIndex={receiptPreviewIndex}
+        onChangeIndex={setReceiptPreviewIndex}
+        onClose={() => setReceiptPreviewOpen(false)}
+        anchorX={1 / 3}
+      />
+
       {/* 로그인 사용자가 직접 기안한 구매요청서 목록과 상세를 보여주는 모달 */}
       <Modal open={historyOpen} onClose={() => setHistoryOpen(false)}>
         <Box sx={historyModalSx(isMobile)}>
           <MDBox sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 1.5 }}>
             <MDBox sx={{ fontSize: 17, fontWeight: 800, color: "#1f4e79" }}>
-              구매요청서 요청내역
+              요청내역
             </MDBox>
             <MDBox sx={{ display: "flex", gap: 1 }}>
               {selectedHistory && (
@@ -528,14 +813,16 @@ function PurchaseRequestHistoryList({ rows, loading, onSelect }) {
     <MDBox sx={{ overflowX: "auto", maxHeight: "65vh", overflowY: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 960, tableLayout: "fixed" }}>
         <colgroup>
-          <col style={{ width: "19%" }} />
-          <col style={{ width: "15%" }} />
-          <col style={{ width: "15%" }} />
-          <col style={{ width: "13%" }} />
-          <col style={{ width: "38%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "32%" }} />
         </colgroup>
         <thead>
           <tr>
+            <th style={historyThCell}>구분</th>
             <th style={historyThCell}>문서번호</th>
             <th style={historyThCell}>기안일자</th>
             <th style={historyThCell}>시행일자</th>
@@ -545,11 +832,12 @@ function PurchaseRequestHistoryList({ rows, loading, onSelect }) {
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td style={historyEmptyCell} colSpan={5}>상신한 구매요청서가 없습니다.</td></tr>
+            <tr><td style={historyEmptyCell} colSpan={6}>상신한 문서가 없습니다.</td></tr>
           ) : rows.map((row, index) => {
             const rejectReason = getHistoryRejectReasonText(row);
             return (
               <tr key={`${row.payment_id}-${index}`} onClick={() => onSelect(row)} style={{ cursor: "pointer" }}>
+                <td style={historyTdCell}>{getPurchaseTypeLabel(row.doc_type || row.payment_id)}</td>
                 <td style={historyTdLink}>{row.payment_id || "-"}</td>
                 <td style={historyTdCell}>{row.draft_dt || "-"}</td>
                 <td style={historyTdCell}>{row.start_dt || "-"}</td>
@@ -625,7 +913,26 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
   const rejectedStageIndex = approvalStages.findIndex(
     (stage) => String(mainRow?.[stage.signKey] || "") === "3"
   );
+  // 개인구매(FR)는 이미 구매한 건이므로 예산포함/구매진행/구매여부 컬럼 대신 첨부 영수증을 보여준다.
+  const isPersonalPurchaseDetail =
+    String(mainRow?.doc_type || detail?.payment_id || "").trim().toUpperCase().startsWith(FR_DOC_TYPE);
   const items = Array.isArray(detail?.items) ? detail.items : [];
+  // 개인구매 영수증 썸네일 카드 - n번째 카드가 n번째 품목의 영수증
+  const receiptCards = useMemo(
+    () => (isPersonalPurchaseDetail ? toSavedReceiptCards(detail?.files, localStorage.getItem("user_id") || "") : []),
+    [isPersonalPurchaseDetail, detail?.files]
+  );
+  const receiptPreviewList = useMemo(() => receiptCards.filter(isPreviewableReceiptCard), [receiptCards]);
+  // 영수증 미리보기 팝업 열림 여부와 현재 보고 있는 파일 위치
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const [receiptPreviewIndex, setReceiptPreviewIndex] = useState(0);
+  // 썸네일 클릭 시 해당 영수증부터 미리보기 열기
+  const openReceiptPreview = (card) => {
+    const idx = receiptPreviewList.findIndex((c) => c.key === card?.key);
+    if (idx < 0) return;
+    setReceiptPreviewIndex(idx);
+    setReceiptPreviewOpen(true);
+  };
   const paymentNoteRow = items.find((row) => String(getHistoryItemValue(row, "payment_note")).trim());
   const paymentNote = getHistoryItemValue(paymentNoteRow, "payment_note") || "-";
   const total = items.reduce((sum, row) => {
@@ -649,7 +956,7 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
       {loading ? <MDBox sx={{ py: 5, textAlign: "center" }}>조회 중...</MDBox> : (
         <>
           <MDBox sx={{ mb: 1, fontSize: 13, fontWeight: 700 }}>
-            문서번호: {detail.payment_id}
+            [{getPurchaseTypeLabel(mainRow?.doc_type || detail.payment_id)}] 문서번호: {detail.payment_id}
           </MDBox>
 
           {/* 결재 진행상황 - 단계별 상태는 그대로(결재/반려/검토중/결재대기),
@@ -718,7 +1025,11 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1080 }}>
               <thead>
                 <tr>
-                  {["No", "품목명", "수량", "금액(원)", "사용처/용도", "결제 업체명", "구매링크", "비고", "예산포함여부", "구매진행여부", "구매여부"].map((label) => (
+                  {[
+                    "No", "품목명", "수량", "금액(원)", "사용처/용도", "결제 업체명",
+                    isPersonalPurchaseDetail ? "영수증" : "구매링크", "비고",
+                    ...(isPersonalPurchaseDetail ? [] : ["예산포함여부", "구매진행여부", "구매여부"]),
+                  ].map((label) => (
                     <th key={label} style={historyThCell}>{label}</th>
                   ))}
                 </tr>
@@ -735,7 +1046,12 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
                     <td style={historyTdCell}>{getHistoryItemValue(row, "use_note") || "-"}</td>
                     <td style={historyTdCell}>{getHistoryItemValue(row, "use_name") || "-"}</td>
                     <td style={{ ...historyTdCell, maxWidth: 220 }}>
-                      {getHistoryItemValue(row, "link") ? (
+                      {/* 개인구매는 링크 대신 해당 품목의 영수증 썸네일 표시 */}
+                      {isPersonalPurchaseDetail ? (
+                        receiptCards[index] ? (
+                          <ReceiptThumbnail card={receiptCards[index]} onOpen={openReceiptPreview} />
+                        ) : "-"
+                      ) : getHistoryItemValue(row, "link") ? (
                         <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
                           <LinkClampText value={getHistoryItemValue(row, "link")} />
                           <MDButton
@@ -751,6 +1067,8 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
                       ) : "-"}
                     </td>
                     <td style={historyTdCell}>{getHistoryItemValue(row, "note") || "-"}</td>
+                    {!isPersonalPurchaseDetail && (
+                    <>
                     <td style={historyTdCell}>
                       <MDBox component="span" sx={getDecisionYnBadgeSx(getHistoryItemValue(row, "budget_yn"))}>
                         {isHistoryYnTrue(getHistoryItemValue(row, "budget_yn")) ? "포함" : "미포함"}
@@ -766,6 +1084,8 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
                         {isHistoryYnTrue(getHistoryItemValue(row, "buy_yn")) ? "구매" : "미구매"}
                       </MDBox>
                     </td>
+                    </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -791,6 +1111,15 @@ function PurchaseRequestHistoryDetail({ detail, loading }) {
           >
             {paymentNote}
           </MDBox>
+          {/* 개인구매 영수증 미리보기 팝업 */}
+          <PreviewOverlay
+            open={receiptPreviewOpen}
+            files={receiptPreviewList}
+            currentIndex={receiptPreviewIndex}
+            onChangeIndex={setReceiptPreviewIndex}
+            onClose={() => setReceiptPreviewOpen(false)}
+            anchorX={1 / 3}
+          />
         </>
       )}
     </MDBox>
@@ -807,6 +1136,7 @@ PurchaseRequestHistoryDetail.propTypes = {
   detail: PropTypes.shape({
     payment_id: PropTypes.string,
     items: PropTypes.arrayOf(PropTypes.object),
+    files: PropTypes.arrayOf(PropTypes.object),
     main: PropTypes.object,
   }).isRequired,
   loading: PropTypes.bool.isRequired,

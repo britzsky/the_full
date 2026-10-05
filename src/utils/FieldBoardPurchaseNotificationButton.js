@@ -17,10 +17,10 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest }) {
   const userId = String(localStorage.getItem("user_id") ?? "").trim();
   // 알림 메뉴의 표시 위치와 열림 상태를 관리하는 기준 요소
   const [anchorEl, setAnchorEl] = useState(null);
-  // 로그인 영양사가 작성한 FP 구입요청서의 미확인 승인·반려 알림 목록
+  // 로그인 영양사가 작성한 FP(온라인구매)/FR(개인구매) 구입요청서의 미확인 승인·반려 알림 목록
   const [notifications, setNotifications] = useState([]);
 
-  // 전자결재 알림에서 FP 문서번호의 승인·반려 결과만 추려 표시한다.
+  // 전자결재 알림에서 FP/FR 문서번호의 승인·반려 결과만 추려 표시한다.
   const fetchNotifications = useCallback(async () => {
     if (!userId) {
       setNotifications([]);
@@ -30,14 +30,16 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest }) {
     try {
       // 공통 전자결재 알림과 동일한 호출 방식으로 조회해 실행 중인 기존 백엔드와도 호환한다.
       const response = await api.get("/HeadOffice/ElectronicPaymentNotificationList", {
-        params: { user_id: userId, doc_type: "FP" },
+        // 문서타입 필터는 단일 값만 받으므로 생략하고 아래에서 문서번호 접두어로 거른다.
+        params: { user_id: userId },
       });
       const rows = Array.isArray(response.data) ? response.data : [];
       setNotifications(
         rows.filter((row) => {
           const paymentId = String(row?.payment_id ?? "").trim().toUpperCase();
           const notifyType = String(row?.notify_type ?? "").trim();
-          return paymentId.startsWith("FP-") && ["승인", "반려"].includes(notifyType);
+          const isPurchaseRequestDoc = paymentId.startsWith("FP-") || paymentId.startsWith("FR-");
+          return isPurchaseRequestDoc && ["승인", "반려"].includes(notifyType);
         })
       );
     } catch (error) {

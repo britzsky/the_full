@@ -33,6 +33,7 @@ const ItemRow = React.memo(function ItemRow({
   gridInputStyle,
   td2Cell,
   td2CellCenter,
+  renderLinkCell,
 }) {
   const handleChangeItem =
     typeof onChangeLocalItem === "function"
@@ -177,6 +178,8 @@ const ItemRow = React.memo(function ItemRow({
       </td>
 
       <td style={td2Cell}>
+        {/* 링크 칸 대체 렌더 함수가 있으면 그 내용(예: 개인구매 영수증)을 대신 표시 */}
+        {typeof renderLinkCell === "function" ? renderLinkCell(row, idx) : (
         <MDBox sx={{ display: "flex", gap: 1, alignItems: "center" }}>
           <TextField
             size="small"
@@ -202,6 +205,7 @@ const ItemRow = React.memo(function ItemRow({
             열기
           </MDButton>
         </MDBox>
+        )}
       </td>
 
       <td style={td2Cell}>
@@ -238,6 +242,14 @@ ItemRow.propTypes = {
   gridInputStyle: PropTypes.object.isRequired,
   td2Cell: PropTypes.object.isRequired,
   td2CellCenter: PropTypes.object.isRequired,
+  renderLinkCell: PropTypes.func,
+};
+
+ItemRow.defaultProps = {
+  onChangeLocalItem: null,
+  onChangeItem: null,
+  onBlurItem: null,
+  renderLinkCell: null,
 };
 
 function normalizeItemRow(row, idx) {
@@ -312,6 +324,7 @@ function ExpendableWriteDocumentForm({
   th2Cell,
   td2Cell,
   td2CellCenter,
+  renderLinkCell,
 }) {
   const normalizedItems = useMemo(() => normalizeItems(items), [items]);
   const [localItems, setLocalItems] = useState(normalizedItems);
@@ -416,6 +429,7 @@ function ExpendableWriteDocumentForm({
                 gridInputStyle={gridInputStyle}
                 td2Cell={td2Cell}
                 td2CellCenter={td2CellCenter}
+                renderLinkCell={renderLinkCell}
               />
             ))}
           </tbody>
@@ -447,6 +461,15 @@ ExpendableWriteDocumentForm.propTypes = {
   th2Cell: PropTypes.object.isRequired,
   td2Cell: PropTypes.object.isRequired,
   td2CellCenter: PropTypes.object.isRequired,
+  // 링크 칸을 다른 내용으로 대신 그릴 때 사용하는 함수 (row, idx) => node
+  renderLinkCell: PropTypes.func,
+};
+
+ExpendableWriteDocumentForm.defaultProps = {
+  setItems: null,
+  onItemsBufferChange: null,
+  onChangeItem: null,
+  renderLinkCell: null,
 };
 
 export default React.memo(ExpendableWriteDocumentForm);

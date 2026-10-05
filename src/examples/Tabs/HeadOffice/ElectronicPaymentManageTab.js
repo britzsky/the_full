@@ -23,6 +23,9 @@ const EXPENDABLE_SPECIAL_USER_ID = "iy1";
 // 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID
 // - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자는 실제 구매완료 여부(구매여부)만 체크한다.
 const FP_BUY_YN_USER_ID = "sh9";
+// 현장 구매요청서 문서타입 - FP: 온라인구매, FR: 개인구매(영수증 첨부 후결재)
+// - 두 타입 모두 거래처 매핑 관리자(1차) → 같은 부서 팀장(2차) 결재 흐름을 사용한다.
+const FIELD_PURCHASE_DOC_TYPES = ["FP", "FR"];
 const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
   largeType: "공통",
   middleType: "결의서",
@@ -34,6 +37,11 @@ const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
 // 공백/undefined 안전 문자열 변환
 function asText(v) {
   return String(v ?? "").trim();
+}
+
+// 현장 구매요청서(FP/FR) 문서타입인지 판정
+function isFieldPurchaseDocType(docType) {
+  return FIELD_PURCHASE_DOC_TYPES.includes(asText(docType).toUpperCase());
 }
 
 // DB 결재 상태 코드(2/3/4)를 화면 문구로 변환
@@ -67,8 +75,8 @@ function toPositionText(positionCode) {
 // - 1: 팀장
 // - 2: 결재자
 function getRequiredRolesByDocPosition(pos, docType, docTypeList) {
-  // 현장 구매요청서(FP)는 매핑 관리자와 같은 부서 팀장까지 2단계 결재한다.
-  if (asText(docType).toUpperCase() === "FP") return ["tm", "payer"];
+  // 현장 구매요청서(FP/FR)는 매핑 관리자와 같은 부서 팀장까지 2단계 결재한다.
+  if (isFieldPurchaseDocType(docType)) return ["tm", "payer"];
   // 소모품 구매 품의서는 결재자 1명(고정)만 사용한다.
   // position 값과 무관하게 payer 단계만 남긴다.
   if (isDocKind(docType, docTypeList, DOC_KIND.EXPENDABLE)) return ["payer"];
@@ -274,8 +282,8 @@ function getSignTextByUser(signValue, approverUserId) {
 // - 승인완료/반려는 "완료"
 // - 그 외는 "결재 중"
 function isCompletedRow(row, docTypeList) {
-  // FP는 과거 저장 상태값보다 현재 1·2차 결재선의 실제 진행상태를 우선한다.
-  if (asText(row?.doc_type).toUpperCase() === "FP") {
+  // FP/FR은 과거 저장 상태값보다 현재 1·2차 결재선의 실제 진행상태를 우선한다.
+  if (isFieldPurchaseDocType(row?.doc_type)) {
     const fpStatusText = getRowProgressStatusText(row, docTypeList);
     return fpStatusText === "승인완료" || fpStatusText.includes("반려");
   }
@@ -1464,6 +1472,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
                   buyYnSavingIdx={buyYnSavingIdx}
                   onToggleBuyYn={handleToggleBuyYn}
                   showFpColumns={isFieldPurchaseRequestDetail}
+                  showAttachments={asText(detailMain?.doc_type).toUpperCase() === "FR"}
                   editableFpDecisionFields={canEditFpDecisionFields}
                   fpDraftMap={fpItemDraftMap}
                   fpFieldsDisabled={saving}

@@ -4,6 +4,8 @@ import { Tooltip } from "@mui/material";
 
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
+import PreviewOverlay from "utils/PreviewOverlay";
+import ReceiptThumbnail, { isPreviewableReceiptCard, toSavedReceiptCards } from "./ReceiptThumbnail";
 
 // 구매링크를 5줄까지만 보여주고, 실제로 잘렸을 때만 호버 시 전체 내용을 툴팁으로 노출한다.
 function LinkClampText({ value }) {
@@ -132,6 +134,9 @@ const nativeCheckboxCenterStyle = {
 // - 결재 라인/결재 처리 표는 상위 ManageTab에서 공통 렌더
 function ExpendableDetailModalContent({
   detailItems,
+  detailFiles,
+  viewerUserId,
+  showAttachments,
   asText,
   sectionSx,
   sectionTitleSx,
@@ -195,6 +200,26 @@ function ExpendableDetailModalContent({
 
   const extraColumnCount = (showBuyYnColumn ? 1 : 0) + (showFpColumns ? 2 : 0);
 
+  // 개인구매(FR) 영수증 썸네일 카드 - n번째 카드가 n번째 품목의 영수증
+  const receiptCards = useMemo(
+    () => (showAttachments ? toSavedReceiptCards(detailFiles, viewerUserId) : []),
+    [showAttachments, detailFiles, viewerUserId]
+  );
+  const receiptPreviewList = useMemo(() => receiptCards.filter(isPreviewableReceiptCard), [receiptCards]);
+  // 영수증 미리보기 팝업 열림 여부와 현재 보고 있는 파일 위치
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const [receiptPreviewIndex, setReceiptPreviewIndex] = useState(0);
+  // 썸네일 클릭 시 해당 영수증부터 미리보기 열기
+  const openReceiptPreview = useCallback(
+    (card) => {
+      const idx = receiptPreviewList.findIndex((c) => c.key === card?.key);
+      if (idx < 0) return;
+      setReceiptPreviewIndex(idx);
+      setReceiptPreviewOpen(true);
+    },
+    [receiptPreviewList]
+  );
+
   return (
     <>
       <MDBox sx={sectionSx}>
@@ -230,7 +255,7 @@ function ExpendableDetailModalContent({
                 <th style={th2Cell}>금액</th>
                 <th style={th2Cell}>사용처/용도</th>
                 <th style={th2Cell}>결제 업체명</th>
-                <th style={th2Cell}>링크</th>
+                <th style={th2Cell}>{showAttachments ? "영수증" : "링크"}</th>
                 <th style={th2Cell}>비고</th>
                 {showFpColumns && <th style={th2Cell}>예산포함여부</th>}
                 {showFpColumns && <th style={th2Cell}>구매진행여부</th>}
@@ -265,7 +290,14 @@ function ExpendableDetailModalContent({
                       <td style={td2CellWrap}>{asText(it.use_note) || "-"}</td>
                       <td style={td2CellWrap}>{asText(it.use_name) || "-"}</td>
                       <td style={{ ...td2CellLink, maxWidth: 220 }}>
-                        {asText(it.link) ? (
+                        {/* 개인구매는 링크 대신 해당 품목의 영수증 썸네일 표시 */}
+                        {showAttachments ? (
+                          receiptCards[idx] ? (
+                            <ReceiptThumbnail card={receiptCards[idx]} onOpen={openReceiptPreview} />
+                          ) : (
+                            "-"
+                          )
+                        ) : asText(it.link) ? (
                           <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>
                             <LinkClampText value={asText(it.link)} />
                             <MDButton
@@ -376,6 +408,16 @@ function ExpendableDetailModalContent({
         <MDBox sx={sectionTitleSx}>요청 사유</MDBox>
         <MDBox sx={requestNoteBodySx}>{paymentNoteText}</MDBox>
       </MDBox>
+
+      {/* 개인구매 영수증 미리보기 팝업 */}
+      <PreviewOverlay
+        open={receiptPreviewOpen}
+        files={receiptPreviewList}
+        currentIndex={receiptPreviewIndex}
+        onChangeIndex={setReceiptPreviewIndex}
+        onClose={() => setReceiptPreviewOpen(false)}
+        anchorX={1 / 3}
+      />
     </>
   );
 }
@@ -383,6 +425,9 @@ function ExpendableDetailModalContent({
 // ManageTab에서 넘겨주는 공통 스타일/데이터 계약 정의
 ExpendableDetailModalContent.propTypes = {
   detailItems: PropTypes.arrayOf(PropTypes.object).isRequired,
+  detailFiles: PropTypes.arrayOf(PropTypes.object),
+  viewerUserId: PropTypes.string,
+  showAttachments: PropTypes.bool,
   asText: PropTypes.func.isRequired,
   sectionSx: PropTypes.object.isRequired,
   sectionTitleSx: PropTypes.object.isRequired,
@@ -404,6 +449,9 @@ ExpendableDetailModalContent.propTypes = {
 };
 
 ExpendableDetailModalContent.defaultProps = {
+  detailFiles: [],
+  viewerUserId: "",
+  showAttachments: false,
   showBuyYnColumn: false,
   editableBuyYn: false,
   buyYnSavingIdx: "",

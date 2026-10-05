@@ -64,6 +64,8 @@ function detectDocKindByName(docName) {
   if (name.includes("기안서")) return DOC_KIND.DRAFT;
   if (name.includes("지출결의서")) return DOC_KIND.PAYMENT;
   if (name.includes("구매요청서")) return DOC_KIND.PAYMENT;
+  // 현장 개인구매 결의서(FR)도 구매요청서(FP)와 같은 문서종류로 처리
+  if (name.includes("개인구매")) return DOC_KIND.PAYMENT;
   return DOC_KIND.UNKNOWN;
 }
 

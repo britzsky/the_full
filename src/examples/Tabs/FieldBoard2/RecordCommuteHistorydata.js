@@ -29,8 +29,9 @@ export default function useRecordCommuteHistoryData() {
 
   // ✅ 출퇴근 기록 목록 조회 - account_id만 넘기고 user_name을 생략하면 그 업장 전체 인원의
   //    기록을 한 번에 받아온다(업장별 출퇴근 기록 탭에서 사용). account_id까지 생략하면 전체 업장.
-  const fetchRecordList = useCallback(async (params) => {
-    setLoading(true);
+  //    silent=true면 화면 로딩 상태를 바꾸지 않는다(엑셀 다운로드용 일괄 조회).
+  const fetchRecordList = useCallback(async (params, { silent = false } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get("/Account/CommuteRecordList", { params });
       return Array.isArray(res.data) ? res.data : [];
@@ -38,7 +39,30 @@ export default function useRecordCommuteHistoryData() {
       console.error("출퇴근 기록 조회 실패:", e);
       return [];
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  // 출근부 인원(직원/파출)의 휴대폰 뒷자리 4자리 목록 조회 - 출퇴근 기록과 이름+뒷자리 매칭용
+  const fetchMemberPhoneList = useCallback(async (params) => {
+    try {
+      const res = await api.get("/Account/CommuteMemberPhoneList", { params });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (e) {
+      console.error("휴대폰 뒷자리 조회 실패:", e);
+      return [];
+    }
+  }, []);
+
+  // 출근부(recordsheet)에 입력된 업장 인원별 일자 근무타입/시간을 조회하는 함수
+  //    응답은 직원 × 일자 1행(long 형태)이며 record_date는 일(day) 숫자다.
+  const fetchRecordSheetList = useCallback(async (params) => {
+    try {
+      const res = await api.get("/Account/AccountRecordSheetList", { params });
+      return Array.isArray(res.data) ? res.data : [];
+    } catch (e) {
+      console.error("출근부 조회 실패:", e);
+      return [];
     }
   }, []);
 
@@ -47,5 +71,7 @@ export default function useRecordCommuteHistoryData() {
     loading,
     fetchAccountList,
     fetchRecordList,
+    fetchRecordSheetList,
+    fetchMemberPhoneList,
   };
 }

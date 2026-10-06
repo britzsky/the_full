@@ -36,6 +36,18 @@ import usePeopleCountingData, { formatNumber } from "./accountMappingPurchaseDat
 // ✅ 새 연도 히트맵 훅
 import useAccountMappingPurchaseYearData from "./accountMappingPurchaseYeartData";
 
+// 아워홈(type 1042) 행을 삼성웰스토리(주) 바로 아래로 옮기는 정렬 보정 함수
+const placeOurhomeBelowWelstory = (rows) => {
+  const ourhomeIdx = rows.findIndex((r) => String(r.type ?? "") === "1042");
+  if (ourhomeIdx < 0) return rows;
+  const next = [...rows];
+  const [ourhome] = next.splice(ourhomeIdx, 1);
+  const welstoryIdx = next.findIndex((r) => String(r.name ?? "").trim() === "삼성웰스토리(주)");
+  if (welstoryIdx < 0) return rows;
+  next.splice(welstoryIdx + 1, 0, ourhome);
+  return next;
+};
+
 export default function PeopleCountingTab() {
   const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   const today = dayjs();
@@ -57,6 +69,15 @@ export default function PeopleCountingTab() {
   useEffect(() => {
     if (mode === "MONTH_COMPARE") fetchPeopleCountingList();
   }, [mode, year, month]);
+
+  // 월 비교 그래프에 표시할 거래처 수(999는 전체)
+  const [monthTopN, setMonthTopN] = useState(10);
+
+  // 월 비교 막대그래프 데이터(당월 매출순 + 아워홈 위치 보정 후 상위 N개)
+  const monthChartData = useMemo(() => {
+    const rows = placeOurhomeBelowWelstory(chartData);
+    return monthTopN === 999 ? rows : rows.slice(0, monthTopN);
+  }, [chartData, monthTopN]);
 
   const diff = useMemo(() => currentTotal - prevTotal, [currentTotal, prevTotal]);
   const diffRate = useMemo(() => {
@@ -129,6 +150,7 @@ export default function PeopleCountingTab() {
       const key = `m${sortMonth}`;
       rows = [...rows].sort((a, b) => (b[key] ?? 0) - (a[key] ?? 0));
     }
+    rows = placeOurhomeBelowWelstory(rows);
 
     // Top N
     if (topN !== 999) rows = rows.slice(0, topN);
@@ -202,6 +224,16 @@ export default function PeopleCountingTab() {
             ))}
           </Select>
         )}
+
+        {/* 월 비교 그래프 표시 거래처 수 선택 */}
+        {mode === "MONTH_COMPARE" && (
+          <Select value={monthTopN} onChange={(e) => setMonthTopN(Number(e.target.value))} size="small">
+            <MenuItem value={10}>Top 10</MenuItem>
+            <MenuItem value={20}>Top 20</MenuItem>
+            <MenuItem value={30}>Top 30</MenuItem>
+            <MenuItem value={999}>전체</MenuItem>
+          </Select>
+        )}
       </MDBox>
 
       {/* =========================
@@ -256,7 +288,7 @@ export default function PeopleCountingTab() {
 
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={chartData}
+                  data={monthChartData}
                   margin={{ top: 10, right: 20, left: 0, bottom: 100 }}
                   barCategoryGap={2}
                   barGap={0}
@@ -270,7 +302,7 @@ export default function PeopleCountingTab() {
                     height={100}
                     tick={{ fontSize: 12 }}
                   />
-                  <YAxis tickFormatter={(v) => formatNumber(v)} />
+                  <YAxis width={100} tickFormatter={(v) => formatNumber(v)} />
                   <Tooltip formatter={(v) => formatNumber(v)} />
                   <Legend />
                   <Bar dataKey="prev" name="전월" fill="#90A4AE" maxBarSize={16} />

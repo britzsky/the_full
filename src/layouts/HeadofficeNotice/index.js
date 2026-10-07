@@ -233,6 +233,15 @@ function HeadofficeNotice() {
     });
     if (!confirm.isConfirmed) return;
 
+    // 저장·첨부파일 업로드 진행 중 로딩 팝업 (완료/실패 팝업이 뜨면 자동으로 교체됨)
+    Swal.fire({
+      title: editIdx ? "수정 중 입니다." : "등록 중 입니다.",
+      text: "잠시만 기다려 주세요...",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => Swal.showLoading(),
+    });
+
     const result = await saveNotice({
       editIdx,
       title: formTitle.trim(),

@@ -778,11 +778,10 @@ export default function ProfitLossTableTab() {
   }, [selectedAccountId, year, today]);
 
   // ✅ 인건비 셀 우클릭 핸들러 (과거 월이면 항상 메뉴 표시)
-  // ✅ 인건비 수정 권한 여부 (user_id: bh4, iy1 또는 department: 6)
+  // ✅ 인건비 수정 권한 여부 (department: 3 인사팀, 6)
   const hasPersonCostEditPermission = useMemo(() => {
-    const userId = localStorage.getItem("user_id") || "";
     const department = localStorage.getItem("department") || "";
-    return ["bh4", "iy1"].includes(userId) || department === "6";
+    return ["3", "6"].includes(department);
   }, []);
 
   const handlePersonCostContextMenu = useCallback((e, row) => {

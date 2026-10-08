@@ -113,15 +113,16 @@ const toMinutes = (timeStr) => {
 // 비교 결과별 셀 배경색과 표시 문구
 const STATUS_STYLE = {
   late: { bg: "#ffd6d6", color: "#c62828", label: "지각" },
-  early: { bg: "#ffe9cc", color: "#e65100", label: "조퇴" },
+  early: { bg: "#ffe9cc", color: "#e65100", label: "일찍 퇴근" },
   missing: { bg: "#fff6c2", color: "#8d6e00", label: "미기록" },
-  mismatch: { bg: "#ead9ff", color: "#6a1b9a", label: "출근부 불일치" },
+  mismatch: { bg: "#ead9ff", color: "#6a1b9a", label: "이력없음" },
 };
 
 // 출근부 셀(sheet)과 출퇴근 기록(commute)을 비교해 문제 목록을 반환하는 함수
 //    - 출근부 근무타입인데 기록 없음 -> 미기록 (오늘 이후 날짜는 제외)
-//    - 출근부가 비었거나 휴무/결근 타입인데 기록 있음 -> 출근부 불일치
-//    - 기록 출근시간 > 출근부 시작시간 -> 지각 / 기록 퇴근시간 < 출근부 종료시간 -> 조퇴
+//    - 출근부가 비었거나 휴무/결근 타입인데 기록 있음 -> 이력없음
+//    - 기록 출근시간 > 출근부 시작시간 -> 지각 / 기록 퇴근시간 < 출근부 종료시간 -> 일찍 퇴근
+//    - 정시이거나 일찍 출근·늦게 퇴근한 경우는 정상
 const compareDay = (sheet, commute, isFuture) => {
   const type = String(sheet?.type ?? "");
   const isWork = WORK_TYPES.has(type);
@@ -161,7 +162,7 @@ const phoneKeyOf = (gubun, accountId, memberId) =>
 //    반환값
 //    - commutePersons: 위쪽 표 행 (출퇴근 기록 인원, 짝지어진 출근부 셀 sheet 포함)
 //    - sheetPersons: 아래쪽 표 행 (출근부 인원, 짝지어진 출퇴근 기록 commuteDays 포함)
-//    - personSummary: 사람별 지각/조퇴/미기록/불일치 건수
+//    - personSummary: 사람별 지각/일찍 퇴근/미기록/이력없음 건수
 const buildCommuteComparison = ({ commuteRows, sheetRows, phoneMap, year, month, todayKey }) => {
   const viewMonthStart = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
   const daysInMonth = viewMonthStart.daysInMonth();
@@ -418,7 +419,7 @@ function RecordCommuteHistoryTab() {
 
   // 엑셀 다운로드 실행 함수 (scope: "account" 선택 업장 / "all" 업장 전체)
   //    1번 시트: 업장별 출퇴근 기록 + 출근부 달력 (손익표 "거래처 전체"처럼 업장을 위에서 아래로 이어 붙임)
-  //    2번 시트: 업장별 사람별 지각/조퇴/미기록/불일치 건수
+  //    2번 시트: 업장별 사람별 지각/일찍 퇴근/미기록/이력없음 건수
   const handleExcelDownload = async (scope) => {
     if (!selectedAccountId) return;
     setExcelLoading(true);
@@ -557,9 +558,10 @@ function RecordCommuteHistoryTab() {
           if (WORK_TYPES.has(type)) {
             lines.push(formatHM(cell?.start_time) || "출근", formatHM(cell?.end_time) || "퇴근");
           }
-          if (compareDay(cell, p.commuteDays[d], comp.isFuture(d)).length > 0) {
-            lines.push("불일치");
-          }
+          // 출퇴근 기록과 비교한 판정 문구 (지각/일찍 퇴근/미기록/이력없음)
+          compareDay(cell, p.commuteDays[d], comp.isFuture(d)).forEach((i) => {
+            lines.push(STATUS_STYLE[i.key].label);
+          });
           return { text: lines.join("\n"), bg: TYPE_COLORS[type] || DEFAULT_CELL_BG };
         });
       });
@@ -570,10 +572,10 @@ function RecordCommuteHistoryTab() {
         { header: "업장명", width: 24 },
         { header: "직원명", width: 12 },
         { header: "휴대폰 뒷자리", width: 14 },
-        { header: "지각", width: 8 },
-        { header: "조퇴", width: 8 },
-        { header: "미기록", width: 8 },
-        { header: "불일치", width: 8 },
+        { header: STATUS_STYLE.late.label, width: 8 },
+        { header: STATUS_STYLE.early.label, width: 10 },
+        { header: STATUS_STYLE.missing.label, width: 8 },
+        { header: STATUS_STYLE.mismatch.label, width: 10 },
       ];
       ws2.getRow(1).eachCell((c) => {
         c.font = { bold: true };
@@ -887,7 +889,7 @@ function RecordCommuteHistoryTab() {
             </MDTypography>
           </MDBox>
 
-          {/* 위쪽: 모바일 출퇴근 앱 기록 달력 (출근부와 비교한 지각/조퇴/불일치 표시) */}
+          {/* 위쪽: 모바일 출퇴근 앱 기록 달력 (출근부와 비교한 지각/일찍 퇴근/이력없음 표시) */}
           <MDBox pt={2}>
             {displayRows.length === 0 ? (
               <MDTypography variant="button" color="text">
@@ -928,7 +930,7 @@ function RecordCommuteHistoryTab() {
                                     퇴 {formatHM(record.end_time)}
                                   </MDTypography>
                                 )}
-                                {/* 출근부와 비교한 문제 표시 (지각/조퇴는 차이 분 포함) */}
+                                {/* 출근부와 비교한 문제 표시 (지각/일찍 퇴근은 차이 분 포함) */}
                                 {issues.map((i) => (
                                   <MDTypography
                                     key={i.key}
@@ -988,10 +990,12 @@ function RecordCommuteHistoryTab() {
                         {dayHeaders.map(({ dayNum }) => {
                           const cell = row.cells[dayNum];
                           const type = String(cell?.type ?? "");
-                          // 출퇴근 기록과 맞지 않는 날(미기록/지각/조퇴/불일치)은 "불일치"로만 표시
-                          const hasIssue =
-                            compareDay(cell, row.commuteDays[dayNum], isFutureDay(dayNum)).length >
-                            0;
+                          // 출퇴근 기록과 비교한 판정 목록 (상단 범례 집계와 같은 기준)
+                          const issues = compareDay(
+                            cell,
+                            row.commuteDays[dayNum],
+                            isFutureDay(dayNum)
+                          );
                           return (
                             <td key={dayNum} style={{ padding: "2px" }}>
                               {/* 근무타입별 배경색 셀 (recordsheet AttendanceCell과 동일 색상) */}
@@ -1011,17 +1015,19 @@ function RecordCommuteHistoryTab() {
                                     <span>{formatHM(cell?.end_time) || "퇴근"}</span>
                                   </>
                                 )}
-                                {hasIssue && (
+                                {/* 판정별 문구 (지각/일찍 퇴근/미기록/이력없음) */}
+                                {issues.map((i) => (
                                   <span
+                                    key={i.key}
                                     style={{
-                                      color: STATUS_STYLE.mismatch.color,
+                                      color: STATUS_STYLE[i.key].color,
                                       fontSize: "0.64rem",
                                       fontWeight: "bold",
                                     }}
                                   >
-                                    불일치
+                                    {STATUS_STYLE[i.key].label}
                                   </span>
-                                )}
+                                ))}
                               </div>
                             </td>
                           );

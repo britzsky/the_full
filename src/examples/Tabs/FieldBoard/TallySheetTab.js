@@ -95,7 +95,7 @@ const isPdfFileLike = (value) => {
     return type.includes("pdf") || name.endsWith(".pdf");
   }
   const s = String(value).toLowerCase();
-  return s.startsWith("data:application/pdf") || /\.pdf($|[?#])/i.test(s);
+  return s.startsWith("data:application/pdf") || /\.pdf($|[?#&])/i.test(s);
 };
 
 const extractDisplayFileName = (value) => {
@@ -744,6 +744,8 @@ function TallySheet() {
     if (s.startsWith("blob:")) return s;
     if (s.startsWith("http")) return s;
     if (s.startsWith("data:")) return s;
+    // 이미 미리보기 API URL로 변환된 값(상대경로 /api 포함)은 그대로 사용
+    if (s.includes("/Account/AccountStoredFileView")) return s;
     return toAbsolutePreviewUrl(s);
   }, [toAbsolutePreviewUrl]);
 
@@ -3472,9 +3474,11 @@ function TallySheet() {
 
                 const yForRow = isSecond ? prevYear : year;
                 const mForRow = isSecond ? prevMonth : month;
+                // 집계표에서 직접 입력하지 않는 타입 (1008 개인구매: 구매요청 후첨 → 개인구매 관리에서만 입력)
                 const rowLocked =
                   !isTotalRow &&
-                  (isTypeLocked(yForRow, mForRow, rowType) || ["1", "2", "3", "4"].includes(rowType));
+                  (isTypeLocked(yForRow, mForRow, rowType) ||
+                    ["1", "2", "3", "4", "1002", "1003", "1008"].includes(rowType));
 
                 // ✅ 포인트 색상 계산(여기서!)
                 const dayNo = isBaseCell ? Number(String(colKey).replace("day_", "")) : null;

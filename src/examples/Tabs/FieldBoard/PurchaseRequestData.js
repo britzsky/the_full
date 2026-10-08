@@ -16,10 +16,12 @@ const PAYMENT_SAVE_API = "/HeadOffice/ElectronicPaymentSave";
 const MANAGE_LIST_API = "/HeadOffice/ElectronicPaymentManageList";
 // 구매요청서 상세 조회 API
 const MANAGE_DETAIL_API = "/HeadOffice/ElectronicPaymentManageDetail";
+// 최종 승인된 개인구매 품목의 구매일자·영수증 후첨 저장 API (저장 시 개인구매 관리에 반영)
+const PERSON_PURCHASE_RECEIPT_SAVE_API = "/FieldBoard/PersonPurchaseReceiptSave";
 
 // 온라인구매(FP) 문서 타입 코드 (tb_electronic_payment_type.doc_type)
 export const FP_DOC_TYPE = "FP";
-// 개인구매(FR) 문서 타입 코드 - 먼저 구매 후 영수증을 첨부해 올리는 후결재 문서
+// 개인구매(FR) 문서 타입 코드 - 결재 후 직접 구매하고 구매일자·영수증을 후첨하는 문서
 export const FR_DOC_TYPE = "FR";
 // 구매요청서 탭에서 다루는 문서 타입 목록
 export const PURCHASE_REQUEST_DOC_TYPES = [FP_DOC_TYPE, FR_DOC_TYPE];
@@ -182,7 +184,26 @@ export default function usePurchaseRequestData() {
     };
   }, []);
 
+  // 개인구매 품목들의 구매일자·영수증을 일괄 후첨 저장한다. 하나라도 실패하면 서버에서 전체 취소된다.
+  // - rows: [{ itemIdx, saleDate, file }] (같은 순서로 item_idx/saleDate/files 배열 전송)
+  // - 응답 code 200: 성공, 그 외: message 안내
+  const savePersonPurchaseReceipt = useCallback(async ({ paymentId, rows }) => {
+    const formData = new FormData();
+    formData.append("payment_id", paymentId);
+    formData.append("user_id", localStorage.getItem("user_id") || "");
+    (rows || []).forEach((row) => {
+      formData.append("item_idx", row.itemIdx);
+      formData.append("saleDate", row.saleDate);
+      formData.append("files", row.file);
+    });
+    const res = await api.post(PERSON_PURCHASE_RECEIPT_SAVE_API, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return res?.data || {};
+  }, []);
+
   return {
+    savePersonPurchaseReceipt,
     accountName,
     writerName,
     approver1st,

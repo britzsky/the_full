@@ -49,6 +49,20 @@ export function toSavedReceiptCards(files, viewerUserId) {
     });
 }
 
+// 개인구매(FR) 품목에 결재 후 후첨된 영수증 경로(receipt_image)를 썸네일 카드로 변환한다. (경로가 없으면 null)
+// - 개인구매 관리 화면과 같이 API_BASE_URL + 저장 경로로 파일을 불러온다.
+export function toItemReceiptCard(receiptImage, key) {
+  const path = String(receiptImage ?? "").trim();
+  if (!path) return null;
+  const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
+  return {
+    key,
+    url: `${apiBase}${path}`,
+    name: path.split("/").pop() || "영수증",
+    kind: getHeadOfficeDocumentPreviewKind({ image_path: path }),
+  };
+}
+
 // 상신 전 브라우저에만 있는 첨부 대기 파일({ file, previewUrl })을 썸네일 카드로 변환한다.
 export function toPendingReceiptCard(pending, key) {
   return {

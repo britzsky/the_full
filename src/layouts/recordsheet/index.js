@@ -25,6 +25,8 @@ import {
   Checkbox,
   useTheme,
   useMediaQuery,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import Autocomplete from "@mui/material/Autocomplete";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -962,6 +964,177 @@ function RecordSheet() {
     [year, month]
   );
 
+  // 출근부 잠금(주간/월간) 버튼·날짜 헤더 우클릭 사용 권한: department 3(인사팀), 6(개발팀)
+  const canManageRecordLock = ["3", "6"].includes(loginDepartmentCode);
+  // 선택한 거래처/연/월의 잠금 기간 목록 (start_day ~ end_day, lock_type W/M)
+  const [recordLocks, setRecordLocks] = useState([]);
+
+  // 선택한 거래처/연/월의 출근부 잠금 기간을 조회하는 함수
+  const fetchRecordLocks = useCallback(async () => {
+    if (!selectedAccountId) {
+      setRecordLocks([]);
+      return;
+    }
+    try {
+      const res = await api.get("/Account/AccountRecordLockList", {
+        params: { account_id: selectedAccountId, record_year: year, record_month: month },
+      });
+      setRecordLocks(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("출근부 잠금 조회 실패:", err);
+      setRecordLocks([]);
+    }
+  }, [selectedAccountId, year, month]);
+
+  useEffect(() => {
+    fetchRecordLocks();
+  }, [fetchRecordLocks]);
+
+  // 잠긴 일자 집합 (해당 일자는 입력/수정/삭제 불가)
+  const lockedDaySet = useMemo(() => {
+    const set = new Set();
+    (recordLocks || []).forEach((l) => {
+      const s = Number(l.start_day);
+      const e = Number(l.end_day);
+      for (let d = s; d <= e; d += 1) set.add(d);
+    });
+    return set;
+  }, [recordLocks]);
+
+  // 월 전체 잠금 여부
+  const isRecordMonthLocked = (recordLocks || []).some((l) => l.lock_type === "M");
+
+  // 출근부 잠금/해제를 저장하는 API 호출 함수
+  const saveRecordLock = async ({ startDay, endDay, lockType, lockYn }) => {
+    const res = await api.post("/Account/AccountRecordLockSave", {
+      account_id: selectedAccountId,
+      record_year: year,
+      record_month: month,
+      start_day: startDay,
+      end_day: endDay,
+      lock_type: lockType,
+      lock_yn: lockYn,
+      user_id: safeTrim(localStorage.getItem("user_id"), ""),
+    });
+    if (res?.data?.code !== 200) throw new Error(res?.data?.message || "잠금 저장 실패");
+    await fetchRecordLocks();
+  };
+
+  // 날짜 헤더 우클릭 시 해당 주(월~일, 이번 달 범위)를 잠그거나 해제하는 함수
+  const handleDayHeaderContextMenu = async (e, dayNum) => {
+    e.preventDefault();
+    if (!canManageRecordLock || !selectedAccountId) return;
+
+    const date = dayjs(`${year}-${String(month).padStart(2, "0")}-${String(dayNum).padStart(2, "0")}`);
+    const offsetFromMonday = (date.day() + 6) % 7; // 월=0 ... 일=6
+    const startDay = Math.max(1, dayNum - offsetFromMonday);
+    const endDay = Math.min(daysInMonth, dayNum + (6 - offsetFromMonday));
+    const rangeText = `${month}월 ${startDay}일 ~ ${month}월 ${endDay}일`;
+
+    const weekLock = (recordLocks || []).find(
+      (l) => l.lock_type === "W" && Number(l.start_day) === startDay && Number(l.end_day) === endDay
+    );
+
+    // 월 마감 중에는 주간 잠금/해제 모두 불가 (월 마감 해제 후 진행)
+    if (isRecordMonthLocked) {
+      Swal.fire({
+        title: "안내",
+        html: `${month}월은 월 마감되어 있습니다.<br/>월 마감을 먼저 해제한 후 진행해주세요.`,
+        icon: "info",
+      });
+      return;
+    }
+
+    const isUnlock = Boolean(weekLock);
+    const confirm = await Swal.fire({
+      title: isUnlock ? "주간 잠금 해제" : "주간 잠금",
+      html: isUnlock
+        ? `${rangeText} 잠금을 해제하시겠습니까?`
+        : `${rangeText} 기간을 잠그시겠습니까?<br/>잠그면 입력/수정/삭제가 불가능합니다.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: isUnlock ? "해제" : "잠금",
+      cancelButtonText: "취소",
+    });
+    if (!confirm.isConfirmed) return;
+
+    try {
+      await saveRecordLock({ startDay, endDay, lockType: "W", lockYn: isUnlock ? "N" : "Y" });
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: isUnlock ? "잠금 해제 완료" : "잠금 완료",
+        showConfirmButton: false,
+        timer: 900,
+      });
+    } catch (err) {
+      Swal.fire("오류", err?.message || "잠금 저장 중 오류", "error");
+    }
+  };
+
+  // "출근 현황" 우측 월 잠금 버튼: 이번 달 전체를 잠그거나 해제하는 함수
+  const handleToggleMonthLock = async () => {
+    if (!canManageRecordLock || !selectedAccountId) return;
+    const isUnlock = isRecordMonthLocked;
+
+    const confirm = await Swal.fire({
+      title: isUnlock ? "월 잠금 해제" : "월 잠금",
+      html: isUnlock
+        ? `${year}년 ${month}월 잠금을 해제하시겠습니까?<br/>(주간 잠금은 그대로 유지됩니다)`
+        : `${year}년 ${month}월 전체를 잠그시겠습니까?<br/>잠그면 입력/수정/삭제가 불가능합니다.`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: isUnlock ? "해제" : "잠금",
+      cancelButtonText: "취소",
+    });
+    if (!confirm.isConfirmed) return;
+
+    try {
+      await saveRecordLock({
+        startDay: 1,
+        endDay: daysInMonth,
+        lockType: "M",
+        lockYn: isUnlock ? "N" : "Y",
+      });
+      Swal.fire({
+        toast: true,
+        position: "top-end",
+        icon: "success",
+        title: isUnlock ? "월 잠금 해제 완료" : "월 잠금 완료",
+        showConfirmButton: false,
+        timer: 900,
+      });
+    } catch (err) {
+      Swal.fire("오류", err?.message || "잠금 저장 중 오류", "error");
+    }
+  };
+
+  // 저장 API가 마감(잠금) 기간 때문에 거절했는지 확인하고 안내창을 띄우는 함수
+  const alertIfRecordLocked = (resData) => {
+    const data = typeof resData === "string" ? JSON.parse(resData || "{}") : resData || {};
+    if (data.code !== 423) return false;
+    Swal.fire({
+      title: "마감된 기간",
+      html: String(data.message || "마감된 기간이 포함되어 저장할 수 없습니다.").replace(/\n/g, "<br/>"),
+      icon: "warning",
+      width: "40em",
+    });
+    return true;
+  };
+
+  // 유틸 엑셀 업로드 / 통합 재택 등록 시작 전에 해당 월 잠금 여부를 검사하는 함수 (잠겨 있으면 안내 후 true)
+  const checkMonthLockBeforeBulk = async ({ recordYear, recordMonth, accountIds, memberIds, source }) => {
+    const res = await api.post("/Account/AccountRecordMonthLockCheck", {
+      record_year: recordYear,
+      record_month: recordMonth,
+      account_ids: Array.from(new Set((accountIds || []).filter(Boolean))),
+      member_ids: Array.from(new Set((memberIds || []).filter(Boolean))),
+      source,
+    });
+    return alertIfRecordLocked(res?.data);
+  };
+
   const selectAccountByInput = useCallback(
     (rawInput) => {
       const q = String(rawInput ?? accountInputRef.current ?? "").trim();
@@ -1430,6 +1603,7 @@ function RecordSheet() {
         recRecords: [],
       });
 
+      if (alertIfRecordLocked(res?.data)) return;
       if (res?.data?.code && res.data.code !== 200) {
         throw new Error(res.data?.message || "지급 처리 실패");
       }
@@ -1645,6 +1819,24 @@ function RecordSheet() {
   };
 
   const handleUtilRecordModalOpen = async () => {
+    // 버튼 클릭 시 현재 연/월에 선택 업장 또는 유틸 직원 기존 배정 업장이 잠겨 있으면 진행하지 않음
+    try {
+      const utilMemberRes = await api.get("/Account/AccountUtilMemberList", {
+        params: { position_type: 6 },
+      });
+      const isMonthLocked = await checkMonthLockBeforeBulk({
+        recordYear: year,
+        recordMonth: month,
+        accountIds: [selectedAccountId],
+        memberIds: extractArray(utilMemberRes.data).map((m) => m.member_id),
+        source: "util",
+      });
+      if (isMonthLocked) return;
+    } catch (err) {
+      Swal.fire("오류", err?.message || "잠금 확인 중 오류가 발생했습니다.", "error");
+      return;
+    }
+
     const { isConfirmed, isDenied } = await Swal.fire({
       title: "유틸 출근부 등록",
       html: `<p style="text-align:left; margin:0; font-size:14px; line-height:2.2; color:#555;">
@@ -1873,6 +2065,18 @@ function RecordSheet() {
         return;
       }
 
+      // 거래처 선택 모달을 띄우기 전에, 등록 대상/기존 배정 업장의 해당 월 잠금 여부 확인
+      const isMonthLocked = await checkMonthLockBeforeBulk({
+        recordYear: recYear,
+        recordMonth: recMonth,
+        accountIds: rows.map((r) => r.account_id),
+        memberIds: [...rows, ...pendingEntries]
+          .map((r) => r.member_id)
+          .filter((mid) => !String(mid).startsWith("__DUP__")),
+        source: "util",
+      });
+      if (isMonthLocked) return;
+
       const userId = localStorage.getItem("user_id") || "";
       const saveMeta = { recYear, recMonth, skippedNoMemberRows, userId, memberIdToName };
 
@@ -1951,6 +2155,7 @@ function RecordSheet() {
       rows: finalRows.map((r) => ({ ...r, user_id: userId })),
     });
     const result = typeof res.data === "string" ? JSON.parse(res.data) : res.data || {};
+    if (alertIfRecordLocked(result)) return;
 
     // ✅ 전체 등록 건수 대신, 실제로 궁금한 "누가 며칠 출근하고 며칠 휴무인지"를 인원별로 보여준다.
     const memberSummary = new Map(); // member_id → { work, off }
@@ -2150,6 +2355,22 @@ function RecordSheet() {
   }, []);
 
   const openIntegrationRecordModal = useCallback(async () => {
+    // 버튼 클릭 시 현재 연/월에 선택 업장 또는 통합 직원 기존 재택 등록 업장이 잠겨 있으면 모달을 열지 않음
+    try {
+      const lockCheckMembers = await fetchIntegrationMemberList();
+      const isMonthLocked = await checkMonthLockBeforeBulk({
+        recordYear: year,
+        recordMonth: month,
+        accountIds: [selectedAccountId],
+        memberIds: (lockCheckMembers || []).map((m) => m.member_id),
+        source: "home",
+      });
+      if (isMonthLocked) return;
+    } catch (err) {
+      Swal.fire("오류", err?.message || "잠금 확인 중 오류가 발생했습니다.", "error");
+      return;
+    }
+
     setIntegrationRecordOpen(true);
     setIntegrationSelectedMember(null);
     setIntegrationMappingRows([]);
@@ -2165,7 +2386,7 @@ function RecordSheet() {
     } finally {
       setIntegrationRecordLoading(false);
     }
-  }, [fetchIntegrationMemberList]);
+  }, [fetchIntegrationMemberList, year, month, selectedAccountId]);
 
   const closeIntegrationRecordModal = useCallback(() => {
     setIntegrationRecordOpen(false);
@@ -2295,6 +2516,21 @@ function RecordSheet() {
       return;
     }
 
+    // 등록 확인창 전에, 매핑 업장/기존 재택 등록 업장의 해당 월 잠금 여부 확인
+    try {
+      const isMonthLocked = await checkMonthLockBeforeBulk({
+        recordYear: year,
+        recordMonth: month,
+        accountIds: integrationMappingRows.map((m) => m.account_id),
+        memberIds: [integrationSelectedMember.member_id],
+        source: "home",
+      });
+      if (isMonthLocked) return;
+    } catch (err) {
+      Swal.fire("오류", err?.message || "잠금 확인 중 오류가 발생했습니다.", "error");
+      return;
+    }
+
     const confirm = await Swal.fire({
       title: "통합 출근부 등록",
       html: `${year}년 ${month}월, 선택된 <b>${integrationMappingRows.length}개 업장</b>에<br/>평일(공휴일 제외) 재택근무로 등록합니다.<br/><br/>이번 달 기존 등록 내용은 삭제되고 새로 등록됩니다.`,
@@ -2329,7 +2565,8 @@ function RecordSheet() {
 
     setIntegrationRecordRegistering(true);
     try {
-      await api.post("/Account/AccountIntegrationHomeRecordSave", { rows });
+      const saveRes = await api.post("/Account/AccountIntegrationHomeRecordSave", { rows });
+      if (alertIfRecordLocked(saveRes?.data)) return;
 
       Swal.fire(
         "등록 완료",
@@ -4910,6 +5147,7 @@ function RecordSheet() {
       employeeDispatchDayStatusMap,
       originalRecordTypeMap,
       holidayDays,
+      lockedDaySet,
     ]
   );
 
@@ -4964,7 +5202,10 @@ function RecordSheet() {
         });
       },
       getOrgTimes: (row) => getOrgTimes(row, defaultTimes),
-      isCellLocked: (row, columnId) => isCellLockedByActJoin(row, columnId),
+      // 입사일 이전 일자 또는 잠긴(마감) 일자는 셀 입력 비활성화
+      isCellLocked: (row, columnId) =>
+        isCellLockedByActJoin(row, columnId) ||
+        lockedDaySet.has(Number(String(columnId).replace("day_", ""))),
     },
   });
 
@@ -5492,6 +5733,8 @@ function RecordSheet() {
           .forEach((dayKey) => {
             const cell = updated[dayKey];
             if (!cell) return;
+            // 잠긴(마감) 일자는 기본시간 일괄 적용 대상에서 제외
+            if (lockedDaySet.has(Number(dayKey.replace("day_", "")))) return;
 
             const typeNum = Number(cell.type);
             if (typeNum === 1 || typeNum === 2) {
@@ -5514,6 +5757,10 @@ function RecordSheet() {
   // 저장 성공 시 직원정보/파출정보를 로딩 없이 "쓱" 갱신
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
+    if (isRecordMonthLocked) {
+      Swal.fire("마감된 기간", `${year}년 ${month}월 출근부는 마감되었습니다.`, "warning");
+      return;
+    }
 
     const loadingStartedAt = Date.now();
     showLoadingModal("저장 중...");
@@ -5703,6 +5950,12 @@ function RecordSheet() {
         disRecords,
         recRecords,
       });
+
+      if (res.data?.code === 423) {
+        await closeLoadingModal();
+        alertIfRecordLocked(res.data);
+        return;
+      }
 
       if (res.data?.code === 200) {
         if (employeeDispatchMappingCandidates.length > 0) {
@@ -6022,9 +6275,42 @@ function RecordSheet() {
                 rowGap: 0.5,
               }}
             >
-              <MDTypography variant="h6" color="white">
-                출근 현황
-              </MDTypography>
+              {/* 출근 현황 제목 및 월 잠금 버튼 영역 */}
+              <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <MDTypography variant="h6" color="white">
+                  출근 현황
+                </MDTypography>
+                {/* 월 잠금 해제(좌) / 월 잠금(우) 탭: 현재 잠금 상태가 선택 표시됨 (집계표 현재월/전월 탭과 동일 스타일) */}
+                {canManageRecordLock && !!selectedAccountId && (
+                  <Tabs
+                    value={isRecordMonthLocked ? 1 : 0}
+                    onChange={() => {
+                      // 반대쪽 탭을 누르면 확인창 후 잠금/해제 (확정 전까지 선택 표시는 그대로)
+                      handleToggleMonthLock();
+                    }}
+                    textColor="inherit"
+                    indicatorColor="secondary"
+                    sx={{
+                      minHeight: 36,
+                      "& .MuiTab-root": {
+                        minHeight: 36,
+                        color: "rgba(255,255,255,0.85)",
+                        fontSize: 13,
+                        fontWeight: 600,
+                      },
+                      "& .Mui-selected": { color: "#fff" },
+                    }}
+                  >
+                    <Tab label="🔓 잠금 해제" />
+                    <Tab label="🔒 월 잠금" />
+                  </Tabs>
+                )}
+                {!canManageRecordLock && isRecordMonthLocked && (
+                  <MDTypography variant="button" color="white" fontWeight="bold">
+                    🔒 마감
+                  </MDTypography>
+                )}
+              </MDBox>
               {!!selectedAccountId && (
                 <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
                   <MDTypography variant="button" color="white" fontWeight="bold" sx={{ whiteSpace: "nowrap" }}>
@@ -6084,8 +6370,23 @@ function RecordSheet() {
                     <tr key={hg.id}>
                       {hg.headers.map((header) => {
                         const hBg = header.column.columnDef.meta?.headerBg;
+                        const isDayHeader = header.column.id.startsWith("day_");
+                        const headerDayNum = isDayHeader
+                          ? Number(header.column.id.replace("day_", ""))
+                          : null;
+                        const isHeaderLocked = isDayHeader && lockedDaySet.has(headerDayNum);
+                        const headerBgColor = isHeaderLocked ? "#bdbdbd" : hBg;
                         return (
-                          <th key={header.id} style={hBg ? { backgroundColor: hBg } : undefined}>
+                          <th
+                            key={header.id}
+                            style={headerBgColor ? { backgroundColor: headerBgColor } : undefined}
+                            onContextMenu={
+                              isDayHeader && canManageRecordLock
+                                ? (e) => handleDayHeaderContextMenu(e, headerDayNum)
+                                : undefined
+                            }
+                          >
+                            {isHeaderLocked && "🔒"}
                             {flexRender(header.column.columnDef.header, header.getContext())}
                           </th>
                         );
@@ -6110,6 +6411,11 @@ function RecordSheet() {
                         const isJoinLocked =
                           cell.column.id.startsWith("day_") &&
                           isCellLockedByActJoin(row.original, cell.column.id);
+                        // 잠긴(마감) 일자 여부 (입력/수정/삭제 불가)
+                        const isPeriodLocked =
+                          cell.column.id.startsWith("day_") &&
+                          lockedDaySet.has(Number(cell.column.id.replace("day_", "")));
+                        const isInputBlocked = isJoinLocked || isPeriodLocked;
                         let bg = "";
                         if (isRetired && cell.column.id === "name") {
                           bg = "#ffe5e5";
@@ -6125,8 +6431,8 @@ function RecordSheet() {
                             style={{
                               width: cell.column.columnDef.size,
                               backgroundColor: bg,
-                              pointerEvents: isJoinLocked ? "none" : "auto",
-                              userSelect: isJoinLocked ? "none" : "auto",
+                              pointerEvents: isInputBlocked ? "none" : "auto",
+                              userSelect: isInputBlocked ? "none" : "auto",
                             }}
                           >
                             {flexRender(cell.column.columnDef.cell, cell.getContext())}

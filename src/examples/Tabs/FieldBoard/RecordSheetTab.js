@@ -835,6 +835,44 @@ function RecordSheet() {
     [year, month]
   );
 
+  // 선택한 거래처/연/월의 출근부 잠금 기간 목록 (잠금/해제는 출근부 메뉴에서 처리)
+  const [recordLocks, setRecordLocks] = useState([]);
+
+  // 선택한 거래처/연/월의 출근부 잠금 기간을 조회하는 함수
+  const fetchRecordLocks = useCallback(async () => {
+    if (!selectedAccountId) {
+      setRecordLocks([]);
+      return;
+    }
+    try {
+      const res = await api.get("/Account/AccountRecordLockList", {
+        params: { account_id: selectedAccountId, record_year: year, record_month: month },
+      });
+      setRecordLocks(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("출근부 잠금 조회 실패:", err);
+      setRecordLocks([]);
+    }
+  }, [selectedAccountId, year, month]);
+
+  useEffect(() => {
+    fetchRecordLocks();
+  }, [fetchRecordLocks]);
+
+  // 잠긴 일자 집합 (해당 일자는 입력/수정/삭제 불가)
+  const lockedDaySet = useMemo(() => {
+    const set = new Set();
+    (recordLocks || []).forEach((l) => {
+      const s = Number(l.start_day);
+      const e = Number(l.end_day);
+      for (let d = s; d <= e; d += 1) set.add(d);
+    });
+    return set;
+  }, [recordLocks]);
+
+  // 월 전체 잠금 여부
+  const isRecordMonthLocked = (recordLocks || []).some((l) => l.lock_type === "M");
+
   // ✅ 잠금(회색) 셀 클릭 시 실입사일 안내
   const openJoinLockInfoModal = useCallback((row) => {
     const raw = safeTrim(row?.act_join_dt ?? "", "");
@@ -2484,7 +2522,16 @@ function RecordSheet() {
           size: isMobile ? 52 : 80,
         };
       }),
-    [daysInMonth, year, month, isMobile, employeeDispatchDayStatusMap, originalRecordTypeMap, holidayDays]
+    [
+      daysInMonth,
+      year,
+      month,
+      isMobile,
+      employeeDispatchDayStatusMap,
+      originalRecordTypeMap,
+      holidayDays,
+      lockedDaySet,
+    ]
   );
 
   const attendanceColumns = useMemo(
@@ -2519,7 +2566,10 @@ function RecordSheet() {
         });
       },
       getOrgTimes: (row) => getOrgTimes(row, defaultTimes),
-      isCellLocked: (row, columnId) => isCellLockedByActJoin(row, columnId),
+      // 입사일 이전 일자 또는 잠긴(마감) 일자는 셀 입력 비활성화
+      isCellLocked: (row, columnId) =>
+        isCellLockedByActJoin(row, columnId) ||
+        lockedDaySet.has(Number(String(columnId).replace("day_", ""))),
     },
   });
 
@@ -2877,6 +2927,8 @@ function RecordSheet() {
           .forEach((dayKey) => {
             const cell = updated[dayKey];
             if (!cell) return;
+            // 잠긴(마감) 일자는 기본시간 일괄 적용 대상에서 제외
+            if (lockedDaySet.has(Number(dayKey.replace("day_", "")))) return;
 
             const typeNum = Number(cell.type);
             if (typeNum === 1 || typeNum === 2) {
@@ -2899,6 +2951,10 @@ function RecordSheet() {
   // 저장 성공 시 직원정보/파출정보를 로딩 없이 "쓱" 갱신
   const handleSave = async () => {
     if (!attendanceRows || !attendanceRows.length) return;
+    if (isRecordMonthLocked) {
+      Swal.fire("마감된 기간", `${year}년 ${month}월 출근부는 마감되었습니다.`, "warning");
+      return;
+    }
 
     const loadingStartedAt = Date.now();
     Swal.fire({
@@ -3101,6 +3157,18 @@ function RecordSheet() {
         disRecords,
         recRecords,
       });
+
+      // 마감(잠금) 기간이 포함되어 서버에서 저장을 거절한 경우
+      if (res.data?.code === 423) {
+        await closeLoadingModal();
+        Swal.fire({
+          title: "마감된 기간",
+          html: String(res.data.message || "마감된 기간이 포함되어 저장할 수 없습니다.").replace(/\n/g, "<br/>"),
+          icon: "warning",
+          width: "40em",
+        });
+        return;
+      }
 
       if (res.data?.code === 200) {
         if (employeeDispatchMappingCandidates.length > 0) {
@@ -3331,7 +3399,7 @@ function RecordSheet() {
               }}
             >
               <MDTypography variant="h6" color="white">
-                출근 현황
+                출근 현황{isRecordMonthLocked && " 🔒 마감"}
               </MDTypography>
               {!!selectedAccountId && (
                 <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
@@ -3392,8 +3460,17 @@ function RecordSheet() {
                     <tr key={hg.id}>
                       {hg.headers.map((header) => {
                         const hBg = header.column.columnDef.meta?.headerBg;
+                        // 잠긴(마감) 일자 헤더는 회색 + 자물쇠 표시
+                        const isHeaderLocked =
+                          header.column.id.startsWith("day_") &&
+                          lockedDaySet.has(Number(header.column.id.replace("day_", "")));
+                        const headerBgColor = isHeaderLocked ? "#bdbdbd" : hBg;
                         return (
-                          <th key={header.id} style={hBg ? { backgroundColor: hBg } : undefined}>
+                          <th
+                            key={header.id}
+                            style={headerBgColor ? { backgroundColor: headerBgColor } : undefined}
+                          >
+                            {isHeaderLocked && "🔒"}
                             {flexRender(header.column.columnDef.header, header.getContext())}
                           </th>
                         );

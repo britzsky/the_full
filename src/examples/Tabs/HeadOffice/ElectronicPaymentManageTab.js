@@ -23,7 +23,7 @@ const EXPENDABLE_SPECIAL_USER_ID = "iy1";
 // 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID
 // - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자는 실제 구매완료 여부(구매여부)만 체크한다.
 const FP_BUY_YN_USER_ID = "sh9";
-// 현장 구매요청서 문서타입 - FP: 온라인구매, FR: 개인구매(영수증 첨부 후결재)
+// 현장 구매요청서 문서타입 - FP: 온라인구매, FR: 개인구매(결재 후 구매일자·영수증 후첨)
 // - 두 타입 모두 거래처 매핑 관리자(1차) → 같은 부서 팀장(2차) 결재 흐름을 사용한다.
 const FIELD_PURCHASE_DOC_TYPES = ["FP", "FR"];
 const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
@@ -967,6 +967,12 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       action_status: selectedActionSign,
       comment: actionComment,
     });
+
+    // 개인구매 거래처에 개인구매 연결이 없어 결재가 취소된 경우 안내
+    if (ok?.message) {
+      Swal.fire({ title: "결재 불가", text: ok.message, icon: "warning" });
+      return;
+    }
 
     if (!ok) {
       Swal.fire({ title: "실패", text: "저장 중 오류가 발생했습니다.", icon: "error" });

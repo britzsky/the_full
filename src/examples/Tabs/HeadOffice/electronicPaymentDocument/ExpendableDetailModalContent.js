@@ -5,7 +5,11 @@ import { Tooltip } from "@mui/material";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import PreviewOverlay from "utils/PreviewOverlay";
-import ReceiptThumbnail, { isPreviewableReceiptCard, toSavedReceiptCards } from "./ReceiptThumbnail";
+import ReceiptThumbnail, {
+  isPreviewableReceiptCard,
+  toItemReceiptCard,
+  toSavedReceiptCards,
+} from "./ReceiptThumbnail";
 
 // 구매링크를 5줄까지만 보여주고, 실제로 잘렸을 때만 호버 시 전체 내용을 툴팁으로 노출한다.
 function LinkClampText({ value }) {
@@ -200,12 +204,19 @@ function ExpendableDetailModalContent({
 
   const extraColumnCount = (showBuyYnColumn ? 1 : 0) + (showFpColumns ? 2 : 0);
 
-  // 개인구매(FR) 영수증 썸네일 카드 - n번째 카드가 n번째 품목의 영수증
-  const receiptCards = useMemo(
-    () => (showAttachments ? toSavedReceiptCards(detailFiles, viewerUserId) : []),
-    [showAttachments, detailFiles, viewerUserId]
+  // 개인구매(FR) 품목별 영수증 썸네일 카드
+  // - 결재 후 후첨된 영수증(receipt_image)이 우선, 없으면 이전 방식 첨부(n번째 첨부 = n번째 품목)
+  const receiptCards = useMemo(() => {
+    if (!showAttachments) return [];
+    const legacyCards = toSavedReceiptCards(detailFiles, viewerUserId);
+    return (detailItems || []).map(
+      (it, idx) => toItemReceiptCard(it?.receipt_image, `item-${it?.idx ?? idx}`) || legacyCards[idx] || null
+    );
+  }, [showAttachments, detailFiles, detailItems, viewerUserId]);
+  const receiptPreviewList = useMemo(
+    () => receiptCards.filter(Boolean).filter(isPreviewableReceiptCard),
+    [receiptCards]
   );
-  const receiptPreviewList = useMemo(() => receiptCards.filter(isPreviewableReceiptCard), [receiptCards]);
   // 영수증 미리보기 팝업 열림 여부와 현재 보고 있는 파일 위치
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
   const [receiptPreviewIndex, setReceiptPreviewIndex] = useState(0);
@@ -295,7 +306,7 @@ function ExpendableDetailModalContent({
                           receiptCards[idx] ? (
                             <ReceiptThumbnail card={receiptCards[idx]} onOpen={openReceiptPreview} />
                           ) : (
-                            "-"
+                            "영수증 후첨 예정"
                           )
                         ) : asText(it.link) ? (
                           <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, width: "100%" }}>

@@ -95,7 +95,7 @@ const isPdfFileLike = (value) => {
     return type.includes("pdf") || name.endsWith(".pdf");
   }
   const s = String(value).toLowerCase();
-  return s.startsWith("data:application/pdf") || /\.pdf($|[?#])/i.test(s);
+  return s.startsWith("data:application/pdf") || /\.pdf($|[?#&])/i.test(s);
 };
 
 const extractDisplayFileName = (value) => {
@@ -853,6 +853,8 @@ function TallySheet() {
     if (s.startsWith("blob:")) return s;
     if (s.startsWith("http")) return s;
     if (s.startsWith("data:")) return s;
+    // 이미 미리보기 API URL로 변환된 값(상대경로 /api 포함)은 그대로 사용
+    if (s.includes("/Account/AccountStoredFileView")) return s;
     return toAbsolutePreviewUrl(s);
   }, [toAbsolutePreviewUrl]);
 

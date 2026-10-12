@@ -61,7 +61,7 @@ const TYPE_LABEL = {
 
 // 위·아래 달력 표 공통 칸 너비 (px)
 const NAME_COL_WIDTH = 90;
-const DAY_COL_WIDTH = 76;
+const DAY_COL_WIDTH = 84;
 
 // 출근부 근무타입별 셀 배경색 (recordsheet의 typeColors와 동일)
 const TYPE_COLORS = {
@@ -80,15 +80,30 @@ const TYPE_COLORS = {
 // 근무타입이 없는 빈 칸 배경색 (recordsheet 기본색과 동일)
 const DEFAULT_CELL_BG = "#ffefd5";
 
-// 위·아래 표가 함께 쓰는 일자 셀 박스 스타일
-const cellBoxStyle = (bg) => ({
+// 판정 문제가 없는 출퇴근 기록 셀 배경색
+const RECORD_CELL_BG = "#eef6f0";
+
+// 위·아래 표가 함께 쓰는 일자 셀 박스 스타일 (borderColor: 반대쪽 표에서 문구로 표시한 판정 색)
+const cellBoxStyle = (bg, borderColor) => ({
   display: "flex",
   flexDirection: "column",
-  gap: "2px",
+  justifyContent: "center",
+  gap: "1px",
+  minHeight: "32px",
   backgroundColor: bg,
   padding: "2px",
   borderRadius: "4px",
-  fontSize: "0.75rem",
+  border: `1.5px dashed ${borderColor || "transparent"}`,
+  boxSizing: "border-box",
+  fontSize: "0.72rem",
+  lineHeight: 1.3,
+});
+
+// 판정 문구 글자 스타일
+const issueTextStyle = (key) => ({
+  color: STATUS_STYLE[key].color,
+  fontSize: "0.66rem",
+  fontWeight: "bold",
 });
 
 // 배경색(#rrggbb)을 같은 계열의 진한 글자색으로 바꾸는 함수
@@ -204,18 +219,29 @@ const buildCommuteComparison = ({ commuteRows, sheetRows, phoneMap, year, month,
   });
   const sheetPersons = Array.from(sheetMap.values());
 
+  // 출근부 동명이인 구분 번호(홍길동1, 홍길동2)를 뗀 기본 이름
+  const baseName = (name) => name.replace(/\d+$/, "").trim() || name;
+
   // 출근부 인원 ↔ 출퇴근 기록 짝짓기
-  //    뒷자리가 있으면 이름+뒷자리 일치, 출근부에 번호가 없으면 같은 이름 기록이 1명뿐일 때만 매칭
+  //    뒷자리가 있으면 이름(또는 번호 뗀 이름)+뒷자리 일치
+  //    출근부에 번호가 없으면 같은 이름 기록이 1명뿐이고, 출근부에도 같은 기본 이름이 1명뿐일 때만 매칭
   const commutePersonsAll = Array.from(commuteMap.values());
-  sheetPersons.forEach((p) => {
+  sheetPersons.forEach((p, idx) => {
+    const base = baseName(p.name);
     let match = null;
     if (p.phone_last4) {
-      match = commuteMap.get(`${p.name}|${p.phone_last4}`) || null;
+      match =
+        commuteMap.get(`${p.name}|${p.phone_last4}`) ||
+        commuteMap.get(`${base}|${p.phone_last4}`) ||
+        null;
     } else {
-      const sameName = commutePersonsAll.filter((c) => c.name === p.name);
-      if (sameName.length === 1) [match] = sameName;
+      const sameName = commutePersonsAll.filter((c) => c.name === p.name || c.name === base);
+      const sameSheetBase = sheetPersons.filter((s) => baseName(s.name) === base);
+      if (sameName.length === 1 && sameSheetBase.length === 1) [match] = sameName;
     }
     if (!match) return;
+    // 위쪽 표를 출근부(position_type) 순서로 정렬하기 위한 출근부 행 순번
+    if (!match.paired) match.sheetOrder = idx;
     match.paired = true;
     match.sheet = p.cells;
     if (!match.phone_last4) match.phone_last4 = p.phone_last4;
@@ -243,9 +269,15 @@ const buildCommuteComparison = ({ commuteRows, sheetRows, phoneMap, year, month,
       .map((c) => ({ name: c.name, phone_last4: c.phone_last4, ...countIssues({}, c.days) })),
   ];
 
+  // 위쪽 표 정렬: 출근부와 짝지어진 인원은 출근부 순서, 출근부에 없는 인원은 맨 아래에 이름순
   const commutePersons = commutePersonsAll
     .filter((c) => Object.keys(c.days).length > 0)
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    .sort((a, b) => {
+      const oa = a.paired ? a.sheetOrder : Infinity;
+      const ob = b.paired ? b.sheetOrder : Infinity;
+      if (oa !== ob) return oa - ob;
+      return a.name.localeCompare(b.name, "ko");
+    });
 
   return { commutePersons, sheetPersons, personSummary, isFuture };
 };
@@ -494,10 +526,33 @@ function RecordCommuteHistoryTab() {
         right: { style: "thin" },
       };
       const nameText = (p) => (p.phone_last4 ? `${p.name}\n(${p.phone_last4})` : p.name);
+      // 반대쪽 표에서 문구로 표시한 판정을 나타내는 판정 색 굵은 테두리
+      const markBorder = (hex) => {
+        const side = { style: "medium", color: { argb: argb(hex) } };
+        return { top: side, left: side, bottom: side, right: side };
+      };
+      // "rgb(r, g, b)" -> "#rrggbb" (darkenHex 결과를 엑셀 글자색으로 쓰기 위함)
+      const rgbToHex = (rgb) =>
+        `#${(String(rgb).match(/\d+/g) || [])
+          .map((n) => Number(n).toString(16).padStart(2, "0"))
+          .join("")}`;
+      // 줄별 글자 조각 [[{ text, color, bold }]] -> 화면과 같은 글자색의 엑셀 서식 문자열
+      const toRichText = (lines) => ({
+        richText: lines.flatMap((runs, idx) =>
+          [...(idx > 0 ? [{ text: "\n" }] : []), ...runs].map((r) => ({
+            text: r.text,
+            font: {
+              size: 10,
+              bold: !!r.bold,
+              ...(r.color ? { color: { argb: argb(r.color) } } : {}),
+            },
+          }))
+        ),
+      });
 
       // ── 1번 시트: 업장별 달력 ──
       const ws1 = wb.addWorksheet("출퇴근 기록");
-      ws1.columns = [{ width: 12 }, ...dayHeaders.map(() => ({ width: 11 }))];
+      ws1.columns = [{ width: 12 }, ...dayHeaders.map(() => ({ width: 14 }))];
       ws1.addRow([`${year}년 ${month}월 출퇴근 기록 / 출근부`]).font = { bold: true, size: 13 };
 
       // 달력 한 구역(제목 + 헤더 + 사람별 행)을 시트에 쓰는 함수
@@ -517,12 +572,16 @@ function RecordCommuteHistoryTab() {
         });
         persons.forEach((p) => {
           const cells = dayHeaders.map((h) => cellOf(p, h.dayNum));
-          const row = ws1.addRow([nameText(p), ...cells.map((c) => c.text)]);
+          const row = ws1.addRow([
+            nameText(p),
+            ...cells.map((c) => (c.lines.length ? toRichText(c.lines) : "")),
+          ]);
           row.eachCell({ includeEmpty: true }, (c, col) => {
-            c.border = border;
+            const info = cells[col - 2];
+            c.border = info?.borderColor ? markBorder(info.borderColor) : border;
             c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
             if (col === 1) c.font = { bold: true };
-            else c.fill = fill(cells[col - 2].bg);
+            else if (info.bg) c.fill = fill(info.bg);
           });
         });
       };
@@ -539,30 +598,78 @@ function RecordCommuteHistoryTab() {
         writeSection("출퇴근 기록", comp.commutePersons, (p, d) => {
           const record = p.days[d];
           const issues = compareDay(p.sheet[d], record, comp.isFuture(d));
+          // 화면과 같이 미기록은 테두리만, 나머지 판정은 문구로 표시
+          const shown = issues.filter((i) => i.key !== "missing");
+          const missing = issues.some((i) => i.key === "missing");
           const lines = [];
-          if (record?.start_time) lines.push(`출 ${formatHM(record.start_time)}`);
-          if (record?.end_time) lines.push(`퇴 ${formatHM(record.end_time)}`);
-          issues.forEach((i) =>
-            lines.push(`${STATUS_STYLE[i.key].label}${i.diff ? ` ${i.diff}분` : ""}`)
+          // 출근 시간(초록) ~ 퇴근 시간(빨강)
+          if (record) {
+            lines.push([
+              { text: formatHM(record.start_time) || "--:--", color: "#1FA45C" },
+              { text: " ~ " },
+              { text: formatHM(record.end_time) || "--:--", color: "#E5566B" },
+            ]);
+          }
+          // 판정 문구 (판정 색 굵은 글씨)
+          shown.forEach((i) =>
+            lines.push([
+              {
+                text: `${STATUS_STYLE[i.key].label}${i.diff ? ` ${i.diff}분` : ""}`,
+                color: STATUS_STYLE[i.key].color,
+                bold: true,
+              },
+            ])
           );
           return {
-            text: lines.length ? lines.join("\n") : "-",
-            bg: (issues[0] && STATUS_STYLE[issues[0].key].bg) || DEFAULT_CELL_BG,
+            lines,
+            bg: shown[0] ? STATUS_STYLE[shown[0].key].bg : record ? RECORD_CELL_BG : null,
+            borderColor: missing ? STATUS_STYLE.missing.color : null,
           };
         });
 
         writeSection("출근 현황 (출근부)", comp.sheetPersons, (p, d) => {
           const cell = p.cells[d];
           const type = String(cell?.type ?? "");
-          const lines = [TYPE_LABEL[type] || "-"];
-          if (WORK_TYPES.has(type)) {
-            lines.push(formatHM(cell?.start_time) || "출근", formatHM(cell?.end_time) || "퇴근");
+          const label = TYPE_LABEL[type];
+          const issues = compareDay(cell, p.commuteDays[d], comp.isFuture(d));
+          // 화면과 같이 미기록은 근무타입 옆 문구로, 나머지 판정은 테두리로만 표시
+          const missing = issues.some((i) => i.key === "missing");
+          const other = issues.find((i) => i.key !== "missing");
+          const lines = [];
+          // 근무타입명(배경색 계열 진한 굵은 글씨) + 미기록(판정 색 굵은 글씨)
+          if (label) {
+            lines.push([
+              {
+                text: label,
+                color: rgbToHex(darkenHex(TYPE_COLORS[type] || DEFAULT_CELL_BG)),
+                bold: true,
+              },
+              ...(missing
+                ? [
+                    {
+                      text: ` ${STATUS_STYLE.missing.label}`,
+                      color: STATUS_STYLE.missing.color,
+                      bold: true,
+                    },
+                  ]
+                : []),
+            ]);
           }
-          // 출퇴근 기록과 비교한 판정 문구 (지각/일찍 퇴근/미기록/이력없음)
-          compareDay(cell, p.commuteDays[d], comp.isFuture(d)).forEach((i) => {
-            lines.push(STATUS_STYLE[i.key].label);
-          });
-          return { text: lines.join("\n"), bg: TYPE_COLORS[type] || DEFAULT_CELL_BG };
+          // 예정 출근 ~ 퇴근 시간
+          if (WORK_TYPES.has(type)) {
+            lines.push([
+              {
+                text: `${formatHM(cell?.start_time) || "출근"} ~ ${
+                  formatHM(cell?.end_time) || "퇴근"
+                }`,
+              },
+            ]);
+          }
+          return {
+            lines,
+            bg: label ? TYPE_COLORS[type] || DEFAULT_CELL_BG : null,
+            borderColor: other ? STATUS_STYLE[other.key].color : null,
+          };
         });
       });
 
@@ -695,6 +802,8 @@ function RecordCommuteHistoryTab() {
   const tableSx = {
     maxHeight: "560px",
     overflow: "auto",
+    // 세로 스크롤바 자리를 위아래 표 모두 항상 비워 둬서, 한쪽에만 스크롤바가 생겨도 좌우 스크롤 폭이 같게 유지
+    scrollbarGutter: "stable",
     "& table": {
       width: "max-content",
       minWidth: "100%",
@@ -906,47 +1015,43 @@ function RecordCommuteHistoryTab() {
                         {dayHeaders.map(({ dayNum }) => {
                           const record = row.days[dayNum];
                           const issues = compareDay(row.sheet[dayNum], record, isFutureDay(dayNum));
-                          const first = issues[0] && STATUS_STYLE[issues[0].key];
+                          // 위 표에 문구로 보여줄 판정 (미기록은 아래 출근부 표에 문구로 표시)
+                          const shown = issues.filter((i) => i.key !== "missing");
+                          const missing = issues.find((i) => i.key === "missing");
                           return (
                             <td key={dayNum} style={{ padding: "2px" }}>
-                              {/* 출근부 표와 같은 모양의 셀 박스 (문제가 있으면 판정 색으로 표시) */}
-                              <div style={cellBoxStyle(first?.bg || DEFAULT_CELL_BG)}>
-                                {!record && issues.length === 0 && <span>-</span>}
-                                {record?.start_time && (
-                                  <MDTypography
-                                    variant="caption"
-                                    display="block"
-                                    sx={{ color: "#1FA45C", fontSize: "0.68rem" }}
-                                  >
-                                    출 {formatHM(record.start_time)}
-                                  </MDTypography>
-                                )}
-                                {record?.end_time && (
-                                  <MDTypography
-                                    variant="caption"
-                                    display="block"
-                                    sx={{ color: "#E5566B", fontSize: "0.68rem" }}
-                                  >
-                                    퇴 {formatHM(record.end_time)}
-                                  </MDTypography>
-                                )}
-                                {/* 출근부와 비교한 문제 표시 (지각/일찍 퇴근은 차이 분 포함) */}
-                                {issues.map((i) => (
-                                  <MDTypography
-                                    key={i.key}
-                                    variant="caption"
-                                    display="block"
-                                    sx={{
-                                      color: STATUS_STYLE[i.key].color,
-                                      fontSize: "0.64rem",
-                                      fontWeight: "bold",
-                                    }}
-                                  >
-                                    {STATUS_STYLE[i.key].label}
-                                    {i.diff ? ` ${i.diff}분` : ""}
-                                  </MDTypography>
-                                ))}
-                              </div>
+                              {/* 기록이 있는 날: 출퇴근 시간 한 줄 + 판정 문구 / 미기록 날: 테두리만 표시 / 그 외 빈칸 */}
+                              {(record || missing) && (
+                                <div
+                                  style={cellBoxStyle(
+                                    shown[0]
+                                      ? STATUS_STYLE[shown[0].key].bg
+                                      : record
+                                      ? RECORD_CELL_BG
+                                      : "transparent",
+                                    missing && STATUS_STYLE.missing.color
+                                  )}
+                                >
+                                  {record && (
+                                    <span>
+                                      <span style={{ color: "#1FA45C" }}>
+                                        {formatHM(record.start_time) || "--:--"}
+                                      </span>
+                                      {" ~ "}
+                                      <span style={{ color: "#E5566B" }}>
+                                        {formatHM(record.end_time) || "--:--"}
+                                      </span>
+                                    </span>
+                                  )}
+                                  {/* 출근부와 비교한 판정 (지각/일찍 퇴근은 차이 분 포함) */}
+                                  {shown.map((i) => (
+                                    <span key={i.key} style={issueTextStyle(i.key)}>
+                                      {STATUS_STYLE[i.key].label}
+                                      {i.diff ? ` ${i.diff}분` : ""}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                           );
                         })}
@@ -996,39 +1101,47 @@ function RecordCommuteHistoryTab() {
                             row.commuteDays[dayNum],
                             isFutureDay(dayNum)
                           );
+                          const missing = issues.find((i) => i.key === "missing");
+                          // 위 출퇴근 기록 표에 문구로 표시한 판정 (여기서는 테두리 색으로만 표시)
+                          const other = issues.find((i) => i.key !== "missing");
+                          const label = TYPE_LABEL[type];
                           return (
                             <td key={dayNum} style={{ padding: "2px" }}>
-                              {/* 근무타입별 배경색 셀 (recordsheet AttendanceCell과 동일 색상) */}
-                              <div style={cellBoxStyle(TYPE_COLORS[type] || DEFAULT_CELL_BG)}>
-                                {/* 근무타입명 - 배경색과 같은 계열의 진한 톤 글자 */}
-                                <span
-                                  style={{
-                                    color: darkenHex(TYPE_COLORS[type] || DEFAULT_CELL_BG),
-                                    fontWeight: "bold",
-                                  }}
+                              {/* 근무타입이 있는 날: 근무타입(+미기록) 한 줄 + 예정 시간 한 줄 / 없는 날: 빈칸 */}
+                              {(label || other) && (
+                                <div
+                                  style={cellBoxStyle(
+                                    label ? TYPE_COLORS[type] || DEFAULT_CELL_BG : "transparent",
+                                    other && STATUS_STYLE[other.key].color
+                                  )}
                                 >
-                                  {TYPE_LABEL[type] || "-"}
-                                </span>
-                                {WORK_TYPES.has(type) && (
-                                  <>
-                                    <span>{formatHM(cell?.start_time) || "출근"}</span>
-                                    <span>{formatHM(cell?.end_time) || "퇴근"}</span>
-                                  </>
-                                )}
-                                {/* 판정별 문구 (지각/일찍 퇴근/미기록/이력없음) */}
-                                {issues.map((i) => (
-                                  <span
-                                    key={i.key}
-                                    style={{
-                                      color: STATUS_STYLE[i.key].color,
-                                      fontSize: "0.64rem",
-                                      fontWeight: "bold",
-                                    }}
-                                  >
-                                    {STATUS_STYLE[i.key].label}
-                                  </span>
-                                ))}
-                              </div>
+                                  {label && (
+                                    <span>
+                                      {/* 근무타입명 - 배경색과 같은 계열의 진한 톤 글자 */}
+                                      <span
+                                        style={{
+                                          color: darkenHex(TYPE_COLORS[type] || DEFAULT_CELL_BG),
+                                          fontWeight: "bold",
+                                        }}
+                                      >
+                                        {label}
+                                      </span>
+                                      {missing && (
+                                        <span style={issueTextStyle("missing")}>
+                                          {" "}
+                                          {STATUS_STYLE.missing.label}
+                                        </span>
+                                      )}
+                                    </span>
+                                  )}
+                                  {WORK_TYPES.has(type) && (
+                                    <span>
+                                      {formatHM(cell?.start_time) || "출근"} ~{" "}
+                                      {formatHM(cell?.end_time) || "퇴근"}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </td>
                           );
                         })}

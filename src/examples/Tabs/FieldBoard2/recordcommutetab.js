@@ -37,7 +37,7 @@ function RecordCommuteTab() {
   const userId = (window.localStorage.getItem("user_id") || "").trim();
 
   // ✅ 기기등록 승인 권한: 대표님(0)/팀장(1), 또는 운영팀(5)/개발팀(6)
-  const canApproveDevice = ["0", "1"].includes(positionCode) || ["5", "6"].includes(departmentCode);
+  const canApproveDevice = ["0", "1"].includes(positionCode) || ["3", "5", "6"].includes(departmentCode);
 
   const {
     deviceList,

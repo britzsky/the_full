@@ -128,14 +128,23 @@ export default function ProfitLossTableTab() {
 
   // ✅ 두 번째 헤더 행의 sticky top 오프셋 측정
   useEffect(() => {
+    // 2행의 실제 표 내 위치를 소수점까지 측정해 sticky top으로 사용 (정수 반올림 시 1·2행 사이에 미세한 틈이 생김)
     const measure = () => {
-      if (theadRef.current?.rows?.[0]) {
-        setSecondRowTop(theadRef.current.rows[0].offsetHeight);
+      const thead = theadRef.current;
+      if (thead?.rows?.[1]) {
+        const tableTop = thead.closest("table").getBoundingClientRect().top;
+        setSecondRowTop(thead.rows[1].getBoundingClientRect().top - tableTop);
       }
     };
     measure();
     window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    // 헤더 크기가 바뀔 때(컬럼 필터 변경 등)도 다시 측정
+    const observer = theadRef.current && typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (observer) observer.observe(theadRef.current);
+    return () => {
+      window.removeEventListener("resize", measure);
+      if (observer) observer.disconnect();
+    };
   }, [editRows]);
 
   // ✅ 데이터 원본 저장

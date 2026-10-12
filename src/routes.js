@@ -571,7 +571,7 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/FieldBoardTabs_2",
         component: <RecordCommuteManager />,
-        allowedDepartments: [6],
+        allowedDepartments: [3, 6],
         // allowedPositions: [0, 1],
         accessMode: "OR",
       },

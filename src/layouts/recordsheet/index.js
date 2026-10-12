@@ -1007,7 +1007,8 @@ function RecordSheet() {
   // 출근부 잠금/해제를 저장하는 API 호출 함수
   const saveRecordLock = async ({ startDay, endDay, lockType, lockYn }) => {
     const res = await api.post("/Account/AccountRecordLockSave", {
-      account_id: selectedAccountId,
+      // 월 잠금(M)은 전체 거래처 대상이라 'ALL'로 저장
+      account_id: lockType === "M" ? "ALL" : selectedAccountId,
       record_year: year,
       record_month: month,
       start_day: startDay,
@@ -1073,7 +1074,7 @@ function RecordSheet() {
     }
   };
 
-  // "출근 현황" 우측 월 잠금 버튼: 이번 달 전체를 잠그거나 해제하는 함수
+  // "출근 현황" 우측 월 잠금 버튼: 이번 달 전체 거래처를 잠그거나 해제하는 함수
   const handleToggleMonthLock = async () => {
     if (!canManageRecordLock || !selectedAccountId) return;
     const isUnlock = isRecordMonthLocked;
@@ -1081,8 +1082,8 @@ function RecordSheet() {
     const confirm = await Swal.fire({
       title: isUnlock ? "월 잠금 해제" : "월 잠금",
       html: isUnlock
-        ? `${year}년 ${month}월 잠금을 해제하시겠습니까?<br/>(주간 잠금은 그대로 유지됩니다)`
-        : `${year}년 ${month}월 전체를 잠그시겠습니까?<br/>잠그면 입력/수정/삭제가 불가능합니다.`,
+        ? `${year}년 ${month}월 <b>전체 거래처</b> 잠금을 해제하시겠습니까?<br/>(주간 잠금은 그대로 유지됩니다)`
+        : `${year}년 ${month}월 <b>전체 거래처</b>를 잠그시겠습니까?<br/>잠그면 모든 거래처의 입력/수정/삭제가 불가능합니다.`,
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: isUnlock ? "해제" : "잠금",
@@ -6302,7 +6303,7 @@ function RecordSheet() {
                     }}
                   >
                     <Tab label="🔓 잠금 해제" />
-                    <Tab label="🔒 월 잠금" />
+                    <Tab label="🔒 월 전체 잠금" />
                   </Tabs>
                 )}
                 {!canManageRecordLock && isRecordMonthLocked && (

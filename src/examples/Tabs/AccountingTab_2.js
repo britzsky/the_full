@@ -73,7 +73,7 @@ function AccountingTab_2() {
       key: "receipt",
       label: "거래처 마감 자료",
       component: <AccountReceiptTab />,
-      allowedDepartments: [0, 2, 6, 9], // 부서권한
+      allowedDepartments: [0, 2, 5, 6, 9], // 부서권한
       allowedPositions: [0, 1, 2, 3], // 직책권한
       accessMode: "AND",
     },

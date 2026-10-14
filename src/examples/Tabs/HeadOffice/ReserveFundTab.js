@@ -34,6 +34,26 @@ const calcReserve = (amount) => Math.round(amount * RESERVE_RATE);
 const MIN_USE_DATE = `${START_YEAR}-${String(START_MONTH).padStart(2, "0")}-01`;
 const getMaxUseDate = () => dayjs().endOf("month").format("YYYY-MM-DD");
 
+// 업장별 적립금 배분: 업장별 4%를 원 단위로 내리고, 남는 원은 소수점이 큰 업장부터 1원씩 더해
+// 업장별 적립금 합계가 월 적립금(월 합계 × 4% 반올림)과 정확히 같게 맞춤
+const allocateReserve = (rows) => {
+  const total = calcReserve(rows.reduce((acc, r) => acc + r.total, 0));
+  const list = rows.map((r, i) => {
+    const exact = r.total * RESERVE_RATE;
+    return { ...r, i, reserve: Math.floor(exact), frac: exact - Math.floor(exact) };
+  });
+  let remain = total - list.reduce((acc, r) => acc + r.reserve, 0);
+  [...list]
+    .sort((a, b) => b.frac - a.frac)
+    .forEach((r) => {
+      if (remain > 0) {
+        list[r.i].reserve += 1;
+        remain -= 1;
+      }
+    });
+  return list;
+};
+
 // 금액 표시용 포맷 (천 단위 콤마 + 원)
 const formatWon = (value) => `${formatNumber(value || 0)}원`;
 
@@ -49,8 +69,14 @@ const emptyForm = () => ({
 export default function ReserveFundTab() {
   const isMobileTablet = useMediaQuery("(max-width:1279.95px)");
   // 적립금 조회/저장 API와 원본 데이터 (reserveFundData.js)
-  const { loading, rawRows, useRows, fetchReserveSource, saveReserveFundUse } =
-    useReserveFundData();
+  const {
+    loading,
+    rawRows,
+    useRows,
+    fetchReserveSource,
+    saveReserveFundUse,
+    fetchMonthAccountDetail,
+  } = useReserveFundData();
   // 조회 연도 필터 (누계는 시작 연월부터 이어서 계산)
   const [year, setYear] = useState(dayjs().year());
   // 좌측에서 선택한 거래처 type
@@ -58,6 +84,10 @@ export default function ReserveFundTab() {
   // 사용 등록/수정 팝업 열림 여부와 입력값
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
+  // 월별 행 클릭 시 업장별 사용금액·적립금 팝업 상태 (대상 연월, 조회 중 여부, 업장 행)
+  const [detailMonth, setDetailMonth] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailRows, setDetailRows] = useState([]);
 
   useEffect(() => {
     fetchReserveSource();
@@ -141,6 +171,22 @@ export default function ReserveFundTab() {
   };
 
   // 선택 거래처 type과 로그인 사용자 ID를 붙여 사용 내역을 저장하는 함수
+  // 월별 행 클릭: 해당 연월의 업장별 사용금액을 조회하고 적립금을 배분해 팝업 표시
+  const openMonthDetail = async (m) => {
+    setDetailMonth(m);
+    setDetailRows([]);
+    setDetailLoading(true);
+    try {
+      const rows = await fetchMonthAccountDetail(m.year, m.month, selectedType);
+      setDetailRows(allocateReserve(rows).sort((a, b) => b.total - a.total));
+    } catch (err) {
+      console.error("업장별 사용금액 조회 실패:", err);
+      setDetailRows([]);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const saveUse = (payload) =>
     saveReserveFundUse({
       ...payload,
@@ -402,7 +448,13 @@ export default function ReserveFundTab() {
                     </Box>
                     <Box component="tbody">
                       {selectedVendor.months.map((m) => (
-                        <Box component="tr" key={`${m.year}-${m.month}`}>
+                        <Box
+                          component="tr"
+                          key={`${m.year}-${m.month}`}
+                          onClick={() => openMonthDetail(m)}
+                          title="클릭: 업장별 사용금액·적립금"
+                          sx={{ cursor: "pointer", "&:hover": { background: "#fff8f1" } }}
+                        >
                           <Box component="td" sx={{ ...td, textAlign: "center" }}>
                             {m.year}년 {m.month}월
                           </Box>
@@ -584,6 +636,85 @@ export default function ReserveFundTab() {
             </>
           )}
         </Grid>
+
+        {/* 월별 행 클릭 시 업장별 사용금액·적립금 팝업 */}
+        <Dialog open={!!detailMonth} onClose={() => setDetailMonth(null)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700 }}>
+            {selectedVendor?.name} / {detailMonth?.year}년 {detailMonth?.month}월 업장별 적립금
+          </DialogTitle>
+          <DialogContent dividers>
+            {detailLoading ? (
+              <MDTypography variant="body2" color="text">
+                업장별 사용금액을 조회 중입니다.
+              </MDTypography>
+            ) : detailRows.length === 0 ? (
+              <MDTypography variant="body2" color="text">
+                업장별 사용금액 데이터가 없습니다.
+              </MDTypography>
+            ) : (
+              <Box sx={{ border: BORDER, borderRadius: 1, maxHeight: 520, overflowY: "auto" }}>
+                <Box
+                  component="table"
+                  sx={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}
+                >
+                  <Box component="thead">
+                    <Box component="tr">
+                      <Box component="th" sx={{ ...th, position: "sticky", top: 0 }}>
+                        업장명
+                      </Box>
+                      <Box component="th" sx={{ ...th, position: "sticky", top: 0, width: 150 }}>
+                        사용금액(매입)
+                      </Box>
+                      <Box
+                        component="th"
+                        sx={{ ...th, position: "sticky", top: 0, width: 130, borderRight: "none" }}
+                      >
+                        적립금
+                      </Box>
+                    </Box>
+                  </Box>
+                  <Box component="tbody">
+                    {detailRows.map((r) => (
+                      <Box component="tr" key={r.account_id || r.account_name}>
+                        <Box component="td" sx={{ ...td, whiteSpace: "normal" }}>
+                          {r.account_name}
+                        </Box>
+                        <Box component="td" sx={{ ...td, ...num }}>
+                          {formatWon(r.total)}
+                        </Box>
+                        <Box component="td" sx={{ ...td, ...num, borderRight: "none" }}>
+                          {formatWon(r.reserve)}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+                  {/* 업장 합계 행 (월별 표의 사용금액·적립금과 같은 값) */}
+                  <Box component="tfoot">
+                    <Box component="tr" sx={{ background: "#fff8f1" }}>
+                      <Box component="td" sx={{ ...td, textAlign: "center", fontWeight: 700 }}>
+                        합계
+                      </Box>
+                      <Box component="td" sx={{ ...td, ...num, fontWeight: 700 }}>
+                        {formatWon(detailRows.reduce((acc, r) => acc + r.total, 0))}
+                      </Box>
+                      <Box
+                        component="td"
+                        sx={{ ...td, ...num, fontWeight: 700, borderRight: "none" }}
+                      >
+                        {formatWon(detailRows.reduce((acc, r) => acc + r.reserve, 0))}
+                      </Box>
+                    </Box>
+                  </Box>
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <MDButton variant="outlined" color="secondary" onClick={() => setDetailMonth(null)}>
+              닫기
+            </MDButton>
+          </DialogActions>
+        </Dialog>
 
         {/* 적립금 사용 등록/수정 팝업 */}
         <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="xs" fullWidth>

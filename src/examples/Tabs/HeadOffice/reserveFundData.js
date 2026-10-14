@@ -59,5 +59,24 @@ export default function useReserveFundData() {
     [fetchUseList]
   );
 
-  return { loading, rawRows, useRows, fetchReserveSource, saveReserveFundUse };
+  // 선택 거래처(type)·연월의 업장별 사용금액(매입)을 조회하는 함수
+  const fetchMonthAccountDetail = useCallback(async (year, month, type) => {
+    const res = await api.get("/HeadOffice/AccountMappingPurchaseDetailList", {
+      params: { year, month: String(month).padStart(2, "0"), type },
+    });
+    return (res.data || []).map((r) => ({
+      account_id: r.account_id,
+      account_name: r.account_name || r.account_id || "-",
+      total: Number(r.total) || 0,
+    }));
+  }, []);
+
+  return {
+    loading,
+    rawRows,
+    useRows,
+    fetchReserveSource,
+    saveReserveFundUse,
+    fetchMonthAccountDetail,
+  };
 }

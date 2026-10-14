@@ -7,6 +7,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import ProfitLossTableTab from "./HeadOffice/ProfitLossTableTab";
 import PeopleCountingTab from "./HeadOffice/PeopleCountingTab";
 import AccountMappingPurchaseTab from "./HeadOffice/AccountMappingPurchaseTab";
+import ReserveFundTab from "./HeadOffice/ReserveFundTab";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
 function HeadOfficeTab() {
@@ -19,12 +20,14 @@ function HeadOfficeTab() {
   const tabLabels = [
     "인원증감",
     "손익표",
+    "적립금 관리",
     "거래처 통계"
   ];
 
   const tabComponents = [
     <PeopleCountingTab key="people" />,
     <ProfitLossTableTab key="profitloss" />,
+    <ReserveFundTab key="reservefund" />,
     <AccountMappingPurchaseTab key="purchasemapping" />,
   ];
   return (

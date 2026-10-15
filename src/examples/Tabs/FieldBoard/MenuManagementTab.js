@@ -15,6 +15,7 @@ import MDTypography from "components/MDTypography";
 import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
+import accountLabelSx from "utils/accountLabelSx";
 
 const MEAL_ROWS = [
   { key: "breakfast", label: "조식" },
@@ -436,6 +437,7 @@ function MenuManagementTab({ standalone = false }) {
                   sx={{
                     "& .MuiInputBase-root": { height: 36, fontSize: 12 },
                     "& .MuiInputLabel-root": { fontSize: 12 },
+                    ...accountLabelSx,
                   }}
                 />
               )}

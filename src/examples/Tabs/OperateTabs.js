@@ -12,6 +12,7 @@ import HandOverSheetTab from "./Operate/HandoverSheetTab";
 import AccountMembersFilesTab from "./Operate/AccountMembersFilesTab";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import { confirmTabLeave } from "utils/unsavedChangesGuard";
 
 // 🔹 로그인 유저의 부서/직책 코드 가져오기 (localStorage 기준)
 const getUserCodes = () => {
@@ -67,8 +68,10 @@ function OperateTabs() {
   const TAB_SWITCH_DELAY_MS = 320;
   const { deptCode, posCode } = getUserCodes();
 
-  const handleTabChange = (_, newValue) => {
+  // 탭 변경 (현재 탭 화면에 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인)
+  const handleTabChange = async (_, newValue) => {
     if (newValue === tabIndex) return;
+    if (!(await confirmTabLeave())) return;
 
     setTabIndex(newValue);
     setTabSwitchLoading(true);

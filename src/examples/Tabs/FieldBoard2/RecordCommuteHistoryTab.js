@@ -62,6 +62,13 @@ const TYPE_LABEL = {
 // 위·아래 달력 표 공통 칸 너비 (px)
 const NAME_COL_WIDTH = 90;
 const DAY_COL_WIDTH = 84;
+// 오늘 일자 열을 다른 날과 구분하는 강조 색
+const TODAY_COLOR = "#FF6D00";
+// 오늘 열 일자 칸의 좌우 강조 테두리
+const TODAY_CELL_STYLE = {
+  borderLeft: `2px solid ${TODAY_COLOR}`,
+  borderRight: `2px solid ${TODAY_COLOR}`,
+};
 
 // 출근부 근무타입별 셀 배경색 (recordsheet의 typeColors와 동일)
 const TYPE_COLORS = {
@@ -386,6 +393,12 @@ function RecordCommuteHistoryTab() {
 
   const daysInMonth = dayjs(`${year}-${month}`).daysInMonth();
   const todayKey = today.format("YYYY-MM-DD");
+  // 운영 DB와 같은 한국시간(UTC+9) 기준 오늘 날짜 - 조회 중인 연월이면 일자, 아니면 null
+  const kstToday = dayjs(
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date())
+  );
+  const todayDayNum =
+    kstToday.year() === year && kstToday.month() + 1 === month ? kstToday.date() : null;
 
   // 휴대폰 뒷자리 조회 맵 (phoneKeyOf -> 뒷자리 4자리)
   const phoneMap = useMemo(
@@ -772,6 +785,17 @@ function RecordCommuteHistoryTab() {
     }
   };
 
+  // 조회 결과가 그려지면 오늘 일자 열이 직원명 칸을 뺀 보이는 영역 가운데에 오도록 두 표를 스크롤
+  useEffect(() => {
+    if (!todayDayNum) return;
+    [topScrollRef.current, bottomScrollRef.current].forEach((box) => {
+      const th = box?.querySelector("th[data-today]");
+      if (!th) return;
+      const thLeft = th.getBoundingClientRect().left - box.getBoundingClientRect().left + box.scrollLeft;
+      box.scrollLeft = thLeft + th.offsetWidth / 2 - (NAME_COL_WIDTH + box.clientWidth) / 2;
+    });
+  }, [todayDayNum, displayRows, attendanceRows, loading]);
+
   // 직원명 칸 - 이름 아래에 휴대폰 뒷자리(동명이인 구분용)를 작게 표시
   const renderNameCell = (row) => (
     <>
@@ -791,7 +815,12 @@ function RecordCommuteHistoryTab() {
       {dayHeaders.map(({ dayNum, weekday, isSun, isSat }) => (
         <th
           key={dayNum}
-          style={{ backgroundColor: isSun ? "#ffe5e5" : isSat ? "#ddf0ff" : undefined }}
+          data-today={dayNum === todayDayNum ? "" : undefined}
+          style={
+            dayNum === todayDayNum
+              ? { ...TODAY_CELL_STYLE, backgroundColor: TODAY_COLOR, color: "#fff" }
+              : { backgroundColor: isSun ? "#ffe5e5" : isSat ? "#ddf0ff" : undefined }
+          }
         >
           {dayNum}일({weekday})
         </th>
@@ -844,6 +873,8 @@ function RecordCommuteHistoryTab() {
       border: "1px solid #686D76",
     },
     "thead th:first-of-type": { zIndex: 5 },
+    // 오늘 열의 마지막 행 아래 테두리 - 좌우 강조 테두리와 이어서 열 전체를 감싸 보이게 함
+    "& tbody tr:last-of-type td[data-today]": { borderBottom: `2px solid ${TODAY_COLOR}` },
   };
 
   return (
@@ -1019,7 +1050,14 @@ function RecordCommuteHistoryTab() {
                           const shown = issues.filter((i) => i.key !== "missing");
                           const missing = issues.find((i) => i.key === "missing");
                           return (
-                            <td key={dayNum} style={{ padding: "2px" }}>
+                            <td
+                              key={dayNum}
+                              style={{
+                                padding: "2px",
+                                ...(dayNum === todayDayNum && TODAY_CELL_STYLE),
+                              }}
+                              data-today={dayNum === todayDayNum ? "" : undefined}
+                            >
                               {/* 기록이 있는 날: 출퇴근 시간 한 줄 + 판정 문구 / 미기록 날: 테두리만 표시 / 그 외 빈칸 */}
                               {(record || missing) && (
                                 <div
@@ -1106,7 +1144,14 @@ function RecordCommuteHistoryTab() {
                           const other = issues.find((i) => i.key !== "missing");
                           const label = TYPE_LABEL[type];
                           return (
-                            <td key={dayNum} style={{ padding: "2px" }}>
+                            <td
+                              key={dayNum}
+                              style={{
+                                padding: "2px",
+                                ...(dayNum === todayDayNum && TODAY_CELL_STYLE),
+                              }}
+                              data-today={dayNum === todayDayNum ? "" : undefined}
+                            >
                               {/* 근무타입이 있는 날: 근무타입(+미기록) 한 줄 + 예정 시간 한 줄 / 없는 날: 빈칸 */}
                               {(label || other) && (
                                 <div

@@ -13,6 +13,7 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import PreviewOverlay from "utils/PreviewOverlay";
+import accountLabelSx from "utils/accountLabelSx";
 
 // ✅ 문서종류 고정 4종 — 회원 1명당 이 순서대로 세로 행이 생김(면허증/보건증/위생교육/보수교육)
 const DOC_TYPES = [
@@ -504,6 +505,7 @@ function AccountMembersFilesTab() {
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                   "& .MuiInputLabel-root": { fontSize: 12 },
+                  ...accountLabelSx,
                 "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />

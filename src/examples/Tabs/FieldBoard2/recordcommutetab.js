@@ -60,8 +60,36 @@ function RecordCommuteTab() {
     refreshAll().finally(() => setInitialLoading(false));
   }, []);
 
+  // 같은 사람(이름+번호)에게 이미 승인된 다른 기기가 있는지 여부 (승인 시 기존 기기가 해제되는 기기 변경 요청)
+  const isDeviceChangeRequest = (row) =>
+    row.approve_yn === "Y" && !!row.device_token && row.device_token !== row.pending_device_token;
+
+  // 기기 승인 확인 모달 공통 옵션 (기기명이 길어도 보이도록 폭 확장, 본문 줄바꿈(\n) 그대로 표시)
+  const deviceConfirmModalOptions = {
+    width: 640,
+    didOpen: () => {
+      Swal.getHtmlContainer().style.whiteSpace = "pre-line";
+      Swal.getHtmlContainer().style.wordBreak = "keep-all";
+    },
+  };
+
   const handleApprove = async (row, approve, staleDecision) => {
     try {
+      // 기기 변경 요청 승인 시 기존 기기 해제 안내 후 확인받기 (동명이인 확인 재요청 때는 생략)
+      if (approve === "Y" && !staleDecision && isDeviceChangeRequest(row)) {
+        const changeConfirm = await Swal.fire({
+          title: "기기 변경 확인",
+          text: `${row.user_name}(${row.phone_last4})님은 이미\n'${row.device_name || "등록된 기기"}'(으)로 승인되어 있습니다.\n\n승인하면 기존 기기는 해제되고\n'${row.pending_device_name || "요청 기기"}'(으)로 변경됩니다.\n승인할까요?`,
+          icon: "warning",
+          ...deviceConfirmModalOptions,
+          showCancelButton: true,
+          confirmButtonText: "기기 변경 승인",
+          cancelButtonText: "취소",
+        });
+
+        if (!changeConfirm.isConfirmed) return;
+      }
+
       const res = await approveDevice({
         account_id: row.account_id,
         user_name: row.user_name,
@@ -81,6 +109,7 @@ function RecordCommuteTab() {
             title: "확인 필요",
             text: res?.msg || "",
             icon: "warning",
+            ...deviceConfirmModalOptions,
             showCancelButton: true,
             confirmButtonText: "같은 사람 맞음 - 계속 진행",
             cancelButtonText: "취소",
@@ -96,6 +125,7 @@ function RecordCommuteTab() {
             title: "확인 필요",
             text: res?.msg || "",
             icon: "question",
+            ...deviceConfirmModalOptions,
             showDenyButton: true,
             showCancelButton: true,
             confirmButtonText: "같은 사람 - 기기변경(예전 기기 해제)",
@@ -326,6 +356,12 @@ function RecordCommuteTab() {
                   {row.user_name}
                   {row.phone_last4 ? ` (${row.phone_last4})` : ""} · {row.account_name || row.account_id}
                 </MDTypography>
+                {/* 이미 승인된 기기가 있으면 기존 기기 → 요청 기기 변경으로 표시 */}
+                {isDeviceChangeRequest(row) && (
+                  <MDTypography variant="caption" color="error" fontWeight="bold" display="block">
+                    기기 변경 · 현재기기: {row.device_name || "-"}
+                  </MDTypography>
+                )}
                 <MDTypography variant="caption" color="text" display="block">
                   요청기기: {row.pending_device_name || "-"}
                 </MDTypography>

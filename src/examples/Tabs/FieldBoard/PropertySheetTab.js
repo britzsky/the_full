@@ -22,6 +22,7 @@ import ExcelJS from "exceljs";
 import dayjs from "dayjs";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import accountLabelSx from "utils/accountLabelSx";
 
 const RECEIPT_IMAGE_FIELDS = ["receipt_img", "receipt_img2", "receipt_img3"];
 const RECEIPT_IMAGE_MAX_COUNT = RECEIPT_IMAGE_FIELDS.length;
@@ -1000,6 +1001,7 @@ function PropertySheetTab() {
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                   "& .MuiInputLabel-root": { fontSize: 12 },
+                  ...accountLabelSx,
                   "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                 }}
               />

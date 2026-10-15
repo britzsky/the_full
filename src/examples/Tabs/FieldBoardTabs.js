@@ -33,6 +33,7 @@ import FieldBoardPurchaseNotificationButton from "utils/FieldBoardPurchaseNotifi
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { confirmTabLeave } from "utils/unsavedChangesGuard";
 
 // 현장관리 진입 공지 팝업 이미지 (public/fieldboard-notice.png 파일을 교체해서 사용, 없으면 이미지 영역 숨김)
 const NOTICE_IMAGE_SRC = `${process.env.PUBLIC_URL}/fieldboard-notice.png`;
@@ -155,8 +156,10 @@ function FieldBoardTabs() {
     token: 0,
   });
 
-  const handleTabChange = (_, newValue) => {
+  // 탭 변경 (현재 탭 화면에 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인)
+  const handleTabChange = async (_, newValue) => {
     if (newValue === tabIndex) return;
+    if (!(await confirmTabLeave())) return;
 
     setTabIndex(newValue);
     setTabSwitchLoading(true);

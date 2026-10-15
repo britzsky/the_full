@@ -1,25 +1,18 @@
 ﻿// src/layouts/hygiene/HygieneSheetTab.js
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
-import Grid from "@mui/material/Grid";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import {
-  TextField,
-  useTheme,
-  useMediaQuery,
-  IconButton,
-  Tooltip,
-  Autocomplete,
-} from "@mui/material";
-import DownloadIcon from "@mui/icons-material/Download";
-import ImageSearchIcon from "@mui/icons-material/ImageSearch";
+import { TextField, useTheme, useMediaQuery, Autocomplete } from "@mui/material";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import useHygienesheetData from "./hygienesheetData";
+import useHygienesheetData, { sortHygieneRows } from "./hygienesheetData";
+import HygieneCardBoard, { HygieneCategoryChips, useFillViewportHeight } from "utils/HygieneCardBoard";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import accountLabelSx from "utils/accountLabelSx";
+import { askUnsavedChanges, setTabLeaveGuard } from "utils/unsavedChangesGuard";
 
 function HygieneSheetTab() {
   const theme = useTheme();
@@ -33,8 +26,33 @@ function HygieneSheetTab() {
   // 조회 시작 전/후 깜빡임 방지를 위한 화면 로딩 상태
   const [viewLoading, setViewLoading] = useState(true);
   const loadingStartedRef = useRef(false);
+  // 미저장 변경 확인 후 이동 가능 여부 (저장 함수가 아래에서 정의되어 ref로 참조, 렌더마다 최신 함수로 교체)
+  const leaveCheckRef = useRef(async () => true);
+  // 카드 영역 ref와 화면 맨 아래까지 채우는 높이
+  const [boardAreaRef, boardAreaHeight] = useFillViewportHeight();
 
-  const { hygieneListRows, accountList, loading, fetcHygieneList } = useHygienesheetData();
+  // 탭 이동 전 미저장 변경 확인 등록 (운영관리·현장 탭 묶음에서 탭을 바꾸기 전에 호출)
+  useEffect(() => setTabLeaveGuard(() => leaveCheckRef.current()), []);
+
+  const {
+    hygieneListRows,
+    accountList,
+    loading,
+    fetcHygieneList,
+    categoryList,
+    fetchHygieneCategoryList,
+  } = useHygienesheetData();
+
+  // 상세 화면 카테고리 key (null: 전체 요약 화면, "": 구분 없음)
+  const [selectedCategoryKey, setSelectedCategoryKey] = useState(null);
+  // 전체 요약 화면 상태 필터 (전체 / 조치 필요 / 완료 / 미점검)
+  const [statusFilter, setStatusFilter] = useState("전체");
+
+  // 등록일자 → 구분 → 등록 순서로 정렬한 행 (카테고리 구분은 카드 화면에서 처리)
+  const filteredHygieneRows = useMemo(
+    () => sortHygieneRows(hygieneListRows || [], categoryList),
+    [hygieneListRows, categoryList]
+  );
 
   // ✅ localStorage account_id 기준으로 거래처 리스트 필터링
   const filteredAccountList = useMemo(() => {
@@ -45,14 +63,6 @@ function HygieneSheetTab() {
   const [rows, setRows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
   const [viewImageSrc, setViewImageSrc] = useState(null);
-
-  // ✅ 우클릭(컨텍스트) 메뉴 상태 (행 삭제)
-  const [ctxMenu, setCtxMenu] = useState({
-    open: false,
-    mouseX: 0,
-    mouseY: 0,
-    rowIndex: null,
-  });
 
   const imageCols = ["problem_image", "clean_image"];
 
@@ -88,13 +98,18 @@ function HygieneSheetTab() {
   }, []);
 
   const setSelectedAccountWithLoading = useCallback(
-    (nextAccountId) => {
+    async (nextAccountId) => {
       const nextId = String(nextAccountId ?? "");
       if (nextId === String(selectedAccountId ?? "")) return;
+      // 미저장 변경이 있으면 확인 (취소 시 거래처 입력칸을 현재 거래처명으로 되돌림)
+      if (!(await leaveCheckRef.current())) {
+        setAccountInput(selectedAccountOption?.label || "");
+        return;
+      }
       beginListLoading();
       setSelectedAccountId(nextId);
     },
-    [beginListLoading, selectedAccountId]
+    [beginListLoading, selectedAccountId, selectedAccountOption]
   );
 
   const selectAccountByInput = useCallback(() => {
@@ -111,6 +126,13 @@ function HygieneSheetTab() {
       setAccountInput(partial.label || q);
     }
   }, [accountInput, accountOptions, isAccountLocked, setSelectedAccountWithLoading]);
+
+  // 거래처 변경 시 위생점검 카테고리 목록 조회, 전체 요약 화면으로 초기화
+  useEffect(() => {
+    setSelectedCategoryKey(null);
+    setStatusFilter("전체");
+    fetchHygieneCategoryList(selectedAccountId);
+  }, [selectedAccountId, fetchHygieneCategoryList]);
 
   // 거래처 변경 시 데이터 조회
   useEffect(() => {
@@ -138,7 +160,7 @@ function HygieneSheetTab() {
 
   // 서버 rows → 로컬 rows / originalRows 복사
   useLayoutEffect(() => {
-    const deepCopy = (hygieneListRows || []).map((row) => ({
+    const deepCopy = filteredHygieneRows.map((row) => ({
       ...row,
       del_yn: row.del_yn ?? "N", // ✅ 없으면 기본 N
     }));
@@ -148,7 +170,7 @@ function HygieneSheetTab() {
     if (selectedAccountId) {
       setViewLoading(false);
     }
-  }, [hygieneListRows, selectedAccountId]);
+  }, [filteredHygieneRows, selectedAccountId]);
 
   useEffect(() => {
     if (!viewLoading) return;
@@ -189,61 +211,11 @@ function HygieneSheetTab() {
     return original === current;
   };
 
-  const getCellStyle = (rowIndex, key, value) => {
-    const original = originalRows[rowIndex]?.[key];
-    return isSameValue(key, original, value) ? { color: "black" } : { color: "red" };
-  };
-
-  // ✅ 아이콘: 변경됐으면 빨강, 아니면 파랑
-  const getFileIconSx = (isChanged) => ({
-    color: isChanged ? "#d32f2f" : "#1e88e5",
-  });
-
-  // ✅ 모바일 대응 테이블 스타일
-  const tableSx = {
-    flex: 1,
-    minHeight: 0,
-    maxHeight: isMobile ? "55vh" : "75vh",
-    overflowX: "auto",
-    overflowY: "auto",
-    WebkitOverflowScrolling: "touch",
-    "& table": {
-      borderCollapse: "separate",
-      width: "max-content",
-      minWidth: "100%",
-      borderSpacing: 0,
-      tableLayout: "fixed",
-    },
-    "& th, & td": {
-      border: "1px solid #686D76",
-      textAlign: "center",
-      padding: isMobile ? "2px" : "4px",
-      whiteSpace: "pre-wrap",
-      fontSize: isMobile ? "10px" : "12px",
-      verticalAlign: "middle",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
-    },
-    "& th": {
-      backgroundColor: "#f0f0f0",
-      position: "sticky",
-      top: 0,
-      zIndex: 10,
-    },
-    "& input[type='date'], & input[type='text']": {
-      fontSize: isMobile ? "10px" : "12px",
-      padding: isMobile ? "2px 3px" : "4px",
-      minWidth: isMobile ? "70px" : "80px",
-      border: "none",
-      background: "transparent",
-      outline: "none",
-    },
-  };
-
-  // 행추가
-  const handleAddRow = () => {
+  // 상세 화면에서 선택한 카테고리로 항목(행) 추가
+  const handleAddRow = (categoryKey) => {
     const newRow = {
       account_id: selectedAccountId,
+      category_key: categoryKey || "",
       reg_dt: "",
       problem_note: "",
       mod_dt: "",
@@ -313,21 +285,6 @@ function HygieneSheetTab() {
     document.body.removeChild(a);
   }, []);
 
-  // ✅ 우클릭 메뉴 열기
-  const handleRowContextMenu = (e, rowIndex) => {
-    e.preventDefault();
-    setCtxMenu({
-      open: true,
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      rowIndex,
-    });
-  };
-
-  const closeCtxMenu = () => {
-    setCtxMenu((prev) => ({ ...prev, open: false, rowIndex: null }));
-  };
-
   // ✅ 행 삭제: del_yn=Y 로 서버 저장 → 성공하면 화면에서만 제거(재조회 X)
   const handleDeleteRow = async (rowIndex) => {
     if (rowIndex == null) return;
@@ -371,8 +328,6 @@ function HygieneSheetTab() {
         setRows((prev) => prev.filter((_, i) => i !== rowIndex));
         setOriginalRows((prev) => prev.filter((_, i) => i !== rowIndex));
 
-        closeCtxMenu();
-
         Swal.fire({
           title: "삭제",
           text: "삭제 처리되었습니다.",
@@ -403,6 +358,7 @@ function HygieneSheetTab() {
 
   const columns = useMemo(
     () => [
+      { header: "구분", accessorKey: "category_key", size: 130 },
       { header: "등록일자", accessorKey: "reg_dt", size: 100 },
       { header: "조치 전 사진", accessorKey: "problem_image", size: 220 },
       { header: "전달 내용", accessorKey: "problem_note", size: 160 },
@@ -414,8 +370,35 @@ function HygieneSheetTab() {
     []
   );
 
-  // 저장
+  // 항목(행) 변경 여부 (신규 행 또는 컬럼 값이 조회값과 다른 경우, 카드 수정 표시용)
+  const isRowChanged = (rowIndex) => {
+    const row = rows[rowIndex] || {};
+    const original = originalRows[rowIndex] || {};
+    return (
+      !!row.isNew ||
+      columns.some((col) => !isSameValue(col.accessorKey, original[col.accessorKey], row[col.accessorKey]))
+    );
+  };
+
+  // 로그인 사용자 아이디 (저장 시 reg_user_id·mod_user_id)
+  const loginUserId = localStorage.getItem("user_id") || "";
+
+  // 저장 진행 중 여부 (빠른 연속 클릭 시 신규 행이 두 번 INSERT되는 것 방지)
+  const savingRef = useRef(false);
+
+  // 저장 (성공 시 true 반환, 미저장 확인 모달의 저장 후 이동에서도 사용)
   const handleSave = async () => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    try {
+      return await saveHygieneRows();
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
+  // 변경·신규 행의 사진 업로드 후 위생점검 행 저장
+  const saveHygieneRows = async () => {
     try {
       const modifiedRows = await Promise.all(
         rows.map(async (row, index) => {
@@ -431,6 +414,15 @@ function HygieneSheetTab() {
             });
 
           if (!isChanged) return null;
+
+          // 조치 전(사진·전달 메모)·조치 후(사진·조치 메모) 중 바뀐 쪽 판단
+          const isSideChanged = (keys) => keys.some((key) => !isSameValue(key, original[key], row[key]));
+          const beforeChanged = row.isNew || isSideChanged(["problem_image", "problem_note"]);
+          const afterChanged = isSideChanged(["clean_image", "clean_note"]);
+
+          // 바뀐 쪽만 사용자 갱신 (등록일자·조치일자는 화면에서 직접 입력)
+          if (beforeChanged) updatedRow.reg_user_id = loginUserId;
+          if (afterChanged) updatedRow.mod_user_id = loginUserId;
 
           // 이미지 처리
           for (const field of imageCols) {
@@ -463,7 +455,7 @@ function HygieneSheetTab() {
           confirmButtonColor: "#d33",
           confirmButtonText: "확인",
         });
-        return;
+        return false;
       }
 
       const response = await api.post("/Operate/HygieneSave", payload, {
@@ -480,6 +472,7 @@ function HygieneSheetTab() {
         });
 
         await fetcHygieneList(selectedAccountId);
+        return true;
       } else {
         Swal.fire({
           title: "오류",
@@ -499,6 +492,27 @@ function HygieneSheetTab() {
       });
       console.error(error);
     }
+    return false;
+  };
+
+  // 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인 (true: 이동 가능)
+  // 취소 후 이동: 추가한 새 항목은 빼고 마지막 조회 상태로 되돌림 (카테고리 이동처럼 다시 조회하지 않는 경우 대비)
+  leaveCheckRef.current = async () => {
+    if (!rows.some((_, index) => isRowChanged(index))) return true;
+    const choice = await askUnsavedChanges();
+    if (choice === "cancel") return false;
+    if (choice === "save") return handleSave();
+    const savedRows = originalRows.filter((row) => !row.isNew);
+    setRows(savedRows);
+    setOriginalRows(savedRows);
+    return true;
+  };
+
+  // 카테고리 칩·전체로 이동·요약 카드 선택 (미저장 변경이 있으면 확인 후 이동)
+  const handleSelectCategory = async (nextKey) => {
+    if (nextKey === selectedCategoryKey) return;
+    if (!(await leaveCheckRef.current())) return;
+    setSelectedCategoryKey(nextKey);
   };
 
   if (loading || viewLoading) return <LoadingScreen />;
@@ -507,7 +521,7 @@ function HygieneSheetTab() {
     <>
       {/* 상단 필터 + 버튼 (모바일 대응) */}
       <MDBox
-        pt={1}
+        pt={0}
         pb={1}
         sx={{
           display: "flex",
@@ -521,6 +535,15 @@ function HygieneSheetTab() {
           backgroundColor: "#ffffff",
         }}
       >
+        {/* 상세 화면 전체로 이동 버튼과 카테고리 칩 (연·월·거래처 필터 왼쪽, 상단 고정) */}
+        <HygieneCategoryChips
+          rows={rows}
+          categoryList={categoryList}
+          selectedKey={selectedCategoryKey}
+          onSelectKey={handleSelectCategory}
+          isMobile={isMobile}
+        />
+
         {(filteredAccountList || []).length > 0 && (
           <Autocomplete
             size="small"
@@ -561,24 +584,13 @@ function HygieneSheetTab() {
                 sx={{
                   "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                   "& .MuiInputLabel-root": { fontSize: 12 },
+                  ...accountLabelSx,
                   "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                 }}
               />
             )}
           />
         )}
-
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleAddRow}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 80 : 100,
-          }}
-        >
-          행 추가
-        </MDButton>
 
         <MDButton
           variant="gradient"
@@ -593,156 +605,33 @@ function HygieneSheetTab() {
         </MDButton>
       </MDBox>
 
-      {/* 테이블 영역 */}
-      <MDBox pt={0} pb={3} sx={tableSx}>
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <table>
-              <thead>
-                <tr>
-                  {columns.map((col) => (
-                    <th key={col.accessorKey}>{col.header}</th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody>
-                {rows.map((row, rowIndex) => (
-                  <tr
-                    key={rowIndex}
-                    onContextMenu={(e) => handleRowContextMenu(e, rowIndex)} // ✅ 우클릭
-                    style={{ cursor: "context-menu" }}
-                  >
-                    {columns.map((col) => {
-                      const key = col.accessorKey;
-                      const value = row[key] ?? "";
-
-                      // 이미지 컬럼 (✅ PropertySheetTab 방식 적용: 업로드/재업로드 + 다운로드 + 미리보기 + 변경시 아이콘 빨강)
-                      if (imageCols.includes(key)) {
-                        const hasImage = !!value;
-                        const original = originalRows[rowIndex]?.[key];
-                        const isImgChanged = !isSameValue(key, original, value);
-
-                        return (
-                          <td
-                            key={key}
-                            style={{
-                              width: `${col.size}px`,
-                              textAlign: "center",
-                              verticalAlign: "middle",
-                            }}
-                          >
-                            <input
-                              type="file"
-                              accept="image/*"
-                              id={`upload-${key}-${rowIndex}`}
-                              style={{ display: "none" }}
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) handleCellChange(rowIndex, key, file);
-                                e.target.value = ""; // ✅ 같은 파일 재선택 가능
-                              }}
-                            />
-
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                gap: 6,
-                                flexWrap: isMobile ? "wrap" : "nowrap",
-                              }}
-                            >
-                              {/* 업로드/재업로드 버튼은 항상 노출 */}
-                              <label htmlFor={`upload-${key}-${rowIndex}`}>
-                                <MDButton
-                                  size="small"
-                                  component="span"
-                                  color="info"
-                                  sx={{ fontSize: isMobile ? "10px" : "12px" }}
-                                >
-                                  {hasImage ? "재업로드" : "이미지 업로드"}
-                                </MDButton>
-                              </label>
-
-                              {/* 다운로드: 서버 문자열일 때만 */}
-                              {typeof value === "string" && value && (
-                                <Tooltip title="다운로드">
-                                  <IconButton
-                                    size="small"
-                                    sx={getFileIconSx(isImgChanged)}
-                                    onClick={() => handleDownload(value)}
-                                  >
-                                    <DownloadIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              )}
-
-                              {/* 미리보기: 서버/로컬 모두 */}
-                              {hasImage && (
-                                <Tooltip title="미리보기">
-                                  <IconButton
-                                    size="small"
-                                    sx={getFileIconSx(isImgChanged)}
-                                    onClick={() => handleViewImage(value)}
-                                  >
-                                    <ImageSearchIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      }
-
-                      // 날짜 컬럼
-                      const isDate = ["reg_dt", "mod_dt"].includes(key);
-                      if (isDate) {
-                        return (
-                          <td
-                            key={key}
-                            style={{
-                              ...getCellStyle(rowIndex, key, value),
-                              width: `${col.size}px`,
-                            }}
-                          >
-                            <input
-                              type="date"
-                              value={value || ""}
-                              onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
-                              style={{
-                                ...getCellStyle(rowIndex, key, value),
-                                width: "100%",
-                                border: "none",
-                                background: "transparent",
-                              }}
-                            />
-                          </td>
-                        );
-                      }
-
-                      // 일반 텍스트 컬럼
-                      return (
-                        <td
-                          key={key}
-                          contentEditable
-                          suppressContentEditableWarning
-                          onBlur={(e) => handleCellChange(rowIndex, key, e.currentTarget.innerText)}
-                          style={{
-                            ...getCellStyle(rowIndex, key, value),
-                            width: `${col.size}px`,
-                          }}
-                        >
-                          {value}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Grid>
-        </Grid>
+      {/* 위생점검 카드 화면 (전체 요약 카드 → 카테고리 상세 조치 전·후 항목 카드), 화면 맨 아래까지 채우고 영역 안에서만 스크롤 */}
+      <MDBox
+        ref={boardAreaRef}
+        pt={1}
+        sx={{
+          height: boardAreaHeight ?? (isMobile ? "55vh" : "75vh"),
+          overflowY: "auto",
+          WebkitOverflowScrolling: "touch",
+        }}
+      >
+        <HygieneCardBoard
+          rows={rows}
+          categoryList={categoryList}
+          selectedKey={selectedCategoryKey}
+          onSelectKey={handleSelectCategory}
+          statusFilter={statusFilter}
+          onStatusFilter={setStatusFilter}
+          isMobile={isMobile}
+          isRowChanged={isRowChanged}
+          onCellChange={handleCellChange}
+          onAddRow={handleAddRow}
+          onDeleteRow={handleDeleteRow}
+          onViewImage={handleViewImage}
+          onDownload={handleDownload}
+          isFieldMode
+          savedRows={originalRows}
+        />
       </MDBox>
 
       {/* 이미지 뷰어 */}
@@ -858,54 +747,6 @@ function HygieneSheetTab() {
         </div>
       )}
 
-      {/* ✅ 우클릭 컨텍스트 메뉴 (행 삭제) */}
-      {ctxMenu.open && (
-        <div
-          onClick={closeCtxMenu}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            closeCtxMenu();
-          }}
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            zIndex: 10000,
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              top: ctxMenu.mouseY,
-              left: ctxMenu.mouseX,
-              background: "#fff",
-              border: "1px solid #ddd",
-              borderRadius: 8,
-              boxShadow: "0 6px 20px rgba(0,0,0,0.15)",
-              minWidth: 140,
-              overflow: "hidden",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                border: "none",
-                background: "transparent",
-                textAlign: "left",
-                cursor: "pointer",
-                fontSize: 13,
-              }}
-              onClick={() => handleDeleteRow(ctxMenu.rowIndex)}
-            >
-              🗑️ 행 삭제
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

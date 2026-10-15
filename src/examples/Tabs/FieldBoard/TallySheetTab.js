@@ -37,6 +37,7 @@ import { API_BASE_URL } from "config";
 import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
 import PreviewOverlay from "utils/PreviewOverlay";
+import accountLabelSx from "utils/accountLabelSx";
 
 const SWAL_LOADING_CUSTOM_CLASS = {
   popup: "tally-swal-loading-popup",
@@ -3701,6 +3702,7 @@ function TallySheet() {
                   sx={{
                     "& .MuiInputBase-root": { height: 35, fontSize: 12 },
                   "& .MuiInputLabel-root": { fontSize: 12 },
+                  ...accountLabelSx,
                     "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
                   }}
                 />

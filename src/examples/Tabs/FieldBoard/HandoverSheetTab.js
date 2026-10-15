@@ -9,6 +9,7 @@ import api from "api/api";
 import Swal from "sweetalert2";
 import XlsxPopulate from "xlsx-populate/browser/xlsx-populate";
 import FileSaver from "file-saver";
+import accountLabelSx from "utils/accountLabelSx";
 
 export default function HandoverSheetTab() {
   // ✅ localStorage account_id로 거래처 고정 + 셀렉트 필터링
@@ -451,6 +452,7 @@ export default function HandoverSheetTab() {
             sx={{
               minWidth: isMobile ? 160 : 200,
               fontSize: isMobile ? "12px" : "14px",
+              ...accountLabelSx,
             }}
             InputLabelProps={{ shrink: true }}
             SelectProps={{ native: true }}

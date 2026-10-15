@@ -32,6 +32,7 @@ import {
   shouldMaskSensitiveField,
 } from "utils/maskingUtils";
 import { getDinerColumnAverages } from "utils/dinerTotalCalc";
+import accountLabelSx from "utils/accountLabelSx";
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -3280,8 +3281,8 @@ function RecordSheet() {
                   sx={{
                     "& .MuiInputBase-root": { height: 40, fontSize: 12 },
                     "& .MuiInputLabel-root": { fontSize: 12 },
+                    ...accountLabelSx,
                     "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
-                    "& .MuiOutlinedInput-notchedOutline legend": { paddingRight: "12px" },
                   }}
                 />
               )}

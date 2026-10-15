@@ -19,6 +19,7 @@ import DownloadIcon from "@mui/icons-material/Download";
 //    화면마다 평균식수 값이 어긋나지 않으므로 src/utils/dinerTotalCalc.js 하나로 통일해서 가져다 쓴다.
 //    (이 파일에 예전에 따로 들고 있던 계산식은 최신 로직과 어긋나 있었음 - 2026-09 정리)
 import { isEmployeeMealColumnPeriod, calculateTotal } from "utils/dinerTotalCalc";
+import accountLabelSx from "utils/accountLabelSx";
 
 // 🔹 데이케어 컬럼이 보이는 account_id 목록 (기본 레이아웃용)
 const DAYCARE_ACCOUNT_IDS = [
@@ -1448,6 +1449,7 @@ function DinersNumberSheet() {
                   label={isAccountLocked ? "거래처(고정)" : "거래처"}
                   placeholder={isAccountLocked ? "거래처가 고정되어 있습니다" : "거래처명을 입력"}
                   size="small"
+                  sx={accountLabelSx}
                   onKeyDown={(e) => {
                     if (isAccountLocked) return;
                     if (e.key === "Enter") {

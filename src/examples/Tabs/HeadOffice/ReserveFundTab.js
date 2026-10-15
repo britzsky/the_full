@@ -58,8 +58,9 @@ const allocateReserve = (rows) => {
 const formatWon = (value) => `${formatNumber(value || 0)}원`;
 
 // 적립금 사용 등록/수정 팝업 입력값 초기값
-const emptyForm = () => ({
+const emptyForm = (type) => ({
   id: null,
+  type,
   use_date: dayjs().format("YYYY-MM-DD"),
   use_amount: "",
   memo: "",
@@ -155,7 +156,7 @@ export default function ReserveFundTab() {
 
   // 사용 등록 버튼: 빈 입력값으로 팝업 열기
   const openNewForm = () => {
-    setForm(emptyForm());
+    setForm(emptyForm(selectedType));
     setFormOpen(true);
   };
 
@@ -163,6 +164,7 @@ export default function ReserveFundTab() {
   const openEditForm = (row) => {
     setForm({
       id: row.id,
+      type: Number(row.type),
       use_date: row.use_date,
       use_amount: String(row.use_amount ?? ""),
       memo: row.memo ?? "",
@@ -170,7 +172,6 @@ export default function ReserveFundTab() {
     setFormOpen(true);
   };
 
-  // 선택 거래처 type과 로그인 사용자 ID를 붙여 사용 내역을 저장하는 함수
   // 월별 행 클릭: 해당 연월의 업장별 사용금액을 조회하고 적립금을 배분해 팝업 표시
   const openMonthDetail = async (m) => {
     setDetailMonth(m);
@@ -187,16 +188,22 @@ export default function ReserveFundTab() {
     }
   };
 
+  // 로그인 사용자 ID를 붙여 사용 내역을 저장하는 함수 (거래처 type은 payload에 포함)
   const saveUse = (payload) =>
     saveReserveFundUse({
       ...payload,
-      type: selectedType,
       user_id: localStorage.getItem("user_id"),
     });
+
+  // 등록/수정 팝업에서 선택한 거래처 (남은 금액 안내용)
+  const formVendor = vendorRows.find((v) => v.type === form.type);
 
   // 팝업 저장 버튼: 입력값 검증 후 저장
   const handleFormSave = async () => {
     const amount = Number(String(form.use_amount).replace(/,/g, ""));
+    if (!RESERVE_TYPES.includes(form.type)) {
+      return Swal.fire("확인", "거래처를 선택해 주세요.", "warning");
+    }
     if (!form.use_date) return Swal.fire("확인", "사용일자를 입력해 주세요.", "warning");
     if (form.use_date < MIN_USE_DATE || form.use_date > getMaxUseDate()) {
       return Swal.fire(
@@ -209,12 +216,15 @@ export default function ReserveFundTab() {
     try {
       await saveUse({
         id: form.id,
+        type: form.type,
         use_date: form.use_date,
         use_amount: amount,
         memo: form.memo,
         del_yn: "N",
       });
       setFormOpen(false);
+      // 저장한 거래처의 내역이 바로 보이도록 좌측 선택 거래처를 맞춤
+      setSelectedType(form.type);
       return Swal.fire("완료", "저장되었습니다.", "success");
     } catch (err) {
       console.error("적립금 사용 저장 실패:", err);
@@ -237,6 +247,7 @@ export default function ReserveFundTab() {
       // 신규 INSERT 구문을 거치므로 NOT NULL 컬럼(use_date, use_amount) 값도 함께 전달
       await saveUse({
         id: row.id,
+        type: Number(row.type),
         use_date: row.use_date,
         use_amount: Number(row.use_amount) || 0,
         memo: row.memo ?? "",
@@ -549,6 +560,9 @@ export default function ReserveFundTab() {
                     >
                       <Box component="thead">
                         <Box component="tr">
+                          <Box component="th" sx={{ ...th, width: 140 }}>
+                            거래처
+                          </Box>
                           <Box component="th" sx={{ ...th, width: 110 }}>
                             사용일자
                           </Box>
@@ -571,7 +585,7 @@ export default function ReserveFundTab() {
                           <Box component="tr">
                             <Box
                               component="td"
-                              colSpan={5}
+                              colSpan={6}
                               sx={{
                                 ...td,
                                 textAlign: "center",
@@ -585,6 +599,9 @@ export default function ReserveFundTab() {
                         ) : (
                           selectedVendor.uses.map((r) => (
                             <Box component="tr" key={r.id}>
+                              <Box component="td" sx={{ ...td, ...rowTd, textAlign: "center" }}>
+                                {vendorRows.find((v) => v.type === Number(r.type))?.name ?? r.type}
+                              </Box>
                               <Box component="td" sx={{ ...td, ...rowTd, textAlign: "center" }}>
                                 {r.use_date}
                               </Box>
@@ -719,10 +736,25 @@ export default function ReserveFundTab() {
         {/* 적립금 사용 등록/수정 팝업 */}
         <Dialog open={formOpen} onClose={() => setFormOpen(false)} maxWidth="xs" fullWidth>
           <DialogTitle sx={{ fontWeight: 700 }}>
-            {selectedVendor?.name} 적립금 사용 {form.id ? "수정" : "등록"}
+            적립금 사용 {form.id ? "수정" : "등록"}
           </DialogTitle>
           <DialogContent dividers>
             <MDBox sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 1 }}>
+              {/* 적립금 대상 거래처 선택 (RESERVE_TYPES 기준으로 목록 생성) */}
+              <TextField
+                select
+                label="거래처"
+                size="small"
+                value={form.type ?? ""}
+                onChange={(e) => setForm((p) => ({ ...p, type: Number(e.target.value) }))}
+                SelectProps={{ sx: { height: 40 } }}
+              >
+                {vendorRows.map((v) => (
+                  <MenuItem key={v.type} value={v.type}>
+                    {v.name}
+                  </MenuItem>
+                ))}
+              </TextField>
               <TextField
                 label="사용일자"
                 type="date"
@@ -740,9 +772,7 @@ export default function ReserveFundTab() {
                   setForm((p) => ({ ...p, use_amount: e.target.value.replace(/[^0-9]/g, "") }))
                 }
                 inputProps={{ inputMode: "numeric", style: { textAlign: "right" } }}
-                helperText={
-                  selectedVendor ? `현재 남은 금액 ${formatNumber(selectedVendor.remain)}원` : ""
-                }
+                helperText={formVendor ? `현재 남은 금액 ${formatNumber(formVendor.remain)}원` : ""}
               />
               <TextField
                 label="내용"

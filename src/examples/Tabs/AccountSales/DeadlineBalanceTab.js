@@ -522,6 +522,13 @@ export default function DeadlineBalanceTab() {
         return acc + Math.max(0, parseNumber(sourceRow?.[accessorKey]));
       }, 0)
       : 0;
+    // 환불 시 마감 항목 금액이 감액되므로, 차액조회 API와 같이 기준월 환불액을 기대금액에 되돌려 더한다
+    const refundTotal = (allDepositColorRows || []).reduce((acc, row) => {
+      if (normalizeDepositTypeCode(row?.type) !== "6") return acc;
+      if (normalizeAccountId(row?.account_id) !== normalizedAccountId) return acc;
+      if (Number(row?.year || 0) !== normalizedYear || Number(row?.month || 0) !== normalizedMonth) return acc;
+      return acc + Math.max(0, parseNumber(row?.input_price));
+    }, 0);
     const typePaidTotal = TRACKED_UNPAID_TYPE_CODES.reduce((acc, typeCode) => {
       const key = `${normalizedAccountId}_${ymKey}_${typeCode}`;
       const sum = rightStatusMapByBaseYmType.get(key) || { actual: 0 };
@@ -535,7 +542,7 @@ export default function DeadlineBalanceTab() {
 
     if (!sourceRow && typePaidTotal === 0 && balancePaid === 0) return null;
 
-    const typeOutstanding = Math.max(0, typeExpectedTotal - typePaidTotal);
+    const typeOutstanding = Math.max(0, typeExpectedTotal + refundTotal - typePaidTotal);
     return Math.max(0, typeOutstanding - balancePaid);
   };
 

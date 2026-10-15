@@ -280,15 +280,17 @@ function HygieneCardBoard({
     [categories, itemsByKey]
   );
 
-  // 상태별 카테고리 개수와 전체 진행률
+  // 상태별 카테고리 개수와 전체 진행률 (진행률 = 점검한 카테고리 중 완료 비율, 미점검 제외)
   const summary = useMemo(() => {
     const statuses = Object.values(statusMap);
     const doneCount = statuses.filter((s) => s === "완료").length;
+    const pendingCount = statuses.filter((s) => s === "조치 필요").length;
+    const checkedCount = doneCount + pendingCount;
     return {
       doneCount,
-      pendingCount: statuses.filter((s) => s === "조치 필요").length,
+      pendingCount,
       uncheckedCount: statuses.filter((s) => s === "미점검").length,
-      percent: statuses.length > 0 ? Math.round((doneCount / statuses.length) * 100) : 0,
+      percent: checkedCount > 0 ? Math.round((doneCount / checkedCount) * 100) : 0,
     };
   }, [statusMap]);
 

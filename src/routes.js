@@ -312,17 +312,6 @@ const routes = [
         // allowUserIds: [""],
         accessMode: "AND",
       },
-      {
-        type: "collapse",
-        name: "🧑‍🔧 채용관리",
-        key: "fieldstaff2",
-        //icon: <Icon fontSize="small">*</Icon>,
-        route: "/fieldstaff2",
-        component: <OperateTab_3 />,
-        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
-        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
-        accessMode: "AND",
-      },
       // 운영 메뉴 고객사 목록 숨김 처리
       // {
       //   type: "collapse",
@@ -477,6 +466,17 @@ const routes = [
           "db1", // 송다빈 매니저
           "si1", // 김세인 매니저
         ],
+      },
+      {
+        type: "collapse",
+        name: "🧑‍🔧 채용관리",
+        key: "fieldstaff2",
+        //icon: <Icon fontSize="small">*</Icon>,
+        route: "/fieldstaff2",
+        component: <OperateTab_3 />,
+        allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+        accessMode: "AND",
       },
       {
         type: "collapse",

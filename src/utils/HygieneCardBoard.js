@@ -23,6 +23,9 @@ const STATUS_TONE = {
 // 강조 색 (ERP info 색)
 const ACCENT = "#1A73E8";
 
+// 요약 카드에 미리 보여줄 최대 항목 수
+const PREVIEW_COUNT = 3;
+
 // 카드 안 입력칸 공통 글자 크기
 // 라벨은 14px(위로 올라가면 75%인 10.5px), 테두리를 끊는 legend 글자도 10.5px로 맞춰 라벨 좌우 여백 통일
 const inputSx = {
@@ -60,14 +63,9 @@ const getStatus = (items) => {
   return items.every(({ row }) => isItemDone(row)) ? "완료" : "조치 필요";
 };
 
-// 요약 카드 한 줄 안내 문구
-const getHint = (items, status) => {
-  if (status === "완료") return "모든 항목 조치 완료";
-  if (status === "조치 필요") {
-    return `조치 ${items.filter(({ row }) => !isItemDone(row)).length}건 남음`;
-  }
-  return "아직 점검하지 않음";
-};
+// 요약 카드 상태 배지 문구 (조치 필요는 남은 건수 함께 표시)
+const getStatusLabel = (items, status) =>
+  status === "조치 필요" ? `조치 필요 ${items.filter(({ row }) => !isItemDone(row)).length}건` : status;
 
 // 조치 전·후 사진이 있는 항목 수
 // 구분 없음(카테고리 없는 기존 웹 등록 행)은 사진 또는 내용(전: 전달 내용, 후: 조치 내용)이 있으면 셈
@@ -584,7 +582,7 @@ function HygieneCardBoard({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fill, minmax(220px, 1fr))",
+            gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fill, minmax(300px, 1fr))",
             gap: 10,
           }}
         >
@@ -642,10 +640,71 @@ function HygieneCardBoard({
                   <Badge label={`전 ${counts.before}`} bg="#f2f5f7" fg="#667584" />
                   <Badge label={`후 ${counts.after}`} bg="#eef6f1" fg="#3e7652" />
                   <span style={{ flex: 1 }} />
-                  {c.status_yn !== "N" && <Badge label={status} {...STATUS_TONE[status]} />}
+                  {c.status_yn !== "N" && <Badge label={getStatusLabel(items, status)} {...STATUS_TONE[status]} />}
                 </div>
-                {/* 조치 진행 안내 문구 */}
-                <span style={{ fontSize: 12, color: "#7b809a" }}>{getHint(items, status)}</span>
+                {/* 항목별 전달 내용 미리보기 목록 (조치 안 된 항목 먼저 최대 3건, 긴 내용은 한 줄 말줄임) */}
+                {items.length > 0 && (
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      borderTop: "1px solid #eef2f5",
+                      paddingTop: 4,
+                    }}
+                  >
+                    {[...items]
+                      .sort((a, b) => Number(isItemDone(a.row)) - Number(isItemDone(b.row)))
+                      .slice(0, PREVIEW_COUNT)
+                      .map(({ row, rowIndex }) => {
+                        const done = isItemDone(row);
+                        const note = String(row.problem_note || "").trim();
+                        return (
+                          // 항목 한 줄 (상태 점, 전달 내용, 조치 상태)
+                          <div
+                            key={rowIndex}
+                            title={note}
+                            style={{ display: "flex", alignItems: "center", gap: 6, height: 28, fontSize: 12 }}
+                          >
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: 999,
+                                flexShrink: 0,
+                                backgroundColor: done ? STATUS_TONE["완료"].fg : "#f0a35c",
+                              }}
+                            />
+                            <span
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                color: note ? "#344767" : "#9aa6b1",
+                              }}
+                            >
+                              {note || "전달 내용 없음"}
+                            </span>
+                            <span
+                              style={{
+                                flexShrink: 0,
+                                color: done ? STATUS_TONE["완료"].fg : STATUS_TONE["조치 필요"].fg,
+                              }}
+                            >
+                              {done ? "완료" : "조치 대기"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    {/* 미리보기 개수를 넘는 항목 수 안내 */}
+                    {items.length > PREVIEW_COUNT && (
+                      <span style={{ height: 24, display: "flex", alignItems: "center", fontSize: 12, color: ACCENT }}>
+                        외 {items.length - PREVIEW_COUNT}건 더 있음
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

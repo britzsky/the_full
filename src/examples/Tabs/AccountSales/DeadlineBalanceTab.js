@@ -542,8 +542,15 @@ export default function DeadlineBalanceTab() {
 
     if (!sourceRow && typePaidTotal === 0 && balancePaid === 0) return null;
 
+    // 미수잔액(type=4) 입금은 화면 미납 요약과 같이 오래된 월부터 FIFO로 배분된 금액만 해당 월에서 차감한다
+    const summaryMonth = (accountUnpaidSummaryMap.get(normalizedAccountId)?.unpaidDetailMonths || [])
+      .find((item) => item.ymKey === ymKey);
+    const appliedBalancePaid = summaryMonth
+      ? Math.max(0, parseNumber(summaryMonth.appliedBalancePaid))
+      : balancePaid;
+
     const typeOutstanding = Math.max(0, typeExpectedTotal + refundTotal - typePaidTotal);
-    return Math.max(0, typeOutstanding - balancePaid);
+    return Math.max(0, typeOutstanding - appliedBalancePaid);
   };
 
   const resolveDepositAmountByType = async (formState, typeValue) => {

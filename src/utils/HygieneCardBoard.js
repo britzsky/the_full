@@ -7,6 +7,8 @@ import DownloadIcon from "@mui/icons-material/Download";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
+import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import MDButton from "components/MDButton";
 import { API_BASE_URL } from "config";
 
@@ -278,20 +280,6 @@ function HygieneCardBoard({
     [categories, itemsByKey]
   );
 
-  // 상태별 카테고리 개수와 전체 진행률 (진행률 = 점검한 카테고리 중 완료 비율, 미점검 제외)
-  const summary = useMemo(() => {
-    const statuses = Object.values(statusMap);
-    const doneCount = statuses.filter((s) => s === "완료").length;
-    const pendingCount = statuses.filter((s) => s === "조치 필요").length;
-    const checkedCount = doneCount + pendingCount;
-    return {
-      doneCount,
-      pendingCount,
-      uncheckedCount: statuses.filter((s) => s === "미점검").length,
-      percent: checkedCount > 0 ? Math.round((doneCount / checkedCount) * 100) : 0,
-    };
-  }, [statusMap]);
-
   // 상세 화면 카테고리 (null이면 전체 요약 화면)
   const selectedCategory = selectedKey === null ? null : categories.find((c) => c.category_key === selectedKey) || null;
 
@@ -528,26 +516,6 @@ function HygieneCardBoard({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 24 }}>
-      {/* 전체 점검 진행률과 상태별 개수 영역 */}
-      <div style={{ ...cardStyle, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div
-          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}
-        >
-          <span style={{ fontSize: 16, fontWeight: 700, color: "#344767" }}>
-            전체 점검 현황 <span style={{ color: ACCENT }}>{summary.percent}%</span>
-          </span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <Badge label={`완료 ${summary.doneCount}`} {...STATUS_TONE["완료"]} />
-            <Badge label={`조치 필요 ${summary.pendingCount}`} {...STATUS_TONE["조치 필요"]} />
-            <Badge label={`미점검 ${summary.uncheckedCount}`} {...STATUS_TONE["미점검"]} />
-          </div>
-        </div>
-        {/* 진행률 막대 */}
-        <div style={{ height: 7, borderRadius: 999, backgroundColor: "#e7edf2", overflow: "hidden" }}>
-          <div style={{ height: 7, width: `${summary.percent}%`, backgroundColor: ACCENT }} />
-        </div>
-      </div>
-
       {/* 상태 필터 탭, 점검 항목 개수, 카테고리 편집 버튼 영역 */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
         {FILTER_TABS.map((filter) => (
@@ -643,73 +611,195 @@ function HygieneCardBoard({
                   {c.status_yn !== "N" && <Badge label={getStatusLabel(items, status)} {...STATUS_TONE[status]} />}
                 </div>
                 {/* 항목별 전달 내용 미리보기 목록 (조치 안 된 항목 먼저 최대 3건, 긴 내용은 한 줄 말줄임) */}
-                {items.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      borderTop: "1px solid #eef2f5",
-                      paddingTop: 4,
-                    }}
-                  >
-                    {[...items]
-                      .sort((a, b) => Number(isItemDone(a.row)) - Number(isItemDone(b.row)))
-                      .slice(0, PREVIEW_COUNT)
-                      .map(({ row, rowIndex }) => {
-                        const done = isItemDone(row);
-                        const note = String(row.problem_note || "").trim();
-                        return (
-                          // 항목 한 줄 (상태 점, 전달 내용, 조치 상태)
-                          <div
-                            key={rowIndex}
-                            title={note}
-                            style={{ display: "flex", alignItems: "center", gap: 6, height: 28, fontSize: 12 }}
+                {/* 항목 수와 관계없이 3줄 + 외 N건 줄 높이를 항상 확보해 카드 크기 통일 */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    boxSizing: "content-box",
+                    height: PREVIEW_COUNT * 28 + 24,
+                    borderTop: "1px solid #eef2f5",
+                    paddingTop: 4,
+                  }}
+                >
+                  {/* 항목 없는 카테고리 안내 (미리보기 영역 전체를 점선 박스로 채움, 운영관리 화면은 추가 방법 안내) */}
+                  {items.length === 0 && (
+                    <div
+                      style={{
+                        flex: 1,
+                        marginTop: 4,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 2,
+                        border: "1px dashed #d3dce3",
+                        borderRadius: 6,
+                        backgroundColor: "#f8fafb",
+                        color: "#9aa6b1",
+                        fontSize: 12,
+                      }}
+                    >
+                      <AssignmentOutlinedIcon sx={{ fontSize: 22, color: "#b8c3cc" }} />
+                      <span>등록된 점검 항목이 없습니다</span>
+                      {!isFieldMode && <span style={{ color: ACCENT }}>눌러서 항목 추가</span>}
+                    </div>
+                  )}
+                  {[...items]
+                    .sort((a, b) => Number(isItemDone(a.row)) - Number(isItemDone(b.row)))
+                    .slice(0, PREVIEW_COUNT)
+                    .map(({ row, rowIndex }) => {
+                      const done = isItemDone(row);
+                      const note = String(row.problem_note || "").trim();
+                      return (
+                        // 항목 한 줄 (상태 점, 전달 내용, 조치 상태)
+                        <div
+                          key={rowIndex}
+                          title={note}
+                          style={{ display: "flex", alignItems: "center", gap: 6, height: 28, fontSize: 12 }}
+                        >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 999,
+                              flexShrink: 0,
+                              backgroundColor: done ? STATUS_TONE["완료"].fg : "#f0a35c",
+                            }}
+                          />
+                          <span
+                            style={{
+                              flex: 1,
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                              color: note ? "#344767" : "#9aa6b1",
+                            }}
                           >
-                            <span
-                              style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: 999,
-                                flexShrink: 0,
-                                backgroundColor: done ? STATUS_TONE["완료"].fg : "#f0a35c",
-                              }}
-                            />
-                            <span
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                                color: note ? "#344767" : "#9aa6b1",
-                              }}
-                            >
-                              {note || "전달 내용 없음"}
-                            </span>
-                            <span
-                              style={{
-                                flexShrink: 0,
-                                color: done ? STATUS_TONE["완료"].fg : STATUS_TONE["조치 필요"].fg,
-                              }}
-                            >
-                              {done ? "완료" : "조치 대기"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    {/* 미리보기 개수를 넘는 항목 수 안내 */}
-                    {items.length > PREVIEW_COUNT && (
-                      <span style={{ height: 24, display: "flex", alignItems: "center", fontSize: 12, color: ACCENT }}>
-                        외 {items.length - PREVIEW_COUNT}건 더 있음
-                      </span>
-                    )}
-                  </div>
-                )}
+                            {note || "전달 내용 없음"}
+                          </span>
+                          <span
+                            style={{
+                              flexShrink: 0,
+                              color: done ? STATUS_TONE["완료"].fg : STATUS_TONE["조치 필요"].fg,
+                            }}
+                          >
+                            {done ? "완료" : "조치 대기"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  {/* 미리보기 개수를 넘는 항목 수 안내 */}
+                  {items.length > PREVIEW_COUNT && (
+                    <span style={{ height: 24, display: "flex", alignItems: "center", fontSize: 12, color: ACCENT }}>
+                      외 {items.length - PREVIEW_COUNT}건
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// 상단 고정 바의 전체 점검 현황 (진행률·항목 단위 완료·조치 필요 건수, 요약·상세 화면 모두 표시)
+// 진행률 = 전체 항목 중 조치 완료 비율
+export function HygieneSummaryStatus({ rows, isMobile }) {
+  const summary = useMemo(() => {
+    const items = rows || [];
+    const doneCount = items.filter((row) => isItemDone(row)).length;
+    return {
+      doneCount,
+      pendingCount: items.length - doneCount,
+      percent: items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0,
+    };
+  }, [rows]);
+
+  // 상태별 건수 표시 목록 (색 점 + 이름 + 건수)
+  const statusItems = [
+    { label: "완료", count: summary.doneCount },
+    { label: "조치 필요", count: summary.pendingCount },
+  ];
+
+  return (
+    // 현황 박스 (연한 파랑 바탕 둥근 박스, 연·월 셀렉트와 같은 40px 높이)
+    <div
+      style={{
+        flex: isMobile ? "1 1 100%" : "0 0 auto",
+        marginRight: isMobile ? 0 : "auto",
+        height: 40,
+        boxSizing: "border-box",
+        padding: "0 14px 0 6px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        whiteSpace: "nowrap",
+        lineHeight: 1,
+        border: "1px solid #d6e6fb",
+        borderRadius: 999,
+        background: "linear-gradient(90deg, #eef5ff 0%, #f8fbff 100%)",
+      }}
+    >
+      {/* 진행률 원형 표시 (바깥 원 테두리가 진행률만큼 채워짐) */}
+      <div
+        style={{
+          width: 30,
+          height: 30,
+          flexShrink: 0,
+          borderRadius: "50%",
+          background: `conic-gradient(${ACCENT} ${summary.percent * 3.6}deg, #dbe6f3 0deg)`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: "50%",
+            backgroundColor: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <FactCheckOutlinedIcon sx={{ fontSize: 14, color: ACCENT }} />
+        </div>
+      </div>
+      {/* 제목과 진행률 % */}
+      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#5b6b7c" }}>전체 점검 현황</span>
+        <span style={{ fontSize: 18, fontWeight: 800, color: ACCENT, lineHeight: 1 }}>{summary.percent}%</span>
+      </span>
+      {/* 구분선 */}
+      <span style={{ width: 1, height: 16, backgroundColor: "#d6e0ea" }} />
+      {/* 상태별 카테고리 개수 (상태 색 테두리의 흰 바탕 작은 박스) */}
+      {statusItems.map(({ label, count }) => (
+        <span
+          key={label}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            height: 26,
+            padding: "0 10px",
+            boxSizing: "border-box",
+            fontSize: 12,
+            borderRadius: 999,
+            border: `1px solid ${STATUS_TONE[label].fg}33`,
+            backgroundColor: "#ffffff",
+          }}
+        >
+          <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: STATUS_TONE[label].fg }} />
+          <span style={{ color: "#667584" }}>{label}</span>
+          <b style={{ color: STATUS_TONE[label].fg }}>{count}건</b>
+        </span>
+      ))}
     </div>
   );
 }
@@ -834,7 +924,8 @@ export function HygieneCategoryChips({ rows, categoryList, selectedKey, onSelect
 // 카드 영역을 화면 맨 아래까지 채우는 높이 계산 훅 (운영관리·현장 위생점검 탭 공통)
 // 반환값: [카드 영역에 연결할 ref 함수, 계산된 높이(px, 계산 전 null)]
 // 창 크기 변경, 바로 위 상단 바 높이 변경(모바일 줄바꿈·칩 표시)에도 다시 계산
-export function useFillViewportHeight(bottomGap = 24) {
+// bottomGap: 카드 영역 아래 남길 여백 (탭 안쪽 패딩 16px + 레이아웃 패딩 12px + 여유 4px, 바깥 페이지 스크롤 방지)
+export function useFillViewportHeight(bottomGap = 32) {
   const [element, setElement] = useState(null);
   const [height, setHeight] = useState(null);
 

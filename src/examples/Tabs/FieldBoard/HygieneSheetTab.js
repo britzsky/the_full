@@ -5,7 +5,11 @@ import MDButton from "components/MDButton";
 import { TextField, useTheme, useMediaQuery, Autocomplete } from "@mui/material";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useHygienesheetData, { sortHygieneRows } from "./hygienesheetData";
-import HygieneCardBoard, { HygieneCategoryChips, useFillViewportHeight } from "utils/HygieneCardBoard";
+import HygieneCardBoard, {
+  HygieneCategoryChips,
+  HygieneSummaryStatus,
+  useFillViewportHeight,
+} from "utils/HygieneCardBoard";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
@@ -535,6 +539,9 @@ function HygieneSheetTab() {
           backgroundColor: "#ffffff",
         }}
       >
+        {/* 전체 점검 현황 (요약·상세 화면 모두 상단 고정 표시) */}
+        <HygieneSummaryStatus rows={rows} isMobile={isMobile} />
+
         {/* 상세 화면 전체로 이동 버튼과 카테고리 칩 (연·월·거래처 필터 왼쪽, 상단 고정) */}
         <HygieneCategoryChips
           rows={rows}

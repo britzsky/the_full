@@ -1933,6 +1933,17 @@ function DinersNumberSheet() {
                                   endCol: colIndex,
                                 });
                               }}
+                              // 엔터 입력 시 같은 열의 다음 행 셀로 포커스 이동 (현재 셀은 onBlur에서 저장)
+                              onKeyDown={(e) => {
+                                if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+                                if (!editable || isSpecial) return;
+                                e.preventDefault();
+                                const nextRow = e.currentTarget.parentElement.nextElementSibling;
+                                // 첫 번째 td는 날짜 열이므로 colIndex + 1 위치가 같은 열
+                                const nextCell = nextRow?.children[colIndex + 1];
+                                if (nextCell) nextCell.focus();
+                                else e.currentTarget.blur();
+                              }}
                               onBlur={(e) => {
                                 if (selectRef.current.selecting) return;
                                 if (isSpecial) return;

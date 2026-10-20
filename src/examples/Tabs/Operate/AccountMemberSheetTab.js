@@ -2234,6 +2234,15 @@ function AccountMemberSheet() {
     // 화면 크기별 고정 열 범위
     // 모바일: 이름(2열)까지 고정, 태블릿: 주민번호(3열)까지 고정, 데스크탑: 기존(7열) 유지
     const stickyColumnCount = isMobile ? 2 : isTablet ? 3 : 7;
+    // n번째 고정 열의 left 위치: 앞 열들의 실제 렌더링 너비 합 (측정 전에는 컬럼 size 기준)
+    const getStickyLeft = (n) =>
+      `${table
+        .getFlatHeaders()
+        .slice(0, n - 1)
+        .reduce(
+          (sum, h) => sum + (measuredColWidths[h.id] ?? h.column.columnDef.size ?? 80),
+          0
+        )}px`;
 
     return (
       <MDBox
@@ -2281,7 +2290,7 @@ function AccountMemberSheet() {
             ? {
               "& td:nth-of-type(2), & th:nth-of-type(2)": {
                 position: "sticky",
-                left: "100px",
+                left: getStickyLeft(2),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -2291,7 +2300,7 @@ function AccountMemberSheet() {
             ? {
               "& td:nth-of-type(3), & th:nth-of-type(3)": {
                 position: "sticky",
-                left: "200px",
+                left: getStickyLeft(3),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -2301,7 +2310,7 @@ function AccountMemberSheet() {
             ? {
               "& td:nth-of-type(4), & th:nth-of-type(4)": {
                 position: "sticky",
-                left: "300px",
+                left: getStickyLeft(4),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -2311,7 +2320,7 @@ function AccountMemberSheet() {
             ? {
               "& td:nth-of-type(5), & th:nth-of-type(5)": {
                 position: "sticky",
-                left: "480px",
+                left: getStickyLeft(5),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -2322,7 +2331,7 @@ function AccountMemberSheet() {
               "& td:nth-of-type(6), & th:nth-of-type(6)": {
                 // 계좌번호
                 position: "sticky",
-                left: "580px",
+                left: getStickyLeft(6),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -2332,7 +2341,7 @@ function AccountMemberSheet() {
             ? {
               "& td:nth-of-type(7), & th:nth-of-type(7)": {
                 position: "sticky",
-                left: "730px",
+                left: getStickyLeft(7),
                 background: "#f0f0f0",
                 zIndex: 3,
               },

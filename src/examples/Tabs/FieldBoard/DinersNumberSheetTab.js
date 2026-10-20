@@ -77,6 +77,20 @@ const numericCols = [
 const employeeMealColumns = ["employ_breakfast", "employ_lunch", "employ_dinner"];
 const employeeMealHeaders = [{ label: "조식" }, { label: "중식" }, { label: "석식" }];
 
+// 비고 외 입력 셀에서 숫자·콤마 이외 문자(붙여넣기, 한글 입력 등)를 지우고 커서를 끝으로 이동
+const keepDigitsOnly = (cell) => {
+  const text = cell.innerText;
+  const cleaned = text.replace(/[^0-9,]/g, "");
+  if (cleaned === text) return;
+  cell.innerText = cleaned;
+  const range = document.createRange();
+  range.selectNodeContents(cell);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+};
+
 // 🔹 "구분" 날짜 표시: 출근부(recordsheet)와 동일하게 요일을 같이 표기 + 주말 배경색
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 const formatDinerDateLabel = (date) => {
@@ -1648,14 +1662,54 @@ function DinersNumberSheet() {
                               }}
                               // 엔터 입력 시 같은 열의 다음 행 셀로 포커스 이동 (현재 셀은 onBlur에서 저장)
                               onKeyDown={(e) => {
-                                if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
                                 if (!editable || isSpecial) return;
+                                // 비고 외 셀은 숫자·콤마만 키 입력 허용
+                                if (
+                                  key !== "note" &&
+                                  e.key.length === 1 &&
+                                  !e.ctrlKey &&
+                                  !e.metaKey &&
+                                  !/[0-9,]/.test(e.key)
+                                ) {
+                                  e.preventDefault();
+                                  return;
+                                }
+                                if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
                                 e.preventDefault();
                                 const nextRow = e.currentTarget.parentElement.nextElementSibling;
                                 // 첫 번째 td는 날짜 열이므로 colIndex + 1 위치가 같은 열
                                 const nextCell = nextRow?.children[colIndex + 1];
-                                if (nextCell) nextCell.focus();
-                                else e.currentTarget.blur();
+                                if (!nextCell) {
+                                  e.currentTarget.blur();
+                                  return;
+                                }
+                                nextCell.focus();
+                              }}
+                              // 선택된 값을 마우스로 끌어 다른 셀로 옮기거나 떨어뜨리는 동작 차단
+                              onDragStart={(e) => e.preventDefault()}
+                              onDrop={(e) => e.preventDefault()}
+                              // 비고 외 셀에 붙여넣기·한글 조합으로 들어온 문자 제거
+                              onInput={(e) => {
+                                if (key === "note" || e.nativeEvent.isComposing) return;
+                                keepDigitsOnly(e.currentTarget);
+                              }}
+                              onCompositionEnd={(e) => {
+                                if (key === "note") return;
+                                keepDigitsOnly(e.currentTarget);
+                              }}
+                              // 셀 진입(클릭·엔터 이동) 시 기존 값을 바로 덮어쓸 수 있도록 내용 전체 선택
+                              onFocus={(e) => {
+                                if (!editable || isSpecial) return;
+                                const cell = e.currentTarget;
+                                // 클릭 시 브라우저가 커서를 놓은 뒤에 선택해야 유지됨
+                                setTimeout(() => {
+                                  if (document.activeElement !== cell) return;
+                                  const range = document.createRange();
+                                  range.selectNodeContents(cell);
+                                  const sel = window.getSelection();
+                                  sel.removeAllRanges();
+                                  sel.addRange(range);
+                                }, 0);
                               }}
                               onBlur={(e) => {
                                 if (selectRef.current.selecting) return;

@@ -35,6 +35,8 @@ import {
   isHeadOfficeDocumentSupportedFile,
 } from "utils/headOfficeDocumentImageUtils";
 
+// 인사 -> 채용관리 -> 현장 채용현황
+
 const NUMERIC_COLS = new Set(["salary"]);
 const PREVIEW_FILE_FIELDS = ["employment_contract", "id", "bankbook"];
 const IMAGE_FIELDS = new Set(["employment_contract", "id", "bankbook"]);
@@ -1381,9 +1383,9 @@ function AccountMemberRecSheet() {
                         className={isEditable && isChanged ? "edited-cell" : ""}
                         onFocus={
                           isEditable &&
-                          !isSelect &&
-                          !isDate &&
-                          canEditMaskedSensitiveField
+                            !isSelect &&
+                            !isDate &&
+                            canEditMaskedSensitiveField
                             ? (e) => {
                               lockColumnsForEditing();
                               keepEditableTailVisible(e.currentTarget);
@@ -1392,9 +1394,9 @@ function AccountMemberRecSheet() {
                         }
                         onInput={
                           isEditable &&
-                          !isSelect &&
-                          !isDate &&
-                          canEditMaskedSensitiveField
+                            !isSelect &&
+                            !isDate &&
+                            canEditMaskedSensitiveField
                             ? (e) => keepEditableTailVisible(e.currentTarget)
                             : undefined
                         }
@@ -1621,7 +1623,7 @@ function AccountMemberRecSheet() {
               }}
               sx={{
                 "& .MuiInputBase-root": { height: 35, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
+                "& .MuiInputLabel-root": { fontSize: 12 },
                 "& input": { paddingLeft: "8px", paddingTop: 0, paddingBottom: 0, lineHeight: 1 },
               }}
             />

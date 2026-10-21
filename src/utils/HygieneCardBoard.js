@@ -1,7 +1,7 @@
 /* eslint-disable react/prop-types */
 // 위생점검 카드형 화면 (앱 위생 점검 화면 구성: 전체 요약 카드 → 카테고리 상세 조치 전·후 항목 카드)
 // 운영관리·현장관리 위생점검 탭에서 공통 사용, 행 데이터·저장·삭제·업로드는 각 탭에서 처리
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { IconButton, Tooltip, TextField, Select, MenuItem } from "@mui/material";
 import DownloadIcon from "@mui/icons-material/Download";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
@@ -850,57 +850,12 @@ export function HygieneSummaryStatus({ rows, isMobile }) {
   );
 }
 
-// 상세 화면 상단 고정 바의 전체로 이동 버튼과 카테고리 전환 칩 (상세 화면일 때만 표시)
-// 칩 줄은 좌우 스크롤(마우스 드래그·휠·터치), 선택한 칩은 항상 가운데로 이동
+// 상세 화면 상단 고정 바의 전체로 이동 버튼 (상세 화면일 때만 표시)
 export function HygieneCategoryChips({ rows, categoryList, selectedKey, onSelectKey, isMobile }) {
   const { categories } = useMemo(() => groupRowsByCategory(rows, categoryList), [rows, categoryList]);
-  // 칩 가로 스크롤 영역
-  const scrollRef = useRef(null);
-  // 마우스 드래그 진행 정보 (시작 좌표·시작 스크롤 위치), 드래그로 움직였는지 여부 (칩 클릭 무시용)
-  const dragRef = useRef(null);
-  const movedRef = useRef(false);
   const isOpen = selectedKey !== null && categories.some((c) => c.category_key === selectedKey);
 
-  // 선택한 칩이 보이도록 칩 줄 가운데로 스크롤
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!isOpen || !el) return;
-    const chip = el.querySelector(`[data-chip="${CSS.escape(selectedKey || "__none")}"]`);
-    if (!chip) return;
-    el.scrollTo({ left: chip.offsetLeft - (el.clientWidth - chip.offsetWidth) / 2, behavior: "smooth" });
-  }, [isOpen, selectedKey, categories.length]);
-
-  // 마우스 휠(세로)을 칩 줄 가로 스크롤로 변환
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!isOpen || !el) return undefined;
-    const handleWheel = (e) => {
-      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-      el.scrollLeft += e.deltaY;
-      e.preventDefault();
-    };
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, [isOpen]);
-
   if (!isOpen) return null;
-
-  // 마우스로 누른 채 좌우로 끌어 칩 줄 스크롤 (터치는 기본 가로 스크롤 사용)
-  const handlePointerDown = (e) => {
-    if (e.pointerType !== "mouse") return;
-    movedRef.current = false;
-    dragRef.current = { startX: e.clientX, scrollLeft: scrollRef.current.scrollLeft };
-  };
-  const handlePointerMove = (e) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const dx = e.clientX - drag.startX;
-    if (Math.abs(dx) > 4) movedRef.current = true;
-    if (movedRef.current) scrollRef.current.scrollLeft = drag.scrollLeft - dx;
-  };
-  const handlePointerEnd = () => {
-    dragRef.current = null;
-  };
 
   return (
     <div
@@ -912,7 +867,7 @@ export function HygieneCategoryChips({ rows, categoryList, selectedKey, onSelect
         gap: 6,
       }}
     >
-      {/* 전체 요약 화면으로 이동 버튼 (칩 줄 왼쪽 고정) */}
+      {/* 전체 요약 화면으로 이동 버튼 */}
       <button
         type="button"
         onClick={() => onSelectKey(null)}
@@ -921,48 +876,6 @@ export function HygieneCategoryChips({ rows, categoryList, selectedKey, onSelect
         <ChevronLeftIcon sx={{ fontSize: 18, display: "block" }} />
         <span style={{ lineHeight: 1 }}>전체로 이동</span>
       </button>
-
-      {/* 카테고리 전환 칩 가로 스크롤 영역 (드래그로 움직였으면 칩 클릭 무시) */}
-      <div
-        ref={scrollRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
-        onPointerLeave={handlePointerEnd}
-        onClickCapture={(e) => {
-          if (!movedRef.current) return;
-          e.stopPropagation();
-          e.preventDefault();
-          movedRef.current = false;
-        }}
-        style={{
-          position: "relative",
-          flex: 1,
-          minWidth: 0,
-          height: 32,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          overflowX: "auto",
-          overflowY: "hidden",
-          // 스크롤바 높이만큼 칩이 위로 밀리지 않도록 숨김 (드래그·휠·터치로 좌우 이동)
-          scrollbarWidth: "none",
-          userSelect: "none",
-        }}
-      >
-        {categories.map((c) => (
-          // 카테고리 칩 버튼
-          <button
-            key={c.category_key || "__none"}
-            data-chip={c.category_key || "__none"}
-            type="button"
-            onClick={() => onSelectKey(c.category_key)}
-            style={{ ...chipStyle(c.category_key === selectedKey), flexShrink: 0 }}
-          >
-            {c.category_name}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

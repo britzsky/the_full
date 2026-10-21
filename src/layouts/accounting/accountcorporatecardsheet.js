@@ -563,6 +563,14 @@ function AccountCorporateCardSheet() {
   // saveAll은 아래에서 정의되므로 ref로 참조
   const saveAllRef = useRef(null);
 
+  // 저장 직전 blur로 반영된 입력값을 읽기 위한 최신 상태 보관 ref
+  const latestSaveStateRef = useRef({
+    masterRows: [],
+    detailRows: [],
+    origDetailRows: [],
+    pendingDetailMap: new Map(),
+  });
+
   // 연도 변경: 미저장 변경사항 있으면 저장/취소/중단 확인
   const handleYearChange = useCallback(async (newYear) => {
     if (hasDirtyRowsEarly()) {
@@ -1514,22 +1522,28 @@ function AccountCorporateCardSheet() {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
+      // blur로 반영된 마지막 입력값까지 포함한 최신 상단/하단 데이터
+      const latest = latestSaveStateRef.current;
+
       const userId = localStorage.getItem("user_id") || "";
 
       // 누적 보관소에 현재 하단 수정값 병합
       const fullDetailMap = new Map();
-      for (const [k, v] of pendingDetailMap.entries()) {
+      for (const [k, v] of latest.pendingDetailMap.entries()) {
         const r = Array.isArray(v) ? v : (v?.rows ?? []);
         const o = Array.isArray(v) ? [] : (v?.originalRows ?? []);
         fullDetailMap.set(k, { rows: r, originalRows: o });
       }
-      if (selectedSaleId && detailRows.length > 0) {
-        fullDetailMap.set(String(selectedSaleId), { rows: detailRows, originalRows: origDetailRows });
+      if (selectedSaleId && latest.detailRows.length > 0) {
+        fullDetailMap.set(String(selectedSaleId), {
+          rows: latest.detailRows,
+          originalRows: latest.origDetailRows,
+        });
       }
 
       // 모든 sale_id의 하단 변경분 취합 + 마스터 합계 자동계산
       let allModifiedDetail = [];
-      let currentMasterRows = masterRows || [];
+      let currentMasterRows = latest.masterRows || [];
 
       for (const [saleId, { rows: savedDetailRows, originalRows: savedOriginalRows }] of fullDetailMap.entries()) {
         const origMap = new Map();
@@ -1577,7 +1591,8 @@ function AccountCorporateCardSheet() {
           if (r.isNew) return buildMainPayload();
           if (!o) return buildMainPayload();
           const changed = Object.keys(r).some((k) => {
-            if (MASTER_NUMBER_KEYS.includes(k)) return parseNumber(o[k]) !== parseNumber(r[k]);
+            // 금액 컬럼은 null(미입력)과 0을 다른 값으로 비교해 DB null 값도 0으로 저장되게 한다
+            if (MASTER_NUMBER_KEYS.includes(k)) return parseNumMaybe(o[k]) !== parseNumMaybe(r[k]);
             return isChangedValue(o[k], r[k]);
           });
           return changed ? buildMainPayload() : null;
@@ -1673,6 +1688,9 @@ function AccountCorporateCardSheet() {
   ]);
   // saveAllRef에 최신 saveAll 함수 연결 (handleSearchMaster에서 ref로 참조)
   saveAllRef.current = saveAll;
+
+  // 저장 시점에 읽을 최신 상단/하단 상태 (렌더마다 갱신)
+  latestSaveStateRef.current = { masterRows, detailRows, origDetailRows, pendingDetailMap };
 
   // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -1954,7 +1972,20 @@ function AccountCorporateCardSheet() {
 
     // ✅ 핵심: 하단 행이 없으면 상단 합계를 절대 건드리지 않음
     if (!detailRows || detailRows.length === 0) return;
-    if (!detailEditedRef.current) return;
+
+    // 하단 수정이 없을 때는 과세/부가세/면세가 비어 있는 상단 행(영수증 인식 저장분)만 하단 과세구분 기준으로 채운다
+    // 채운 행은 미저장 변경으로 표시(__dirty)해 빨간 글씨와 이동 시 저장 확인이 동작하게 한다
+    const isSplitFill = !detailEditedRef.current;
+    if (isSplitFill) {
+      const curMaster = (masterRowsRef.current || []).find(
+        (r) => selectedMaster.sale_id && String(r.sale_id) === String(selectedMaster.sale_id)
+      );
+      const splitEmpty =
+        !!curMaster && ["tax", "vat", "taxFree"].some((k) => parseNumMaybe(curMaster[k]) == null);
+      const allTaxTyped = detailRows.every((r) => [1, 2].includes(parseNumMaybe(r?.taxType)));
+      const sameTotal = !!curMaster && parseNumber(curMaster.total) === Number(sumDetailAmount || 0);
+      if (!splitEmpty || !allTaxTyped || !sameTotal) return;
+    }
 
     // 상단에서 저장된 행이면 sale_id로, 신규면 client_id로 매칭
     const masterKey = selectedMaster.sale_id
@@ -1998,25 +2029,32 @@ function AccountCorporateCardSheet() {
       const row = prev[idx];
 
       const same =
-        parseNumber(row.total) === nextTotal &&
-        parseNumber(row.tax) === nextTax &&
-        parseNumber(row.vat) === nextVat &&
-        parseNumber(row.taxFree) === nextTaxFree;
+        parseNumMaybe(row.total) === nextTotal &&
+        parseNumMaybe(row.tax) === nextTax &&
+        parseNumMaybe(row.vat) === nextVat &&
+        parseNumMaybe(row.taxFree) === nextTaxFree;
 
       if (same) return prev;
 
       const next = [...prev];
-      next[idx] = { ...row, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree };
+      next[idx] = {
+        ...row,
+        total: nextTotal,
+        tax: nextTax,
+        vat: nextVat,
+        taxFree: nextTaxFree,
+        ...(isSplitFill ? { __dirty: true } : {}),
+      };
       return next;
     });
 
     setSelectedMaster((prev) => {
       if (!prev) return prev;
       const sameSelected =
-        parseNumber(prev.total) === nextTotal &&
-        parseNumber(prev.tax) === nextTax &&
-        parseNumber(prev.vat) === nextVat &&
-        parseNumber(prev.taxFree) === nextTaxFree;
+        parseNumMaybe(prev.total) === nextTotal &&
+        parseNumMaybe(prev.tax) === nextTax &&
+        parseNumMaybe(prev.vat) === nextVat &&
+        parseNumMaybe(prev.taxFree) === nextTaxFree;
       if (sameSelected) return prev;
       return { ...prev, total: nextTotal, tax: nextTax, vat: nextVat, taxFree: nextTaxFree };
     });

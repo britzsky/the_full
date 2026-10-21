@@ -39,6 +39,14 @@ import DownloadIcon from "@mui/icons-material/Download";
 import PreviewOverlay from "utils/PreviewOverlay";
 import accountLabelSx from "utils/accountLabelSx";
 
+// 읽기 전용 메모 칸: 클릭(포커스)해도 기본 테두리 유지
+const READ_ONLY_NOTE_SX = {
+  "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
+    borderColor: "#d2d6da",
+    borderWidth: 1,
+  },
+};
+
 const SWAL_LOADING_CUSTOM_CLASS = {
   popup: "tally-swal-loading-popup",
   confirmButton: "tally-swal-hidden-confirm",
@@ -466,6 +474,12 @@ function TallySheet() {
   const [tabValue, setTabValue] = useState(0);
   const [tallyNote, setTallyNote] = useState("");
   const [loadingTallyNote, setLoadingTallyNote] = useState(false);
+  // 현장 메모 입력값(비제어 입력: ref로 읽고 key로 초기화) 및 저장 상태
+  const fieldNoteInputRef = useRef(null);
+  const [fieldNoteInputKey, setFieldNoteInputKey] = useState(0);
+  const [fieldNoteOrigin, setFieldNoteOrigin] = useState("");
+  const [isFieldNoteDirty, setIsFieldNoteDirty] = useState(false);
+  const [savingFieldNote, setSavingFieldNote] = useState(false);
 
   const beginListLoading = useCallback(() => {
     setViewLoading(true);
@@ -592,6 +606,9 @@ function TallySheet() {
 
       if (!a || !y || !m) {
         setTallyNote("");
+        setFieldNoteOrigin("");
+        setIsFieldNoteDirty(false);
+        setFieldNoteInputKey((k) => k + 1);
         return "";
       }
 
@@ -602,10 +619,16 @@ function TallySheet() {
         });
         const loadedNote = String(res.data?.note ?? "");
         setTallyNote(loadedNote);
+        setFieldNoteOrigin(String(res.data?.note2 ?? ""));
+        setIsFieldNoteDirty(false);
+        setFieldNoteInputKey((k) => k + 1);
         return loadedNote;
       } catch (err) {
         console.error("집계표 메모 조회 실패:", err);
         setTallyNote("");
+        setFieldNoteOrigin("");
+        setIsFieldNoteDirty(false);
+        setFieldNoteInputKey((k) => k + 1);
         return "";
       } finally {
         setLoadingTallyNote(false);
@@ -617,6 +640,47 @@ function TallySheet() {
   useEffect(() => {
     fetchTallyNote(selectedAccountId, activeNoteYear, activeNoteMonth);
   }, [fetchTallyNote, selectedAccountId, activeNoteYear, activeNoteMonth]);
+
+  // 현장 메모 입력 시 원본과 달라졌는지 표시하는 함수
+  const handleFieldNoteInputChange = useCallback(
+    (e) => {
+      const dirty = String(e.target.value ?? "") !== String(fieldNoteOrigin ?? "");
+      setIsFieldNoteDirty((prev) => (prev === dirty ? prev : dirty));
+    },
+    [fieldNoteOrigin]
+  );
+
+  // 선택한 월의 현장 메모를 저장하는 함수(note_type=field)
+  const handleSaveFieldNote = useCallback(async () => {
+    if (!selectedAccountId || !activeNoteYear || !activeNoteMonth) return;
+
+    const nextNote = String(fieldNoteInputRef.current?.value ?? "");
+    if (nextNote === String(fieldNoteOrigin ?? "")) return;
+
+    try {
+      setSavingFieldNote(true);
+      const res = await api.post("/Operate/TallySheetNoteSave", {
+        account_id: selectedAccountId,
+        year: activeNoteYear,
+        month: activeNoteMonth,
+        note: nextNote,
+        note_type: "field",
+        user_id: localUserId,
+      });
+
+      if (res.data?.code === 200) {
+        setFieldNoteOrigin(nextNote);
+        setIsFieldNoteDirty(false);
+        Swal.fire("저장", "현장 메모가 저장되었습니다.", "success");
+      } else {
+        Swal.fire("실패", res.data?.message || "현장 메모 저장 실패", "error");
+      }
+    } catch (err) {
+      Swal.fire("실패", err.message || "현장 메모 저장 중 오류 발생", "error");
+    } finally {
+      setSavingFieldNote(false);
+    }
+  }, [selectedAccountId, activeNoteYear, activeNoteMonth, fieldNoteOrigin, localUserId]);
 
   // ✅ 검색: 엔터 입력 시 텍스트로 거래처 선택 (정확 일치 우선, 없으면 부분 일치)
   const selectAccountByInput = () => {
@@ -3897,23 +3961,99 @@ function TallySheet() {
         </Card>
       </MDBox>
 
+      {/* 집계표 메모 영역: 왼쪽 본사 메모(읽기 전용), 오른쪽 현장 메모(편집) */}
       <MDBox pb={3}>
         <Card>
-          <MDBox p={2}>
-            <MDTypography variant="h6" mb={1}>
-              집계표 메모
-            </MDTypography>
-            <TextField
-              fullWidth
-              multiline
-              minRows={3}
-              maxRows={8}
-              value={tallyNote}
-              InputProps={{ readOnly: true }}
-              disabled={loadingTallyNote || !selectedAccountId}
-              helperText={loadingTallyNote ? "메모를 불러오는 중입니다." : "읽기 전용"}
-            />
-          </MDBox>
+          <Grid container spacing={2} p={2}>
+            {/* 본사 메모 표시 영역 */}
+            <Grid item xs={12} md={6}>
+              {/* 본사 메모 제목 및 읽기 전용 표시 */}
+              <MDBox
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  mb: 1,
+                  minHeight: 32,
+                }}
+              >
+                <MDTypography variant="h6">본사 메모</MDTypography>
+                <MDTypography variant="caption" color="text">
+                  읽기 전용
+                </MDTypography>
+              </MDBox>
+              <TextField
+                fullWidth
+                multiline
+                minRows={3}
+                maxRows={8}
+                value={tallyNote}
+                InputProps={{ readOnly: true }}
+                sx={READ_ONLY_NOTE_SX}
+                disabled={loadingTallyNote || !selectedAccountId}
+                helperText={loadingTallyNote ? "메모를 불러오는 중입니다." : ""}
+              />
+            </Grid>
+
+            {/* 현장 메모 입력 영역 */}
+            <Grid item xs={12} md={6}>
+              <MDBox
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 1,
+                  mb: 1,
+                  minHeight: 32,
+                }}
+              >
+                <MDTypography variant="h6">현장 메모</MDTypography>
+                <MDButton
+                  variant="gradient"
+                  color="info"
+                  size="small"
+                  disabled={
+                    loadingTallyNote || savingFieldNote || !selectedAccountId || !isFieldNoteDirty
+                  }
+                  onClick={handleSaveFieldNote}
+                >
+                  {savingFieldNote ? "저장중..." : "메모 저장"}
+                </MDButton>
+              </MDBox>
+              <TextField
+                key={fieldNoteInputKey}
+                fullWidth
+                multiline
+                minRows={3}
+                maxRows={8}
+                defaultValue={fieldNoteOrigin}
+                inputRef={fieldNoteInputRef}
+                onChange={handleFieldNoteInputChange}
+                placeholder="현장 메모를 입력하세요."
+                disabled={loadingTallyNote || !selectedAccountId}
+                sx={{
+                  "& .MuiInputBase-inputMultiline": {
+                    color: isFieldNoteDirty ? "#d32f2f" : "inherit",
+                    fontWeight: isFieldNoteDirty ? 600 : 400,
+                  },
+                  "& .MuiOutlinedInput-root .MuiOutlinedInput-notchedOutline": {
+                    borderColor: isFieldNoteDirty ? "#d32f2f" : undefined,
+                  },
+                  "& .MuiFormHelperText-root": {
+                    color: isFieldNoteDirty ? "#d32f2f" : undefined,
+                    fontWeight: isFieldNoteDirty ? 700 : 400,
+                  },
+                }}
+                helperText={
+                  loadingTallyNote
+                    ? "메모를 불러오는 중입니다."
+                    : isFieldNoteDirty
+                      ? "수정됨 (저장 필요)"
+                      : ""
+                }
+              />
+            </Grid>
+          </Grid>
         </Card>
       </MDBox>
 

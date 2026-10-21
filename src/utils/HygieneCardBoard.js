@@ -155,7 +155,13 @@ function PhotoThumb({ value, onView }) {
       }}
     >
       {src ? (
-        <img src={src} alt="점검 사진" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <img
+          src={src}
+          alt="점검 사진"
+          loading="lazy"
+          decoding="async"
+          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+        />
       ) : (
         "사진 없음"
       )}
@@ -249,6 +255,46 @@ function ItemSide({ side, row, rowIndex, locked = false, onCellChange, onViewIma
       />
     </div>
   );
+}
+
+// 값이 바뀐 항목 칸만 다시 그리는 조치 전·후 칸 (입력 시 전체 카드 재렌더링 방지)
+const MemoItemSide = React.memo(ItemSide);
+
+// 업로드 전 사진 축소 (긴 변 최대 1600px, JPEG 80% 품질, 줄어들지 않거나 실패하면 원본 반환)
+// ponytail: 브라우저 canvas 기준 단순 축소, 서버 썸네일이 필요해지면 업로드 API에서 생성
+export async function compressImageFile(file, maxSize = 1600, quality = 0.8) {
+  if (!file || !String(file.type || "").startsWith("image/") || file.type === "image/gif") return file;
+
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = url;
+    });
+
+    const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    const ctx = canvas.getContext("2d");
+    // 투명 PNG가 검게 나오지 않도록 흰 배경 채움
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file;
+
+    const baseName = String(file.name || "photo").replace(/\.[^.]+$/, "");
+    return new File([blob], `${baseName}.jpg`, { type: "image/jpeg" });
+  } catch (err) {
+    console.error("사진 축소 실패, 원본으로 업로드:", err);
+    return file;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 function HygieneCardBoard({
@@ -459,7 +505,7 @@ function HygieneCardBoard({
 
                   {/* 조치 전(왼쪽) → 조치 후(오른쪽) 두 칸 */}
                   <div style={{ display: "flex", alignItems: "stretch", gap: 6 }}>
-                    <ItemSide
+                    <MemoItemSide
                       side="before"
                       row={row}
                       rowIndex={rowIndex}
@@ -469,7 +515,7 @@ function HygieneCardBoard({
                       onDownload={onDownload}
                     />
                     <ArrowForwardIcon fontSize="small" sx={{ alignSelf: "center", color: ACCENT }} />
-                    <ItemSide
+                    <MemoItemSide
                       side="after"
                       row={row}
                       rowIndex={rowIndex}

@@ -6,6 +6,7 @@ import { TextField, useTheme, useMediaQuery, Autocomplete, Select, MenuItem } fr
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import useHygienesheetData, { sortHygieneRows } from "./hygienesheetData";
 import HygieneCardBoard, {
+  compressImageFile,
   HygieneCategoryChips,
   HygieneSummaryStatus,
   useFillViewportHeight,
@@ -237,11 +238,11 @@ function HygieneSheetTab() {
   }, [loading, viewLoading]);
 
   // cell 값 변경 처리
-  const handleCellChange = (rowIndex, key, value) => {
+  const handleCellChange = useCallback((rowIndex, key, value) => {
     setRows((prevRows) =>
       prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
     );
-  };
+  }, []);
 
   const normalize = (value) => {
     if (typeof value !== "string") return value ?? "";
@@ -281,21 +282,22 @@ function HygieneSheetTab() {
   };
 
   // 이미지 뷰어
-  const handleViewImage = (value) => {
+  const handleViewImage = useCallback((value) => {
     if (!value) return;
     if (typeof value === "object") {
       setViewImageSrc(URL.createObjectURL(value));
     } else {
       setViewImageSrc(`${API_BASE_URL}${value}`);
     }
-  };
+  }, []);
 
   const handleCloseViewer = () => setViewImageSrc(null);
 
+  // 사진을 축소한 뒤 서버에 업로드하고 저장 경로 반환
   const uploadImage = async (file, imageDt, account_id) => {
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", await compressImageFile(file));
       formData.append("type", "hygiene");
       formData.append("gubun", imageDt);
       formData.append("folder", account_id);
@@ -479,30 +481,25 @@ function HygieneSheetTab() {
 
   // 저장 진행 중 여부 (빠른 연속 클릭 시 신규 행이 두 번 INSERT되는 것 방지)
   const savingRef = useRef(false);
+  // 저장 중 전체 화면 로딩 표시 여부 (사진 업로드~저장 완료까지 화면 조작 차단)
+  const [saving, setSaving] = useState(false);
 
   // 저장 (성공 시 true 반환, 미저장 확인 모달의 저장 후 이동에서도 사용)
   const handleSave = async () => {
     if (savingRef.current) return false;
     savingRef.current = true;
+    setSaving(true);
     try {
       return await saveHygieneRows();
     } finally {
       savingRef.current = false;
+      setSaving(false);
     }
   };
 
   // 변경·신규 행의 사진 업로드 후 위생점검 행 저장
   const saveHygieneRows = async () => {
     try {
-      // ✅ 저장 완료/실패 확인창 전까지 로딩 모달 유지
-      Swal.fire({
-        title: "저장중입니다.",
-        text: "잠시만 기다려 주세요.",
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        didOpen: () => Swal.showLoading(),
-      });
-
       const modifiedRows = await Promise.all(
         rows.map(async (row, index) => {
           const original = originalRows[index] || {};
@@ -626,6 +623,13 @@ function HygieneSheetTab() {
 
   return (
     <>
+      {/* 저장 중 전체 화면 로딩 (확인창 Swal보다 아래 층) */}
+      {saving && (
+        <MDBox sx={{ position: "fixed", inset: 0, zIndex: 1055, backgroundColor: "white" }}>
+          <LoadingScreen />
+        </MDBox>
+      )}
+
       {/* 상단 필터 + 버튼 (모바일 대응) */}
       <MDBox
         pt={0}

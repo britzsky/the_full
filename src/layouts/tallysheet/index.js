@@ -38,6 +38,14 @@ import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
 import PreviewOverlay from "utils/PreviewOverlay";
 
+// 읽기 전용 메모 칸: 클릭(포커스)해도 기본 테두리 유지
+const READ_ONLY_NOTE_SX = {
+  "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
+    borderColor: "#d2d6da",
+    borderWidth: 1,
+  },
+};
+
 const SWAL_LOADING_CUSTOM_CLASS = {
   popup: "tally-swal-loading-popup",
   confirmButton: "tally-swal-hidden-confirm",
@@ -546,6 +554,8 @@ function TallySheet() {
   const [isTallyNoteDirty, setIsTallyNoteDirty] = useState(false);
   const [loadingTallyNote, setLoadingTallyNote] = useState(false);
   const [savingTallyNote, setSavingTallyNote] = useState(false);
+  // 현장에서 작성한 현장 메모(본사 화면에서는 읽기 전용)
+  const [tallyFieldNote, setTallyFieldNote] = useState("");
 
   const beginListLoading = useCallback(() => {
     setViewLoading(true);
@@ -654,6 +664,7 @@ function TallySheet() {
 
       if (!a || !y || !m) {
         setTallyNoteOrigin("");
+        setTallyFieldNote("");
         setIsTallyNoteDirty(false);
         setTallyNoteInputKey((k) => k + 1);
         return "";
@@ -666,12 +677,14 @@ function TallySheet() {
         });
         const loadedNote = String(res.data?.note ?? "");
         setTallyNoteOrigin(loadedNote);
+        setTallyFieldNote(String(res.data?.note2 ?? ""));
         setIsTallyNoteDirty(false);
         setTallyNoteInputKey((k) => k + 1);
         return loadedNote;
       } catch (err) {
         console.error("집계표 메모 조회 실패:", err);
         setTallyNoteOrigin("");
+        setTallyFieldNote("");
         setIsTallyNoteDirty(false);
         setTallyNoteInputKey((k) => k + 1);
         return "";
@@ -4400,9 +4413,12 @@ function TallySheet() {
         </Card>
       </MDBox>
 
+      {/* 집계표 메모 영역: 왼쪽 본사 메모(편집), 오른쪽 현장 메모(읽기 전용) */}
       <MDBox pb={3}>
         <Card>
-          <MDBox p={2}>
+          <Grid container spacing={2} p={2}>
+          {/* 본사 메모 입력 영역 */}
+          <Grid item xs={12} md={6}>
             <MDBox
               sx={{
                 display: "flex",
@@ -4410,9 +4426,18 @@ function TallySheet() {
                 justifyContent: "space-between",
                 gap: 1,
                 mb: 1,
+                minHeight: 32,
               }}
             >
-              <MDTypography variant="h6">집계표 메모</MDTypography>
+              {/* 본사 메모 제목(권한 없으면 바로 옆에 읽기 전용 표시) */}
+              <MDBox sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                <MDTypography variant="h6">본사 메모</MDTypography>
+                {!canEditTallyNote && (
+                  <MDTypography variant="caption" color="text">
+                    읽기 전용
+                  </MDTypography>
+                )}
+              </MDBox>
               {canEditTallyNote && (
                 <MDButton
                   variant="gradient"
@@ -4444,6 +4469,7 @@ function TallySheet() {
               InputProps={{ readOnly: !canEditTallyNote }}
               disabled={loadingTallyNote || !selectedAccountId}
               sx={{
+                ...(!canEditTallyNote ? READ_ONLY_NOTE_SX : {}),
                 "& .MuiInputBase-inputMultiline": {
                   color: isTallyNoteDirty ? "#d32f2f" : "inherit",
                   fontWeight: isTallyNoteDirty ? 600 : 400,
@@ -4462,14 +4488,43 @@ function TallySheet() {
               helperText={
                 loadingTallyNote
                   ? "메모를 불러오는 중입니다."
-                  : canEditTallyNote
-                    ? isTallyNoteDirty
-                      ? "수정됨 (저장 필요)"
-                      : ""
-                    : "읽기 전용"
+                  : canEditTallyNote && isTallyNoteDirty
+                    ? "수정됨 (저장 필요)"
+                    : ""
               }
             />
-          </MDBox>
+          </Grid>
+
+          {/* 현장 메모 표시 영역 */}
+          <Grid item xs={12} md={6}>
+            {/* 현장 메모 제목 및 읽기 전용 표시 */}
+            <MDBox
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                gap: 1,
+                mb: 1,
+                minHeight: 32,
+              }}
+            >
+              <MDTypography variant="h6">현장 메모</MDTypography>
+              <MDTypography variant="caption" color="text">
+                읽기 전용
+              </MDTypography>
+            </MDBox>
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              maxRows={8}
+              value={tallyFieldNote}
+              InputProps={{ readOnly: true }}
+              sx={READ_ONLY_NOTE_SX}
+              disabled={loadingTallyNote || !selectedAccountId}
+              helperText={loadingTallyNote ? "메모를 불러오는 중입니다." : ""}
+            />
+          </Grid>
+          </Grid>
         </Card>
       </MDBox>
 

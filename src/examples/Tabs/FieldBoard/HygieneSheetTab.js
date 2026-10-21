@@ -315,6 +315,8 @@ function HygieneSheetTab() {
 
       // ✅ 삭제 플래그
       deleteRow.del_yn = "Y";
+      // 삭제한 사용자 아이디
+      deleteRow.mod_user_id = localStorage.getItem("user_id") || "";
 
       // ✅ account_id 보정
       deleteRow.account_id = selectedAccountId || row.account_id;

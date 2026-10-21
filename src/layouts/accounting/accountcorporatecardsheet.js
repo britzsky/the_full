@@ -883,7 +883,16 @@ function AccountCorporateCardSheet() {
   // ========================= 변경 핸들러 =========================
   const handleMasterCellChange = useCallback((rowIndex, key, value) => {
     if (isLocked) return;
-    setMasterRows((prev) => prev.map((r, i) => (i === rowIndex ? { ...r, [key]: value, __dirty: true } : r)));
+    setMasterRows((prev) =>
+      prev.map((r, i) => {
+        if (i !== rowIndex) return r;
+        // 값이 실제로 바뀐 경우에만 미저장 변경으로 표시 (금액 빈칸은 화면 표시처럼 0과 같게 봄)
+        const same = MASTER_NUMBER_KEYS.includes(key)
+          ? parseNumber(r[key]) === parseNumber(value)
+          : !isChangedValue(r[key] ?? "", value ?? "");
+        return same ? r : { ...r, [key]: value, __dirty: true };
+      })
+    );
   }, [isLocked]);
 
   const handleDetailCellChange = useCallback((rowIndex, key, value) => {
@@ -910,6 +919,20 @@ function AccountCorporateCardSheet() {
       });
     });
   }, []);
+
+  // 같은 과세구분을 다시 선택했을 때 하단 기준으로 상단 금액을 다시 계산하게 하는 함수
+  // (상단 과세/부가세/면세가 비어 있는 행만 대상이라 값이 실제로 바뀔 때만 변경 처리됨)
+  const handleDetailTaxReselect = useCallback(() => {
+    if (isLocked) return;
+    const sm = selectedMasterRef.current;
+    const curMaster = (masterRowsRef.current || []).find(
+      (r) => sm?.sale_id && String(r.sale_id) === String(sm.sale_id)
+    );
+    if (!curMaster) return;
+    if (["tax", "vat", "taxFree"].every((k) => parseNumMaybe(curMaster[k]) != null)) return;
+    detailEditedRef.current = true;
+    setDetailRows((prev) => [...(prev || [])]);
+  }, [isLocked]);
 
   // 신규 상세행 우클릭 메뉴 닫기
   const closeDetailCtxMenu = useCallback(() => {
@@ -1972,20 +1995,7 @@ function AccountCorporateCardSheet() {
 
     // ✅ 핵심: 하단 행이 없으면 상단 합계를 절대 건드리지 않음
     if (!detailRows || detailRows.length === 0) return;
-
-    // 하단 수정이 없을 때는 과세/부가세/면세가 비어 있는 상단 행(영수증 인식 저장분)만 하단 과세구분 기준으로 채운다
-    // 채운 행은 미저장 변경으로 표시(__dirty)해 빨간 글씨와 이동 시 저장 확인이 동작하게 한다
-    const isSplitFill = !detailEditedRef.current;
-    if (isSplitFill) {
-      const curMaster = (masterRowsRef.current || []).find(
-        (r) => selectedMaster.sale_id && String(r.sale_id) === String(selectedMaster.sale_id)
-      );
-      const splitEmpty =
-        !!curMaster && ["tax", "vat", "taxFree"].some((k) => parseNumMaybe(curMaster[k]) == null);
-      const allTaxTyped = detailRows.every((r) => [1, 2].includes(parseNumMaybe(r?.taxType)));
-      const sameTotal = !!curMaster && parseNumber(curMaster.total) === Number(sumDetailAmount || 0);
-      if (!splitEmpty || !allTaxTyped || !sameTotal) return;
-    }
+    if (!detailEditedRef.current) return;
 
     // 상단에서 저장된 행이면 sale_id로, 신규면 client_id로 매칭
     const masterKey = selectedMaster.sale_id
@@ -2043,7 +2053,8 @@ function AccountCorporateCardSheet() {
         tax: nextTax,
         vat: nextVat,
         taxFree: nextTaxFree,
-        ...(isSplitFill ? { __dirty: true } : {}),
+        // 하단 수정으로 상단 금액이 실제로 바뀐 경우에만 미저장 변경으로 표시
+        __dirty: true,
       };
       return next;
     });
@@ -2864,7 +2875,16 @@ function AccountCorporateCardSheet() {
                                   <em>선택</em>
                                 </MenuItem>
                                 {c.options.map((opt) => (
-                                  <MenuItem key={opt.value} value={String(opt.value)}>
+                                  <MenuItem
+                                    key={opt.value}
+                                    value={String(opt.value)}
+                                    onClick={() => {
+                                      // 이미 선택된 과세구분을 다시 고른 경우 상단 과세/부가세/면세 재계산
+                                      if (key === "taxType" && String(opt.value) === curStr) {
+                                        handleDetailTaxReselect();
+                                      }
+                                    }}
+                                  >
                                     {opt.value}:{opt.label}
                                   </MenuItem>
                                 ))}

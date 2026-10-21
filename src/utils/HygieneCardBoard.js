@@ -122,21 +122,82 @@ function Badge({ label, bg, fg }) {
   );
 }
 
-// 사진 미리보기 칸 (File 객체는 임시 주소, 서버 경로는 API 주소로 표시, 클릭 시 크게 보기)
-function PhotoThumb({ value, onView }) {
-  const isFile = !!value && typeof value === "object";
-  const src = useMemo(() => {
-    if (!value) return "";
-    return isFile ? URL.createObjectURL(value) : encodeURI(`${API_BASE_URL}${value}`);
-  }, [value, isFile]);
+// 미리보기 칸에 그릴 축소 사진의 긴 변 크기(px)
+const THUMB_MAX_SIZE = 400;
 
-  // 선택한 파일 임시 주소 해제
-  useEffect(
-    () => () => {
-      if (isFile && src) URL.revokeObjectURL(src);
-    },
-    [isFile, src]
-  );
+// 사진을 받아 작은 크기로 한 번만 줄인 임시 주소를 반환하는 훅 (스크롤 때 큰 원본을 다시 풀지 않도록)
+// File 객체는 임시 주소, 서버 경로는 API 주소에서 받으며, 축소에 실패하면 원본 주소를 그대로 사용
+// ponytail: 다운로드 용량은 원본 그대로, 첫 로딩까지 줄이려면 서버 썸네일 생성 필요
+function useThumbSrc(value) {
+  const [thumbSrc, setThumbSrc] = useState("");
+
+  useEffect(() => {
+    setThumbSrc("");
+    if (!value) return undefined;
+
+    const isFile = typeof value === "object";
+    const originalSrc = isFile ? URL.createObjectURL(value) : encodeURI(`${API_BASE_URL}${value}`);
+    let cancelled = false;
+    let resizedSrc = "";
+    const img = new Image();
+    // 서버 사진을 canvas로 줄이려면 CORS 요청 필요
+    if (!isFile) img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      if (cancelled) return;
+      const scale = Math.min(1, THUMB_MAX_SIZE / Math.max(img.naturalWidth, img.naturalHeight));
+      if (scale === 1) {
+        setThumbSrc(originalSrc);
+        return;
+      }
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        const ctx = canvas.getContext("2d");
+        // 투명 PNG가 검게 나오지 않도록 흰 배경 채움
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) => {
+            if (cancelled) return;
+            if (!blob) {
+              setThumbSrc(originalSrc);
+              return;
+            }
+            resizedSrc = URL.createObjectURL(blob);
+            setThumbSrc(resizedSrc);
+          },
+          "image/jpeg",
+          0.85
+        );
+      } catch (err) {
+        // CORS 미허용 등으로 canvas 사용이 막히면 원본 표시
+        setThumbSrc(originalSrc);
+      }
+    };
+    img.onerror = () => {
+      if (!cancelled) setThumbSrc(originalSrc);
+    };
+    img.src = originalSrc;
+
+    // 화면에서 빠지거나 사진이 바뀌면 진행 중인 축소 중단, 임시 주소 해제
+    return () => {
+      cancelled = true;
+      img.onload = null;
+      img.onerror = null;
+      if (resizedSrc) URL.revokeObjectURL(resizedSrc);
+      if (isFile) URL.revokeObjectURL(originalSrc);
+    };
+  }, [value]);
+
+  return thumbSrc;
+}
+
+// 사진 미리보기 칸 (축소한 사진 표시, 클릭 시 원본 크게 보기)
+function PhotoThumb({ value, onView }) {
+  const src = useThumbSrc(value);
 
   return (
     <div
@@ -158,10 +219,11 @@ function PhotoThumb({ value, onView }) {
         <img
           src={src}
           alt="점검 사진"
-          loading="lazy"
           decoding="async"
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
+      ) : value ? (
+        "불러오는 중..."
       ) : (
         "사진 없음"
       )}

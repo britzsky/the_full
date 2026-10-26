@@ -82,6 +82,8 @@ import TallyManager from "layouts/tallysheet";
 import RecordManager from "layouts/recordsheet";
 import RecordCommuteManager from "examples/Tabs/FieldBoardTabs_2";
 import DinersManager from "layouts/dinersnumbersheet";
+// 본사 지점업로드 (거래처별 식단표·식판 사진 조회·다운로드)
+import BranchUploadManager from "layouts/branchupload";
 import MenuManagement from "layouts/menumanagement";
 
 // 개발팀 전용
@@ -582,6 +584,13 @@ const routes = [
         //icon: <Icon fontSize="small">*</Icon>,
         route: "/diners/dinersnumber",
         component: <DinersManager />,
+      },
+      {
+        type: "collapse",
+        name: "📤 지점업로드",
+        key: "branch_upload",
+        route: "/layouts/branchupload",
+        component: <BranchUploadManager />,
       },
       // {
       //   type: "collapse",

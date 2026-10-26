@@ -17,24 +17,32 @@ import {
   useTheme,
   useMediaQuery,
 } from "@mui/material";
-import Backdrop from "@mui/material/Backdrop";
-import CircularProgress from "@mui/material/CircularProgress";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import { API_BASE_URL } from "config";
 import useCarManagerData from "./corCarData";
-import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
-import Swal from "sweetalert2";
+// 이 화면의 알림·확인창은 바깥(검은 배경) 클릭으로 닫히지 않는 Swal 사용
+import { LockedSwal as Swal, showSwalLoading, updateSwalLoading } from "utils/swalLoading";
 import { Download, Trash2, RotateCcw, ChevronLeft, ChevronRight } from "lucide-react";
 import { PhotoThumb, compressImageFile, useFillViewportHeight } from "utils/HygieneCardBoard";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { askUnsavedChanges, setTabLeaveGuard } from "utils/unsavedChangesGuard";
+import useDetailBackGuard from "utils/useDetailBackGuard";
 
 
 // 변경 여부를 비교하는 기록 입력 항목
 const FIELD_KEYS = ["service_dt", "mileage", "exterior_note", "service_note", "service_amt", "comment"];
+
+// 요약 화면 최근 기록 목록에 보여줄 건수
+const RECENT_COUNT = 10;
+
+// 조회 로딩 창 최소 표시 시간(ms) (사용자 관리와 동일, 너무 빨리 닫혀 깜빡이는 것 방지)
+const MIN_LOADING_MODAL_MS = 420;
+
+// 정비 내역 칸 입력 항목 (정비내용·정비 비용·정비시 특이사항)
+const SERVICE_KEYS = ["service_note", "service_amt", "comment"];
 
 // 강조 색 (위생관리와 동일한 ERP info 색)
 const ACCENT = "#1A73E8";
@@ -111,9 +119,8 @@ function CorCarTabStyled({ embedded = false }) {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState({ car_number: "", car_name: "" });
 
-  // 저장/업로드 진행 상태와 안내 문구
+  // 저장/업로드 진행 상태 (진행 문구는 Swal 로딩 창에 표시)
   const [saving, setSaving] = useState(false);
-  const [savingText, setSavingText] = useState("");
 
   // 사진 크게 보기 목록·현재 위치 (새로 고른 사진의 임시 주소는 닫을 때 해제)
   const [previewFiles, setPreviewFiles] = useState([]);
@@ -128,11 +135,75 @@ function CorCarTabStyled({ embedded = false }) {
   // 탭 이동 전 미저장 변경 확인 등록 (경영관리·본사 관리 탭 묶음에서 탭을 바꾸기 전에 호출)
   useEffect(() => setTabLeaveGuard(() => leaveCheckRef.current()), []);
 
+  // 최초 조회 완료 여부와 첫 진입 대표 사진 준비 완료 여부 (준비 전까지 로딩 화면 표시)
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [firstPhotosReady, setFirstPhotosReady] = useState(false);
+
   // 최초 진입 시 차량 목록과 전체 차량 상태 기록 조회
   useEffect(() => {
-    fetchCarSelectList();
-    fetchCarList();
+    Promise.all([fetchCarSelectList(), fetchCarList()]).finally(() => setDataLoaded(true));
   }, []);
+
+  // 첫 진입 시 요약 카드 대표 사진(차량별 최근 기록의 첫 사진)을 미리 받아 둔 뒤 화면 표시
+  // 사진 칸과 같은 주소·CORS 방식으로 받아 브라우저 캐시를 그대로 사용
+  // ponytail: 최대 8초만 대기, 느린 사진은 이후 사진 칸에서 이어서 표시
+  useEffect(() => {
+    if (!dataLoaded || firstPhotosReady) return undefined;
+
+    const latestByCar = {};
+    (carListRows || []).forEach((r) => {
+      if (!(r.images || []).length) return;
+      const cur = latestByCar[r.car_number];
+      if (!cur || String(r.service_dt) > String(cur.service_dt)) latestByCar[r.car_number] = r;
+    });
+    const urls = Object.values(latestByCar).map((r) => encodeURI(`${API_BASE_URL}${r.images[0].exterior_image}`));
+
+    const preload = (src) =>
+      new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = resolve;
+        img.onerror = resolve;
+        img.src = src;
+      });
+
+    let cancelled = false;
+    Promise.race([Promise.all(urls.map(preload)), new Promise((resolve) => setTimeout(resolve, 8000))]).then(() => {
+      if (!cancelled) setFirstPhotosReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dataLoaded, carListRows, firstPhotosReady]);
+
+  // 조회 중(첫 진입 대표 사진 준비 포함) 여부와 조회 로딩 창을 띄운 시각
+  const busy = loading || !firstPhotosReady;
+  const loadingOpenedAtRef = useRef(0);
+
+  // 조회 로딩 창이 떠 있으면 닫기 (저장 결과 등 다른 Swal 창은 유지)
+  const closeFetchLoading = () => {
+    if (Swal.isVisible() && (Swal.getTitle()?.textContent || "").includes("불러오는 중")) Swal.close();
+  };
+
+  // 조회 중에는 Swal 로딩 창 표시 (사용자 관리와 같은 방식, 너무 빨리 끝나도 최소 표시 시간만큼 유지해 깜빡임 방지)
+  // 저장 중 다시 조회할 때는 이미 떠 있는 저장 로딩 창을 그대로 사용
+  useEffect(() => {
+    if (busy) {
+      if (!saving) {
+        showSwalLoading("불러오는 중...", "차량 기록을 조회하고 있습니다.");
+        loadingOpenedAtRef.current = Date.now();
+      }
+      return undefined;
+    }
+    if (!loadingOpenedAtRef.current) return undefined;
+    const remain = Math.max(MIN_LOADING_MODAL_MS - (Date.now() - loadingOpenedAtRef.current), 0);
+    loadingOpenedAtRef.current = 0;
+    const timer = setTimeout(closeFetchLoading, remain);
+    return () => clearTimeout(timer);
+  }, [busy]);
+
+  // 조회 중 탭을 벗어나면 조회 로딩 창 닫기
+  useEffect(() => closeFetchLoading, []);
 
   // 조회 결과를 화면 편집용 행으로 변환 (사진 라벨·추가 예정 사진·삭제 예정 사진 포함)
   useEffect(() => {
@@ -195,7 +266,7 @@ function CorCarTabStyled({ embedded = false }) {
     return map;
   }, [rows, originalRows]);
 
-  // 차량 요약값 (저장된 기록 기준 현재 주행거리·최근 기록일·누적 건수·사진 수·대표 사진)
+  // 차량 요약값 (저장된 기록 기준 현재 주행거리·최근 기록일·누적 건수·대표 사진)
   const getCarSummary = (carNumber) => {
     const saved = (recordsByCar[carNumber] || [])
       .map(({ rowIndex }) => originalRows[rowIndex])
@@ -206,7 +277,6 @@ function CorCarTabStyled({ embedded = false }) {
       mileage: latestMileage ? toNum(latestMileage.mileage).toLocaleString() : "",
       lastDt: saved[0]?.service_dt || "",
       count: saved.length,
-      photoCount: saved.reduce((sum, r) => sum + (r.images || []).length, 0),
       photo: latestPhoto ? latestPhoto.images[0].exterior_image : "",
     };
   };
@@ -222,6 +292,19 @@ function CorCarTabStyled({ embedded = false }) {
   // 기록 입력값 변경
   const handleCellChange = (rowIndex, key, value) => {
     setRows((prev) => prev.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row)));
+  };
+
+  // 정비 내역 칸 열기/추가 취소 (취소 시 입력한 정비 내용을 마지막 조회 값으로 되돌리고 칸 닫기)
+  const handleToggleService = (rowIndex, open) => {
+    setRows((prev) =>
+      prev.map((row, idx) => {
+        if (idx !== rowIndex) return row;
+        if (open) return { ...row, showService: true };
+        const original = originalRows[rowIndex] || {};
+        const restored = Object.fromEntries(SERVICE_KEYS.map((key) => [key, original[key] ?? ""]));
+        return { ...row, ...restored, showService: false };
+      })
+    );
   };
 
   // 선택 차량에 오늘 날짜 새 상태 기록 추가 (비교 기준은 날짜 없는 빈 행이라 새 기록으로 판단)
@@ -413,6 +496,33 @@ function CorCarTabStyled({ embedded = false }) {
   // 저장 (새 기록이면 기록 저장 먼저 → 사진 삭제 → 사진 업로드 → 라벨 수정 → 기존 기록 저장)
   // ================================
 
+  // 주행거리 앞뒤 기록 비교 안내 문구 (같은 차량의 이전 기록보다 작거나 다음 기록보다 크면 문구 반환)
+  // 새 기록이거나 주행거리를 바꾼 기록만 검사 (기존 저장 데이터는 안내하지 않음)
+  const getMileageWarning = (rowIndex) => {
+    const row = rows[rowIndex];
+    const km = toNum(row?.mileage);
+    if (!km || !row.service_dt) return "";
+    if (!isRowNew(rowIndex) && normalize(originalRows[rowIndex]?.mileage) === normalize(row.mileage)) return "";
+
+    const others = rows.filter(
+      (r, i) => i !== rowIndex && r.car_number === row.car_number && r.service_dt && toNum(r.mileage) > 0
+    );
+    const prev = others
+      .filter((r) => r.service_dt < row.service_dt)
+      .sort((a, b) => b.service_dt.localeCompare(a.service_dt))[0];
+    const next = others
+      .filter((r) => r.service_dt > row.service_dt)
+      .sort((a, b) => a.service_dt.localeCompare(b.service_dt))[0];
+
+    if (prev && km < toNum(prev.mileage)) {
+      return `이전 기록(${prev.service_dt} ${toNum(prev.mileage).toLocaleString()}km)보다 작습니다.`;
+    }
+    if (next && km > toNum(next.mileage)) {
+      return `다음 기록(${next.service_dt} ${toNum(next.mileage).toLocaleString()}km)보다 큽니다.`;
+    }
+    return "";
+  };
+
   // 저장용 기록 데이터 (숫자 콤마 제거, 화면용 사진 상태 제외)
   const buildSaveRow = (row, user_id) => {
     const saveRow = { ...row, user_id };
@@ -446,8 +556,33 @@ function CorCarTabStyled({ embedded = false }) {
       return false;
     }
 
+    // 주행거리가 앞뒤 기록과 맞지 않는 기록이 있으면 그대로 저장할지 확인 (계기판 교체 등 예외 허용)
+    const mileageWarnings = rows
+      .map((row, rowIndex) => ({ row, message: getMileageWarning(rowIndex) }))
+      .filter(({ message }) => message);
+    if (mileageWarnings.length > 0) {
+      const result = await Swal.fire({
+        title: "주행거리를 확인해 주세요.",
+        html: mileageWarnings
+          .map(({ row, message }) => `${getCarName(row.car_number)} ${row.service_dt}: ${toNum(row.mileage).toLocaleString()}km<br/>→ ${message}`)
+          .join("<br/><br/>"),
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "그대로 저장",
+        cancelButtonText: "수정하기",
+        confirmButtonColor: "#1976d2",
+        cancelButtonColor: "#9e9e9e",
+      });
+      if (!result.isConfirmed) return false;
+    }
+
     setSaving(true);
-    setSavingText("저장 준비중...");
+    showSwalLoading("저장 중...", "저장 준비중...");
+
+    // 서버 응답 code가 200이 아니면 실패로 처리 (실패도 HTTP 200으로 돌려주는 API 대응)
+    const checkOk = (res, label) => {
+      if (res?.data?.code !== 200) throw new Error(`${label} 실패: ${res?.data?.message || "서버 응답 오류"}`);
+    };
 
     // 기록일자 누락으로 건너뛴 기록이 있으면 false (저장 후 이동 시 이동하지 않음)
     let allSaved = true;
@@ -469,24 +604,25 @@ function CorCarTabStyled({ embedded = false }) {
 
         if (!row.service_dt) {
           await Swal.fire("경고", "기록일자를 입력해 주세요.", "warning");
+          // 경고창이 로딩 창을 대신했으므로 남은 기록 저장을 위해 로딩 창 다시 표시
+          showSwalLoading("저장 중...", "저장 준비중...");
           allSaved = false;
           continue;
         }
 
-        const progress = `(${rowIndex + 1}/${rows.length})`;
-
         // (1) 새 기록이면 기록 먼저 저장 (사진이 기록일자 기준으로 연결됨)
         if (newRow) {
-          setSavingText(`기록 저장중... ${progress}`);
-          await api.post("/Business/CarSave", [buildSaveRow(row, user_id)], {
+          updateSwalLoading(`${row.service_dt} 기록 저장 중...`);
+          const res = await api.post("/Business/CarSave", [buildSaveRow(row, user_id)], {
             headers: { "Content-Type": "application/json" },
           });
+          checkOk(res, "기록 저장");
         }
 
         // (2) 삭제 예정 사진 삭제
-        for (const img of row.deletedImages) {
-          setSavingText(`사진 삭제중... ${progress}`);
-          await api.delete("/Business/CarFileDelete", {
+        for (const [i, img] of row.deletedImages.entries()) {
+          updateSwalLoading(`사진 삭제 중... (${i + 1}/${row.deletedImages.length}장)`);
+          const res = await api.delete("/Business/CarFileDelete", {
             params: {
               car_number: row.car_number,
               service_dt: row.service_dt,
@@ -495,28 +631,32 @@ function CorCarTabStyled({ embedded = false }) {
               user_id,
             },
           });
+          checkOk(res, "사진 삭제");
         }
 
         // (3) 추가 예정 사진 축소 후 업로드 (파일 순서와 같은 순서로 위치 라벨 전달)
         if (row.pendingFiles.length > 0) {
-          setSavingText(`사진 업로드중... ${progress} ${row.pendingFiles.length}장`);
           const fd = new FormData();
           fd.append("car_number", row.car_number);
           fd.append("service_dt", row.service_dt);
           fd.append("user_id", user_id);
-          for (const pf of row.pendingFiles) {
+          // 사진을 한 장씩 줄이면서 진행 장수 표시
+          for (const [i, pf] of row.pendingFiles.entries()) {
+            updateSwalLoading(`사진 줄이는 중... (${i + 1}/${row.pendingFiles.length}장)`);
             fd.append("files", await compressImageFile(pf.file));
           }
+          updateSwalLoading(`사진 ${row.pendingFiles.length}장 업로드 중...`);
           fd.append("labels", JSON.stringify(row.pendingFiles.map((pf) => pf.label.trim())));
-          await api.post("/Business/CarFilesUpload", fd, {
+          const res = await api.post("/Business/CarFilesUpload", fd, {
             headers: { "Content-Type": "multipart/form-data" },
           });
+          checkOk(res, "사진 업로드");
         }
 
         // (4) 기존 사진 위치 라벨 수정
         if (labelChanges.length > 0) {
-          setSavingText(`사진 라벨 저장중... ${progress}`);
-          await api.post(
+          updateSwalLoading("사진 위치 라벨 저장 중...");
+          const res = await api.post(
             "/Business/CarFileLabelSave",
             labelChanges.map((img) => ({
               image_id: img.image_id,
@@ -525,14 +665,16 @@ function CorCarTabStyled({ embedded = false }) {
             })),
             { headers: { "Content-Type": "application/json" } }
           );
+          checkOk(res, "사진 라벨 저장");
         }
 
         // (5) 기존 기록의 입력값 저장
         if (!newRow && fieldChanged) {
-          setSavingText(`기록 저장중... ${progress}`);
-          await api.post("/Business/CarSave", [buildSaveRow(row, user_id)], {
+          updateSwalLoading(`${row.service_dt} 기록 저장 중...`);
+          const res = await api.post("/Business/CarSave", [buildSaveRow(row, user_id)], {
             headers: { "Content-Type": "application/json" },
           });
+          checkOk(res, "기록 저장");
         }
       }
 
@@ -544,7 +686,6 @@ function CorCarTabStyled({ embedded = false }) {
       return false;
     } finally {
       setSaving(false);
-      setSavingText("");
     }
   };
 
@@ -561,14 +702,17 @@ function CorCarTabStyled({ embedded = false }) {
     return true;
   };
 
-  // 요약 카드·전체로 이동·차량 선택으로 화면 전환 (미저장 변경이 있으면 확인 후 이동)
+  // 요약 카드·전체로 이동·차량 선택으로 화면 전환 (미저장 변경이 있으면 확인 후 이동, 이동하면 true)
   const handleSelectCar = async (nextCar) => {
-    if (nextCar === selectedCar) return;
-    if (!(await leaveCheckRef.current())) return;
+    if (nextCar === selectedCar) return true;
+    if (!(await leaveCheckRef.current())) return false;
     setSelectedCar(nextCar);
+    return true;
   };
 
-  if (loading) return <LoadingScreen />;
+  // 상세 화면에서 브라우저 뒤로가기 시 전체 차량 요약 화면으로 이동
+  useDetailBackGuard(selectedCar !== null, () => handleSelectCar(null));
+
 
   // ================================
   // 차량 상세: 상태 기록 카드 한 건
@@ -577,9 +721,12 @@ function CorCarTabStyled({ embedded = false }) {
     const newRow = isRowNew(rowIndex);
     const changed = isRowChanged(rowIndex);
     const photoCount = getPhotoCount(row);
+    // 주행거리 앞뒤 기록 비교 안내 문구 (문제 없으면 빈 문자열)
+    const mileageWarning = getMileageWarning(rowIndex);
+    // 저장된 정비 내용이 있는 기록 여부 (이미 저장된 정비 내역은 추가 취소 대상이 아니라 칸 항상 표시)
+    const hasSavedService = SERVICE_KEYS.some((key) => normalize(originalRows[rowIndex]?.[key]));
     // 정비 내역 칸 표시 여부 (정비 내역 추가 버튼을 눌렀거나 입력된 정비 내용이 있는 경우)
-    const showService =
-      row.showService || ["service_note", "service_amt", "comment"].some((key) => normalize(row[key]));
+    const showService = row.showService || SERVICE_KEYS.some((key) => normalize(row[key]));
 
     return (
       // 기록 카드 (수정된 기록은 빨간 테두리)
@@ -653,6 +800,9 @@ function CorCarTabStyled({ embedded = false }) {
             InputLabelProps={{ shrink: true }}
             InputProps={{ endAdornment: <InputAdornment position="end">km</InputAdornment> }}
             placeholder="현재 계기판 주행거리"
+            // 같은 차량 앞뒤 기록과 맞지 않으면 빨간 테두리와 안내 문구
+            error={Boolean(mileageWarning)}
+            helperText={mileageWarning || undefined}
             disabled={saving}
             fullWidth
             sx={inputSx}
@@ -688,17 +838,17 @@ function CorCarTabStyled({ embedded = false }) {
                 }}
               />
             </MDButton>
-            {/* 정비 내역 입력 칸 열기 버튼 (칸이 열려 있으면 미표시) */}
-            {!showService && (
+            {/* 정비 내역 칸 추가/추가 취소 버튼 (저장된 정비 내역이 있는 기록은 미표시) */}
+            {!hasSavedService && (
               <MDButton
                 variant="outlined"
-                color="info"
+                color={showService ? "error" : "info"}
                 size="small"
-                onClick={() => handleCellChange(rowIndex, "showService", true)}
+                onClick={() => handleToggleService(rowIndex, !showService)}
                 disabled={saving}
                 sx={buttonSx}
               >
-                + 정비 내역
+                {showService ? "정비 내역 취소" : "+ 정비 내역"}
               </MDButton>
             )}
           </div>
@@ -955,19 +1105,29 @@ function CorCarTabStyled({ embedded = false }) {
   // ================================
   // 전체 차량 요약 화면
   // ================================
-  const renderSummary = () =>
-    carSelectList.length === 0 ? (
-      <div style={{ ...cardStyle, padding: 20, textAlign: "center", fontSize: 13, color: "#7b809a" }}>
-        등록된 차량이 없습니다. 차량등록을 눌러 차량을 추가해 주세요.
-      </div>
-    ) : (
-      // 차량별 요약 카드 목록 (클릭 시 상세 화면 이동)
+  const renderSummary = () => {
+    if (carSelectList.length === 0) {
+      return (
+        <div style={{ ...cardStyle, padding: 20, textAlign: "center", fontSize: 13, color: "#7b809a" }}>
+          등록된 차량이 없습니다. 차량등록을 눌러 차량을 추가해 주세요.
+        </div>
+      );
+    }
+
+    // 전체 차량의 저장된 기록 중 최신 기록 목록 (기록일자 최신순)
+    const recentRecords = originalRows
+      .filter((r) => r?.service_dt)
+      .sort((a, b) => String(b.service_dt).localeCompare(String(a.service_dt)))
+      .slice(0, RECENT_COUNT);
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20, paddingBottom: 24 }}>
+      {/* 차량별 요약 카드 목록 (PC 한 줄 3~4대, 클릭 시 상세 화면 이동) */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fill, minmax(260px, 1fr))",
-          gap: 10,
-          paddingBottom: 24,
+          gridTemplateColumns: isMobile ? "repeat(2, minmax(0, 1fr))" : "repeat(auto-fill, minmax(320px, 1fr))",
+          gap: 12,
         }}
       >
         {carSelectList.map((car) => {
@@ -1009,23 +1169,77 @@ function CorCarTabStyled({ embedded = false }) {
                 </span>
               </div>
               {/* 최근 기록 대표 사진 */}
-              <PhotoThumb value={summary.photo} onView={() => {}} />
+              <PhotoThumb value={summary.photo} onView={() => {}} height={isMobile ? 140 : 200} />
               {/* 현재 주행거리 */}
               <div style={{ fontSize: 18, fontWeight: 800, color: summary.mileage ? ACCENT : "#9aa6b1" }}>
                 {summary.mileage ? `${summary.mileage} km` : "주행거리 미입력"}
               </div>
-              {/* 최근 기록일·누적 건수·사진 수 배지 */}
+              {/* 최근 기록일·저장 전 배지 */}
               <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
                 <Badge label={summary.lastDt ? `최근 ${summary.lastDt}` : "기록 없음"} bg="#f2f5f7" fg="#667584" />
-                <Badge label={`누적 ${summary.count}건`} bg="#f2f5f7" fg="#667584" />
-                <Badge label={`사진 ${summary.photoCount}장`} bg="#eef6f1" fg="#3e7652" />
                 {changed && <Badge label="저장 전" bg="#fdecea" fg="#d32f2f" />}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* 전체 차량 최근 기록 목록 (클릭 시 해당 차량 상세 화면 이동) */}
+      <div style={{ ...cardStyle, display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "10px 14px", fontSize: 14, fontWeight: 700, color: "#344767", borderBottom: "1px solid #eef2f5" }}>
+          최근 기록
+        </div>
+        {recentRecords.length === 0 ? (
+          <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: "#7b809a" }}>등록된 기록이 없습니다.</div>
+        ) : (
+          recentRecords.map((r) => {
+            // 기록 내용 미리보기 (정비내용 우선, 없으면 상태 메모 첫 줄)
+            const note = String(r.service_note || r.exterior_note || "").trim().split("\n")[0];
+            return (
+              // 최근 기록 한 줄 (기록일자·차량·주행거리·내용·정비 비용)
+              <div
+                key={`${r.car_number}-${r.service_dt}`}
+                onClick={() => handleSelectCar(r.car_number)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                  gap: isMobile ? "4px 10px" : 14,
+                  padding: "10px 14px",
+                  borderBottom: "1px solid #f2f5f7",
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: "#7b809a", whiteSpace: "nowrap" }}>{r.service_dt}</span>
+                <span style={{ fontWeight: 700, color: "#344767", whiteSpace: "nowrap" }}>{getCarName(r.car_number)}</span>
+                <span style={{ color: ACCENT, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {toNum(r.mileage) > 0 ? `${toNum(r.mileage).toLocaleString()} km` : "-"}
+                </span>
+                <span
+                  style={{
+                    flex: 1,
+                    minWidth: isMobile ? "100%" : 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: note ? "#344767" : "#9aa6b1",
+                  }}
+                >
+                  {note || "내용 없음"}
+                </span>
+                {toNum(r.service_amt) > 0 && (
+                  <Badge label={`정비 ${toNum(r.service_amt).toLocaleString()}원`} bg="#fff3e6" fg="#a55d1d" />
+                )}
+                {!isMobile && <ChevronRight size={16} color="#9aa6b1" />}
+              </div>
+            );
+          })
+        )}
+      </div>
+      </div>
     );
+  };
 
   const content = (
     <>
@@ -1052,6 +1266,8 @@ function CorCarTabStyled({ embedded = false }) {
           flexWrap: isMobile ? "wrap" : "nowrap",
           pt: 0.25,
           pb: 1,
+          // 차량 수 문구가 왼쪽 끝에 붙지 않도록 카드 영역과 같은 왼쪽 여백
+          pl: 1,
           backgroundColor: "#ffffff",
         }}
       >
@@ -1104,14 +1320,15 @@ function CorCarTabStyled({ embedded = false }) {
         )}
 
         <Box sx={{ display: "flex", gap: 1, ml: "auto" }}>
+          {/* 요약 화면: 차량등록 / 상세 화면: 선택 차량 상태 기록 추가 */}
           <MDButton
             variant="gradient"
             color="info"
-            onClick={handleModalOpen}
+            onClick={selectedCar ? handleAddRow : handleModalOpen}
             disabled={saving}
             sx={{ fontSize: isMobile ? "11px" : "13px", minWidth: isMobile ? 70 : undefined }}
           >
-            차량등록
+            {selectedCar ? "상태 기록 추가" : "차량등록"}
           </MDButton>
           <MDButton
             variant="gradient"
@@ -1129,13 +1346,16 @@ function CorCarTabStyled({ embedded = false }) {
       <MDBox
         ref={boardAreaRef}
         pt={1}
+        // 카드가 왼쪽 끝에 붙지 않도록 왼쪽 여백
+        pl={1}
         sx={{
           height: boardAreaHeight ?? (isMobile ? "60vh" : "75vh"),
           overflowY: "auto",
           WebkitOverflowScrolling: "touch",
         }}
       >
-        {selectedCar ? renderDetail() : renderSummary()}
+        {/* 첫 진입 조회·대표 사진 준비 전에는 비워 두고 로딩 창만 표시 */}
+        {firstPhotosReady && (selectedCar ? renderDetail() : renderSummary())}
       </MDBox>
 
       {/* 차량 등록 팝업 */}
@@ -1202,20 +1422,6 @@ function CorCarTabStyled({ embedded = false }) {
         onClose={handleClosePreview}
         anchorX={1 / 2}
       />
-
-      {/* 저장/업로드 진행 로딩 */}
-      <Backdrop
-        open={saving}
-        sx={{
-          color: "#fff",
-          zIndex: (t) => t.zIndex.modal + 20,
-          flexDirection: "column",
-          gap: 1,
-        }}
-      >
-        <CircularProgress color="inherit" />
-        <Typography sx={{ color: "#fff", fontSize: isMobile ? 12 : 14 }}>{savingText || "저장중..."}</Typography>
-      </Backdrop>
     </>
   );
 

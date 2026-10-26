@@ -196,14 +196,15 @@ function useThumbSrc(value) {
 }
 
 // 사진 미리보기 칸 (축소한 사진 표시, 클릭 시 원본 크게 보기, 법인차량 상태 사진에서도 사용)
-export function PhotoThumb({ value, onView }) {
+// height: 칸 높이(px, 기본 140)
+export function PhotoThumb({ value, onView, height = 140 }) {
   const src = useThumbSrc(value);
 
   return (
     <div
       onClick={() => value && onView(value)}
       style={{
-        height: 140,
+        height,
         borderRadius: 8,
         overflow: "hidden",
         backgroundColor: "#e3e9ee",

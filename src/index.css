@@ -27,6 +27,15 @@ code {
 
 html {
   background-color: white;
+  /* 세로 스크롤바 자리를 항상 비워 둠: 탭 전환·조회 로딩으로 화면 높이가 바뀌어
+     스크롤바가 생기거나 사라질 때 화면 폭이 바뀌어 탭·레이아웃이 좌우로 흔들리는 현상 방지 */
+  scrollbar-gutter: stable;
+}
+
+/* MUI 팝업·Swal 알림창이 열릴 때 스크롤바 폭만큼 body에 붙이는 보정 여백 제거
+   (위에서 스크롤바 자리를 이미 비워 두므로 보정하면 오히려 화면이 왼쪽으로 밀림) */
+body {
+  padding-right: 0 !important;
 }
 
 /* iOS Safari는 포커스되는 input/select/textarea의 글자 크기가 16px 미만이면

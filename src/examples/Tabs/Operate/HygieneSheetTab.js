@@ -13,11 +13,13 @@ import HygieneCardBoard, {
 import HygieneCategoryEditor from "utils/HygieneCategoryEditor";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
-import Swal from "sweetalert2";
+// 이 화면의 알림·확인창은 바깥(검은 배경) 클릭으로 닫히지 않는 Swal 사용
+import { LockedSwal as Swal, showSwalLoading } from "utils/swalLoading";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { askUnsavedChanges, setTabLeaveGuard } from "utils/unsavedChangesGuard";
+import useDetailBackGuard from "utils/useDetailBackGuard";
 
 function HygieneSheetTab() {
   const theme = useTheme();
@@ -496,19 +498,17 @@ function HygieneSheetTab() {
 
   // 저장 진행 중 여부 (빠른 연속 클릭 시 신규 행이 두 번 INSERT되는 것 방지)
   const savingRef = useRef(false);
-  // 저장 중 전체 화면 로딩 표시 여부 (사진 업로드~저장 완료까지 화면 조작 차단)
-  const [saving, setSaving] = useState(false);
 
   // 저장 (성공 시 true 반환, 미저장 확인 모달의 저장 후 이동에서도 사용)
   const handleSave = async () => {
     if (savingRef.current) return false;
     savingRef.current = true;
-    setSaving(true);
+    // 사진 업로드~저장 완료까지 로딩 창 표시 (저장 결과 알림이 뜨면 그 창으로 교체됨)
+    showSwalLoading("저장 중...", "사진 업로드 및 저장 중입니다.");
     try {
       return await saveHygieneRows();
     } finally {
       savingRef.current = false;
-      setSaving(false);
     }
   };
 
@@ -628,23 +628,21 @@ function HygieneSheetTab() {
   };
 
   // 카테고리 칩·전체로 이동·요약 카드 선택 (미저장 변경이 있으면 확인 후 이동)
+  // 이동하면 true, 미저장 확인에서 취소하면 false
   const handleSelectCategory = async (nextKey) => {
-    if (nextKey === selectedCategoryKey) return;
-    if (!(await leaveCheckRef.current())) return;
+    if (nextKey === selectedCategoryKey) return true;
+    if (!(await leaveCheckRef.current())) return false;
     setSelectedCategoryKey(nextKey);
+    return true;
   };
+
+  // 카테고리 상세 화면에서 브라우저 뒤로가기 시 전체 요약 화면으로 이동
+  useDetailBackGuard(selectedCategoryKey !== null, () => handleSelectCategory(null));
 
   if (loading || viewLoading) return <LoadingScreen />;
 
   return (
     <>
-      {/* 저장 중 전체 화면 로딩 (확인창 Swal보다 아래 층) */}
-      {saving && (
-        <MDBox sx={{ position: "fixed", inset: 0, zIndex: 1055, backgroundColor: "white" }}>
-          <LoadingScreen />
-        </MDBox>
-      )}
-
       {/* 상단 필터 + 버튼 (모바일 대응) */}
       <MDBox
         pt={0}

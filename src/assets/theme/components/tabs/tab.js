@@ -54,6 +54,18 @@ const tab = {
         marginBottom: "0 !important",
         marginRight: pxToRem(6),
       },
+
+      // 가로 탭 사이 세로 구분선 (마지막 탭 제외, 탭 높이의 위아래 가운데)
+      ".MuiTabs-flexContainer:not(.MuiTabs-flexContainerVertical) > &:not(:last-of-type)::after": {
+        content: '""',
+        position: "absolute",
+        right: 0,
+        top: "50%",
+        transform: "translateY(-50%)",
+        height: "60%",
+        width: "1px",
+        backgroundColor: "#afafaf",
+      },
     },
 
     labelIcon: {

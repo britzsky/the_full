@@ -15,6 +15,8 @@ export async function askUnsavedChanges() {
     confirmButtonColor: "#1976d2",
     denyButtonColor: "#e53935",
     cancelButtonColor: "#9e9e9e",
+    // 바깥(검은 배경) 클릭으로 닫히지 않고 버튼으로만 선택
+    allowOutsideClick: false,
   });
 
   if (result.isConfirmed) return "save";

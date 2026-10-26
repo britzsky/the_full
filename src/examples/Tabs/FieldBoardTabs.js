@@ -11,8 +11,13 @@ import {
   Checkbox,
   Button,
   IconButton,
+  Popper,
+  Paper,
+  MenuList,
+  MenuItem,
+  ClickAwayListener,
 } from "@mui/material";
-import { X, ZoomIn } from "lucide-react";
+import { X, ZoomIn, ChevronDown } from "lucide-react";
 import MDBox from "components/MDBox";
 import { useNavigate } from "react-router-dom";
 import LoadingScreen from "layouts/loading/loadingscreen";
@@ -28,6 +33,8 @@ import MenuManagementTab from "./FieldBoard/MenuManagementTab";
 import AccountMembersFilesTab from "./FieldBoard/AccountMembersFilesTab";
 // 구입요청 탭 (현장 영양사 구입요청서 작성)
 import PurchaseRequestTab from "./FieldBoard/PurchaseRequestTab";
+// 지점업로드 탭 (급식일자·구분별 식단표/식판 사진 업로드)
+import BranchUploadTab from "./FieldBoard/BranchUploadTab";
 import FieldBoardPurchaseNotificationButton from "utils/FieldBoardPurchaseNotificationButton";
 
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
@@ -150,6 +157,9 @@ function FieldBoardTabs() {
   const switchTimerRef = useRef(null);
   const TAB_SWITCH_DELAY_MS = 320;
   const navigate = useNavigate();
+  // 묶음 탭 하위 메뉴의 기준 탭 요소, 묶음 번호와 닫힘 지연 타이머
+  const [groupMenu, setGroupMenu] = useState({ anchor: null, groupIndex: -1 });
+  const groupMenuTimerRef = useRef(null);
   // 구입요청 알림에서 선택한 작성 문서를 자동으로 여는 대상과 실행 토큰
   const [purchaseNotificationTarget, setPurchaseNotificationTarget] = useState({
     paymentId: "",
@@ -175,6 +185,7 @@ function FieldBoardTabs() {
   useEffect(
     () => () => {
       if (switchTimerRef.current) clearTimeout(switchTimerRef.current);
+      clearTimeout(groupMenuTimerRef.current);
     },
     []
   );
@@ -231,30 +242,75 @@ function FieldBoardTabs() {
   };
 
   const tabLabels = [
-    "📅 출근부",
-    "📋 집계표",
-    "🍽️ 식수현황",
     "🔁 인수인계",
     "🧹 위생점검",
     "📦 기물관리",
     // "🍽️ 식단표 관리",
     "📋 자격/보건 서류 관리",
+    "📅 출근부",
+    "📋 집계표",
+    "🍽️ 식수현황",
+    "📤 지점업로드",
     "🛒 구매요청",
   ];
+
+  // 상단 탭 구성: children은 마우스 오버/클릭 시 하위 메뉴로 펼쳐지는 묶음 탭, index는 단일 탭
+  const tabGroups = [
+    { label: "🏢 운영관리", children: [0, 1, 2, 3] },
+    { index: 4 },
+    { index: 5 },
+    { index: 6 },
+    { index: 7 },
+    { index: 8 },
+  ];
+  // 현재 선택된 화면이 속한 상단 탭 번호
+  const topTabIndex = tabGroups.findIndex((g) =>
+    g.children ? g.children.includes(tabIndex) : g.index === tabIndex
+  );
+
+  // 묶음 탭 하위 메뉴를 여는 함수 (닫힘 대기 중이면 취소)
+  const openGroupMenu = (anchor, groupIndex) => {
+    clearTimeout(groupMenuTimerRef.current);
+    setGroupMenu({ anchor, groupIndex });
+  };
+  // 하위 메뉴를 즉시 닫는 함수
+  const closeGroupMenu = () => {
+    clearTimeout(groupMenuTimerRef.current);
+    setGroupMenu({ anchor: null, groupIndex: -1 });
+  };
+  // 탭에서 메뉴로 마우스를 옮기는 동안 닫히지 않도록 잠시 뒤에 닫는 함수
+  const closeGroupMenuSoon = () => {
+    clearTimeout(groupMenuTimerRef.current);
+    groupMenuTimerRef.current = setTimeout(closeGroupMenu, 150);
+  };
+
+  // 상단 단일 탭 클릭 시 해당 화면으로 전환 (묶음 탭은 하위 메뉴에서 선택)
+  const handleTopTabChange = (event, newTop) => {
+    const group = tabGroups[newTop];
+    if (group.children) return;
+    handleTabChange(event, group.index);
+  };
+
+  // 하위 메뉴에서 화면을 선택해 전환하는 함수
+  const handleGroupItemClick = (index) => {
+    closeGroupMenu();
+    handleTabChange(null, index);
+  };
 
   // 구입요청 탭 인덱스를 배열에서 동적으로 찾아 하드코딩 없이 사용한다.
   // MenuManagementTab 주석 해제 시에도 자동으로 올바른 인덱스를 가리킨다.
   const PURCHASE_TAB_INDEX = tabLabels.findIndex((l) => l.includes("구매요청"));
 
   const tabComponents = [
-    <RecordSheetTab key="record" />,
-    <TallySheetTab key="tally" />,
-    <DinersNumberSheetTab key="diner" />,
     <HandoverSheetTab key="handover" />,
     <HygieneSheetTab key="hygiene" />,
     <PropertySheetTab key="property" />,
     // <MenuManagementTab key="menu-management" />,
     <AccountMembersFilesTab key="account-files" />,
+    <RecordSheetTab key="record" />,
+    <TallySheetTab key="tally" />,
+    <DinersNumberSheetTab key="diner" />,
+    <BranchUploadTab key="branch-upload" />,
     <PurchaseRequestTab
       key="purchase-request"
       isActive={tabIndex === PURCHASE_TAB_INDEX}
@@ -301,8 +357,8 @@ function FieldBoardTabs() {
         />
 
         <Tabs
-          value={tabIndex}
-          onChange={handleTabChange}
+          value={topTabIndex}
+          onChange={handleTopTabChange}
           variant="scrollable"
           scrollButtons="auto"
           sx={{
@@ -315,29 +371,88 @@ function FieldBoardTabs() {
             },
           }}
         >
-          {tabLabels.map((label, index) => (
-            <Tab
-              key={label}
-              label={
-                <Box display="flex" alignItems="center" gap={1}>
-                  <span>{label}</span>
-                </Box>
-              }
-              sx={{
-                fontSize: "0.8rem",
-                minWidth: 120,
-                textTransform: "none",
-                color: tabIndex === index ? "#ff9800" : "#666",
-                fontWeight: "bold",
-                transition: "0.2s",
-                "&:hover": {
-                  color: "#ff9800",
-                  opacity: 0.8,
-                },
-              }}
-            />
-          ))}
+          {tabGroups.map((group, groupIndex) => {
+            const isGroup = Boolean(group.children);
+            const active = topTabIndex === groupIndex;
+            const label = isGroup ? group.label : tabLabels[group.index];
+            return (
+              <Tab
+                key={isGroup ? group.label : label}
+                label={
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    <span>{label}</span>
+                    {isGroup && <ChevronDown size={14} />}
+                  </Box>
+                }
+                {...(isGroup && {
+                  onClick: (e) => openGroupMenu(e.currentTarget, groupIndex),
+                  onMouseEnter: (e) => openGroupMenu(e.currentTarget, groupIndex),
+                  onMouseLeave: closeGroupMenuSoon,
+                })}
+                sx={{
+                  fontSize: "0.8rem",
+                  minWidth: 120,
+                  textTransform: "none",
+                  color: active ? "#ff9800" : "#666",
+                  fontWeight: "bold",
+                  transition: "0.2s",
+                  "&:hover": {
+                    color: "#ff9800",
+                    opacity: 0.8,
+                  },
+                }}
+              />
+            );
+          })}
         </Tabs>
+
+        {/* 묶음 탭 하위 메뉴 (마우스 오버 또는 클릭 시 펼침) */}
+        <Popper
+          open={Boolean(groupMenu.anchor)}
+          anchorEl={groupMenu.anchor}
+          placement="bottom-start"
+          sx={{ zIndex: 1300 }}
+        >
+          <ClickAwayListener
+            onClickAway={(e) => {
+              if (groupMenu.anchor?.contains(e.target)) return;
+              closeGroupMenu();
+            }}
+          >
+            <Paper
+              onMouseEnter={() => clearTimeout(groupMenuTimerRef.current)}
+              onMouseLeave={closeGroupMenuSoon}
+              sx={{
+                minWidth: groupMenu.anchor?.offsetWidth || 160,
+                borderRadius: "10px",
+                boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                overflow: "hidden",
+              }}
+            >
+              <MenuList sx={{ py: 0.5 }}>
+                {(tabGroups[groupMenu.groupIndex]?.children || []).map((index) => (
+                  <MenuItem
+                    key={tabLabels[index]}
+                    selected={tabIndex === index}
+                    onClick={() => handleGroupItemClick(index)}
+                    sx={{
+                      // 테마 MenuItem 기본값(minHeight unset, 좁은 여백)보다 우선 적용
+                      minHeight: "44px !important",
+                      py: "10px !important",
+                      px: 2,
+                      fontSize: "0.85rem",
+                      fontWeight: "bold",
+                      color: tabIndex === index ? "#ff9800 !important" : "#666",
+                      "&:hover": { color: "#ff9800 !important" },
+                    }}
+                  >
+                    {tabLabels[index]}
+                  </MenuItem>
+                ))}
+              </MenuList>
+            </Paper>
+          </ClickAwayListener>
+        </Popper>
       </MDBox>
 
       <MDBox p={2} sx={{ position: "relative" }}>

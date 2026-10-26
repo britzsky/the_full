@@ -18,6 +18,7 @@ import {
   Tooltip,
   Tabs,
   Tab,
+  Menu,
 } from "@mui/material";
 
 import MDBox from "components/MDBox";
@@ -34,6 +35,7 @@ import api from "api/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import { showSwalLoading } from "utils/swalLoading";
 
 // =========================
 // ✅ 계약기간 직접입력 유틸
@@ -138,7 +140,20 @@ const FILE_TYPES = [
   { key: "nutritionist_room_img", label: "영양사실" },
   { key: "chef_lounge_img", label: "휴게실" },
   { key: "meal_service_contract", label: "위탁급식계약서" },
+  { key: "daycare_meal_service_contract", label: "주간보호 위탁급식계약서" },
 ];
+
+// 주간보호 계약서 타입 (별도 버튼 없이 위탁급식계약서 버튼 메뉴에서 선택)
+const DAYCARE_CONTRACT_TYPE = "daycare_meal_service_contract";
+
+// 주간보호 함께 운영 거래처에서 위탁급식계약서 버튼 클릭 시 보여줄 선택 항목
+const CONTRACT_MENU_ITEMS = [
+  { type: "meal_service_contract", label: "요양원 계약서" },
+  { type: DAYCARE_CONTRACT_TYPE, label: "주간보호 계약서" },
+];
+
+// 첨부파일 상태값에 파일(선택 파일 또는 저장 경로)이 있는지 확인
+const hasFileValue = (v) => !!v && (v instanceof File || !!v?.path || (typeof v === "string" && !!v));
 
 const ACCOUNT_TABLE_RESTORE_PAGINATION_KEY = "accountTableRestorePagination";
 
@@ -307,7 +322,11 @@ function AccountInfoSheet() {
     nutritionist_room_img: null,
     chef_lounge_img: null,
     meal_service_contract: null,
+    daycare_meal_service_contract: null,
   });
+
+  // 위탁급식계약서 요양원·주간보호 관리 팝업의 기준 위치(버튼) 상태
+  const [contractMenuAnchor, setContractMenuAnchor] = useState(null);
 
   // ✅ "{k=v, k2=v2}" 형태 문자열 파싱
   const parseServerMapString = (s) => {
@@ -583,6 +602,36 @@ function AccountInfoSheet() {
     document.getElementById(type).click();
   };
 
+  // 위탁급식계약서 버튼/다운로드 클릭 시 요양원·주간보호 관리 팝업을 여는 함수
+  const openContractMenu = (e) => {
+    setContractMenuAnchor(e.currentTarget);
+  };
+
+  const closeContractMenu = () => {
+    setContractMenuAnchor(null);
+  };
+
+  // 팝업에서 계약서 칸의 파일 선택 창을 여는 함수
+  const handleContractSelect = (type) => {
+    closeContractMenu();
+    handleFileSelect(type);
+  };
+
+  // 팝업에서 계약서 칸의 미리보기 창을 여는 함수
+  const handleContractPreview = (type) => {
+    closeContractMenu();
+    handlePreviewByType(type);
+  };
+
+  // 팝업 각 줄에 보여줄 계약서 등록 상태 문구 (업로드 전 선택 파일 / 저장 파일명 / 미등록)
+  const getContractStatusText = (type) => {
+    const v = selectedFiles[type];
+    if (v instanceof File) return `업로드 대기 · ${v.name}`;
+    if (v?.path) return v.name || String(v.path).split("/").pop();
+    if (typeof v === "string" && v) return v.split("/").pop();
+    return "미등록";
+  };
+
   // ✅ 추가: 어떤 타입이 변경되었는지 추적
   const [dirtyFiles, setDirtyFiles] = useState(() => new Set());
 
@@ -662,6 +711,8 @@ function AccountInfoSheet() {
       return;
     }
 
+    showSwalLoading("업로드 중...");
+
     try {
       const res = await api.post("/Account/AccountBusinessImgUpload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -680,6 +731,7 @@ function AccountInfoSheet() {
         "nutritionist_room_img",
         "chef_lounge_img",
         "meal_service_contract",
+        "daycare_meal_service_contract",
       ];
 
       const next = {};
@@ -783,6 +835,7 @@ function AccountInfoSheet() {
       "nutritionist_room_img",
       "chef_lounge_img",
       "meal_service_contract",
+      "daycare_meal_service_contract",
     ];
 
     // 서버에서 내려온 row
@@ -1873,6 +1926,8 @@ function AccountInfoSheet() {
       eventData: _eventData,
     };
 
+    showSwalLoading();
+
     try {
       const res = await api.post("/Account/AccountInfoSave", payload);
       if (res.data.code === 200) {
@@ -1891,6 +1946,9 @@ function AccountInfoSheet() {
             setOriginalEvent([...eventData]);
           }
         });
+      } else {
+        // 성공 코드가 아니면 결과 알림이 없으므로 로딩 창만 닫는다
+        Swal.close();
       }
     } catch (e) {
       Swal.fire("실패", e.message || "저장 중 오류 발생", "error");
@@ -2046,9 +2104,26 @@ function AccountInfoSheet() {
           }}
         >
           {FILE_TYPES.map(({ key: type, label }) => {
-            const v = selectedFiles[type];
-            const hasPreview =
-              !!v && (v instanceof File || !!v?.path || (typeof v === "string" && v));
+            // 주간보호 계약서는 버튼 없이 파일 입력만 두고, 위탁급식계약서 메뉴에서 선택한다
+            if (type === DAYCARE_CONTRACT_TYPE) {
+              return (
+                <input
+                  key={type}
+                  type="file"
+                  id={type}
+                  style={{ display: "none" }}
+                  disabled={isDeletedAccount}
+                  onChange={(e) => handleFileChange(type, e)}
+                />
+              );
+            }
+
+            // 주간보호 함께 운영 거래처의 위탁급식계약서 (요양원·주간보호 2장 묶음)
+            const isContractGroup = hasDaycare && type === "meal_service_contract";
+            const contractCount = isContractGroup
+              ? CONTRACT_MENU_ITEMS.filter((x) => hasFileValue(selectedFiles[x.type])).length
+              : 0;
+            const hasPreview = isContractGroup ? contractCount > 0 : hasFileValue(selectedFiles[type]);
 
             return (
               <Box key={type} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -2056,7 +2131,9 @@ function AccountInfoSheet() {
                   variant="gradient"
                   color="success"
                   size="small"
-                  onClick={() => handleFileSelect(type)}
+                  onClick={(e) =>
+                    isContractGroup ? openContractMenu(e) : handleFileSelect(type)
+                  }
                   sx={{
                     minWidth: 88,
                     height: 32,
@@ -2065,7 +2142,7 @@ function AccountInfoSheet() {
                     lineHeight: 1,
                   }}
                 >
-                  {label}
+                  {isContractGroup ? `${label} ${contractCount}/2` : label}
                 </MDButton>
 
                 <Box
@@ -2089,7 +2166,11 @@ function AccountInfoSheet() {
                         size="small"
                         disabled={!hasPreview}
                         sx={hasPreview ? { ...fileIconSx, mt: -0.25 } : { color: "#bdbdbd", mt: -0.25 }}
-                        onClick={() => handleDownloadByType(type)}
+                        onClick={(e) =>
+                          isContractGroup
+                            ? openContractMenu(e)
+                            : handleDownloadByType(type)
+                        }
                       >
                         <DownloadIcon fontSize="small" />
                       </IconButton>
@@ -2102,7 +2183,13 @@ function AccountInfoSheet() {
                         size="small"
                         disabled={!hasPreview}
                         sx={hasPreview ? { ...fileIconSx, mt: -0.25 } : { color: "#bdbdbd", mt: -0.25 }}
-                        onClick={() => handlePreviewByType(type)}
+                        onClick={() =>
+                          handlePreviewByType(
+                            isContractGroup && !hasFileValue(selectedFiles[type])
+                              ? DAYCARE_CONTRACT_TYPE
+                              : type
+                          )
+                        }
                       >
                         <ImageSearchIcon fontSize="small" />
                       </IconButton>
@@ -2120,6 +2207,78 @@ function AccountInfoSheet() {
               </Box>
             );
           })}
+
+          {/* 위탁급식계약서 요양원·주간보호 관리 팝업 (줄마다 상태·선택·다운로드·미리보기) */}
+          <Menu
+            anchorEl={contractMenuAnchor}
+            open={Boolean(contractMenuAnchor)}
+            onClose={closeContractMenu}
+          >
+            {CONTRACT_MENU_ITEMS.map(({ type, label }) => {
+              const has = hasFileValue(selectedFiles[type]);
+              const isPending = selectedFiles[type] instanceof File;
+              return (
+                // 계약서 한 칸의 상태와 버튼 줄
+                <Box
+                  key={type}
+                  sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, py: 0.5 }}
+                >
+                  <Box sx={{ width: 96, fontSize: 13, fontWeight: 600 }}>{label}</Box>
+
+                  {/* 등록 파일명 또는 업로드 대기/미등록 상태 */}
+                  <Box
+                    sx={{
+                      width: 180,
+                      fontSize: 12,
+                      color: isPending ? "#e65100" : has ? "#333" : "#9e9e9e",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                    title={getContractStatusText(type)}
+                  >
+                    {getContractStatusText(type)}
+                  </Box>
+
+                  <MDButton
+                    variant="gradient"
+                    color="success"
+                    size="small"
+                    onClick={() => handleContractSelect(type)}
+                    sx={{ minWidth: 64, height: 28, px: 1, fontSize: 12, lineHeight: 1 }}
+                  >
+                    {has ? "재업로드" : "업로드"}
+                  </MDButton>
+
+                  <Tooltip title={has ? "다운로드" : "다운로드 불가"}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={!has}
+                        sx={has ? fileIconSx : { color: "#bdbdbd" }}
+                        onClick={() => handleDownloadByType(type)}
+                      >
+                        <DownloadIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+
+                  <Tooltip title={has ? "미리보기(창)" : "미리보기 불가"}>
+                    <span>
+                      <IconButton
+                        size="small"
+                        disabled={!has}
+                        sx={has ? fileIconSx : { color: "#bdbdbd" }}
+                        onClick={() => handleContractPreview(type)}
+                      >
+                        <ImageSearchIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              );
+            })}
+          </Menu>
 
           <MDButton
             variant="gradient"

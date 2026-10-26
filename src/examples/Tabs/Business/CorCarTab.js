@@ -1,7 +1,7 @@
 /* eslint-disable react/function-component-definition */
 // 법인차량 관리 화면 (위생관리 카드 구성: 차량별 요약 카드 → 차량 상세 날짜별 상태 기록 카드)
 // 기록 한 건 = tb_thefull_car_management 한 행 (기록일자·주행거리·상태 사진·상태 메모·정비 내역)
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import PropTypes from "prop-types";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -30,9 +30,8 @@ import { Download, Trash2, RotateCcw, ChevronLeft, ChevronRight } from "lucide-r
 import { PhotoThumb, compressImageFile, useFillViewportHeight } from "utils/HygieneCardBoard";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import { askUnsavedChanges, setTabLeaveGuard } from "utils/unsavedChangesGuard";
 
-// 기록 한 건당 등록 가능한 최대 사진 수
-const MAX_FILES = 10;
 
 // 변경 여부를 비교하는 기록 입력 항목
 const FIELD_KEYS = ["service_dt", "mileage", "exterior_note", "service_note", "service_amt", "comment"];
@@ -122,6 +121,12 @@ function CorCarTabStyled({ embedded = false }) {
 
   // 카드 영역을 화면 맨 아래까지 채우는 높이
   const [boardAreaRef, boardAreaHeight] = useFillViewportHeight();
+
+  // 미저장 변경 확인 후 이동 가능 여부 (저장 함수가 아래에서 정의되어 ref로 참조, 렌더마다 최신 함수로 교체)
+  const leaveCheckRef = useRef(async () => true);
+
+  // 탭 이동 전 미저장 변경 확인 등록 (경영관리·본사 관리 탭 묶음에서 탭을 바꾸기 전에 호출)
+  useEffect(() => setTabLeaveGuard(() => leaveCheckRef.current()), []);
 
   // 최초 진입 시 차량 목록과 전체 차량 상태 기록 조회
   useEffect(() => {
@@ -252,19 +257,7 @@ function CorCarTabStyled({ embedded = false }) {
   // 사진 선택 → 추가 예정 사진에 저장 (업로드는 저장 시)
   const handleFileSelect = (rowIndex, fileList) => {
     if (!fileList || fileList.length === 0) return;
-    const row = rows[rowIndex];
-    const available = MAX_FILES - getPhotoCount(row);
-
-    if (available <= 0) {
-      Swal.fire(`사진은 최대 ${MAX_FILES}장까지 등록 가능합니다.`, "", "warning");
-      return;
-    }
-
-    let files = Array.from(fileList);
-    if (files.length > available) {
-      files = files.slice(0, available);
-      Swal.fire("사진 개수 제한", `최대 ${MAX_FILES}장까지 등록 가능하여 ${available}장만 추가되었습니다.`, "info");
-    }
+    const files = Array.from(fileList);
 
     setRows((prev) =>
       prev.map((r, i) =>
@@ -297,14 +290,9 @@ function CorCarTabStyled({ embedded = false }) {
     );
   };
 
-  // 기존 사진 삭제 예정 표시/해제 (해제 시 최대 장수 초과면 막음)
+  // 기존 사진 삭제 예정 표시/해제
   const toggleImageDeleted = (rowIndex, img) => {
-    const row = rows[rowIndex];
-    const isDeleted = row.deletedImages.some((d) => d.image_id === img.image_id);
-    if (isDeleted && getPhotoCount(row) >= MAX_FILES) {
-      Swal.fire(`사진은 최대 ${MAX_FILES}장까지 등록 가능합니다.`, "", "warning");
-      return;
-    }
+    const isDeleted = rows[rowIndex].deletedImages.some((d) => d.image_id === img.image_id);
     setRows((prev) =>
       prev.map((r, i) =>
         i === rowIndex
@@ -428,8 +416,9 @@ function CorCarTabStyled({ embedded = false }) {
   // 저장용 기록 데이터 (숫자 콤마 제거, 화면용 사진 상태 제외)
   const buildSaveRow = (row, user_id) => {
     const saveRow = { ...row, user_id };
-    if (saveRow.service_amt) saveRow.service_amt = saveRow.service_amt.toString().replace(/,/g, "");
-    if (saveRow.mileage) saveRow.mileage = saveRow.mileage.toString().replace(/,/g, "");
+    // 주행거리·정비 비용은 INT 컬럼이라 빈 값은 null로 전달 (빈 문자열은 엄격 모드 DB에서 저장 오류)
+    saveRow.service_amt = saveRow.service_amt ? saveRow.service_amt.toString().replace(/,/g, "") : null;
+    saveRow.mileage = saveRow.mileage ? saveRow.mileage.toString().replace(/,/g, "") : null;
     delete saveRow.images;
     delete saveRow.pendingFiles;
     delete saveRow.deletedImages;
@@ -454,11 +443,14 @@ function CorCarTabStyled({ embedded = false }) {
         `${getCarName(duplicated.car_number)} 차량에 ${duplicated.service_dt} 기록이 두 건 있습니다. 기록일자를 확인해 주세요.`,
         "warning"
       );
-      return;
+      return false;
     }
 
     setSaving(true);
     setSavingText("저장 준비중...");
+
+    // 기록일자 누락으로 건너뛴 기록이 있으면 false (저장 후 이동 시 이동하지 않음)
+    let allSaved = true;
 
     try {
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
@@ -477,6 +469,7 @@ function CorCarTabStyled({ embedded = false }) {
 
         if (!row.service_dt) {
           await Swal.fire("경고", "기록일자를 입력해 주세요.", "warning");
+          allSaved = false;
           continue;
         }
 
@@ -545,12 +538,34 @@ function CorCarTabStyled({ embedded = false }) {
 
       await fetchCarList();
       await Swal.fire("저장 완료", "모든 변경이 저장되었습니다.", "success");
+      return allSaved;
     } catch (e) {
       Swal.fire("저장 실패", e?.message || String(e), "error");
+      return false;
     } finally {
       setSaving(false);
       setSavingText("");
     }
+  };
+
+  // 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인 (true: 이동 가능)
+  // 취소 후 이동: 추가한 새 기록은 빼고 마지막 조회 상태로 되돌림
+  leaveCheckRef.current = async () => {
+    if (!rows.some((_, index) => isRowChanged(index))) return true;
+    const choice = await askUnsavedChanges();
+    if (choice === "cancel") return false;
+    if (choice === "save") return handleSave();
+    const savedRows = originalRows.filter((row) => row.service_dt);
+    setRows(JSON.parse(JSON.stringify(savedRows)));
+    setOriginalRows(savedRows);
+    return true;
+  };
+
+  // 요약 카드·전체로 이동·차량 선택으로 화면 전환 (미저장 변경이 있으면 확인 후 이동)
+  const handleSelectCar = async (nextCar) => {
+    if (nextCar === selectedCar) return;
+    if (!(await leaveCheckRef.current())) return;
+    setSelectedCar(nextCar);
   };
 
   if (loading) return <LoadingScreen />;
@@ -650,7 +665,7 @@ function CorCarTabStyled({ embedded = false }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: "#344767" }}>상태 사진</span>
             <span style={{ fontSize: 12, color: "#7b809a" }}>
-              {photoCount}/{MAX_FILES}장
+              {photoCount}장
             </span>
             <span style={{ flex: 1 }} />
             <MDButton
@@ -658,7 +673,7 @@ function CorCarTabStyled({ embedded = false }) {
               variant="outlined"
               color="info"
               size="small"
-              disabled={saving || photoCount >= MAX_FILES}
+              disabled={saving}
               sx={buttonSx}
             >
               + 사진 추가
@@ -963,7 +978,7 @@ function CorCarTabStyled({ embedded = false }) {
             // 차량 요약 카드
             <div
               key={car.car_number}
-              onClick={() => setSelectedCar(car.car_number)}
+              onClick={() => handleSelectCar(car.car_number)}
               style={{
                 ...cardStyle,
                 borderColor: changed ? "#d32f2f" : "#dde5eb",
@@ -1045,7 +1060,7 @@ function CorCarTabStyled({ embedded = false }) {
             {/* 전체 차량 요약 화면으로 이동 버튼 */}
             <button
               type="button"
-              onClick={() => setSelectedCar(null)}
+              onClick={() => handleSelectCar(null)}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -1070,7 +1085,7 @@ function CorCarTabStyled({ embedded = false }) {
               select
               size="small"
               value={selectedCar}
-              onChange={(e) => setSelectedCar(e.target.value)}
+              onChange={(e) => handleSelectCar(e.target.value)}
               sx={{ minWidth: isMobile ? 140 : 180 }}
               SelectProps={{ native: true }}
               disabled={saving}

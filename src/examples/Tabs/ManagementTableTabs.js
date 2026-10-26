@@ -8,11 +8,17 @@ import TeleManagerTab from "./Business/TeleManagerTab";
 import CorCarTab from "./Business/CorCarTab";
 import CookWearTab from "./Business/CookWearTab";
 import AccountFileTab from "./Business/AccountFileTab";
+import { confirmTabLeave } from "utils/unsavedChangesGuard";
 
 function ManagementTableTabs() {
   const [tabIndex, setTabIndex] = useState(0);
 
-  const handleTabChange = (_, newValue) => setTabIndex(newValue);
+  // 탭 변경 (현재 탭 화면에 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인)
+  const handleTabChange = async (_, newValue) => {
+    if (newValue === tabIndex) return;
+    if (!(await confirmTabLeave())) return;
+    setTabIndex(newValue);
+  };
   // ✅ 숫자 이모지 아이콘
   const numberIcons = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"];
 

@@ -6,6 +6,7 @@ import CorCarTab from "examples/Tabs/Business/CorCarTab";
 import UserManagement from "layouts/humanresource/usermanagement";
 import WeekMenuManager from "layouts/weekmenusheet";
 import ErpSurveyTab, { getSurveyPeriod } from "examples/Tabs/HeadOffice/ErpSurveyTab";
+import { confirmTabLeave } from "utils/unsavedChangesGuard";
 
 // 로그인 사용자 정보를 기준으로 탭별 접근 권한을 판정합니다.
 const hasAccess = ({ allowedDepartments, allowedPositions, allowUserIds, accessMode = "AND" }) => {
@@ -91,7 +92,12 @@ function HeadOfficeTab_4() {
         <DashboardNavbar title="🏢 본사 관리" />
         <Tabs
           value={tabIndex}
-          onChange={(_, newValue) => setTabIndex(newValue)}
+          onChange={async (_, newValue) => {
+            // 현재 탭 화면에 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인
+            if (newValue === tabIndex) return;
+            if (!(await confirmTabLeave())) return;
+            setTabIndex(newValue);
+          }}
           variant="scrollable"
           scrollButtons="auto"
           sx={{

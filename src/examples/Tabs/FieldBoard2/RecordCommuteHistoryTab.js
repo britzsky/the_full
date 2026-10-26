@@ -181,22 +181,32 @@ const phoneKeyOf = (gubun, accountId, memberId) =>
 //    - commuteRows: CommuteRecordList 결과 (같은 업장으로 조회된 행)
 //    - sheetRows: AccountRecordSheetList 결과 (같은 업장)
 //    - phoneMap: phoneKeyOf -> 휴대폰 뒷자리
+//    - userIdMap: 직원 member_id -> 연결된 ERP 계정 아이디 (ERP 로그인 출퇴근 기록 매칭용)
 //    반환값
 //    - commutePersons: 위쪽 표 행 (출퇴근 기록 인원, 짝지어진 출근부 셀 sheet 포함)
 //    - sheetPersons: 아래쪽 표 행 (출근부 인원, 짝지어진 출퇴근 기록 commuteDays 포함)
 //    - personSummary: 사람별 지각/일찍 퇴근/미기록/이력없음 건수
-const buildCommuteComparison = ({ commuteRows, sheetRows, phoneMap, year, month, todayKey }) => {
+const buildCommuteComparison = ({
+  commuteRows,
+  sheetRows,
+  phoneMap,
+  userIdMap = new Map(),
+  year,
+  month,
+  todayKey,
+}) => {
   const viewMonthStart = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
   const daysInMonth = viewMonthStart.daysInMonth();
   const isFuture = (d) => viewMonthStart.date(d).format("YYYY-MM-DD") > todayKey;
 
-  // 출퇴근 기록을 이름 + 휴대폰 뒷자리 단위로 묶음
+  // 출퇴근 기록을 이름 + 휴대폰 뒷자리 단위로 묶음 (ERP 로그인 기록은 계정 아이디 단위)
   const commuteMap = new Map();
   (commuteRows || []).forEach((row) => {
     const name = String(row.user_name || "").trim();
     if (!name) return;
     const phone = String(row.phone_last4 || "").trim();
-    const key = `${name}|${phone}`;
+    const uid = String(row.user_id || "").trim();
+    const key = uid ? `uid|${uid}` : `${name}|${phone}`;
     if (!commuteMap.has(key)) {
       commuteMap.set(key, { key, name, phone_last4: phone, days: {}, sheet: {}, paired: false });
     }
@@ -215,6 +225,7 @@ const buildCommuteComparison = ({ commuteRows, sheetRows, phoneMap, year, month,
         member_id: mid,
         name: String(row.name || "").trim(),
         phone_last4: phoneMap.get(phoneKeyOf(row.gubun, row.account_id, mid)) || "",
+        user_id: row.gubun === "nor" ? userIdMap.get(mid) || "" : "",
         cells: {},
         commuteDays: {},
       });
@@ -232,11 +243,17 @@ const buildCommuteComparison = ({ commuteRows, sheetRows, phoneMap, year, month,
   // 출근부 인원 ↔ 출퇴근 기록 짝짓기
   //    뒷자리가 있으면 이름(또는 번호 뗀 이름)+뒷자리 일치
   //    출근부에 번호가 없으면 같은 이름 기록이 1명뿐이고, 출근부에도 같은 기본 이름이 1명뿐일 때만 매칭
+  //    ERP 로그인 기록은 직원에 연결된 계정 아이디(예전 데이터는 member_id = 계정 아이디)로 우선 매칭
   const commutePersonsAll = Array.from(commuteMap.values());
   sheetPersons.forEach((p, idx) => {
     const base = baseName(p.name);
-    let match = null;
-    if (p.phone_last4) {
+    let match =
+      (p.user_id && commuteMap.get(`uid|${p.user_id}`)) ||
+      commuteMap.get(`uid|${p.member_id}`) ||
+      null;
+    if (match) {
+      // 계정 아이디로 짝지어진 경우 이름/뒷자리 매칭은 하지 않음
+    } else if (p.phone_last4) {
       match =
         commuteMap.get(`${p.name}|${p.phone_last4}`) ||
         commuteMap.get(`${base}|${p.phone_last4}`) ||
@@ -412,6 +429,17 @@ function RecordCommuteHistoryTab() {
     [phoneRows]
   );
 
+  // 직원 member_id -> 연결된 ERP 계정 아이디 맵
+  const userIdMap = useMemo(
+    () =>
+      new Map(
+        (phoneRows || [])
+          .filter((r) => r.gubun === "nor" && r.user_id)
+          .map((r) => [String(r.member_id), String(r.user_id)])
+      ),
+    [phoneRows]
+  );
+
   // 출퇴근 기록 ↔ 출근부를 이름 + 휴대폰 뒷자리 + 업장 기준으로 짝지은 결과
   //    displayRows: 위쪽 출퇴근 기록 표 / attendanceRows: 아래쪽 출근부 표
   const comparison = useMemo(
@@ -420,11 +448,12 @@ function RecordCommuteHistoryTab() {
         commuteRows: rows,
         sheetRows,
         phoneMap,
+        userIdMap,
         year,
         month,
         todayKey,
       }),
-    [rows, sheetRows, phoneMap, year, month, todayKey]
+    [rows, sheetRows, phoneMap, userIdMap, year, month, todayKey]
   );
   const {
     commutePersons: displayRows,
@@ -513,6 +542,7 @@ function RecordCommuteHistoryTab() {
               commuteRows: acc.rows,
               sheetRows: results[idx],
               phoneMap,
+              userIdMap,
               year,
               month,
               todayKey,

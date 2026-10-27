@@ -1,5 +1,5 @@
 // 지점업로드 탭: 거래처별 급식일자·구분마다 식단표와 식판 사진을 올리고 내려받는 화면 (목록 보기 / 달력 보기)
-// 파일은 위생점검과 같은 업로드 API(Operate/OperateImgUpload)로 올리고, 경로는 Operate/BranchUploadSave로 저장
+// 조회·업로드·저장 API와 자료 판별 헬퍼는 branchUploadData.js에서 처리
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import dayjs from "dayjs";
@@ -32,31 +32,28 @@ import CalendarMonthOutlinedIcon from "@mui/icons-material/CalendarMonthOutlined
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import api from "api/api";
 import { API_BASE_URL } from "config";
-import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
-import { PhotoThumb, compressImageFile, useFillViewportHeight } from "utils/HygieneCardBoard";
+import { PhotoThumb, useFillViewportHeight } from "utils/HygieneCardBoard";
 import accountLabelSx from "utils/accountLabelSx";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { LockedSwal as Swal, showSwalLoading } from "utils/swalLoading";
+import useBranchUploadData, {
+  MEAL_TYPES,
+  FILE_KINDS,
+  ALL_ACCOUNTS,
+  DOWNLOAD_OPTIONS,
+  fileOf,
+  isPdf,
+  countFiles,
+  isDone,
+  buildFileName,
+  fetchFileBlob,
+} from "./branchUploadData";
 
-// 급식 구분 목록 (화면 표시 순서)
-const MEAL_TYPES = ["조식", "중식", "석식", "간식"];
-// 업로드 자료 종류 (key: 서버 컬럼 접두어, label: 화면 표시명, hint·accept: 등록 카드 안내·허용 형식)
-const FILE_KINDS = [
-  { key: "menu", label: "식단표", hint: "PDF · 사진 파일", accept: "image/*,application/pdf", Icon: ArticleOutlinedIcon },
-  { key: "plate", label: "식판 사진", hint: "사진 파일 (JPG · PNG 등)", accept: "image/*", Icon: RestaurantOutlinedIcon },
-];
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-// 거래처 선택칸의 전체 거래처 값
-const ALL_ACCOUNTS = "ALL";
-// 다운로드 메뉴 항목 (kinds: ZIP에 담을 자료 종류)
-const DOWNLOAD_OPTIONS = [
-  { label: "식판 사진만", kinds: ["plate"] },
-  { label: "식단표만", kinds: ["menu"] },
-  { label: "식단표 + 식판 사진", kinds: ["menu", "plate"] },
-];
+// 등록 카드 자료 종류별 아이콘
+const KIND_ICON = { menu: ArticleOutlinedIcon, plate: RestaurantOutlinedIcon };
 
 // 위생점검 화면과 같은 색 구성 (강조: ERP info 파랑)
 const ACCENT = "#1A73E8";
@@ -84,24 +81,6 @@ const inputBoxSx = {
   },
 };
 
-// 행의 자료 경로·파일명·등록일시 (kind: menu | plate)
-const fileOf = (row, kind) =>
-  row && row[`${kind}_file_path`]
-    ? { path: row[`${kind}_file_path`], name: row[`${kind}_file_name`] || "", regDt: row[`${kind}_reg_dt`] || "" }
-    : null;
-const isPdf = (path) => /\.pdf$/i.test(path || "");
-// 행의 등록된 자료 개수
-const countFiles = (row) => FILE_KINDS.filter((k) => fileOf(row, k.key)).length;
-const isDone = (row) => countFiles(row) === FILE_KINDS.length;
-
-// 다운로드 파일명 (거래처_일자_구분_자료종류.확장자)
-const buildFileName = (row, kind) => {
-  const { path } = fileOf(row, kind);
-  const ext = path.includes(".") ? path.split(".").pop() : "file";
-  const label = FILE_KINDS.find((k) => k.key === kind).label.replace(" ", "");
-  return `${row.account_name || row.account_id}_${row.meal_date}_${row.meal_type}_${label}.${ext}`;
-};
-
 // URL을 지정한 파일명으로 내려받는 함수
 const triggerDownload = (url, fileName) => {
   const a = document.createElement("a");
@@ -113,15 +92,6 @@ const triggerDownload = (url, fileName) => {
   a.remove();
 };
 
-// 서버 파일을 Blob으로 받아오는 함수 (ZIP 묶음용, 오류 응답이면 예외)
-const fetchFileBlob = async (path) => {
-  const res = await fetch(buildFileDownloadUrl(path), { credentials: "include" });
-  const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-  if (!res.ok || contentType.includes("xml") || contentType.includes("html") || contentType.includes("json")) {
-    throw new Error("파일을 불러오지 못했습니다.");
-  }
-  return res.blob();
-};
 
 // 둥근 상태 배지
 function Badge({ label, bg, fg }) {
@@ -264,7 +234,8 @@ function FileCell({ file, onView, onAdd }) {
 function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownload }) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
-  const { label, hint, accept, Icon } = kind;
+  const { label, hint, accept } = kind;
+  const Icon = KIND_ICON[kind.key];
   const current = file || existing?.path;
 
   return (
@@ -633,8 +604,18 @@ function BranchUploadTab({ isHeadOffice }) {
   );
   const isAccountLocked = !!localAccountId;
 
+  // 거래처 목록·조회 자료·조회 중 여부와 조회/저장 API (branchUploadData.js)
+  const {
+    accountList,
+    rows,
+    loading: listLoading,
+    fetchBranchUploadList,
+    fetchBranchUploadRows,
+    findExistingRow,
+    saveBranchUpload,
+  } = useBranchUploadData(isHeadOffice);
+
   // 조회 조건: 거래처(전체/단일), 연도, 월
-  const [accountList, setAccountList] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState(() => localAccountId || ALL_ACCOUNTS);
   const [accountInput, setAccountInput] = useState("");
   const [year, setYear] = useState(today.year());
@@ -645,9 +626,6 @@ function BranchUploadTab({ isHeadOffice }) {
   // 화면 보기 방식 (list: 목록, calendar: 달력)
   const [viewMode, setViewMode] = useState("list");
 
-  // 조회한 자료 행 목록과 조회 중 여부
-  const [rows, setRows] = useState([]);
-  const [listLoading, setListLoading] = useState(false);
   // 다운로드용으로 체크한 행 idx 목록
   const [checkedIds, setCheckedIds] = useState([]);
   // 다운로드 메뉴 기준 버튼
@@ -676,40 +654,16 @@ function BranchUploadTab({ isHeadOffice }) {
   const fileInputRef = useRef(null);
   const pickTargetRef = useRef(null);
 
-  // 거래처 목록 조회 (본사 화면: 전체 거래처, 현장 화면: 로그인 사용자 접근 가능 거래처)
-  useEffect(() => {
-    const load = isHeadOffice
-      ? api
-          .get("/Account/AccountList", { params: { account_type: "0" } })
-          .then((res) =>
-            (Array.isArray(res.data) ? res.data : []).sort((a, b) =>
-              String(a.account_name || "").localeCompare(String(b.account_name || ""), "ko")
-            )
-          )
-      : fetchFieldBoardAccountList({ endpoint: "/Account/AccountList", accountType: "0" });
-    load.then((list) => setAccountList(list || [])).catch(() => setAccountList([]));
-  }, [isHeadOffice]);
-
-  // 접근 가능한 거래처 id 목록 (전체 조회 결과를 이 범위로 제한)
-  const accessibleIds = useMemo(() => new Set(accountList.map((acc) => String(acc.account_id))), [accountList]);
-
   // 선택 연월·거래처의 자료 목록 조회
-  const fetchList = useCallback(async () => {
-    if (accountList.length === 0) return;
-    setListLoading(true);
-    try {
-      const res = await api.get("/Operate/BranchUploadList", {
-        params: { year, month, account_id: selectedAccountId === ALL_ACCOUNTS ? "" : selectedAccountId },
-      });
-      const list = Array.isArray(res.data) ? res.data : [];
-      setRows(list.filter((row) => accessibleIds.has(String(row.account_id))));
-    } catch (err) {
-      console.error("지점업로드 조회 실패:", err);
-      setRows([]);
-    } finally {
-      setListLoading(false);
-    }
-  }, [year, month, selectedAccountId, accountList.length, accessibleIds]);
+  const fetchList = useCallback(
+    () =>
+      fetchBranchUploadList({
+        year,
+        month,
+        account_id: selectedAccountId === ALL_ACCOUNTS ? "" : selectedAccountId,
+      }),
+    [year, month, selectedAccountId, fetchBranchUploadList]
+  );
 
   useEffect(() => {
     fetchList();
@@ -740,36 +694,11 @@ function BranchUploadTab({ isHeadOffice }) {
 
   const allChecked = visibleRows.length > 0 && visibleRows.every((row) => checkedIds.includes(row.idx));
 
-  // 파일 1개를 서버에 올리고 저장 경로 반환 (사진은 축소, 식단표 사진은 글씨가 보이도록 크게 유지)
-  const uploadFile = async (file, kind, accountId, mealDate) => {
-    const upload = kind === "menu" ? await compressImageFile(file, 2400, 0.9) : await compressImageFile(file);
-    const formData = new FormData();
-    formData.append("file", upload);
-    formData.append("type", "branch_upload");
-    formData.append("gubun", mealDate.slice(0, 7).replace("-", ""));
-    formData.append("folder", accountId);
-    const res = await api.post("/Operate/OperateImgUpload", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-    if (res.data?.code !== 200) throw new Error("파일 업로드 실패");
-    return res.data.image_path;
-  };
-
-  // 거래처·일자·구분 1건의 자료를 올리고 경로를 저장하는 함수 (files: { menu?: File, plate?: File })
-  const saveUpload = async ({ account_id, meal_date, meal_type }, files) => {
+  // 거래처·일자·구분 1건의 자료를 올리고 저장한 뒤 목록 다시 조회 (files: { menu?: File, plate?: File })
+  const saveUpload = async (target, files) => {
     showSwalLoading("업로드 중...");
     try {
-      const payload = { account_id, meal_date, meal_type, user_id: localStorage.getItem("user_id") || "" };
-      // eslint-disable-next-line no-restricted-syntax
-      for (const { key } of FILE_KINDS) {
-        if (files[key]) {
-          // eslint-disable-next-line no-await-in-loop
-          payload[`${key}_file_path`] = await uploadFile(files[key], key, account_id, meal_date);
-          payload[`${key}_file_name`] = files[key].name;
-        }
-      }
-      const res = await api.post("/Operate/BranchUploadSave", payload);
-      if (res.data?.code !== 200) throw new Error(res.data?.message || "저장 실패");
+      await saveBranchUpload(target, files);
       await fetchList();
       Swal.fire({ title: "저장 완료", icon: "success", timer: 900, showConfirmButton: false });
       return true;
@@ -825,17 +754,6 @@ function BranchUploadTab({ isHeadOffice }) {
 
   const closeModal = () => setModal((m) => ({ ...m, open: false }));
   const setFormValue = (key, value) => setModal((m) => ({ ...m, form: { ...m.form, [key]: value } }));
-
-  // 등록 전 같은 거래처·일자·구분으로 이미 등록된 건 조회 (화면 조회 조건과 무관하게 서버에서 확인)
-  const findExistingRow = async ({ account_id, meal_date, meal_type }) => {
-    const d = dayjs(meal_date);
-    const res = await api.get("/Operate/BranchUploadList", {
-      params: { year: d.year(), month: d.month() + 1, account_id },
-    });
-    return (Array.isArray(res.data) ? res.data : []).find(
-      (row) => row.meal_date === meal_date && row.meal_type === meal_type
-    );
-  };
 
   // 등록·수정 모달 저장 (등록은 이미 있는 건이면 막고 수정으로 안내, 수정은 선택한 파일만 교체)
   const handleModalSave = async () => {
@@ -914,12 +832,13 @@ function BranchUploadTab({ isHeadOffice }) {
     });
     if (!value) return null;
 
-    const res = await api.get("/Operate/BranchUploadList", {
-      params: { year, month, account_id: value.accountId === ALL_ACCOUNTS ? "" : value.accountId },
+    const monthRows = await fetchBranchUploadRows({
+      year,
+      month,
+      account_id: value.accountId === ALL_ACCOUNTS ? "" : value.accountId,
     });
-    const list = (Array.isArray(res.data) ? res.data : []).filter(
+    const list = monthRows.filter(
       (row) =>
-        accessibleIds.has(String(row.account_id)) &&
         (mealFilter === "전체" || row.meal_type === mealFilter) &&
         row.meal_date >= value.startDate &&
         row.meal_date <= value.endDate

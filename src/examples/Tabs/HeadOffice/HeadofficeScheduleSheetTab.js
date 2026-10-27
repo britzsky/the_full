@@ -267,6 +267,14 @@ const resolveAccountName = (item, accounts) => {
 const POSITION_LABEL = { 0: "대표", 1: "팀장", 2: "파트장", 3: "매니저" };
 const getPositionLabel = (pos) => POSITION_LABEL[Number(pos)] ?? "직급없음";
 
+// 일정 화면 전용 동명이인 표시 이름 (user_id 기준, name: 실제 이름 / label: 화면 표시 이름)
+const SCHEDULE_NAME_OVERRIDE = {
+  sy7: { name: "이수연", label: "큰수연" },
+  sy8: { name: "이수연", label: "작수연" },
+};
+const getScheduleUserName = (userId, userName) =>
+  SCHEDULE_NAME_OVERRIDE[String(userId ?? "").trim()]?.label || userName;
+
 // 날짜 값을 YYYY-MM-DD 문자열로 정규화
 const normalizeYmd = (value) => {
   const d = dayjs(value);
@@ -350,7 +358,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     // 본인 이름 최초 1회 캐싱
     if (!loginUserNameRef.current && loginUserId) {
       const me = rows.find((m) => String(m.user_id) === String(loginUserId));
-      if (me?.user_name) loginUserNameRef.current = me.user_name;
+      if (me?.user_name) loginUserNameRef.current = getScheduleUserName(me.user_id, me.user_name);
     }
   };
 
@@ -660,6 +668,8 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
       </Box>
 
       {/* 캘린더 */}
+      {/* 달력 영역: 내용 높이만큼 그려서 스크롤은 페이지에서 처리 */}
+      <Box sx={{ "& .fc": { height: "auto" } }}>
       <FullCalendar
         key={`${currentYear}-${currentMonth}`}
         plugins={[dayGridPlugin, interactionPlugin]}
@@ -675,7 +685,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
         select={handleSelectRange}
         eventColor="#F2921D"
         eventTextColor="#fff"
-        height="80vh"
+        height="auto"
         dayMaxEventRows={5}
         fixedWeekCount={false}
         datesSet={() => {
@@ -712,9 +722,21 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
           const isCanceled = arg.event.extendedProps?.isCanceled;
           const mainUserName = String(arg.event.extendedProps?.user_name || "").trim();
           const userNamesStr = String(arg.event.extendedProps?.user_names || "").trim();
+          // 담당자 이름 목록에서 등록자 이름을 1개만 제외한 동행자 목록 (동명이인 동행자는 유지)
           const companionNames = userNamesStr
-            ? userNamesStr.split(",").map((n) => n.trim()).filter((n) => n && n !== mainUserName)
+            ? userNamesStr.split(",").map((n) => n.trim()).filter(Boolean)
             : [];
+          const mainNameIdx = companionNames.indexOf(mainUserName);
+          if (mainNameIdx >= 0) companionNames.splice(mainNameIdx, 1);
+          // 동명이인 동행자는 user_ids 기준으로 구분 이름으로 치환
+          const mainUserId = String(arg.event.extendedProps?.user_id ?? "").trim();
+          String(arg.event.extendedProps?.user_ids || "").split(",").map((id) => id.trim()).forEach((id) => {
+            const override = SCHEDULE_NAME_OVERRIDE[id];
+            if (!override || id === mainUserId) return;
+            const idx = companionNames.indexOf(override.name);
+            if (idx >= 0) companionNames[idx] = override.label;
+          });
+          const mainUserLabel = getScheduleUserName(mainUserId, mainUserName);
           const deptType = arg.event.extendedProps?.dept_type;
           const typeLabel = getTypeLabel(arg.event.extendedProps?.type, deptType);
           const accountName = resolveAccountName(arg.event.extendedProps || {}, accountList);
@@ -732,12 +754,13 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                 {companionNames.length > 0 && (
                   <span style={{ marginLeft: 2 }}>(동행+{companionNames.join(", ")})</span>
                 )}
-                {mainUserName && <span style={{ marginLeft: 2 }}>({mainUserName})</span>}
+                {mainUserName && <span style={{ marginLeft: 2 }}>({mainUserLabel})</span>}
               </div>
             </div>
           );
         }}
       />
+      </Box>
 
       {/* 일정 등록/수정 모달 */}
       <Modal open={open} onClose={handleClose}>
@@ -801,7 +824,8 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                   return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
                 // 항상 본인 이름을 앞에 표시 (현재 팀에 없어도 캐시 사용)
                 const meInList = memberList.find((m) => String(m.user_id) === String(loginUserId));
-                const myName = meInList?.user_name || loginUserNameRef.current || loginUserName;
+                const myName = (meInList?.user_name && getScheduleUserName(meInList.user_id, meInList.user_name))
+                  || loginUserNameRef.current || getScheduleUserName(loginUserId, loginUserName);
                 return total > 1 ? `${myName} 외 ${total - 1}명` : myName;
               }}
               sx={{ width: isMobile ? "100%" : 150, flexShrink: 0, ...ctrlSx }}
@@ -818,7 +842,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
                     sx={{ bgcolor: isLoginUser ? "#e0e0e0 !important" : "transparent", "&.Mui-disabled": { opacity: 1 } }}
                   >
                     <Checkbox checked={isChecked} size="small" sx={{ p: 0.5, mr: 0.5 }} />
-                    {member.user_name} [{getPositionLabel(member.position)}]
+                    {getScheduleUserName(member.user_id, member.user_name)} [{getPositionLabel(member.position)}]
                   </MenuItem>
                 );
               })}

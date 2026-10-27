@@ -412,6 +412,8 @@ function BusinessScheduleSheet() {
         </Button>
       </Box>
 
+      {/* 달력 영역: 내용 높이만큼 그려서 스크롤은 페이지에서 처리 */}
+      <Box sx={{ "& .fc": { height: "auto" } }}>
       <FullCalendar
         key={`${currentYear}-${currentMonth}`}
         plugins={[dayGridPlugin, interactionPlugin]}
@@ -427,7 +429,7 @@ function BusinessScheduleSheet() {
         select={handleSelectRange}
         eventColor="#F2921D"
         eventTextColor="#fff"
-        height="80vh"
+        height="auto"
         dayMaxEventRows={5}
         fixedWeekCount={false}
         datesSet={() => {
@@ -481,6 +483,7 @@ function BusinessScheduleSheet() {
           );
         }}
       />
+      </Box>
 
       {/* 일정 입력/수정/취소/복원 모달 */}
       <Modal open={open} onClose={handleClose}>

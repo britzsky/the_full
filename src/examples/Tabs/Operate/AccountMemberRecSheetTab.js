@@ -52,13 +52,6 @@ const STICKY_COL_WIDTH = {
   rrn: 104,
 };
 
-const STICKY_LEFT = {
-  cor_type: 0,
-  name: STICKY_COL_WIDTH.cor_type,
-  rrn: STICKY_COL_WIDTH.cor_type + STICKY_COL_WIDTH.name,
-  account_id: STICKY_COL_WIDTH.cor_type + STICKY_COL_WIDTH.name + STICKY_COL_WIDTH.rrn,
-};
-
 const DEFAULT_JOIN_DATE_SORT = [{ id: "act_join_dt", desc: false }];
 const DATE_FIELDS = new Set(["act_join_dt"]);
 const SELECT_FIELDS = new Set([
@@ -498,7 +491,8 @@ function AccountMemberRecSheet() {
       table.getFlatHeaders().forEach((header, idx) => {
         const el = headerCells[idx];
         if (!el) return;
-        const w = Math.ceil(el.getBoundingClientRect().width);
+        // 고정 열 위치가 실제 경계와 맞도록 소수점 너비 그대로 저장 (잠금 시에만 올림)
+        const w = el.getBoundingClientRect().width;
         if (w > 0) next[header.id] = w;
       });
 
@@ -1012,6 +1006,16 @@ function AccountMemberRecSheet() {
     // 화면 크기별 고정 열 범위
     // 모바일: 이름(2열)까지 고정, 태블릿: 주민번호(3열)까지 고정, 데스크탑: 기존(4열) 유지
     const stickyColumnCount = isMobile ? 2 : isTablet ? 3 : 4;
+    // n번째 고정 열의 left 위치: 앞 열들의 실제 렌더링 너비 합 (측정 전에는 컬럼 size 기준)
+    // 너비 잠금 상태에서는 열 너비가 올림값으로 고정되므로 같은 기준으로 합산
+    const getStickyLeft = (n) =>
+      `${tableInstance
+        .getFlatHeaders()
+        .slice(0, n - 1)
+        .reduce((sum, h) => {
+          const w = measuredColWidths[h.id] ?? h.column.columnDef.size ?? 80;
+          return sum + (isColumnWidthLocked ? Math.ceil(w) : w);
+        }, 0)}px`;
 
     return (
       <MDBox
@@ -1049,7 +1053,7 @@ function AccountMemberRecSheet() {
             ? {
               "& td:nth-of-type(1), & th:nth-of-type(1)": {
                 position: "sticky",
-                left: STICKY_LEFT.cor_type,
+                left: 0,
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -1059,7 +1063,7 @@ function AccountMemberRecSheet() {
             ? {
               "& td:nth-of-type(2), & th:nth-of-type(2)": {
                 position: "sticky",
-                left: `${STICKY_LEFT.name}px`,
+                left: getStickyLeft(2),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -1069,7 +1073,7 @@ function AccountMemberRecSheet() {
             ? {
               "& td:nth-of-type(3), & th:nth-of-type(3)": {
                 position: "sticky",
-                left: `${STICKY_LEFT.rrn}px`,
+                left: getStickyLeft(3),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -1079,7 +1083,7 @@ function AccountMemberRecSheet() {
             ? {
               "& td:nth-of-type(4), & th:nth-of-type(4)": {
                 position: "sticky",
-                left: `${STICKY_LEFT.account_id}px`,
+                left: getStickyLeft(4),
                 background: "#f0f0f0",
                 zIndex: 3,
               },
@@ -1127,7 +1131,7 @@ function AccountMemberRecSheet() {
                 {headerGroup.headers.map((header) => {
                   const headerWidth =
                     header.column.columnDef.size ?? header.column.columnDef.minWidth ?? 80;
-                  const lockedHeaderWidth = measuredColWidths[header.id] ?? headerWidth;
+                  const lockedHeaderWidth = Math.ceil(measuredColWidths[header.id] ?? headerWidth);
 
                   return (
                     <th
@@ -1157,11 +1161,12 @@ function AccountMemberRecSheet() {
                   {row.getVisibleCells().map((cell) => {
                     const colKey = cell.column.columnDef.accessorKey;
                     const currentValue = row.getValue(colKey);
-                    const cellWidth =
+                    const cellWidth = Math.ceil(
                       measuredColWidths[cell.column.id] ??
                       cell.column.columnDef.size ??
                       cell.column.columnDef.minWidth ??
-                      80;
+                      80
+                    );
 
                     const originalRow = originalMap.get(rid) || {};
                     const originalValue = originalRow?.[colKey];

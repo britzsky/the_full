@@ -1,5 +1,5 @@
-// 지점업로드 탭: 거래처별 급식일자·구분마다 식단표와 식판 사진을 올리고 내려받는 화면 (목록 보기 / 달력 보기)
-// 조회·업로드·저장 API와 자료 판별 헬퍼는 branchUploadData.js에서 처리
+// 지점업로드 탭: 거래처별 주차(월~일)마다 주간 식단표 1장과 요일별 식판 사진을 올리고 내려받는 화면 (목록 보기 / 달력 보기)
+// 조회·업로드·저장 API와 주차·자료 판별 헬퍼는 branchUploadData.js에서 처리
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import dayjs from "dayjs";
@@ -20,9 +20,11 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import AddIcon from "@mui/icons-material/Add";
 import DownloadIcon from "@mui/icons-material/Download";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import PictureAsPdfOutlinedIcon from "@mui/icons-material/PictureAsPdfOutlined";
+import GridOnOutlinedIcon from "@mui/icons-material/GridOnOutlined";
 import AddPhotoAlternateOutlinedIcon from "@mui/icons-material/AddPhotoAlternateOutlined";
 import CloudUploadOutlinedIcon from "@mui/icons-material/CloudUploadOutlined";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
@@ -37,21 +39,21 @@ import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { PhotoThumb, useFillViewportHeight } from "utils/HygieneCardBoard";
 import accountLabelSx from "utils/accountLabelSx";
 import PreviewOverlay from "utils/PreviewOverlay";
-import { LockedSwal as Swal, showSwalLoading } from "utils/swalLoading";
+import { LockedSwal as Swal, showSwalLoading, updateSwalLoading } from "utils/swalLoading";
 import useBranchUploadData, {
-  MEAL_TYPES,
+  WEEK_DAY_LABELS,
   FILE_KINDS,
   ALL_ACCOUNTS,
   DOWNLOAD_OPTIONS,
+  mondayOf,
+  monthWeeks,
   fileOf,
-  isPdf,
-  countFiles,
-  isDone,
+  previewKindOf,
+  groupWeekRows,
+  weekRowsOf,
   buildFileName,
   fetchFileBlob,
 } from "./branchUploadData";
-
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 // 등록 카드 자료 종류별 아이콘
 const KIND_ICON = { menu: ArticleOutlinedIcon, plate: RestaurantOutlinedIcon };
 
@@ -137,14 +139,6 @@ const chipStyle = (active, color = ACCENT) => ({
   whiteSpace: "nowrap",
 });
 
-// 급식 구분별 색 (목록 구분 배지·필터 칩 선택 색)
-const MEAL_COLOR = {
-  조식: { bg: "#fff4e0", fg: "#c77700" },
-  중식: { bg: "#eef4fc", fg: ACCENT },
-  석식: { bg: "#f3eefc", fg: "#6a3fc1" },
-  간식: { bg: "#fdeef4", fg: "#c2185b" },
-};
-
 // 목록/달력 보기 전환 버튼 스타일 (선택된 쪽은 흰 바탕으로 띄움)
 const viewButtonStyle = (active) => ({
   display: "inline-flex",
@@ -164,26 +158,32 @@ const viewButtonStyle = (active) => ({
   whiteSpace: "nowrap",
 });
 
-// 자료 썸네일 (사진은 축소 미리보기, PDF는 문서 아이콘 / value: 서버 경로 또는 새로 고른 File)
+// 문서 썸네일 아이콘·색 (PDF: 빨강, 엑셀: 초록)
+const DOC_THUMB = {
+  pdf: { Icon: PictureAsPdfOutlinedIcon, bg: "#fdecea", fg: "#c62828" },
+  excel: { Icon: GridOnOutlinedIcon, bg: "#e8f5e9", fg: "#1e7b45" },
+};
+
+// 자료 썸네일 (사진은 축소 미리보기, PDF·엑셀은 문서 아이콘 / value: 서버 경로 또는 새로 고른 File)
 function FileThumb({ value, width, height, onView }) {
-  const pdf = typeof value === "string" ? isPdf(value) : value?.type === "application/pdf";
+  const doc = DOC_THUMB[previewKindOf(value)];
   return (
     <div style={{ width, flexShrink: 0 }}>
-      {pdf ? (
+      {doc ? (
         <div
           onClick={onView}
           style={{
             height,
             borderRadius: 8,
-            backgroundColor: "#fdecea",
-            color: "#c62828",
+            backgroundColor: doc.bg,
+            color: doc.fg,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             cursor: onView ? "zoom-in" : "default",
           }}
         >
-          <PictureAsPdfOutlinedIcon sx={{ fontSize: Math.round(height * 0.5) }} />
+          <doc.Icon sx={{ fontSize: Math.round(height * 0.5) }} />
         </div>
       ) : (
         <PhotoThumb value={value} height={height} onView={() => onView && onView()} />
@@ -193,7 +193,33 @@ function FileThumb({ value, width, height, onView }) {
 }
 
 // 목록 표의 식단표/식판 사진 칸 (등록됨: 썸네일·등록 시각, 미등록: 점선 추가 버튼)
-function FileCell({ file, onView, onAdd }) {
+// compact: 요일별 식판 사진 칸 (썸네일·작은 + 버튼만 표시)
+function FileCell({ file, onView, onAdd, compact }) {
+  if (compact) {
+    return file ? (
+      <FileThumb value={file.path} width={56} height={42} onView={onView} />
+    ) : (
+      <button
+        type="button"
+        onClick={onAdd}
+        title="식판 사진 추가"
+        style={{
+          width: 56,
+          height: 42,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: "1px dashed #c9d5df",
+          borderRadius: 8,
+          backgroundColor: "#f8fafb",
+          color: "#9aa6b1",
+          cursor: onAdd ? "pointer" : "default",
+        }}
+      >
+        <AddIcon sx={{ fontSize: 18, display: "block" }} />
+      </button>
+    );
+  }
   if (!file) {
     return (
       <button
@@ -231,12 +257,17 @@ function FileCell({ file, onView, onAdd }) {
 }
 
 // 등록·수정 모달의 첨부자료 카드 (클릭 또는 파일 드래그로 선택, 기존 파일이 있으면 미리보기 후 교체)
-function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownload }) {
+// compact: 요일별 식판 사진 카드 (작은 크기, 안내 문구 생략)
+// deleted: 기존 파일 삭제 예정 여부, onDelete(true|false): 기존 파일 삭제 표시·되돌리기 (수정 모달)
+function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownload, onDelete, deleted, compact }) {
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef(null);
   const { label, hint, accept } = kind;
   const Icon = KIND_ICON[kind.key];
-  const current = file || existing?.path;
+  // 화면에 보여줄 파일 (새로 고른 파일 → 삭제 예정이 아닌 기존 파일)
+  const current = file || (!deleted && existing?.path);
+  // 카드 안 작은 버튼 스타일 (다운로드·삭제·되돌리기)
+  const miniButton = { ...chipStyle(false), height: 24, padding: "0 8px", fontSize: 11 };
 
   return (
     <div
@@ -253,8 +284,8 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
         if (dropped) onSelect(dropped);
       }}
       style={{
-        minHeight: 168,
-        padding: 14,
+        minHeight: compact ? 118 : 168,
+        padding: compact ? 10 : 14,
         boxSizing: "border-box",
         border: `1px dashed ${dragOver || file ? ACCENT : "#c9d5df"}`,
         borderRadius: 10,
@@ -280,7 +311,7 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
               onView();
             }}
           >
-            <FileThumb value={current} width={120} height={78} />
+            <FileThumb value={current} width={compact ? 96 : 120} height={compact ? 60 : 78} />
           </div>
           <div style={{ fontSize: 13, fontWeight: 700, color: TEXT }}>
             {index} {label}
@@ -293,30 +324,65 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
             {!file && onDownload && (
               <button
                 type="button"
+                title="다운로드"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDownload();
                 }}
-                style={{ ...chipStyle(false), height: 24, padding: "0 8px", fontSize: 11 }}
+                style={miniButton}
               >
                 <DownloadIcon sx={{ fontSize: 14, display: "block" }} />
-                다운로드
+                {!compact && "다운로드"}
+              </button>
+            )}
+            {/* 기존 파일 삭제 표시 (저장할 때 삭제) */}
+            {!file && onDelete && (
+              <button
+                type="button"
+                title="삭제"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(true);
+                }}
+                style={{ ...miniButton, color: "#c62828", borderColor: "#f3c4c4", backgroundColor: "#fff5f5" }}
+              >
+                <DeleteOutlineIcon sx={{ fontSize: 14, display: "block" }} />
+                {!compact && "삭제"}
               </button>
             )}
           </div>
-          <div style={{ fontSize: 11, color: "#9aa6b1" }}>클릭 또는 파일 드래그로 교체</div>
+          {!compact && <div style={{ fontSize: 11, color: "#9aa6b1" }}>클릭 또는 파일 드래그로 교체</div>}
         </>
       ) : (
-        // 파일 선택 전 안내
+        // 파일 선택 전 안내 (기존 파일을 삭제 표시했으면 삭제 예정 배지와 되돌리기 버튼)
         <>
-          <Icon sx={{ fontSize: 30, color: "#8aa0b4" }} />
-          <div style={{ fontSize: 14, fontWeight: 700, color: TEXT }}>
+          <Icon sx={{ fontSize: compact ? 22 : 30, color: "#8aa0b4" }} />
+          <div style={{ fontSize: compact ? 13 : 14, fontWeight: 700, color: TEXT }}>
             {index} {label}
           </div>
-          <div style={{ fontSize: 12, color: "#9aa6b1", lineHeight: 1.6 }}>
-            {hint}
-            <br />
-            클릭 또는 파일 드래그
+          {deleted && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Badge label="삭제 예정" bg="#fdecea" fg="#c62828" />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(false);
+                }}
+                style={miniButton}
+              >
+                되돌리기
+              </button>
+            </div>
+          )}
+          <div style={{ fontSize: compact ? 11 : 12, color: "#9aa6b1", lineHeight: 1.6 }}>
+            {compact ? "클릭 · 드래그" : hint}
+            {!compact && (
+              <>
+                <br />
+                클릭 또는 파일 드래그
+              </>
+            )}
           </div>
         </>
       )}
@@ -336,22 +402,38 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
   );
 }
 
-// 달력 보기 (날짜별 등록 건수·완료 건수와 건별 상태 막대, 날짜 클릭 시 해당 날짜 목록으로 이동)
-// summaryMode: 전체 거래처 조회 여부 (건별 막대 대신 날짜별 요약 표시)
-function UploadCalendar({ year, month, rows, isMobile, summaryMode, onSelectDate }) {
-  const first = dayjs(new Date(year, month - 1, 1));
+// 달력 보기 (월~일 주차 단위, 월 경계 주의 다른 달 날짜는 흐리게 표시, 날짜 클릭 시 해당 주차 목록으로 이동)
+// 각 날짜: 식판 사진 등록 여부, 월요일 칸: 주간 식단표 등록 여부도 함께 표시
+// summaryMode: 전체 거래처 조회 여부 (등록 여부 대신 등록한 거래처 수 표시)
+function UploadCalendar({ year, month, weeks, rows, isMobile, summaryMode, onSelectWeek }) {
   const todayStr = dayjs().format("YYYY-MM-DD");
-  // 앞쪽 빈칸 + 날짜 + 마지막 주 빈칸 (7칸 단위)
-  const cells = [...Array(first.day()).fill(null), ...Array.from({ length: first.daysInMonth() }, (_, i) => i + 1)];
-  while (cells.length % 7) cells.push(null);
-  // 급식일자별 행 묶음
+  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+  // 날짜별 행 묶음
   const rowsByDate = rows.reduce((acc, row) => {
     (acc[row.meal_date] = acc[row.meal_date] || []).push(row);
     return acc;
   }, {});
 
+  // 칸 안의 자료 상태 한 줄 (등록: 자료 색, 미등록: 회색 / 전체 거래처: 등록 거래처 수)
+  const statusLine = (kindKey, label, dayRows) => {
+    const count = dayRows.filter((row) => fileOf(row, kindKey)).length;
+    const on = count > 0;
+    return (
+      <div
+        key={kindKey}
+        style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5, fontSize: 11, lineHeight: 1, whiteSpace: "nowrap" }}
+      >
+        <span style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, backgroundColor: on ? KIND_COLOR[kindKey] : EMPTY_BAR }} />
+        <span style={{ color: on ? TEXT : "#9aa6b1", fontWeight: on ? 700 : 500 }}>
+          {label}
+          {summaryMode ? ` ${count}곳` : on ? "" : " 미등록"}
+        </span>
+      </div>
+    );
+  };
+
   return (
-    // 달력 카드 (영역 높이를 꽉 채우고, 날짜 칸은 주 수에 맞춰 남은 높이를 나눠 가짐)
+    // 달력 카드 (영역 높이를 꽉 채우고, 주차 줄은 주 수에 맞춰 남은 높이를 나눠 가짐)
     <div
       style={{
         ...cardStyle,
@@ -362,7 +444,7 @@ function UploadCalendar({ year, month, rows, isMobile, summaryMode, onSelectDate
         flexDirection: "column",
       }}
     >
-      {/* 달력 제목과 상태 색 범례 */}
+      {/* 달력 제목과 자료 색 범례 */}
       <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
         <span style={{ fontSize: 17, fontWeight: 800, color: TEXT }}>
           {year}년 {month}월
@@ -384,15 +466,15 @@ function UploadCalendar({ year, month, rows, isMobile, summaryMode, onSelectDate
           flex: 1,
           minHeight: 0,
           display: "grid",
-          gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
-          gridTemplateRows: `auto repeat(${cells.length / 7}, minmax(${isMobile ? 64 : 80}px, 1fr))`,
+          gridTemplateColumns: `${isMobile ? 36 : 64}px repeat(7, minmax(0, 1fr))`,
+          gridTemplateRows: `auto repeat(${weeks.length}, minmax(${isMobile ? 64 : 80}px, 1fr))`,
           border: `1px solid ${BORDER}`,
           borderRadius: 8,
           overflow: "hidden",
         }}
       >
-        {/* 요일 머리 줄 */}
-        {WEEKDAYS.map((w, i) => (
+        {/* 요일 머리 줄 (맨 앞은 주차 칸) */}
+        {["주차", ...WEEK_DAY_LABELS].map((w, i) => (
           <div
             key={w}
             style={{
@@ -401,133 +483,92 @@ function UploadCalendar({ year, month, rows, isMobile, summaryMode, onSelectDate
               fontSize: 12,
               fontWeight: 700,
               backgroundColor: "#f5f8fa",
-              color: i === 0 ? "#d32f2f" : i === 6 ? ACCENT : "#5b6b7c",
+              color: i === 7 ? "#d32f2f" : i === 6 ? ACCENT : "#5b6b7c",
               borderBottom: `1px solid ${BORDER}`,
-              borderRight: i < 6 ? `1px solid ${BORDER}` : "none",
+              borderRight: i < 7 ? `1px solid ${BORDER}` : "none",
             }}
           >
             {w}
           </div>
         ))}
 
-        {/* 날짜 칸 (등록 건이 있는 날만 클릭 가능) */}
-        {cells.map((day, i) => {
-          const dateStr = day ? first.date(day).format("YYYY-MM-DD") : "";
-          const dayRows = (day && rowsByDate[dateStr]) || [];
-          // 날짜의 등록 자료 수 / 필요 자료 수 (건당 식단표·식판 사진 2개)
-          const fileCount = dayRows.reduce((sum, row) => sum + countFiles(row), 0);
-          const fileTotal = dayRows.length * FILE_KINDS.length;
-          const weekday = i % 7;
-          const isToday = dateStr === todayStr;
+        {/* 주차 줄 (주차 칸 + 월~일 날짜 칸, 누르면 그 주차 목록으로 이동) */}
+        {weeks.map((week, wi) => {
+          const lastRow = wi === weeks.length - 1;
+          const cellBorder = (ci) => ({
+            borderRight: ci < 7 ? `1px solid ${BORDER}` : "none",
+            borderBottom: lastRow ? "none" : `1px solid ${BORDER}`,
+          });
           return (
-            <div
-              key={day ? dateStr : `blank-${i}`}
-              onClick={() => dayRows.length && onSelectDate(dateStr)}
-              style={{
-                padding: isMobile ? 6 : 10,
-                boxSizing: "border-box",
-                backgroundColor: day ? "#ffffff" : "#fafbfc",
-                borderRight: weekday < 6 ? `1px solid ${BORDER}` : "none",
-                borderBottom: i < cells.length - 7 ? `1px solid ${BORDER}` : "none",
-                cursor: dayRows.length ? "pointer" : "default",
-              }}
-            >
-              {day && (
-                <>
-                  <span
+            <React.Fragment key={week.start}>
+              <div
+                onClick={() => onSelectWeek(week.start)}
+                style={{
+                  ...cellBorder(0),
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: SUB,
+                  backgroundColor: "#fafbfc",
+                  cursor: "pointer",
+                }}
+              >
+                {week.no}주
+              </div>
+              {week.dates.map((date, di) => {
+                const d = dayjs(date);
+                const inMonth = date.startsWith(monthKey);
+                const dayRows = rowsByDate[date] || [];
+                const isToday = date === todayStr;
+                return (
+                  <div
+                    key={date}
+                    onClick={() => onSelectWeek(week.start)}
                     style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      width: 24,
-                      height: 24,
-                      borderRadius: "50%",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      lineHeight: 1,
-                      backgroundColor: isToday ? ACCENT : "transparent",
-                      color: isToday ? "#ffffff" : weekday === 0 ? "#d32f2f" : weekday === 6 ? ACCENT : "#5b6b7c",
+                      ...cellBorder(di + 1),
+                      padding: isMobile ? 6 : 10,
+                      boxSizing: "border-box",
+                      backgroundColor: inMonth ? "#ffffff" : "#fafbfc",
+                      opacity: inMonth ? 1 : 0.6,
+                      cursor: "pointer",
+                      minWidth: 0,
+                      overflow: "hidden",
                     }}
                   >
-                    {day}
-                  </span>
-                  {/* 전체 거래처: 날짜별 요약 (거래처 수·건수 + 자료 종류별 등록 진행 막대) */}
-                  {dayRows.length > 0 && summaryMode && (
-                    <>
-                      <div style={{ fontSize: 11, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap", fontWeight: 700, color: TEXT }}>
-                        {new Set(dayRows.map((row) => row.account_id)).size}곳 · {dayRows.length}건
-                      </div>
-                      {FILE_KINDS.map(({ key, label }) => {
-                        const count = dayRows.filter((row) => fileOf(row, key)).length;
-                        return (
-                          <div
-                            key={key}
-                            title={`${label} ${count} / ${dayRows.length}건 등록`}
-                            style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 5 }}
-                          >
-                            <span style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: EMPTY_BAR, overflow: "hidden" }}>
-                              <span
-                                style={{
-                                  display: "block",
-                                  width: `${(count / dayRows.length) * 100}%`,
-                                  height: "100%",
-                                  backgroundColor: KIND_COLOR[key],
-                                }}
-                              />
-                            </span>
-                            {!isMobile && (
-                              <span style={{ fontSize: 10, lineHeight: 1, color: SUB, whiteSpace: "nowrap" }}>
-                                {count}/{dayRows.length}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </>
-                  )}
-                  {/* 단일 거래처: 등록 자료 수와 건별 막대 */}
-                  {dayRows.length > 0 && !summaryMode && (
-                    <>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          lineHeight: 1,
-                          marginTop: 6,
-                          whiteSpace: "nowrap",
-                          fontWeight: 700,
-                          color: fileCount === fileTotal ? TONE.done.fg : TONE.missing.fg,
-                        }}
-                      >
-                        {fileCount} / {fileTotal}개 등록
-                      </div>
-                      {/* 건별 자료 막대 (식단표·식판 사진 두 칸, 미등록은 회색) */}
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-                        {dayRows.map((row) => (
-                          <span key={row.idx} title={`${row.account_name} ${row.meal_type}`} style={{ display: "flex", gap: 2 }}>
-                            {FILE_KINDS.map(({ key }) => (
-                              <span
-                                key={key}
-                                style={{
-                                  width: 12,
-                                  height: 4,
-                                  borderRadius: 2,
-                                  backgroundColor: fileOf(row, key) ? KIND_COLOR[key] : EMPTY_BAR,
-                                }}
-                              />
-                            ))}
-                          </span>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minWidth: 24,
+                        height: 24,
+                        padding: "0 4px",
+                        boxSizing: "border-box",
+                        borderRadius: 12,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        backgroundColor: isToday ? ACCENT : "transparent",
+                        color: isToday ? "#ffffff" : di === 6 ? "#d32f2f" : di === 5 ? ACCENT : "#5b6b7c",
+                      }}
+                    >
+                      {inMonth ? d.date() : d.format("M/D")}
+                    </span>
+                    {/* 월요일 칸: 주간 식단표 상태 */}
+                    {di === 0 && statusLine("menu", isMobile ? "식단" : "식단표", dayRows)}
+                    {/* 날짜별 식판 사진 상태 */}
+                    {statusLine("plate", isMobile ? "식판" : "식판 사진", dayRows)}
+                  </div>
+                );
+              })}
+            </React.Fragment>
           );
         })}
       </div>
       <div style={{ fontSize: 12, color: SUB, marginTop: 10 }}>
-        날짜를 선택하면 해당 날짜의 거래처별 상세 목록을 확인할 수 있습니다.
+        날짜나 주차를 선택하면 해당 주차의 거래처별 상세 목록을 확인할 수 있습니다.
       </div>
     </div>
   );
@@ -541,7 +582,7 @@ FileThumb.propTypes = {
   height: PropTypes.number,
   onView: PropTypes.func,
 };
-FileCell.propTypes = { file: fileShape, onView: PropTypes.func, onAdd: PropTypes.func };
+FileCell.propTypes = { file: fileShape, onView: PropTypes.func, onAdd: PropTypes.func, compact: PropTypes.bool };
 FileDropCard.propTypes = {
   index: PropTypes.string,
   kind: PropTypes.object.isRequired,
@@ -550,45 +591,18 @@ FileDropCard.propTypes = {
   onSelect: PropTypes.func.isRequired,
   onView: PropTypes.func,
   onDownload: PropTypes.func,
+  onDelete: PropTypes.func,
+  deleted: PropTypes.bool,
+  compact: PropTypes.bool,
 };
 UploadCalendar.propTypes = {
   summaryMode: PropTypes.bool,
   year: PropTypes.number.isRequired,
   month: PropTypes.number.isRequired,
+  weeks: PropTypes.arrayOf(PropTypes.object).isRequired,
   rows: PropTypes.arrayOf(PropTypes.object).isRequired,
   isMobile: PropTypes.bool,
-  onSelectDate: PropTypes.func.isRequired,
-};
-
-// 식사 구분 선택 목록 (SelectAutocomplete 옵션)
-const MEAL_OPTIONS = MEAL_TYPES.map((t) => ({ value: t, label: t }));
-
-// 정해진 목록에서 값을 고르는 Autocomplete (식사 구분, options: [{ value, label }])
-function SelectAutocomplete({ options, value, onChange, label, disabled, sx }) {
-  return (
-    <Autocomplete
-      size="small"
-      options={options}
-      value={options.find((o) => o.value === value) || null}
-      onChange={(_, opt) => opt && onChange(opt.value)}
-      getOptionLabel={(opt) => opt?.label ?? ""}
-      isOptionEqualToValue={(opt, val) => opt.value === val.value}
-      disableClearable
-      disabled={disabled}
-      renderInput={(params) => <TextField {...params} label={label} sx={{ ...inputBoxSx, ...accountLabelSx }} />}
-      ListboxProps={{ style: { fontSize: "12px" } }}
-      sx={sx}
-    />
-  );
-}
-
-SelectAutocomplete.propTypes = {
-  options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.any, label: PropTypes.string })).isRequired,
-  value: PropTypes.any,
-  onChange: PropTypes.func.isRequired,
-  label: PropTypes.string,
-  disabled: PropTypes.bool,
-  sx: PropTypes.object,
+  onSelectWeek: PropTypes.func.isRequired,
 };
 
 // isHeadOffice: 본사 메뉴 화면 여부 (전체 거래처 조회, 거래처 고정 없음, 다운로드 시 거래처 범위 선택)
@@ -611,8 +625,9 @@ function BranchUploadTab({ isHeadOffice }) {
     loading: listLoading,
     fetchBranchUploadList,
     fetchBranchUploadRows,
-    findExistingRow,
+    findWeekRows,
     saveBranchUpload,
+    saveWeekUpload,
   } = useBranchUploadData(isHeadOffice);
 
   // 조회 조건: 거래처(전체/단일), 연도, 월
@@ -620,18 +635,17 @@ function BranchUploadTab({ isHeadOffice }) {
   const [accountInput, setAccountInput] = useState("");
   const [year, setYear] = useState(today.year());
   const [month, setMonth] = useState(today.month() + 1);
-  // 목록 필터: 구분, 달력에서 고른 날짜("": 전체 날짜)
-  const [mealFilter, setMealFilter] = useState("전체");
-  const [selectedDate, setSelectedDate] = useState("");
+  // 목록 필터: 고른 주차의 월요일 날짜 ("": 전체 주차)
+  const [selectedWeek, setSelectedWeek] = useState("");
   // 화면 보기 방식 (list: 목록, calendar: 달력)
   const [viewMode, setViewMode] = useState("list");
 
-  // 다운로드용으로 체크한 행 idx 목록
-  const [checkedIds, setCheckedIds] = useState([]);
+  // 다운로드용으로 체크한 거래처·주차 줄 key 목록
+  const [checkedKeys, setCheckedKeys] = useState([]);
   // 다운로드 메뉴 기준 버튼
   const [downloadAnchor, setDownloadAnchor] = useState(null);
-  // 본사 다운로드 범위 선택 팝업 (label: 다운로드 종류, accountId: 고른 거래처)과 선택 결과 전달 함수
-  // startDate·endDate: 다운로드 기간 (선택 월 안)
+  // 다운로드 범위 선택 팝업 (label: 다운로드 종류, accountId: 고른 거래처)과 선택 결과 전달 함수
+  // startDate·endDate: 다운로드 기간 (YYYY-MM-DD, 달과 상관없이 자유롭게 선택)
   const [scopeDialog, setScopeDialog] = useState({
     open: false,
     label: "",
@@ -643,8 +657,9 @@ function BranchUploadTab({ isHeadOffice }) {
   // 사진 확대 미리보기 대상
   const [previewFiles, setPreviewFiles] = useState(null);
 
-  // 등록·수정 모달 (mode: register | edit, row: 수정 대상 행, form: 입력값과 새로 고른 파일)
-  const [modal, setModal] = useState({ open: false, mode: "register", row: null, form: {} });
+  // 등록·수정 모달 (mode: register | edit, item: 수정 대상 거래처·주차 묶음)
+  // form: 거래처, 주 시작 월요일, 새로 고른 식단표 파일, 날짜별 새로 고른 식판 사진 { 날짜: File }
+  const [modal, setModal] = useState({ open: false, mode: "register", item: null, form: { plates: {} } });
 
   // 목록·달력 영역 ref와 화면 맨 아래까지 채우는 높이
   // (아래 여백: 현장 탭 안쪽 패딩 기준 32px, 본사 화면은 카드·페이지 패딩까지 56px)
@@ -654,25 +669,30 @@ function BranchUploadTab({ isHeadOffice }) {
   const fileInputRef = useRef(null);
   const pickTargetRef = useRef(null);
 
-  // 선택 연월·거래처의 자료 목록 조회
+  // 선택 연월의 주차 목록과 조회 기간 (그 달 첫 월요일 ~ 마지막 주 일요일, 다음 달 날짜 포함 가능)
+  const weeks = useMemo(() => monthWeeks(year, month), [year, month]);
+  const rangeStart = weeks[0].start;
+  const rangeEnd = weeks[weeks.length - 1].end;
+
+  // 선택 연월(주차 포함 기간)·거래처의 자료 목록 조회
   const fetchList = useCallback(
     () =>
       fetchBranchUploadList({
-        year,
-        month,
+        start_date: rangeStart,
+        end_date: rangeEnd,
         account_id: selectedAccountId === ALL_ACCOUNTS ? "" : selectedAccountId,
       }),
-    [year, month, selectedAccountId, fetchBranchUploadList]
+    [rangeStart, rangeEnd, selectedAccountId, fetchBranchUploadList]
   );
 
   useEffect(() => {
     fetchList();
   }, [fetchList]);
 
-  // 조회 조건이 바뀌면 체크·선택 날짜 해제
+  // 조회 조건이 바뀌면 체크·선택 주차 해제
   useEffect(() => {
-    setCheckedIds([]);
-    setSelectedDate("");
+    setCheckedKeys([]);
+    setSelectedWeek("");
   }, [year, month, selectedAccountId]);
 
   // 거래처 검색 선택 옵션 (고정 사용자가 아니면 맨 앞에 전체 거래처)
@@ -681,20 +701,21 @@ function BranchUploadTab({ isHeadOffice }) {
     return isAccountLocked ? list : [{ value: ALL_ACCOUNTS, label: "전체 거래처" }, ...list];
   }, [accountList, isAccountLocked]);
 
-  // 구분 필터를 적용한 행 (달력 표시 기준)
-  const mealRows = useMemo(
-    () => rows.filter((row) => mealFilter === "전체" || row.meal_type === mealFilter),
-    [rows, mealFilter]
-  );
-  // 목록 표시 행 (달력에서 고른 날짜가 있으면 그 날짜만)
-  const visibleRows = useMemo(
-    () => (selectedDate ? mealRows.filter((row) => row.meal_date === selectedDate) : mealRows),
-    [mealRows, selectedDate]
+  // 거래처·주차 단위 목록 (단일 거래처는 자료가 없는 주차도 줄을 만들어 바로 올릴 수 있게 표시)
+  const weekItems = useMemo(() => {
+    const names = Object.fromEntries(accountList.map((acc) => [String(acc.account_id), acc.account_name]));
+    const ids = selectedAccountId === ALL_ACCOUNTS ? [] : [String(selectedAccountId)];
+    return groupWeekRows(rows, weeks, ids, names);
+  }, [rows, weeks, accountList, selectedAccountId]);
+  // 목록 표시 줄 (주차 필터가 있으면 그 주차만)
+  const visibleItems = useMemo(
+    () => (selectedWeek ? weekItems.filter((item) => item.week.start === selectedWeek) : weekItems),
+    [weekItems, selectedWeek]
   );
 
-  const allChecked = visibleRows.length > 0 && visibleRows.every((row) => checkedIds.includes(row.idx));
+  const allChecked = visibleItems.length > 0 && visibleItems.every((item) => checkedKeys.includes(item.key));
 
-  // 거래처·일자·구분 1건의 자료를 올리고 저장한 뒤 목록 다시 조회 (files: { menu?: File, plate?: File })
+  // 거래처·일자 1건의 자료를 올리고 저장한 뒤 목록 다시 조회 (files: { menu?: File, plate?: File })
   const saveUpload = async (target, files) => {
     showSwalLoading("업로드 중...");
     try {
@@ -709,84 +730,132 @@ function BranchUploadTab({ isHeadOffice }) {
     }
   };
 
-  // 표의 미등록 칸 추가 버튼: 파일 선택창 열기
-  const pickFile = (row, kind) => {
-    pickTargetRef.current = { row, kind };
+  // 표의 미등록 칸 추가 버튼: 파일 선택창 열기 (target: { account_id, meal_date }, kind: menu | plate)
+  const pickFile = (target, kind) => {
+    pickTargetRef.current = { target, kind };
     fileInputRef.current.value = "";
     fileInputRef.current.accept = FILE_KINDS.find((k) => k.key === kind).accept;
     fileInputRef.current.click();
   };
 
-  // 숨김 파일 입력에서 파일을 고른 뒤 대상 행의 해당 자료만 저장
+  // 숨김 파일 입력에서 파일을 고른 뒤 대상 일자의 해당 자료만 저장
   const handlePickedFile = (e) => {
     const file = e.target.files?.[0];
-    const target = pickTargetRef.current;
-    if (file && target) saveUpload(target.row, { [target.kind]: file });
+    const picked = pickTargetRef.current;
+    if (file && picked) saveUpload(picked.target, { [picked.kind]: file });
   };
 
-  // 등록 모달 열기 (일자는 달력 선택 날짜 → 선택 월의 오늘 → 1일 순, 거래처는 현재 선택 거래처)
+  // 등록 모달 열기 (연월은 화면 조회 연월, 주차는 선택 주차 → 오늘이 속한 주차 → 첫 주차 순, 거래처는 현재 선택 거래처)
   const openRegister = () => {
-    const inMonth = today.year() === year && today.month() + 1 === month;
-    const defaultDate =
-      selectedDate || (inMonth ? today.format("YYYY-MM-DD") : dayjs(new Date(year, month - 1, 1)).format("YYYY-MM-DD"));
+    const todayWeek = weeks.find((w) => w.start === mondayOf(today));
     setModal({
       open: true,
       mode: "register",
-      row: null,
+      item: null,
       form: {
-        meal_date: defaultDate,
         account_id: selectedAccountId === ALL_ACCOUNTS ? "" : selectedAccountId,
-        meal_type: mealFilter === "전체" ? "중식" : mealFilter,
+        year,
+        month,
+        week_start: selectedWeek || todayWeek?.start || weeks[0].start,
         menu: null,
-        plate: null,
+        plates: {},
       },
     });
   };
 
-  // 수정 모달 열기 (거래처·일자·구분은 고정, 파일만 교체)
-  const openEdit = (row) =>
+  // 수정 모달 열기 (거래처·주차는 고정, 파일만 교체·추가)
+  const openEdit = (item) =>
     setModal({
       open: true,
       mode: "edit",
-      row,
-      form: { account_id: String(row.account_id), meal_date: row.meal_date, meal_type: row.meal_type, menu: null, plate: null },
+      item,
+      form: { account_id: String(item.account_id), year, month, week_start: item.week.start, menu: null, plates: {} },
+    });
+
+  // 등록 모달 연·월 변경 (주차는 바뀐 달의 첫 주차로, 고른 식판 사진은 날짜가 달라지므로 비움)
+  const setFormYearMonth = (key, value) =>
+    setModal((m) => {
+      const next = { ...m.form, [key]: value };
+      return { ...m, form: { ...next, week_start: monthWeeks(next.year, next.month)[0].start, plates: {} } };
     });
 
   const closeModal = () => setModal((m) => ({ ...m, open: false }));
   const setFormValue = (key, value) => setModal((m) => ({ ...m, form: { ...m.form, [key]: value } }));
+  // 요일 식판 사진 선택 (새 파일을 고르면 그 날짜 삭제 표시는 해제)
+  const setPlateFile = (date, file) =>
+    setModal((m) => ({
+      ...m,
+      form: {
+        ...m.form,
+        plates: { ...m.form.plates, [date]: file },
+        deletePlates: { ...m.form.deletePlates, [date]: false },
+      },
+    }));
+  // 요일 식판 사진 기존 파일 삭제 표시·되돌리기
+  const setPlateDelete = (date, on) =>
+    setModal((m) => ({ ...m, form: { ...m.form, deletePlates: { ...m.form.deletePlates, [date]: on } } }));
 
-  // 등록·수정 모달 저장 (등록은 이미 있는 건이면 막고 수정으로 안내, 수정은 선택한 파일만 교체)
+  // 거래처·주차 1개의 자료를 일자별로 저장한 뒤 목록 다시 조회
+  const saveWeek = async (form) => {
+    showSwalLoading("업로드 중...");
+    try {
+      await saveWeekUpload(form);
+      await fetchList();
+      Swal.fire({ title: "저장 완료", icon: "success", timer: 900, showConfirmButton: false });
+      return true;
+    } catch (err) {
+      console.error("지점업로드 저장 실패:", err);
+      Swal.fire("업로드 실패", err?.message || "잠시 후 다시 시도해 주세요.", "error");
+      return false;
+    }
+  };
+
+  // 등록·수정 모달 저장 (등록은 이미 자료가 있는 주차면 막고 수정으로 안내, 수정은 선택한 파일만 교체)
   const handleModalSave = async () => {
     const { form, mode } = modal;
     if (!form.account_id) return Swal.fire("거래처를 선택해 주세요.", "", "warning");
-    if (!form.meal_date) return Swal.fire("급식일자를 선택해 주세요.", "", "warning");
-    if (!form.menu && !form.plate) {
-      return Swal.fire(mode === "edit" ? "교체할 파일을 선택해 주세요." : "식단표나 식판 사진 중 하나 이상 올려 주세요.", "", "warning");
+    if (!form.week_start) return Swal.fire("주차를 선택해 주세요.", "", "warning");
+    const hasDelete = !!form.deleteMenu || Object.values(form.deletePlates || {}).some(Boolean);
+    if (!form.menu && !Object.values(form.plates).some(Boolean) && !hasDelete) {
+      return Swal.fire(mode === "edit" ? "교체하거나 삭제할 파일을 선택해 주세요." : "식단표나 식판 사진 중 하나 이상 올려 주세요.", "", "warning");
+    }
+    // 삭제 표시가 있으면 한 번 더 확인
+    if (hasDelete) {
+      const confirm = await Swal.fire({
+        title: "파일을 삭제할까요?",
+        text: "삭제 표시한 파일은 저장하면 목록에서 사라집니다.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "저장",
+        cancelButtonText: "취소",
+      });
+      if (!confirm.isConfirmed) return null;
     }
 
     if (mode === "register") {
-      let existing;
+      let existingRows;
       try {
-        existing = await findExistingRow(form);
+        existingRows = await findWeekRows(form);
       } catch (err) {
         return Swal.fire("확인 실패", "기존 등록 여부를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
       }
-      if (existing) {
+      if (existingRows.some((row) => fileOf(row, "menu") || fileOf(row, "plate"))) {
+        const week = monthWeeks(form.year, form.month).find((w) => w.start === form.week_start);
         const result = await Swal.fire({
-          title: "이미 등록된 자료가 있습니다",
-          html: `${dayjs(form.meal_date).format("YYYY.MM.DD")} ${form.meal_type} 자료가 이미 등록되어 있습니다.<br/>새로 등록하지 말고 <b>수정</b>으로 변경해 주세요.`,
+          title: "이미 등록된 주차입니다",
+          html: `${dayjs(week.start).format("MM.DD")} ~ ${dayjs(week.end).format("MM.DD")} 주차 자료가 이미 등록되어 있습니다.<br/>새로 등록하지 말고 <b>수정</b>으로 변경해 주세요.`,
           icon: "warning",
           showCancelButton: true,
           confirmButtonText: "수정하기",
           cancelButtonText: "닫기",
         });
-        // 수정하기: 기존 건 수정 모달로 전환 (방금 고른 파일은 그대로 유지)
+        // 수정하기: 기존 주차 수정 모달로 전환 (방금 고른 파일은 그대로 유지)
         if (result.isConfirmed) {
           setModal({
             open: true,
             mode: "edit",
-            row: existing,
-            form: { ...form, account_id: String(existing.account_id) },
+            item: groupWeekRows(existingRows, [week])[0],
+            form,
           });
         }
         return null;
@@ -794,21 +863,16 @@ function BranchUploadTab({ isHeadOffice }) {
     }
 
     closeModal();
-    const ok = await saveUpload(form, { menu: form.menu, plate: form.plate });
+    const ok = await saveWeek(form);
     if (!ok) {
       setModal((m) => ({ ...m, open: true }));
       return null;
     }
-    // 등록한 일자의 연월로 조회 조건 이동
-    const d = dayjs(form.meal_date);
-    setYear(d.year());
-    setMonth(d.month() + 1);
+    // 등록한 연월로 화면 조회 조건 이동
+    setYear(form.year);
+    setMonth(form.month);
     return null;
   };
-
-  // 선택 월의 첫날·마지막 날 (다운로드 기간 선택 범위)
-  const monthStart = dayjs(new Date(year, month - 1, 1)).format("YYYY-MM-DD");
-  const monthEnd = dayjs(new Date(year, month - 1, 1)).endOf("month").format("YYYY-MM-DD");
 
   // 다운로드 범위 선택 팝업 닫기 (value: { accountId, startDate, endDate }, 취소면 null)
   const closeScopeDialog = (value) => {
@@ -817,62 +881,72 @@ function BranchUploadTab({ isHeadOffice }) {
     scopeResolveRef.current = null;
   };
 
-  // 본사 화면 다운로드 범위 선택 (거래처: 전체 또는 1곳, 기간: 선택 월 안) 후 해당 자료 조회, 취소하면 null
-  // 기간 기본값은 달력에서 고른 날짜가 있으면 그 날짜, 없으면 선택 월 전체
+  // 다운로드 범위 선택 (거래처: 전체 또는 1곳, 기간: 시작일 ~ 종료일) 후 해당 자료 조회, 취소하면 null
+  // 기본 기간은 선택 주차가 있으면 그 주차, 없으면 화면 조회 월의 주차 전체
+  // 식단표는 그 주 월요일 행에 있으므로 시작일이 속한 주 월요일부터 조회 (기간에 걸친 주의 식단표 포함)
   const askDownloadScope = async (optionLabel) => {
+    const week = weeks.find((w) => w.start === selectedWeek);
     const value = await new Promise((resolve) => {
       scopeResolveRef.current = resolve;
       setScopeDialog({
         open: true,
         label: optionLabel,
         accountId: String(selectedAccountId),
-        startDate: selectedDate || monthStart,
-        endDate: selectedDate || monthEnd,
+        startDate: week?.start || rangeStart,
+        endDate: week?.end || rangeEnd,
       });
     });
     if (!value) return null;
 
-    const monthRows = await fetchBranchUploadRows({
-      year,
-      month,
+    showSwalLoading("자료 조회 중...", `${value.startDate} ~ ${value.endDate}`);
+    const list = await fetchBranchUploadRows({
+      start_date: mondayOf(value.startDate),
+      end_date: value.endDate,
       account_id: value.accountId === ALL_ACCOUNTS ? "" : value.accountId,
     });
-    const list = monthRows.filter(
-      (row) =>
-        (mealFilter === "전체" || row.meal_type === mealFilter) &&
-        row.meal_date >= value.startDate &&
-        row.meal_date <= value.endDate
-    );
-    return { rows: list, allAccounts: value.accountId === ALL_ACCOUNTS };
+    return { rows: list, allAccounts: value.accountId === ALL_ACCOUNTS, startDate: value.startDate, endDate: value.endDate };
   };
 
   // 지정 자료를 ZIP으로 내려받는 함수
-  // 체크한 행이 있으면 그 행만, 없으면 현장 화면은 표시 목록 전체 / 본사 화면은 거래처 범위 선택 후 해당 월 전체
+  // 체크한 줄이 있으면 그 줄만, 없으면 거래처·기간(시작일 ~ 종료일) 선택 후 해당 자료
+  // 진행 상황: 조회 중 → 파일 받는 중 (n / 전체) → 압축 중 (%) → 완료 알림
   const handleZipDownload = async ({ label, kinds }) => {
     setDownloadAnchor(null);
-    let targets = checkedIds.length ? visibleRows.filter((row) => checkedIds.includes(row.idx)) : visibleRows;
+    const ym = `${year}-${String(month).padStart(2, "0")}`;
+    let targets = visibleItems.filter((item) => checkedKeys.includes(item.key)).flatMap(weekRowsOf);
     // 전체 거래처 묶음이면 거래처별 폴더로 나눠 담음
     let byAccountFolder = false;
-    if (isHeadOffice && checkedIds.length === 0) {
+    // ZIP 파일명 기간 표시
+    let periodLabel = ym;
+    // 식판 사진 시작일 (기간 선택 시, 시작일 이전 같은 주 식판 사진은 제외)
+    let plateFrom = "";
+    if (checkedKeys.length === 0) {
       try {
         const scope = await askDownloadScope(label);
         if (!scope) return;
         targets = scope.rows;
         byAccountFolder = scope.allAccounts;
+        periodLabel = scope.startDate === scope.endDate ? scope.startDate : `${scope.startDate}~${scope.endDate}`;
+        plateFrom = scope.startDate;
       } catch (err) {
         Swal.fire("조회 실패", "다운로드할 자료를 불러오지 못했습니다.", "error");
         return;
       }
     }
-    const jobs = targets.flatMap((row) => kinds.filter((kind) => fileOf(row, kind)).map((kind) => ({ row, kind })));
+    const jobs = targets.flatMap((row) =>
+      kinds
+        .filter((kind) => fileOf(row, kind) && !(kind === "plate" && row.meal_date < plateFrom))
+        .map((kind) => ({ row, kind }))
+    );
     if (jobs.length === 0) {
-      Swal.fire("내려받을 자료가 없습니다.", "", "info");
+      Swal.fire("내려받을 자료가 없습니다.", "선택한 기간에 등록된 자료가 없습니다.", "info");
       return;
     }
 
-    showSwalLoading("압축 파일 만드는 중...", `${jobs.length}개 파일`);
+    showSwalLoading("사진 받는 중...", `0 / ${jobs.length}개 파일`);
     const zip = new JSZip();
     let failed = 0;
+    let done = 0;
     // eslint-disable-next-line no-restricted-syntax
     for (const { row, kind } of jobs) {
       try {
@@ -884,30 +958,43 @@ function BranchUploadTab({ isHeadOffice }) {
       } catch (err) {
         failed += 1;
       }
+      done += 1;
+      updateSwalLoading(`${done} / ${jobs.length}개 파일`);
     }
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-    triggerDownload(url, `지점업로드_${year}-${String(month).padStart(2, "0")}.zip`);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    if (failed) Swal.fire("일부 파일 누락", `${failed}개 파일을 받지 못했습니다.`, "warning");
-    else Swal.close();
+
+    try {
+      Swal.update({ title: "압축 파일 만드는 중..." });
+      updateSwalLoading("0%");
+      const blob = await zip.generateAsync({ type: "blob" }, (meta) => updateSwalLoading(`${Math.floor(meta.percent)}%`));
+      const url = URL.createObjectURL(blob);
+      triggerDownload(url, `지점업로드_${periodLabel}.zip`);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      Swal.fire("다운로드 실패", "압축 파일을 만들지 못했습니다.", "error");
+      return;
+    }
+    if (failed) {
+      Swal.fire("일부 파일 누락", `${jobs.length - failed}개 파일을 받았고, ${failed}개 파일은 받지 못했습니다.`, "warning");
+    } else {
+      Swal.fire({ title: "다운로드 완료", text: `${jobs.length}개 파일`, icon: "success", timer: 1200, showConfirmButton: false });
+    }
   };
 
   // 자료 하나를 확대 미리보기로 여는 함수
   const openPreview = (row, kind) => {
     const { path, name } = fileOf(row, kind);
-    setPreviewFiles([{ url: `${API_BASE_URL}${path}`, name: name || path.split("/").pop(), kind: isPdf(path) ? "pdf" : "image" }]);
+    setPreviewFiles([{ url: `${API_BASE_URL}${path}`, name: name || path.split("/").pop(), kind: previewKindOf(path) }]);
   };
 
-  // 달력에서 날짜를 고르면 그 날짜 목록으로 이동
-  const handleSelectDate = (dateStr) => {
-    setSelectedDate(dateStr);
-    setCheckedIds([]);
+  // 달력에서 날짜·주차를 고르면 그 주차 목록으로 이동
+  const handleSelectWeek = (weekStart) => {
+    setSelectedWeek(weekStart);
+    setCheckedKeys([]);
     setViewMode("list");
   };
 
-  const toggleChecked = (idx) =>
-    setCheckedIds((prev) => (prev.includes(idx) ? prev.filter((v) => v !== idx) : [...prev, idx]));
+  const toggleChecked = (key) =>
+    setCheckedKeys((prev) => (prev.includes(key) ? prev.filter((v) => v !== key) : [...prev, key]));
 
   // 표 머리·칸 공통 스타일
   const th = {
@@ -924,15 +1011,22 @@ function BranchUploadTab({ isHeadOffice }) {
     top: 0,
     zIndex: 1,
   };
+  // 표 머리 2줄 높이 고정 (아랫줄 요일 머리가 윗줄 바로 아래에 붙어 고정되도록)
+  const TH_ROW_HEIGHT = 38;
+  const thRow = { height: TH_ROW_HEIGHT, boxSizing: "border-box", paddingTop: 0, paddingBottom: 0 };
+  const thTall = { height: TH_ROW_HEIGHT * 2, boxSizing: "border-box", paddingTop: 0, paddingBottom: 0 };
   const td = { padding: "12px", borderBottom: "1px solid #eef2f5", verticalAlign: "middle" };
 
   const { form } = modal;
   const isEdit = modal.mode === "edit";
+  // 모달 연월의 주차 목록과 모달에서 다루는 주차 (수정: 대상 묶음의 주차, 등록: 고른 주차)
+  const modalWeeks = form.year ? monthWeeks(form.year, form.month) : weeks;
+  const modalWeek = isEdit ? modal.item?.week : modalWeeks.find((w) => w.start === form.week_start);
 
   return (
     <MDBox>
-      {/* 상단 구분 필터·조회 조건·보기 전환·다운로드/등록 버튼 영역 */}
-      {/* 넓은 화면은 한 줄, 좁아지면 [구분 칩] / [조회 조건·버튼] 두 묶음으로 줄바꿈, 모바일은 칸이 폭을 나눠 사용 */}
+      {/* 상단 주차 필터·조회 조건·보기 전환·다운로드/등록 버튼 영역 */}
+      {/* 넓은 화면은 한 줄, 좁아지면 [주차 칩] / [조회 조건·버튼] 두 묶음으로 줄바꿈, 모바일은 칸이 폭을 나눠 사용 */}
       <MDBox
         sx={{
           display: "flex",
@@ -945,7 +1039,7 @@ function BranchUploadTab({ isHeadOffice }) {
           borderBottom: "1px solid #eef2f5",
         }}
       >
-        {/* 구분 필터 칩 (선택 날짜가 있으면 날짜 칩도 표시) */}
+        {/* 목록 필터 칩 (전체, 달력에서 주차를 고르면 해당 주차 칩 표시) */}
         <div
           style={{
             display: "flex",
@@ -955,18 +1049,17 @@ function BranchUploadTab({ isHeadOffice }) {
             flex: isMobile ? "1 1 100%" : "1 1 auto",
           }}
         >
-          {["전체", ...MEAL_TYPES].map((type) => (
-            <button key={type} type="button" onClick={() => setMealFilter(type)} style={chipStyle(mealFilter === type, MEAL_COLOR[type]?.fg)}>
-              {type}
-            </button>
-          ))}
-          {selectedDate && (
+          <button type="button" onClick={() => setSelectedWeek("")} style={chipStyle(!selectedWeek)}>
+            전체
+          </button>
+          {/* 달력에서 고른 주차 (누르면 해제) */}
+          {selectedWeek && (
             <button
               type="button"
-              onClick={() => setSelectedDate("")}
+              onClick={() => setSelectedWeek("")}
               style={{ ...chipStyle(false), borderColor: ACCENT, color: ACCENT, fontWeight: 700 }}
             >
-              {dayjs(selectedDate).format("MM.DD")}만 보기
+              {weeks.find((w) => w.start === selectedWeek)?.no}주차만 보기
               <CloseIcon sx={{ fontSize: 15, display: "block" }} />
             </button>
           )}
@@ -1071,7 +1164,7 @@ function BranchUploadTab({ isHeadOffice }) {
             onClick={(e) => setDownloadAnchor(e.currentTarget)}
             sx={{ flex: isMobile ? 1 : "0 0 auto", whiteSpace: "nowrap" }}
           >
-            {checkedIds.length ? `선택 ${checkedIds.length}건` : "사진 다운로드"}
+            {checkedKeys.length ? `선택 ${checkedKeys.length}주` : "사진 다운로드"}
           </MDButton>
           <MDButton
             variant="gradient"
@@ -1110,41 +1203,64 @@ function BranchUploadTab({ isHeadOffice }) {
         <UploadCalendar
           year={year}
           month={month}
-          rows={mealRows}
+          weeks={weeks}
+          rows={rows}
           isMobile={isMobile}
           summaryMode={selectedAccountId === ALL_ACCOUNTS}
-          onSelectDate={handleSelectDate}
+          onSelectWeek={handleSelectWeek}
         />
       ) : (
-        // 일자별 자료 목록 카드
+        // 거래처·주차별 자료 목록 카드 (식단표 1칸 + 월~일 식판 사진 7칸)
         <div style={{ ...cardStyle, overflow: "hidden", height: "100%", boxSizing: "border-box" }}>
           <div style={{ overflow: "auto", height: "100%" }}>
-            <table style={{ width: "100%", minWidth: 880, borderCollapse: "collapse" }}>
+            <table style={{ width: "100%", minWidth: 1100, borderCollapse: "collapse" }}>
+              {/* 표 머리 2줄 (윗줄: 항목명과 "식판 사진" 묶음 제목, 아랫줄: 식판 사진 요일) */}
               <thead>
                 <tr>
-                  <th style={{ ...th, width: 44 }}>
+                  <th rowSpan={2} style={{ ...th, ...thTall, width: 44 }}>
                     <Checkbox
                       size="small"
                       checked={allChecked}
-                      indeterminate={checkedIds.length > 0 && !allChecked}
-                      onChange={(e) => setCheckedIds(e.target.checked ? visibleRows.map((row) => row.idx) : [])}
+                      indeterminate={checkedKeys.length > 0 && !allChecked}
+                      onChange={(e) => setCheckedKeys(e.target.checked ? visibleItems.map((item) => item.key) : [])}
                       sx={{ p: 0 }}
                     />
                   </th>
-                  <th style={th}>급식일자</th>
-                  <th style={th}>거래처</th>
-                  <th style={th}>구분</th>
-                  <th style={th}>식단표</th>
-                  <th style={th}>식판 사진</th>
-                  <th style={th}>등록 상태</th>
-                  <th style={{ ...th, textAlign: "center" }}>관리</th>
+                  <th rowSpan={2} style={{ ...th, ...thTall }}>주차</th>
+                  <th rowSpan={2} style={{ ...th, ...thTall }}>거래처</th>
+                  <th rowSpan={2} style={{ ...th, ...thTall }}>주간 식단표</th>
+                  <th
+                    colSpan={WEEK_DAY_LABELS.length}
+                    style={{ ...th, ...thRow, textAlign: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}
+                  >
+                    식판 사진
+                  </th>
+                  <th rowSpan={2} style={{ ...th, ...thTall, textAlign: "center" }}>관리</th>
+                </tr>
+                <tr>
+                  {WEEK_DAY_LABELS.map((w, i) => (
+                    <th
+                      key={w}
+                      style={{
+                        ...th,
+                        ...thRow,
+                        top: TH_ROW_HEIGHT,
+                        textAlign: "center",
+                        color: i === 6 ? "#d32f2f" : i === 5 ? ACCENT : th.color,
+                        borderLeft: `1px solid ${BORDER}`,
+                        borderRight: i === 6 ? `1px solid ${BORDER}` : "none",
+                      }}
+                    >
+                      {w}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {/* 조회 중·자료 없음 안내 행 */}
-                {(listLoading || visibleRows.length === 0) && (
+                {(listLoading || visibleItems.length === 0) && (
                   <tr>
-                    <td colSpan={8} style={{ ...td, padding: "48px 12px", textAlign: "center", color: "#9aa6b1", fontSize: 13 }}>
+                    <td colSpan={12} style={{ ...td, padding: "48px 12px", textAlign: "center", color: "#9aa6b1", fontSize: 13 }}>
                       {listLoading ? (
                         "불러오는 중..."
                       ) : (
@@ -1160,44 +1276,65 @@ function BranchUploadTab({ isHeadOffice }) {
                   </tr>
                 )}
 
-                {/* 급식일자·거래처·구분별 자료 행 */}
+                {/* 거래처·주차별 자료 줄 */}
                 {!listLoading &&
-                  visibleRows.map((row) => {
-                    const d = dayjs(row.meal_date);
-                    const done = isDone(row);
-                    const checked = checkedIds.includes(row.idx);
+                  visibleItems.map((item) => {
+                    const { week } = item;
+                    const checked = checkedKeys.includes(item.key);
                     return (
-                      <tr key={row.idx} style={{ backgroundColor: checked ? "#f3f8ff" : "#ffffff" }}>
+                      <tr key={item.key} style={{ backgroundColor: checked ? "#f3f8ff" : "#ffffff" }}>
                         <td style={td}>
-                          <Checkbox size="small" checked={checked} onChange={() => toggleChecked(row.idx)} sx={{ p: 0 }} />
+                          <Checkbox size="small" checked={checked} onChange={() => toggleChecked(item.key)} sx={{ p: 0 }} />
                         </td>
-                        <td style={td}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>{d.format("MM.DD")}</div>
-                          <div style={{ fontSize: 11, color: d.day() === 0 ? "#d32f2f" : d.day() === 6 ? ACCENT : SUB }}>
-                            {WEEKDAYS[d.day()]}요일
+                        <td style={{ ...td, whiteSpace: "nowrap" }}>
+                          {/* 주차 표시 (월요일이 속한 달 기준 "N월 N주차") */}
+                          <div style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>
+                            {dayjs(week.start).month() + 1}월 {week.no}주차
+                          </div>
+                          <div style={{ fontSize: 11, color: SUB, marginTop: 2 }}>
+                            {dayjs(week.start).format("MM.DD")} ~ {dayjs(week.end).format("MM.DD")}
                           </div>
                         </td>
-                        <td style={{ ...td, fontSize: 13, fontWeight: 700, color: TEXT }}>{row.account_name}</td>
+                        <td style={{ ...td, fontSize: 13, fontWeight: 700, color: TEXT }}>{item.account_name}</td>
+                        {/* 주간 식단표 (그 주 월요일 행에 저장) */}
                         <td style={td}>
-                          <Badge label={row.meal_type} {...(MEAL_COLOR[row.meal_type] || { bg: "#eef4fc", fg: ACCENT })} />
+                          <FileCell
+                            file={fileOf(item.menuRow, "menu")}
+                            onView={() => openPreview(item.menuRow, "menu")}
+                            onAdd={() => pickFile({ account_id: item.account_id, meal_date: week.start }, "menu")}
+                          />
                         </td>
-                        {FILE_KINDS.map(({ key }) => (
-                          <td key={key} style={td}>
-                            <FileCell
-                              file={fileOf(row, key)}
-                              onView={() => openPreview(row, key)}
-                              onAdd={() => pickFile(row, key)}
-                            />
-                          </td>
-                        ))}
-                        {/* 등록 자료 개수 (모두 등록: 초록, 일부만: 주황) */}
-                        <td style={{ ...td, fontSize: 13, fontWeight: 700, color: done ? TONE.done.fg : TONE.missing.fg }}>
-                          {countFiles(row)} / {FILE_KINDS.length}개 등록
-                        </td>
+                        {/* 월~일 식판 사진 (칸 아래 날짜) */}
+                        {week.dates.map((date, di) => {
+                          const row = item.dayRows[date];
+                          return (
+                            <td
+                              key={date}
+                              style={{
+                                ...td,
+                                padding: "10px 6px",
+                                textAlign: "center",
+                                // 요일 칸 사이 세로 구분선
+                                borderLeft: `1px solid ${BORDER}`,
+                                borderRight: di === 6 ? `1px solid ${BORDER}` : "none",
+                              }}
+                            >
+                              <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                                <FileCell
+                                  compact
+                                  file={fileOf(row, "plate")}
+                                  onView={() => openPreview(row, "plate")}
+                                  onAdd={() => pickFile({ account_id: item.account_id, meal_date: date }, "plate")}
+                                />
+                                <span style={{ fontSize: 11, lineHeight: 1, color: SUB }}>{dayjs(date).format("MM.DD")}</span>
+                              </div>
+                            </td>
+                          );
+                        })}
                         <td style={{ ...td, textAlign: "center" }}>
                           <button
                             type="button"
-                            onClick={() => openEdit(row)}
+                            onClick={() => openEdit(item)}
                             style={{
                               display: "inline-flex",
                               alignItems: "center",
@@ -1210,6 +1347,7 @@ function BranchUploadTab({ isHeadOffice }) {
                               fontSize: 12,
                               lineHeight: 1,
                               cursor: "pointer",
+                              whiteSpace: "nowrap",
                             }}
                           >
                             수정
@@ -1230,7 +1368,7 @@ function BranchUploadTab({ isHeadOffice }) {
       <Dialog
         open={modal.open}
         onClose={closeModal}
-        PaperProps={{ sx: { width: "100%", maxWidth: 720, m: 2, borderRadius: "16px" } }}
+        PaperProps={{ sx: { width: "100%", maxWidth: 760, m: 2, borderRadius: "16px" } }}
       >
         {/* 모달 상단 제목·설명·닫기 영역 */}
         <div style={{ display: "flex", alignItems: "flex-start", padding: "22px 24px 16px", borderBottom: "1px solid #eef2f5" }}>
@@ -1239,7 +1377,7 @@ function BranchUploadTab({ isHeadOffice }) {
             <div style={{ fontSize: 13, color: SUB, marginTop: 4 }}>
               {isEdit
                 ? "교체할 자료만 다시 선택하면 됩니다. 선택하지 않은 자료는 그대로 유지됩니다."
-                : "거래처와 급식 일자를 기준으로 식단표와 식판 사진을 한 번에 등록합니다."}
+                : "거래처와 주차를 기준으로 주간 식단표와 요일별 식판 사진을 한 번에 등록합니다."}
             </div>
           </div>
           <IconButton onClick={closeModal} sx={{ backgroundColor: "#f3f5f8" }} aria-label="닫기">
@@ -1248,15 +1386,15 @@ function BranchUploadTab({ isHeadOffice }) {
         </div>
 
         <DialogContent sx={{ px: 3, py: 2.5 }}>
-          {/* 거래처·급식일자·식사 구분 입력 줄 (수정 모달은 고정) */}
+          {/* 거래처·연·월·주차 입력 줄 (수정 모달은 고정, 모바일은 거래처·주차 한 줄씩 + 연·월 반반) */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1.3fr 1fr 1fr",
+              gridTemplateColumns: isMobile ? "1fr 1fr" : "1.3fr 0.8fr 0.7fr 1.6fr",
               gap: 12,
             }}
           >
-            <div>
+            <div style={{ gridColumn: isMobile ? "1 / -1" : "auto", minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>거래처</div>
               <Autocomplete
                 size="small"
@@ -1270,51 +1408,127 @@ function BranchUploadTab({ isHeadOffice }) {
                 ListboxProps={{ style: { fontSize: "12px" } }}
               />
             </div>
+            {/* 주차를 고를 연·월 */}
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>급식 일자</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>연도</div>
               <TextField
-                type="date"
+                select
                 size="small"
                 fullWidth
-                value={form.meal_date || ""}
-                onChange={(e) => setFormValue("meal_date", e.target.value)}
+                value={form.year || year}
+                onChange={(e) => setFormYearMonth("year", Number(e.target.value))}
+                SelectProps={{ native: true }}
                 disabled={isEdit}
                 sx={inputBoxSx}
-              />
+              >
+                {Array.from({ length: 10 }, (_, i) => today.year() - 5 + i).map((y) => (
+                  <option key={y} value={y}>
+                    {y}년
+                  </option>
+                ))}
+              </TextField>
             </div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>식사 구분</div>
-              <SelectAutocomplete
-                options={MEAL_OPTIONS}
-                value={form.meal_type || ""}
-                onChange={(v) => setFormValue("meal_type", v)}
+              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>월</div>
+              <TextField
+                select
+                size="small"
+                fullWidth
+                value={form.month || month}
+                onChange={(e) => setFormYearMonth("month", Number(e.target.value))}
+                SelectProps={{ native: true }}
                 disabled={isEdit}
-              />
+                sx={inputBoxSx}
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>
+                    {m}월
+                  </option>
+                ))}
+              </TextField>
+            </div>
+            <div style={{ gridColumn: isMobile ? "1 / -1" : "auto", minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: TEXT, marginBottom: 6 }}>주차 (월~일)</div>
+              {isEdit ? (
+                <TextField
+                  size="small"
+                  fullWidth
+                  disabled
+                  value={`${modalWeek.no}주차 · ${dayjs(modalWeek.start).format("MM.DD")} ~ ${dayjs(modalWeek.end).format("MM.DD")}`}
+                  sx={inputBoxSx}
+                />
+              ) : (
+                <TextField
+                  select
+                  size="small"
+                  fullWidth
+                  value={form.week_start || ""}
+                  onChange={(e) => setModal((m) => ({ ...m, form: { ...m.form, week_start: e.target.value, plates: {} } }))}
+                  SelectProps={{ native: true }}
+                  sx={inputBoxSx}
+                >
+                  {modalWeeks.map((w) => (
+                    <option key={w.start} value={w.start}>
+                      {w.no}주차 · {dayjs(w.start).format("MM.DD")} ~ {dayjs(w.end).format("MM.DD")}
+                    </option>
+                  ))}
+                </TextField>
+              )}
             </div>
           </div>
 
-          {/* 첨부자료 카드 영역 (식단표·식판 사진) */}
+          {/* 주간 식단표 카드 (주 1장, 그 주 월요일 행에 저장) */}
           <div style={{ marginTop: 22, marginBottom: 10, display: "flex", alignItems: "baseline", gap: 6 }}>
-            <span style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>첨부자료</span>
-            <span style={{ fontSize: 12, color: "#9aa6b1" }}>· 필요한 항목만 선택하셔도 됩니다.</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>주간 식단표</span>
+            <span style={{ fontSize: 12, color: "#9aa6b1" }}>· 주차별 1장</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-            {FILE_KINDS.map((kind, i) => (
-              <FileDropCard
-                key={kind.key}
-                index={["①", "②"][i]}
-                kind={kind}
-                file={form[kind.key]}
-                existing={isEdit ? fileOf(modal.row, kind.key) : null}
-                onSelect={(file) => setFormValue(kind.key, file)}
-                onView={isEdit ? () => openPreview(modal.row, kind.key) : undefined}
-                onDownload={
-                  isEdit
-                    ? () => triggerDownload(buildFileDownloadUrl(fileOf(modal.row, kind.key).path), buildFileName(modal.row, kind.key))
-                    : undefined
-                }
-              />
-            ))}
+          <FileDropCard
+            kind={FILE_KINDS[0]}
+            file={form.menu}
+            existing={isEdit ? fileOf(modal.item.menuRow, "menu") : null}
+            onSelect={(file) => setModal((m) => ({ ...m, form: { ...m.form, menu: file, deleteMenu: false } }))}
+            deleted={!!form.deleteMenu}
+            onDelete={isEdit && fileOf(modal.item.menuRow, "menu") ? (on) => setFormValue("deleteMenu", on) : undefined}
+            onView={isEdit ? () => openPreview(modal.item.menuRow, "menu") : undefined}
+            onDownload={
+              isEdit
+                ? () =>
+                    triggerDownload(
+                      buildFileDownloadUrl(fileOf(modal.item.menuRow, "menu").path),
+                      buildFileName(modal.item.menuRow, "menu")
+                    )
+                : undefined
+            }
+          />
+
+          {/* 요일별 식판 사진 카드 (월~일 하루 1장) */}
+          <div style={{ marginTop: 22, marginBottom: 10, display: "flex", alignItems: "baseline", gap: 6 }}>
+            <span style={{ fontSize: 15, fontWeight: 800, color: TEXT }}>식판 사진</span>
+            <span style={{ fontSize: 12, color: "#9aa6b1" }}>· 하루 1장, 필요한 요일만 선택하셔도 됩니다.</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
+            {(modalWeek?.dates || []).map((date, i) => {
+              const row = isEdit ? modal.item.dayRows[date] : null;
+              return (
+                <FileDropCard
+                  key={date}
+                  compact
+                  index={WEEK_DAY_LABELS[i]}
+                  kind={{ ...FILE_KINDS[1], label: dayjs(date).format("MM.DD") }}
+                  file={form.plates[date]}
+                  existing={fileOf(row, "plate")}
+                  onSelect={(file) => setPlateFile(date, file)}
+                  deleted={!!form.deletePlates?.[date]}
+                  onDelete={fileOf(row, "plate") ? (on) => setPlateDelete(date, on) : undefined}
+                  onView={row ? () => openPreview(row, "plate") : undefined}
+                  onDownload={
+                    row && fileOf(row, "plate")
+                      ? () => triggerDownload(buildFileDownloadUrl(fileOf(row, "plate").path), buildFileName(row, "plate"))
+                      : undefined
+                  }
+                />
+              );
+            })}
           </div>
 
           {/* 저장 방식 안내 박스 */}
@@ -1334,8 +1548,8 @@ function BranchUploadTab({ isHeadOffice }) {
             <InfoOutlinedIcon sx={{ fontSize: 16, color: "#1687b2", mt: "2px" }} />
             <span>
               {isEdit
-                ? "선택한 파일만 교체되고, 선택하지 않은 기존 파일은 그대로 유지됩니다."
-                : "같은 거래처·급식 일자·식사 구분으로 이미 등록된 자료가 있으면 새로 등록할 수 없습니다. 목록에서 [수정]으로 변경해 주세요."}
+                ? "선택한 파일만 교체·추가되고, [삭제]를 누른 파일은 저장할 때 지워집니다. 나머지 기존 파일은 그대로 유지됩니다."
+                : "같은 거래처·주차로 이미 등록된 자료가 있으면 새로 등록할 수 없습니다. 목록에서 [수정]으로 변경해 주세요."}
             </span>
           </div>
         </DialogContent>
@@ -1350,7 +1564,7 @@ function BranchUploadTab({ isHeadOffice }) {
         </DialogActions>
       </Dialog>
 
-      {/* 본사 다운로드 범위 선택 팝업 (전체 거래처 또는 거래처 1곳) */}
+      {/* 다운로드 범위 선택 팝업 (거래처: 전체 또는 1곳, 기간: 시작일 ~ 종료일) */}
       <Dialog
         open={scopeDialog.open}
         onClose={() => closeScopeDialog(null)}
@@ -1360,7 +1574,7 @@ function BranchUploadTab({ isHeadOffice }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: TEXT }}>{scopeDialog.label} 다운로드</div>
             <div style={{ fontSize: 13, color: SUB, marginTop: 4 }}>
-              {year}년 {month}월 자료를 받을 거래처를 선택해 주세요.
+              자료를 받을 거래처와 기간을 선택해 주세요.
             </div>
           </div>
           <IconButton onClick={() => closeScopeDialog(null)} sx={{ backgroundColor: "#f3f5f8" }} aria-label="닫기">
@@ -1376,13 +1590,14 @@ function BranchUploadTab({ isHeadOffice }) {
             getOptionLabel={(opt) => opt?.label ?? ""}
             isOptionEqualToValue={(opt, val) => opt.value === val.value}
             disableClearable
+            disabled={isAccountLocked}
             renderInput={(params) => (
               <TextField {...params} label="거래처" placeholder="거래처명을 입력" sx={{ ...inputBoxSx, ...accountLabelSx }} />
             )}
             ListboxProps={{ style: { fontSize: "12px" } }}
             sx={{ mt: 1 }}
           />
-          {/* 다운로드 기간 (선택 월 안에서 시작일 ~ 종료일) */}
+          {/* 다운로드 기간 (시작일 ~ 종료일, 달을 넘겨도 선택 가능, 식단표는 기간에 걸친 주의 것 포함) */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
             <TextField
               type="date"
@@ -1390,7 +1605,7 @@ function BranchUploadTab({ isHeadOffice }) {
               label="시작일"
               value={scopeDialog.startDate}
               onChange={(e) => setScopeDialog((d) => ({ ...d, startDate: e.target.value }))}
-              inputProps={{ min: monthStart, max: scopeDialog.endDate || monthEnd }}
+              inputProps={{ max: scopeDialog.endDate || undefined }}
               InputLabelProps={{ shrink: true }}
               sx={{ flex: 1, ...inputBoxSx, ...accountLabelSx }}
             />
@@ -1401,7 +1616,7 @@ function BranchUploadTab({ isHeadOffice }) {
               label="종료일"
               value={scopeDialog.endDate}
               onChange={(e) => setScopeDialog((d) => ({ ...d, endDate: e.target.value }))}
-              inputProps={{ min: scopeDialog.startDate || monthStart, max: monthEnd }}
+              inputProps={{ min: scopeDialog.startDate || undefined }}
               InputLabelProps={{ shrink: true }}
               sx={{ flex: 1, ...inputBoxSx, ...accountLabelSx }}
             />
@@ -1437,6 +1652,7 @@ function BranchUploadTab({ isHeadOffice }) {
 
       {/* 자료 확대 미리보기 */}
       <PreviewOverlay
+        excelStyled
         open={Boolean(previewFiles)}
         files={previewFiles || []}
         currentIndex={0}

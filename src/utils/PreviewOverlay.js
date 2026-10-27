@@ -8,12 +8,17 @@ import * as XLSX from "xlsx";
 import MDBox from "components/MDBox";
 import api from "api/api";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import ExcelStyledSheet from "utils/ExcelStyledSheet";
 
 // 파일 종류별 미리보기 창 비율을 계산한다.
 function getViewerFrameRatio(isMobile, fileKind) {
   const kind = String(fileKind || "").trim().toLowerCase();
   if (kind === "pdf") {
     return isMobile ? { widthRatio: 0.8, heightRatio: 0.84 } : { widthRatio: 0.46, heightRatio: 0.82 };
+  }
+  // 서식 엑셀 미리보기는 시트 폭이 넓어 창을 크게 연다
+  if (kind === "excel-styled") {
+    return isMobile ? { widthRatio: 0.94, heightRatio: 0.84 } : { widthRatio: 0.6, heightRatio: 0.86 };
   }
   return isMobile ? { widthRatio: 0.68, heightRatio: 0.92 } : { widthRatio: 0.34, heightRatio: 0.88 };
 }
@@ -164,6 +169,7 @@ function PreviewOverlay({
   onChangeIndex,
   onClose,
   anchorX = 1 / 3,
+  excelStyled = false,
 }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
@@ -223,6 +229,8 @@ function PreviewOverlay({
       return `${encodeURI(pathPart)}${queryPart}`;
     }
   }, [currentFile?.url]);
+  // 창 크기 계산용 파일 종류 (서식 엑셀 미리보기는 별도 크기)
+  const frameKind = excelStyled && currentFile?.kind === "excel" ? "excel-styled" : currentFile?.kind;
   const canGoPrev = safeIndex > 0;
   const canGoNext = safeIndex < maxIndex;
 
@@ -236,9 +244,9 @@ function PreviewOverlay({
   // 오버레이를 열 때 화면 중앙 위치로 기본 배치, 파일 변경 시 사용자 지정 크기 초기화
   useLayoutEffect(() => {
     if (!open) return;
-    setViewerPos(getCenteredViewerPos(isMobile, currentFile?.kind, anchorX));
+    setViewerPos(getCenteredViewerPos(isMobile, frameKind, anchorX));
     setViewerSize(null);
-  }, [open, isMobile, safeIndex, currentFile?.kind, anchorX]);
+  }, [open, isMobile, safeIndex, frameKind, anchorX]);
 
   // 커스텀 resize 핸들 mousedown: 시작 마우스 위치와 패널 크기를 ref에만 저장
   const handleResizeStart = useCallback((e) => {
@@ -387,7 +395,7 @@ function PreviewOverlay({
       if (!dragging) return;
       const w = window.innerWidth;
       const h = window.innerHeight;
-      const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, currentFile?.kind);
+      const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, frameKind);
       const modalW = w * widthRatio;
       const modalH = h * heightRatio;
       const nextX = e.clientX - dragOffsetRef.current.x;
@@ -397,7 +405,7 @@ function PreviewOverlay({
         y: Math.min(Math.max(0, nextY), Math.max(0, h - modalH)),
       });
     },
-    [dragging, isMobile, currentFile?.kind]
+    [dragging, isMobile, frameKind]
   );
 
   const handleDragEnd = useCallback(() => {
@@ -503,7 +511,7 @@ function PreviewOverlay({
     let cancelled = false;
 
     const loadExcelPreview = async () => {
-      if (!open || currentFile?.kind !== "excel" || !currentFileViewUrl) {
+      if (!open || currentFile?.kind !== "excel" || excelStyled || !currentFileViewUrl) {
         setExcelPreview({ loading: false, sheetName: "", rows: [], error: "" });
         return;
       }
@@ -548,11 +556,11 @@ function PreviewOverlay({
     return () => {
       cancelled = true;
     };
-  }, [open, currentFile?.kind, currentFileViewUrl]);
+  }, [open, currentFile?.kind, excelStyled, currentFileViewUrl]);
 
   const panelStyle = useMemo(
     () => {
-      const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, currentFile?.kind);
+      const { widthRatio, heightRatio } = getViewerFrameRatio(isMobile, frameKind);
       return {
         position: "absolute",
         left: viewerPos.x,
@@ -565,7 +573,7 @@ function PreviewOverlay({
         overflow: "hidden",
       };
     },
-    [viewerPos.x, viewerPos.y, isMobile, currentFile?.kind, viewerSize]
+    [viewerPos.x, viewerPos.y, isMobile, frameKind, viewerSize]
   );
 
   const titlebarIconButtonStyle = useMemo(
@@ -991,8 +999,13 @@ function PreviewOverlay({
             </div>
           ) : null}
 
+          {/* Excel 서식 미리보기 (excelStyled: 병합·글꼴·채우기·테두리 유지, 시트 전환·확대) */}
+          {currentFile.kind === "excel" && excelStyled ? (
+            <ExcelStyledSheet url={currentFileViewUrl} fetchBlob={fetchPreviewBlob} />
+          ) : null}
+
           {/* Excel(xls/xlsx): 첫 시트 내용을 표 형태로 렌더 */}
-          {currentFile.kind === "excel" ? (
+          {currentFile.kind === "excel" && !excelStyled ? (
             <MDBox
               sx={{
                 width: "100%",
@@ -1075,6 +1088,7 @@ PreviewOverlay.propTypes = {
   onChangeIndex: PropTypes.func,
   onClose: PropTypes.func,
   anchorX: PropTypes.number,
+  excelStyled: PropTypes.bool,
 };
 
 PreviewOverlay.defaultProps = {
@@ -1084,6 +1098,7 @@ PreviewOverlay.defaultProps = {
   onChangeIndex: null,
   onClose: null,
   anchorX: 1 / 3,
+  excelStyled: false,
 };
 
 export default React.memo(PreviewOverlay);

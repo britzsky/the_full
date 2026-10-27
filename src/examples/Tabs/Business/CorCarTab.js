@@ -1265,7 +1265,7 @@ function CorCarTabStyled({ embedded = false }) {
           alignItems: "center",
           flexWrap: isMobile ? "wrap" : "nowrap",
           pt: 0.25,
-          pb: 1,
+          pb: 0,
           // 차량 수 문구가 왼쪽 끝에 붙지 않도록 카드 영역과 같은 왼쪽 여백
           pl: 1,
           backgroundColor: "#ffffff",

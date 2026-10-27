@@ -492,7 +492,8 @@ function AccountMemberSheet() {
       table.getFlatHeaders().forEach((header, idx) => {
         const el = headerCells[idx];
         if (!el) return;
-        const width = Math.ceil(el.getBoundingClientRect().width);
+        // 고정 열 위치가 실제 경계와 맞도록 소수점 너비 그대로 저장 (잠금 시에만 올림)
+        const width = el.getBoundingClientRect().width;
         if (width > 0) next[header.id] = width;
       });
 
@@ -1015,14 +1016,15 @@ function AccountMemberSheet() {
     // 모바일: 이름(2열)까지 고정, 태블릿: 주민번호(3열)까지 고정, 데스크탑: 기존(7열) 유지
     const stickyColumnCount = isMobile ? 2 : isTablet ? 3 : 7;
     // n번째 고정 열의 left 위치: 앞 열들의 실제 렌더링 너비 합 (측정 전에는 컬럼 size 기준)
+    // 너비 잠금 상태에서는 열 너비가 올림값으로 고정되므로 같은 기준으로 합산
     const getStickyLeft = (n) =>
       `${table
         .getFlatHeaders()
         .slice(0, n - 1)
-        .reduce(
-          (sum, h) => sum + (measuredColWidths[h.id] ?? h.column.columnDef.size ?? 80),
-          0
-        )}px`;
+        .reduce((sum, h) => {
+          const w = measuredColWidths[h.id] ?? h.column.columnDef.size ?? 80;
+          return sum + (isColumnWidthLocked ? Math.ceil(w) : w);
+        }, 0)}px`;
 
     return (
       <MDBox
@@ -1168,7 +1170,7 @@ function AccountMemberSheet() {
                 {headerGroup.headers.map((header) => {
                   const headerWidth =
                     header.column.columnDef.size ?? header.column.columnDef.minWidth ?? 80;
-                  const lockedHeaderWidth = measuredColWidths[header.id] ?? headerWidth;
+                  const lockedHeaderWidth = Math.ceil(measuredColWidths[header.id] ?? headerWidth);
                   return (
                     <th
                       key={header.id}
@@ -1193,11 +1195,12 @@ function AccountMemberSheet() {
                 {row.getVisibleCells().map((cell) => {
                   const colKey = cell.column.columnDef.accessorKey;
                   const currentValue = row.getValue(colKey);
-                  const cellWidth =
+                  const cellWidth = Math.ceil(
                     measuredColWidths[cell.column.id] ??
                     cell.column.columnDef.size ??
                     cell.column.columnDef.minWidth ??
-                    80;
+                    80
+                  );
                   const originalValue = originals?.[rowIndex]?.[colKey];
                   const isNewRow = !String(row.original?.member_id ?? "").trim();
 

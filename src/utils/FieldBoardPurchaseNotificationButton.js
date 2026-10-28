@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Badge, Divider, Icon, IconButton, Menu } from "@mui/material";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
+import CampaignIcon from "@mui/icons-material/Campaign";
 
 import api from "api/api";
 import MDBox from "components/MDBox";
@@ -10,7 +11,8 @@ import NotificationItem from "examples/Items/NotificationItem";
 import PropTypes from "prop-types";
 
 // 현장 영양사 전용 구입요청서 승인·반려 알림 버튼
-function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest }) {
+// notice: 알림 목록 맨 위에 고정으로 보여줄 공지 문구 (숫자 배지에는 포함하지 않음), onOpenNotice: 공지 항목 클릭 시 공지 팝업 열기
+function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest, notice, onOpenNotice }) {
   // 화면을 새로고침하지 않고 결재 결과를 갱신하기 위한 알림 조회 주기
   const NOTIFICATION_POLL_MS = 30000;
   // 구입요청서 작성자 기준 알림 조회 및 읽음 처리에 사용하는 로그인 사용자 식별값
@@ -178,13 +180,34 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest }) {
           },
         }}
       >
-        {/* 알림 메뉴 제목 영역 */}
-        <MDBox px={2} py={1}>
-          <MDTypography variant="button" fontWeight="bold">
+        {/* 공지 영역 제목 (공지 기간에만 표시, 본사 알림 메뉴와 같은 구역 제목 형식) */}
+        {notice && (
+          <MDBox px={2} pt={1} pb={0.5}>
+            <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+              공지
+            </MDTypography>
+          </MDBox>
+        )}
+        {/* 공지 항목 (누르면 공지 팝업 다시 열기) */}
+        {notice && (
+          <NotificationItem
+            icon={<CampaignIcon sx={{ color: "#ff9800" }} />}
+            title={notice}
+            onClick={() => {
+              setAnchorEl(null);
+              onOpenNotice?.();
+            }}
+          />
+        )}
+        {/* 공지 영역과 구입요청 알림 영역 구분선 */}
+        {notice && <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />}
+
+        {/* 구입요청 결재 알림 영역 제목 */}
+        <MDBox px={2} pt={1} pb={0.5}>
+          <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
             구입요청 결재 알림
           </MDTypography>
         </MDBox>
-        <Divider sx={{ my: 0 }} />
 
         {/* 미확인 알림 유무에 따른 빈 안내 또는 결재 결과 목록 영역 */}
         {notifications.length === 0 ? (
@@ -210,6 +233,13 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest }) {
 
 FieldBoardPurchaseNotificationButton.propTypes = {
   onOpenPurchaseRequest: PropTypes.func.isRequired,
+  notice: PropTypes.string,
+  onOpenNotice: PropTypes.func,
+};
+
+FieldBoardPurchaseNotificationButton.defaultProps = {
+  notice: "",
+  onOpenNotice: undefined,
 };
 
 export default FieldBoardPurchaseNotificationButton;

@@ -197,7 +197,8 @@ function useThumbSrc(value) {
 
 // 사진 미리보기 칸 (축소한 사진 표시, 클릭 시 원본 크게 보기, 법인차량 상태 사진에서도 사용)
 // height: 칸 높이(px, 기본 140)
-export function PhotoThumb({ value, onView, height = 140 }) {
+// loadingText: 사진을 불러오는 동안 표시할 문구 (작은 칸은 짧은 문구를 넘겨 줄바꿈 방지)
+export function PhotoThumb({ value, onView, height = 140, loadingText = "불러오는 중..." }) {
   const src = useThumbSrc(value);
 
   return (
@@ -214,6 +215,9 @@ export function PhotoThumb({ value, onView, height = 140 }) {
         cursor: value ? "zoom-in" : "default",
         color: "#8a97a3",
         fontSize: 12,
+        // 안내 문구는 한 줄로 고정 (좁은 칸에서 두 줄로 꺾이며 칸 크기가 흔들리지 않게)
+        whiteSpace: "nowrap",
+        lineHeight: 1,
       }}
     >
       {src ? (
@@ -224,7 +228,7 @@ export function PhotoThumb({ value, onView, height = 140 }) {
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       ) : value ? (
-        "불러오는 중..."
+        loadingText
       ) : (
         "사진 없음"
       )}

@@ -2555,7 +2555,17 @@ function TallySheet() {
     const changedBefore = getChangedRows(data2Rows, original2Rows);
 
     if (!changedNow.length && !changedBefore.length) {
+      isSavingRef.current = false;
       return Swal.fire("정보", "변경된 내용이 없습니다.", "info");
+    }
+
+    // 마감된 달(말일 밤 11시 이후)의 변경분이 있으면 저장 차단
+    if (
+      (changedNow.length && isMonthClosed(year, month)) ||
+      (changedBefore.length && isMonthClosed(prevYear, prevMonth))
+    ) {
+      isSavingRef.current = false;
+      return Swal.fire("입력 마감", "말일 밤 11시(23:00) 이후에는 해당 월 집계표를 저장할 수 없습니다.", "warning");
     }
 
     // ✅ 여기서 row마다 user_id 주입
@@ -3303,9 +3313,20 @@ function TallySheet() {
     return map;
   }, [useList, selectedAccountId]);
 
+  // 해당 연월의 집계표 입력 마감 여부 (말일 밤 11시가 지나면 그 달 전체 입력불가)
+  const isMonthClosed = useCallback(
+    (y, m) =>
+      !dayjs().isBefore(
+        dayjs(`${y}-${String(m).padStart(2, "0")}-01`).endOf("month").hour(23).minute(0).second(0)
+      ),
+    []
+  );
+
+  // 월 마감이거나 useList 입력불가(input_yn=1)인 타입인지 확인
   const isTypeLocked = useCallback(
-    (y, m, type) => (useLockMap.get(buildUseKey(y, m, type))?.lock ?? 0) === 1,
-    [useLockMap]
+    (y, m, type) =>
+      isMonthClosed(y, m) || (useLockMap.get(buildUseKey(y, m, type))?.lock ?? 0) === 1,
+    [useLockMap, isMonthClosed]
   );
 
   // ✅ 낙관적 업데이트용 로컬 override 맵 (서버 재조회 완료 전까지 즉시 반영)

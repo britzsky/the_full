@@ -5,7 +5,8 @@ import Swal from "sweetalert2";
 export const LockedSwal = Swal.mixin({ allowOutsideClick: false });
 
 // 저장·업로드 진행 중 로딩 스피너 창 (바깥 클릭·ESC로 닫히지 않음, 결과 알림을 띄우면 그 창으로 교체됨)
-export function showSwalLoading(title = "저장 중...", text = "잠시만 기다려 주세요.") {
+// options: 화면별로 덧붙일 Swal 옵션 (예: heightAuto: false)
+export function showSwalLoading(title = "저장 중...", text = "잠시만 기다려 주세요.", options = {}) {
   Swal.fire({
     title,
     text,
@@ -13,6 +14,7 @@ export function showSwalLoading(title = "저장 중...", text = "잠시만 기�
     allowEscapeKey: false,
     showConfirmButton: false,
     didOpen: () => Swal.showLoading(),
+    ...options,
   });
 }
 

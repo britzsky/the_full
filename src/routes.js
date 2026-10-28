@@ -231,7 +231,7 @@ const routes = [
         component: <Tables />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9], // 🔹 부서권한
         allowedPositions: [0, 1], // 🔹 직책권한
-        allowUserIds: ["ww1", "sy7"], // ID 임시권한
+        allowUserIds: ["ww1", "sy7", "sh8"], // ID 임시권한
         accessMode: "AND",
       },
       {

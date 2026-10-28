@@ -149,17 +149,18 @@ export default function useBranchUploadData(isHeadOffice) {
   );
 
   // 목록 화면 자료 조회 (거래처 목록을 받은 뒤에만 조회)
+  // silent: 저장 직후 다시 조회할 때 기존 표를 그대로 두고 데이터만 교체 (불러오는 중 표시·사진 재로딩 없음)
   const fetchBranchUploadList = useCallback(
-    async (params) => {
+    async (params, { silent = false } = {}) => {
       if (accountList.length === 0) return;
-      setLoading(true);
+      if (!silent) setLoading(true);
       try {
         setRows(await fetchBranchUploadRows(params));
       } catch (err) {
         console.error("지점업로드 조회 실패:", err);
-        setRows([]);
+        if (!silent) setRows([]);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [accountList.length, fetchBranchUploadRows]

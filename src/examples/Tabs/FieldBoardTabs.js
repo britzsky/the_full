@@ -21,6 +21,7 @@ import { X, ZoomIn, ChevronDown } from "lucide-react";
 import MDBox from "components/MDBox";
 import { useNavigate } from "react-router-dom";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import dayjs from "dayjs";
 
 import RecordSheetTab from "./FieldBoard/RecordSheetTab";
 import TallySheetTab from "./FieldBoard/TallySheetTab";
@@ -44,92 +45,62 @@ import { confirmTabLeave } from "utils/unsavedChangesGuard";
 
 // 현장관리 진입 공지 팝업 이미지 (public/fieldboard-notice.png 파일을 교체해서 사용, 없으면 이미지 영역 숨김)
 const NOTICE_IMAGE_SRC = `${process.env.PUBLIC_URL}/fieldboard-notice.png`;
-// 공지 노출 마감 시각 (한국시간 2026-10-17 23:59:59까지 표시)
-const NOTICE_END_AT = new Date("2026-10-17T23:59:59+09:00").getTime();
+// 이번 달 집계표 입력 마감 시각 (말일 밤 11시)
+const TALLY_CLOSE_AT = dayjs().endOf("month").hour(23).minute(0).second(0).millisecond(0);
+// 마감 안내 노출 시작 시각 (말일이 속한 주의 월요일 0시, 마지막 주 시작)
+const NOTICE_START_AT = TALLY_CLOSE_AT.startOf("day")
+  .subtract((TALLY_CLOSE_AT.day() + 6) % 7, "day")
+  .valueOf();
+// 공지 노출 마감 시각 (집계표 마감 시각까지 표시)
+const NOTICE_END_AT = TALLY_CLOSE_AT.valueOf();
 
-// 공지 본문 강조 스타일 (파란 강조, 빨간 강조, 밑줄)
-const noticeBlue = { color: "#1565c0", fontWeight: 700, textDecoration: "underline" };
+// 공지 본문 강조 스타일 (빨간 강조)
 const noticeRed = { color: "#d32f2f", fontWeight: 700 };
-const noticeUnderline = { textDecoration: "underline" };
-const noticeSectionTitle = { fontWeight: 700, color: "#222", fontSize: "0.95rem", margin: "16px 0 6px" };
-const noticeList = { margin: 0, paddingLeft: 20 };
+
+// 마감 일시 표시 문구 (예: 10월 31일(토) 밤 11시 (23:00))
+const TALLY_CLOSE_LABEL = `${TALLY_CLOSE_AT.month() + 1}월 ${TALLY_CLOSE_AT.date()}일(${"일월화수목금토"[TALLY_CLOSE_AT.day()]
+  }) 밤 11시 (23:00)`;
 
 // 공지 팝업 제목과 본문 (이미지와 본문이 모두 없으면 팝업이 뜨지 않음)
-const NOTICE_TITLE = "식자재 및 마트 거래처 대금 지급 규정 강화 안내 (예외 없음)";
+const NOTICE_TITLE = "📢 월말 집계표 입력 마감 및 시스템 통제 안내";
 const NOTICE_CONTENT = (
   <>
-    <p style={{ margin: "0 0 10px" }}>안녕하십니까, 회계팀입니다.</p>
+    <p style={{ margin: "0 0 10px" }}> 월말 마감 작업에 따른 시스템 통제 일정을 안내해 드립니다.</p>
+    <p style={{ margin: "0 0 14px" }}>
+      마감 시간 이후에는 자료 입력 및 수정이 불가능하오니, 기한 내에 빠짐없이 등록을 완료해 주시기
+      바랍니다.
+    </p>
+
+    {/* 마감 대상 및 마감 일시 영역 */}
+    <ul style={{ margin: "0 0 14px", paddingLeft: 4, listStyle: "none", display: "grid", gap: 4 }}>
+      <li>
+        📋 <b>마감 대상:</b> 이번 달 전체 집계표 등록 건
+      </li>
+      <li>
+        ⏰ <b>마감 일시:</b> <span style={noticeRed}>{TALLY_CLOSE_LABEL}</span>
+      </li>
+    </ul>
+
     <p style={{ margin: "0 0 10px" }}>
-      식자재 구매 거래처 개편(9/19 시행) 이후에도 기존 거래처 및 일반 마트 이용에 따른 대금
-      미지급 사례와 문의가 계속 발생하고 있어, 대금 지급 기준을 다시 한번 명확히 안내 드립니다.
+      <span style={noticeRed}>🔒 마감 시각 이후에는 시스템이 자동으로 통제되어 추가 입력이 불가합니다.</span>
     </p>
     <p style={{ margin: 0 }}>
-      아래 기준{" "}
-      <span style={noticeBlue}>
-        어떠한 사유로도 예외가 인정되지 않으며, 운영팀에서 회계팀으로 승인 요청이 완료된
-        거래처에 한해서만 대금 지급이 가능합니다.
-      </span>{" "}
-      각 현장 및 관련 부서에서는 내용을 반드시 숙지하시어 대금 미지급 등의 불이익이 발생하지
-      않도록 철저히 협조해 주시기 바랍니다.
+      ✅ 자료 누락으로 인한 불이익이 발생하지 않도록 마감 시각 전에 최종 등록 및 확인을 부탁드립니다.
     </p>
-
-    {/* 대금 지급 기준 영역 */}
-    <div style={noticeSectionTitle}>1. 대금 지급 기준 (2026년 10월 1일부 적용이나 10월 17일까지 유예기간)</div>
-    <ul style={noticeList}>
-      <li>
-        <b>지급 가능 거래처</b>
-        <ol style={{ ...noticeList, margin: "4px 0" }}>
-          <li>
-            <b>삼성웰스토리 / 아워홈</b>
-          </li>
-          <li>
-            <b>운영팀에서 회계팀으로 승인 요청이 완료된 거래처</b>
-          </li>
-        </ol>
-      </li>
-      <li>
-        <b>지급 불가 건</b>
-        <div style={{ margin: "4px 0 0 4px" }}>
-          - <b>위 거래처 외 모든 미승인 거래처 (동네 마트, 대형 마트 등 전부 포함) 구매 건</b>
-        </div>
-      </li>
-    </ul>
-
-    {/* 현장 유의 사항 영역 */}
-    <div style={noticeSectionTitle}>2. 현장 유의 사항</div>
-    <ul style={{ ...noticeList, display: "grid", gap: 6 }}>
-      <li>
-        거래 전면 불가: 기존에 관행적으로 이용하던 마트 거래는{" "}
-        <span style={noticeRed}>10월 18일부터 대금 결제 및 지급이 전면 불가</span>합니다.
-      </li>
-      <li>
-        사전 승인 필수: 삼성웰스토리, 아워홈 외 타 거래처 이용이 불가피한 경우, 반드시 구매 전에{" "}
-        <span style={noticeRed}>운영팀의 확인 및 승인</span>을 받아야 하며,{" "}
-        <span style={noticeUnderline}>
-          운영팀이 회계팀에 승인 요청을 완료한 거래처만 지급 대상
-        </span>
-        이 됩니다.
-      </li>
-      <li>
-        예외 불인정: 긴급 구매, 현장 사정, 담당자 변경, 구두 협의 등 어떠한 사유로도 예외를
-        인정하지 않습니다. 운영팀 승인 요청 이력이 없는 구매 건은 회계팀에서 지급 처리가
-        불가합니다.
-      </li>
-      <li>
-        <span style={noticeRed}> 불이익 책임: 10월 18일부터는 사전 승인 없이 진행된 구매 대금은 회계팀에서 지급할 수 없으며, 이에 따른
-          미지급 문제는 해당 현장에서 책임지게 됩니다.</span>
-      </li>
-      <li>지정 거래처 외 구매가 필요한 경우, 구매 전에 반드시 운영팀에 문의해 주시기 바랍니다.</li>
-    </ul>
   </>
 );
+// 알림 종 목록에 고정으로 보여줄 공지 문구 (공지 기간에만 표시)
+const NOTICE_BELL_LABEL = `월말 집계표 입력 마감 안내 (${TALLY_CLOSE_AT.format("M/D")} 23:00)`;
+// 현재 시각이 공지 노출 기간(마지막 주 시작 ~ 마감 시각)인지 확인하는 함수
+const isNoticePeriod = () => Date.now() >= NOTICE_START_AT && Date.now() <= NOTICE_END_AT;
+
 // "24시간 동안 안보이기"를 누른 시각을 저장하는 localStorage 키
 const NOTICE_HIDE_KEY = "fieldboard_notice_hide_at";
 const NOTICE_HIDE_MS = 24 * 60 * 60 * 1000;
 
-// 마감 전이고, 숨김 시각으로부터 24시간이 지났는지 확인해 팝업 노출 여부를 정하는 함수
+// 마지막 주 시작 ~ 마감 시각 사이이고, 숨김 시각으로부터 24시간이 지났는지 확인해 팝업 노출 여부를 정하는 함수
 const shouldShowNotice = () => {
-  if (Date.now() > NOTICE_END_AT) return false;
+  if (!isNoticePeriod()) return false;
   try {
     const hideAt = Number(localStorage.getItem(NOTICE_HIDE_KEY) || 0);
     return Date.now() - hideAt >= NOTICE_HIDE_MS;
@@ -197,8 +168,9 @@ function FieldBoardTabs() {
   }, [contentTabIndex, tabIndex, tabSwitchLoading]);
 
   // 공지 이미지를 미리 불러와 존재 여부를 확인한 뒤 팝업을 띄운다.
+  // 숨김 상태로 진입한 뒤 알림 종에서 다시 열 때도 이미지 확인을 거치도록 noticeOpen 기준으로 실행
   useEffect(() => {
-    if (!noticeOpen) return undefined;
+    if (!noticeOpen || noticeImageLoaded || noticeImageError) return undefined;
     let cancelled = false;
     const img = new Image();
     img.onload = () => !cancelled && setNoticeImageLoaded(true);
@@ -207,7 +179,7 @@ function FieldBoardTabs() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [noticeOpen]);
 
   // 공지 팝업 닫기:체크했으면 현재 시각을 저장해 24시간 동안 숨긴다.
   const handleNoticeClose = () => {
@@ -351,6 +323,11 @@ function FieldBoardTabs() {
           rightContent={(
             <FieldBoardPurchaseNotificationButton
               onOpenPurchaseRequest={handleOpenPurchaseRequest}
+              notice={isNoticePeriod() ? NOTICE_BELL_LABEL : ""}
+              onOpenNotice={() => {
+                setNoticeHideToday(false);
+                setNoticeOpen(true);
+              }}
             />
           )}
           onLogout={handleLogout}

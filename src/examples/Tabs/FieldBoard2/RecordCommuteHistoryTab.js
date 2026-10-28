@@ -1027,7 +1027,7 @@ function RecordCommuteHistoryTab() {
         <MDTypography variant="button" color="text">
           거래처를 검색해서 업장을 선택하면 출퇴근 기록이 표시됩니다.
         </MDTypography>
-      ) : loading ? (
+      ) : loading || !searched ? (
         <MDTypography variant="button" color="text">
           불러오는 중...
         </MDTypography>

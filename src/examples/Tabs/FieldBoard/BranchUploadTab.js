@@ -39,7 +39,7 @@ import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { PhotoThumb, useFillViewportHeight } from "utils/HygieneCardBoard";
 import accountLabelSx from "utils/accountLabelSx";
 import PreviewOverlay from "utils/PreviewOverlay";
-import { LockedSwal as Swal, showSwalLoading, updateSwalLoading } from "utils/swalLoading";
+import { LockedSwal, showSwalLoading as showBaseSwalLoading, updateSwalLoading } from "utils/swalLoading";
 import useBranchUploadData, {
   WEEK_DAY_LABELS,
   FILE_KINDS,
@@ -56,6 +56,10 @@ import useBranchUploadData, {
 } from "./branchUploadData";
 // 등록 카드 자료 종류별 아이콘
 const KIND_ICON = { menu: ArticleOutlinedIcon, plate: RestaurantOutlinedIcon };
+
+// 이 화면 Swal 창: 뜰 때 html·body 높이를 auto로 바꾸지 않음 (heightAuto 기본값이 뒤쪽 화면을 들썩이게 함)
+const Swal = LockedSwal.mixin({ heightAuto: false });
+const showSwalLoading = (title, text) => showBaseSwalLoading(title, text, { heightAuto: false });
 
 // 위생점검 화면과 같은 색 구성 (강조: ERP info 파랑)
 const ACCENT = "#1A73E8";
@@ -186,7 +190,7 @@ function FileThumb({ value, width, height, onView }) {
           <doc.Icon sx={{ fontSize: Math.round(height * 0.5) }} />
         </div>
       ) : (
-        <PhotoThumb value={value} height={height} onView={() => onView && onView()} />
+        <PhotoThumb value={value} height={height} loadingText="···" onView={() => onView && onView()} />
       )}
     </div>
   );
@@ -674,14 +678,17 @@ function BranchUploadTab({ isHeadOffice }) {
   const rangeStart = weeks[0].start;
   const rangeEnd = weeks[weeks.length - 1].end;
 
-  // 선택 연월(주차 포함 기간)·거래처의 자료 목록 조회
+  // 선택 연월(주차 포함 기간)·거래처의 자료 목록 조회 (options.silent: 저장 후 표를 유지한 채 다시 조회)
   const fetchList = useCallback(
-    () =>
-      fetchBranchUploadList({
-        start_date: rangeStart,
-        end_date: rangeEnd,
-        account_id: selectedAccountId === ALL_ACCOUNTS ? "" : selectedAccountId,
-      }),
+    (options) =>
+      fetchBranchUploadList(
+        {
+          start_date: rangeStart,
+          end_date: rangeEnd,
+          account_id: selectedAccountId === ALL_ACCOUNTS ? "" : selectedAccountId,
+        },
+        options
+      ),
     [rangeStart, rangeEnd, selectedAccountId, fetchBranchUploadList]
   );
 
@@ -720,7 +727,7 @@ function BranchUploadTab({ isHeadOffice }) {
     showSwalLoading("업로드 중...");
     try {
       await saveBranchUpload(target, files);
-      await fetchList();
+      await fetchList({ silent: true });
       Swal.fire({ title: "저장 완료", icon: "success", timer: 900, showConfirmButton: false });
       return true;
     } catch (err) {
@@ -800,7 +807,7 @@ function BranchUploadTab({ isHeadOffice }) {
     showSwalLoading("업로드 중...");
     try {
       await saveWeekUpload(form);
-      await fetchList();
+      await fetchList({ silent: true });
       Swal.fire({ title: "저장 완료", icon: "success", timer: 900, showConfirmButton: false });
       return true;
     } catch (err) {
@@ -862,12 +869,11 @@ function BranchUploadTab({ isHeadOffice }) {
       }
     }
 
-    closeModal();
+    // 업로드 중에는 모달을 열어 둔 채 진행 창을 위에 띄우고, 저장이 끝나면 모달 닫기
+    // (모달 닫힘과 진행 창이 동시에 화면 스크롤 잠금을 바꾸면 뒤쪽 화면이 들썩임)
     const ok = await saveWeek(form);
-    if (!ok) {
-      setModal((m) => ({ ...m, open: true }));
-      return null;
-    }
+    if (!ok) return null;
+    closeModal();
     // 등록한 연월로 화면 조회 조건 이동
     setYear(form.year);
     setMonth(form.month);
@@ -1365,9 +1371,13 @@ function BranchUploadTab({ isHeadOffice }) {
       </div>
 
       {/* 급식자료 등록·수정 모달 */}
+      {/* disableEnforceFocus: 업로드 진행·결과 창(Swal)이 모달 위에서 포커스를 받도록 허용 */}
+      {/* disableRestoreFocus: 닫을 때 처음 누른 버튼으로 포커스·스크롤이 튀지 않게 함 */}
       <Dialog
         open={modal.open}
         onClose={closeModal}
+        disableEnforceFocus
+        disableRestoreFocus
         PaperProps={{ sx: { width: "100%", maxWidth: 760, m: 2, borderRadius: "16px" } }}
       >
         {/* 모달 상단 제목·설명·닫기 영역 */}

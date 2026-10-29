@@ -503,6 +503,8 @@ export default function ProfitLossTableTab() {
     // 1순위: 백엔드 upfront_monthly_deprec 합산
     // 2순위(개별 거래처): 연속 월 잔존가치 차이로 월 감가액 역산
     // 누적: 계약 시작 연도가 조회 연도 이전이면 이전 연도 감가액도 합산
+    // 합계 매입소계가 감가액 기준으로 재계산되었는지 여부(영업이익 비율 제외 월 계산에 사용)
+    let totalHasDeprec = false;
     {
       let sumDeprec = 0;
       let hasDeprec = false;
@@ -591,6 +593,7 @@ export default function ProfitLossTableTab() {
         }
       }
 
+      totalHasDeprec = hasDeprec;
       if (hasDeprec) {
         result.upfront_cost = sumDeprec;
         const purchaseBase = ["food_process", "dishwasher", "cesco", "water_puri",
@@ -667,6 +670,43 @@ export default function ProfitLossTableTab() {
       result.sales_total_ratio + result.payback_ratio -
       result.purchase_total_ratio - result.person_total_ratio - result.indirect_total_ratio
     ) * 100) / 100;
+
+    // 매출 미확정 월 판단: 매출은 다음 달 10일경 입력되므로 이번 달 이후와(10일 전이면) 지난달까지를 미확정으로 본다.
+    // 미확정 월이라도 영업이익 비율이 플러스면 매출이 들어온 것으로 보고 합계 비율에 포함한다.
+    const SALES_CONFIRM_DAY = 10;
+    const today = new Date();
+    const curYm = today.getFullYear() * 12 + today.getMonth();
+    const confirmedLastYm = today.getDate() < SALES_CONFIRM_DAY ? curYm - 2 : curYm - 1;
+    const excludedForRatio = rowsForTotal.filter((r) => {
+      const ym = Number(r.year ?? year) * 12 + (Number(r.month) - 1);
+      return ym > confirmedLastYm && !(Number(r.business_profit_ratio) > 0);
+    });
+
+    // 매출 미확정 월을 빼고 영업이익/총영업이익 합계 비율을 다시 계산하는 함수
+    // 합계 금액은 그대로 두고, 두 비율 계산에서만 해당 월 금액을 제외한다.
+    const calcRatioExcludingUnconfirmed = (ratioKey, withPayback) => {
+      const excluded = excludedForRatio;
+      if (excluded.length === 0) return result[ratioKey];
+
+      const sumOf = (getter) => excluded.reduce((s, r) => s + (Number(getter(r)) || 0), 0);
+      // 합계 매입소계가 감가액 기준으로 재계산된 경우, 제외 월도 같은 기준(항목 합 + 월 감가액)으로 뺀다.
+      const purchaseOf = (r) => totalHasDeprec
+        ? ["food_process", "dishwasher", "cesco", "water_puri",
+          "food_cost", "event_cost", "not_budget_cost", "etc_cost"]
+          .reduce((s, f) => s + (Number(r[f]) || 0), 0) + (Number(r.upfront_monthly_deprec) || 0)
+        : r.purchase_total;
+
+      const s = st - sumOf((r) => r.sales_total);
+      const ratio =
+        rnd(s, s) -
+        rnd((result.purchase_total || 0) - sumOf(purchaseOf), s) -
+        rnd((result.person_total || 0) - sumOf((r) => r.person_total), s) -
+        rnd((result.indirect_total || 0) - sumOf((r) => r.indirect_total), s) +
+        (withPayback ? rndFull((result.payback_price || 0) - sumOf((r) => r.payback_price), s) : 0);
+      return Math.round(ratio * 100) / 100;
+    };
+    result.business_profit_ratio = calcRatioExcludingUnconfirmed("business_profit_ratio", false);
+    result.total_business_profit_ratio = calcRatioExcludingUnconfirmed("total_business_profit_ratio", true);
 
     return result;
   }, [editRows, selectedAccountId, accountList, year]);

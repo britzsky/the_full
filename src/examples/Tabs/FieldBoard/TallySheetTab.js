@@ -2573,7 +2573,14 @@ function TallySheet() {
     const beforeList = changedBefore.map((r) => ({ ...r, user_id: localUserId }));
 
     try {
-      const payload = { user_id: localUserId, nowList: nowList, beforeList: beforeList };
+      // close_check_year/month: 서버 시각 기준 말일 23시 마감 검사에 쓰는 화면 기준 연월 (현장 화면에서만 전달)
+      const payload = {
+        user_id: localUserId,
+        nowList: nowList,
+        beforeList: beforeList,
+        close_check_year: year,
+        close_check_month: month,
+      };
       const res = await api.post("/Operate/TallySheetSave", payload);
 
       if (res.data?.code === 200) {

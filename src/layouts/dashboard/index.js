@@ -461,10 +461,11 @@ const INTERNAL_ROUTES = {
   운영: [
     { name: "📅 일정관리", route: "/operateschedule" },
     { name: "📑 예산", route: "/budget/budgetManager" },
+    { name: "🧾 거래처 집계표", route: "/budget/vendorTallySheet" },
     { name: "🧑‍🔧 현장관리", route: "/fieldstaff" },
-    { name: "🧑‍🔧 채용관리", route: "/fieldstaff2" },
     { name: "📁 고객사 관리", route: "/Operate/OperateTabs" },
     { name: "📋 고객사 소통", route: "/Operate/accountissuesheet2" },
+    { name: "🍽️ 메뉴/레시피 관리", route: "/Operate/MenuRecipe" },
   ],
   회계: [
     { name: "💳 거래처 자료 입력", route: "/purchaseDeadLineTally/purchasetally" },
@@ -476,13 +477,16 @@ const INTERNAL_ROUTES = {
   ],
   인사: [
     { name: "🧑‍🔧 현장관리", route: "/fieldstaff_1" },
+    { name: "🧑‍🔧 채용관리", route: "/fieldstaff2" },
     { name: "📚 본사 교육", route: "/humanresource/education" },
     { name: "📊 평가", route: "/humanresource/evaluation" },
   ],
   현장: [
     { name: "📋 집계표", route: "/layouts/tallysheet" },
     { name: "📅 출근부", route: "/layouts/recordsheet" },
+    { name: "📍 출·퇴근 관리", route: "/FieldBoardTabs_2" },
     { name: "🍽️ 식수현황", route: "/diners/dinersnumber" },
+    { name: "📤 지점업로드", route: "/layouts/branchupload" },
     { name: "📋 집계표-개발팀", route: "/layouts/tallysheet_develop" },
   ],
 };
@@ -1626,7 +1630,7 @@ function Dashboard() {
 
           {/* ✅ 본사 식단표: WeekMenuManager 로 연결된 라우트 경로로 이동 */}
           <Grid item xs={12} md={6} lg={3}>
-            <HeaderCard title="본사 식단표" onClick={() => navigate("/weekmenu")}> {/* ✅ routes.js에서 WeekMenuManager path와 동일하게 */}
+            <HeaderCard title="본사 식단표" onClick={() => navigate("/headoffice/management")}> {/* 본사 관리 화면의 첫 탭(본사 식단표)으로 이동 */}
               <ListLines items={meals} emptyText="식단표가 없습니다." />
             </HeaderCard>
           </Grid>

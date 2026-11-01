@@ -1,5 +1,5 @@
 // 구매요청서 작성 탭 (현장 영양사 → 전자결재 FP/FR 타입 상신)
-// - 구분: 온라인구매(FP, 결재 후 구매) / 개인구매(FR, 결재 후 구매하고 요청내역에서 구매일자·영수증 후첨 → 개인구매 관리 반영)
+// - 구분: 온라인구매(FP, 결재 후 구매) / 개인구매(FR, 1차 결재 후 요청내역에서 구매일자·영수증 후첨 → 2차 결재 시 집계표·개인구매 관리 반영)
 // - 소모품 구매 품의서(ExpendableWriteDocumentForm)와 동일한 포맷 사용
 // - 헤더: 거래처/작성자/기안일자/시행일자/문서번호
 // - 바디: 품목 내역과 요청 사유
@@ -200,7 +200,7 @@ export default function PurchaseRequestTab({ isActive, openHistoryPaymentId, ope
     setPurchaseType(nextType);
   }, []);
 
-  // 개인구매일 때 품목 표의 링크 칸 대신 그리는 영수증 칸 - 구매일자·영수증은 최종 결재 후 요청내역에서 첨부한다.
+  // 개인구매일 때 품목 표의 링크 칸 대신 그리는 영수증 칸 - 구매일자·영수증은 1차 결재 후 요청내역에서 첨부한다.
   const renderReceiptCell = useCallback(() => (
     <MDBox sx={{ textAlign: "center", fontSize: 11, color: "#7b809a" }}>영수증 후첨 필수</MDBox>
   ), []);
@@ -771,7 +771,7 @@ LinkClampText.propTypes = {
 };
 
 // 선택한 구매요청서의 품목과 요청 사유를 표시한다.
-// - 개인구매(FR)는 최종 결재 후 품목별 구매일자·영수증을 후첨 저장하고, 저장된 품목은 수정할 수 없다.
+// - 개인구매(FR)는 1차 결재 후 품목별 구매일자·영수증을 후첨 저장하고, 저장된 품목은 수정할 수 없다.
 function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload }) {
   const mainRow = detail?.main || {};
   // 결재자가 배정된 단계는 전부 노출 (FP는 보통 1차/2차만 사용)
@@ -786,8 +786,11 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
   const isPersonalPurchaseDetail =
     String(mainRow?.doc_type || detail?.payment_id || "").trim().toUpperCase().startsWith(FR_DOC_TYPE);
   const items = Array.isArray(detail?.items) ? detail.items : [];
-  // 최종 결재(status 4)가 끝난 개인구매 문서만 구매일자·영수증 후첨 가능
-  const canAttachReceipt = isPersonalPurchaseDetail && String(mainRow?.status ?? "") === "4";
+  // 문서 결재 상태 (4: 최종 결재, 3: 반려)
+  const docStatus = String(mainRow?.status ?? "");
+  // 1차 결재가 끝나고 반려되지 않은 개인구매 문서만 구매일자·영수증 후첨 가능 (이미 최종 결재된 문서 포함)
+  const canAttachReceipt = isPersonalPurchaseDetail
+    && (docStatus === "4" || (String(mainRow?.tm_sign ?? "") === "4" && docStatus !== "3"));
   // 후첨 입력 중인 품목별 구매일자·영수증 (key: 품목 idx, value: { saleDate, file, previewUrl })
   const [receiptDraftByIdx, setReceiptDraftByIdx] = useState({});
   const receiptDraftRef = useRef(receiptDraftByIdx);
@@ -845,7 +848,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
     .map((row, index) => ({ row, no: index + 1 }))
     .filter(({ row }) => !getHistoryItemValue(row, "sale_id"));
 
-  // 반영 안 된 품목 전체의 구매일자·영수증을 한 번에 저장하고 개인구매 관리에 반영한다. 저장 후에는 수정할 수 없다.
+  // 후첨 안 된 품목 전체의 구매일자·영수증을 한 번에 저장한다. 저장 후에는 수정할 수 없고 2차 결재 시 개인구매 관리에 반영된다.
   // - 하나라도 구매일자/영수증이 빠져 있으면 몇 번 품목에 무엇이 없는지 안내하고 저장하지 않는다.
   const handleSaveAllReceipts = async () => {
     const missingLines = pendingReceiptRows
@@ -1097,11 +1100,13 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                       ) : "-"}
                     </td>
                     <td style={historyTdCell}>{getHistoryItemValue(row, "note") || "-"}</td>
-                    {/* 개인구매 반영 영역 - 전체 품목에 걸친 칸 하나에 반영 완료 배지 또는 일괄 저장 버튼 */}
+                    {/* 개인구매 반영 영역 - 전체 품목에 걸친 칸 하나에 후첨/반영 상태 배지 또는 일괄 저장 버튼 */}
                     {isPersonalPurchaseDetail && index === 0 && (
                       <td style={historyTdCell} rowSpan={items.length}>
                         {pendingReceiptRows.length === 0 ? (
-                          <MDBox component="span" sx={getDecisionYnBadgeSx("Y")}>반영완료</MDBox>
+                          <MDBox component="span" sx={getDecisionYnBadgeSx("Y")}>
+                            {docStatus === "4" ? "반영완료" : "후첨완료"}
+                          </MDBox>
                         ) : canAttachReceipt ? (
                           <MDButton
                             variant="gradient"

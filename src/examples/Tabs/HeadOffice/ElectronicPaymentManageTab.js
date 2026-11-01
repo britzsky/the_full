@@ -23,7 +23,7 @@ const EXPENDABLE_SPECIAL_USER_ID = "iy1";
 // 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID
 // - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자는 실제 구매완료 여부(구매여부)만 체크한다.
 const FP_BUY_YN_USER_ID = "sh9";
-// 현장 구매요청서 문서타입 - FP: 온라인구매, FR: 개인구매(결재 후 구매일자·영수증 후첨)
+// 현장 구매요청서 문서타입 - FP: 온라인구매, FR: 개인구매(1차 결재 후 구매일자·영수증 후첨, 2차 결재 시 집계표 반영)
 // - 두 타입 모두 거래처 매핑 관리자(1차) → 같은 부서 팀장(2차) 결재 흐름을 사용한다.
 const FIELD_PURCHASE_DOC_TYPES = ["FP", "FR"];
 const EXPENDABLE_LINKED_PAYMENT_DOC_META = Object.freeze({
@@ -381,6 +381,9 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   // 검색: 상신자/부서(거래처) 통합 검색어, 문서타입 드롭다운 필터
   const [searchKeyword, setSearchKeyword] = useState("");
   const [docTypeFilter, setDocTypeFilter] = useState("all");
+  // 기안일자 기준 연도/월 필터 (all: 전체)
+  const [yearFilter, setYearFilter] = useState("all");
+  const [monthFilter, setMonthFilter] = useState("all");
   // 목록 페이징: 남는 공간/빈 화면 없이 카드 안에 딱 맞는 행 수를 실측해서 페이지당 건수로 사용
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -488,9 +491,23 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     [detailMain?.doc_type, docTypeList, detailItems]
   );
 
-  // 목록 상태 필터 + 문서타입 필터 + 상신자/부서(거래처) 통합 검색 + 기안일자 내림차순 정렬 적용
+  // 연도 필터 선택지: 조회된 문서의 기안연도 목록 (최신 연도 우선)
+  const yearOptions = useMemo(() => {
+    const years = (Array.isArray(rows) ? rows : [])
+      .map((row) => asText(row?.draft_dt).slice(0, 4))
+      .filter(Boolean);
+    return [...new Set(years)].sort().reverse();
+  }, [rows]);
+
+  // 연월 필터 + 목록 상태 필터 + 문서타입 필터 + 상신자/부서(거래처) 통합 검색 + 기안일자 내림차순 정렬 적용
   const filteredRows = useMemo(() => {
-    const source = Array.isArray(rows) ? rows : [];
+    const source = (Array.isArray(rows) ? rows : []).filter((row) => {
+      const draftDt = asText(row?.draft_dt);
+      return (
+        (yearFilter === "all" || draftDt.slice(0, 4) === yearFilter) &&
+        (monthFilter === "all" || draftDt.slice(5, 7) === monthFilter)
+      );
+    });
     const byStatus =
       listStatusFilter === "all"
         ? source
@@ -520,12 +537,12 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       if (dtB < dtA) return -1;
       return String(b?.payment_id || "").localeCompare(String(a?.payment_id || ""));
     });
-  }, [rows, listStatusFilter, docTypeFilter, searchKeyword, docTypeList, getUserLabel]);
+  }, [rows, yearFilter, monthFilter, listStatusFilter, docTypeFilter, searchKeyword, docTypeList, getUserLabel]);
 
   // 필터/페이지당 행 수 변경 시 1페이지로 복귀
   useEffect(() => {
     setPage(1);
-  }, [listStatusFilter, docTypeFilter, searchKeyword, rowsPerPage]);
+  }, [yearFilter, monthFilter, listStatusFilter, docTypeFilter, searchKeyword, rowsPerPage]);
 
   // 페이징 적용된 목록 행 (usermanagement.js 페이징 UI와 동일한 방식)
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
@@ -968,8 +985,9 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
       comment: actionComment,
     });
 
-    // 개인구매 거래처에 개인구매 연결이 없어 결재가 취소된 경우 안내
+    // 개인구매 2차 결재가 취소된 경우(개인구매 연결 없음, 영수증 미첨부, 반영 오류) 안내 후 도장을 대기 상태로 되돌린다.
     if (ok?.message) {
+      setActionStatus("");
       Swal.fire({ title: "결재 불가", text: ok.message, icon: "warning" });
       return;
     }
@@ -1028,6 +1046,37 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
             onChange={(e) => setSearchKeyword(e.target.value)}
             sx={{ minWidth: isMobile ? 140 : 190 }}
           />
+          {/* 기안일자 기준 연도/월 필터 영역 */}
+          <TextField
+            select
+            size="small"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            SelectProps={{ native: true }}
+            sx={{ minWidth: isMobile ? 90 : 100 }}
+          >
+            <option value="all">연도 전체</option>
+            {yearOptions.map((year) => (
+              <option key={year} value={year}>
+                {year}년
+              </option>
+            ))}
+          </TextField>
+          <TextField
+            select
+            size="small"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            SelectProps={{ native: true }}
+            sx={{ minWidth: isMobile ? 84 : 90 }}
+          >
+            <option value="all">월 전체</option>
+            {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((month) => (
+              <option key={month} value={month}>
+                {Number(month)}월
+              </option>
+            ))}
+          </TextField>
           <TextField
             select
             size="small"

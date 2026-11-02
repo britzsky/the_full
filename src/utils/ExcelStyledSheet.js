@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import * as XLSX from "xlsx";
 import { Minus, Plus } from "lucide-react";
 
@@ -266,10 +267,47 @@ function buildPlainSheet(ws) {
   return { cols, rows, images: [], truncated: range.e.r + 1 > MAX_ROWS || range.e.c + 1 > MAX_COLS };
 }
 
-// 파일 Blob을 읽어 시트별 그리기 모델 목록으로 변환 (xlsx: 서식·그림 포함, 실패 시 값만)
+// 한셀이 저장한 xlsx의 태그 접두사(<x:workbook>, <ep:Properties>)를 지워 일반 xlsx로 변환 (zip이 아니거나 접두사가 없으면 null)
+export async function stripSheetTagPrefix(buffer) {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    const names = Object.keys(zip.files).filter((name) => /^(xl|docProps)\/.*\.xml$/i.test(name));
+    const parts = await Promise.all(names.map(async (name) => [name, await zip.file(name).async("string")]));
+    const prefixed = parts.filter(([, xml]) => /<(x|ep):/.test(xml));
+    if (!prefixed.length) return null;
+    // 한셀은 서식을 Choice/Fallback으로 이중 저장해 스타일 번호가 밀리므로 표준 서식(Fallback)만 남긴다
+    // SheetJS가 오류를 내는 한셀 전용 글자 서식 태그(<hs:size/>)도 함께 지운다
+    prefixed.forEach(([name, xml]) =>
+      zip.file(
+        name,
+        xml
+          .replace(/<mc:AlternateContent\b[^>]*>(?:(?!<\/mc:AlternateContent>)[\s\S])*?<mc:Fallback>([\s\S]*?)<\/mc:Fallback><\/mc:AlternateContent>/g, "$1")
+          .replace(/<(\/?)(?:x|ep):/g, "<$1")
+          .replace(/\bxmlns:(?:x|ep)=/g, "xmlns=")
+          .replace(/<hs:[^>]*\/>/g, "")
+      )
+    );
+    return await zip.generateAsync({ type: "arraybuffer" });
+  } catch {
+    return null;
+  }
+}
+
+// 파일 Blob을 읽어 시트별 그리기 모델 목록으로 변환 (xlsx: 서식·그림 포함, 한셀 저장 파일은 접두사 제거 후 재시도, 실패 시 값만)
 // 반환: { sheets, urls: 만든 그림 blob URL 목록 (화면을 닫을 때 해제) }
 async function loadSheets(blob) {
   const buffer = await blob.arrayBuffer();
+  const styled = await readStyledSheets(buffer);
+  if (styled) return styled;
+  const stripped = await stripSheetTagPrefix(buffer);
+  const retried = stripped && (await readStyledSheets(stripped));
+  if (retried) return retried;
+  const workbook = XLSX.read(stripped || buffer, { type: "array" });
+  return { sheets: workbook.SheetNames.map((name) => ({ name, styled: false, ...buildPlainSheet(workbook.Sheets[name]) })), urls: [] };
+}
+
+// ExcelJS로 서식·그림까지 읽는 함수 (읽을 수 없는 형식이거나 시트가 없으면 null)
+async function readStyledSheets(buffer) {
   const urls = [];
   try {
     const workbook = new ExcelJS.Workbook();
@@ -290,12 +328,10 @@ async function loadSheets(blob) {
       .map((ws) => ({ name: ws.name, styled: true, ...buildStyledSheet(ws, theme, imageUrlOf) }));
     if (sheets.length) return { sheets, urls };
   } catch {
-    // ExcelJS가 못 읽는 형식(.xls 등)은 아래 SheetJS 경로로 처리
+    // ExcelJS가 못 읽는 형식(.xls 등)은 loadSheets의 다음 경로로 처리
     urls.forEach((u) => URL.revokeObjectURL(u));
-    urls.length = 0;
   }
-  const workbook = XLSX.read(buffer, { type: "array" });
-  return { sheets: workbook.SheetNames.map((name) => ({ name, styled: false, ...buildPlainSheet(workbook.Sheets[name]) })), urls };
+  return null;
 }
 
 // 미리보기 상단 도구 버튼 스타일

@@ -8,7 +8,7 @@ import * as XLSX from "xlsx";
 import MDBox from "components/MDBox";
 import api from "api/api";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
-import ExcelStyledSheet from "utils/ExcelStyledSheet";
+import ExcelStyledSheet, { stripSheetTagPrefix } from "utils/ExcelStyledSheet";
 
 // 파일 종류별 미리보기 창 비율을 계산한다.
 function getViewerFrameRatio(isMobile, fileKind) {
@@ -131,9 +131,12 @@ async function fetchPreviewBlob(url) {
     }
 
     try {
+      // API_BASE_URL이 이미 붙은 주소는 axios가 baseURL을 또 붙이지 않게 비운다 (/api/api 방지)
+      const hasApiBase = candidateUrl.startsWith(`${api.defaults.baseURL}/`);
       const response = await api.get(candidateUrl, {
         responseType: "blob",
         withCredentials: true,
+        ...(hasApiBase ? { baseURL: "" } : {}),
       });
       const responseBlob = response?.data;
       if (responseBlob instanceof Blob && responseBlob.size > 0) {
@@ -223,10 +226,11 @@ function PreviewOverlay({
     const queryIndex = rawUrl.indexOf("?");
     const pathPart = queryIndex >= 0 ? rawUrl.slice(0, queryIndex) : rawUrl;
     const queryPart = queryIndex >= 0 ? rawUrl.slice(queryIndex) : "";
+    // encodeURI가 남겨두는 파일명의 #은 주소가 잘리지 않게 따로 인코딩한다.
     try {
-      return `${encodeURI(decodeUriRepeatedly(pathPart))}${queryPart}`;
+      return `${encodeURI(decodeUriRepeatedly(pathPart)).replace(/#/g, "%23")}${queryPart}`;
     } catch {
-      return `${encodeURI(pathPart)}${queryPart}`;
+      return `${encodeURI(pathPart).replace(/#/g, "%23")}${queryPart}`;
     }
   }, [currentFile?.url]);
   // 창 크기 계산용 파일 종류 (서식 엑셀 미리보기는 별도 크기)
@@ -519,7 +523,9 @@ function PreviewOverlay({
       setExcelPreview({ loading: true, sheetName: "", rows: [], error: "" });
       try {
         const previewBlob = await fetchPreviewBlob(currentFileViewUrl);
-        const buffer = await previewBlob.arrayBuffer();
+        const rawBuffer = await previewBlob.arrayBuffer();
+        // 한셀이 저장한 xlsx는 태그 접두사를 지운 뒤 읽는다
+        const buffer = (await stripSheetTagPrefix(rawBuffer)) || rawBuffer;
         if (cancelled) return;
 
         const workbook = XLSX.read(buffer, { type: "array" });

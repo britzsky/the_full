@@ -14,7 +14,7 @@ const DAILY_MEAL_TYPE = "일일";
 const WEEK_DAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 // 업로드 자료 종류 (key: 서버 컬럼 접두어, label: 화면 표시명, hint·accept: 등록 카드 안내·허용 형식)
 const FILE_KINDS = [
-  { key: "menu", label: "식단표", hint: "주 1장 · 엑셀 · PDF · 사진 파일", accept: "image/*,application/pdf,.xlsx,.xls" },
+  { key: "menu", label: "식단표", hint: "주 1장 · 엑셀 · PDF · 사진 파일", accept: "image/*,application/pdf,.xlsx,.xls,.cell" },
   { key: "plate", label: "식판 사진", hint: "매일 1장 · 사진 파일", accept: "image/*" },
 ];
 // 거래처 선택칸의 전체 거래처 값
@@ -57,7 +57,8 @@ const fileOf = (row, kind) =>
     ? { path: row[`${kind}_file_path`], name: row[`${kind}_file_name`] || "", regDt: row[`${kind}_reg_dt`] || "" }
     : null;
 const isPdf = (path) => /\.pdf$/i.test(path || "");
-const isExcel = (path) => /\.xlsx?$/i.test(path || "");
+// 엑셀 파일 여부 (한셀 .cell은 xlsx와 같은 구조라 엑셀로 취급)
+const isExcel = (path) => /\.(xlsx?|cell)$/i.test(path || "");
 // 미리보기 종류 (PreviewOverlay kind: pdf | excel | image, value: 서버 경로 또는 새로 고른 File)
 const previewKindOf = (value) => {
   const name = typeof value === "string" ? value : value?.name;

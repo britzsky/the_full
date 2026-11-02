@@ -4376,6 +4376,7 @@ function TallySheet() {
                   used={usedForTab}
                   suppliesBudget={suppliesBudgetForTab}
                   suppliesUsed={suppliesUsedForTab}
+                  monthText={`${String(tabValue === 1 ? prevMonth : month).padStart(2, "0")}월`}
                 />
               </Box>
 

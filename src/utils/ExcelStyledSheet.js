@@ -293,10 +293,35 @@ export async function stripSheetTagPrefix(buffer) {
   }
 }
 
+// 글꼴 꺼짐 표시(<strike val="0"/>, <u val="none"/> 등)를 지운 xlsx로 변환 (해당 태그가 없거나 zip이 아니면 null)
+// ExcelJS는 값과 상관없이 태그만 있으면 굵게·기울임·취소선을 켜진 것으로 읽어서 미리 지운다
+async function dropFalseFontFlags(buffer) {
+  try {
+    const zip = await JSZip.loadAsync(buffer);
+    let changed = false;
+    await Promise.all(
+      ["xl/styles.xml", "xl/sharedStrings.xml"]
+        .filter((name) => zip.file(name))
+        .map(async (name) => {
+          const xml = await zip.file(name).async("string");
+          const next = xml.replace(/<(?:b|i|strike|outline|shadow|condense|extend)\s+val="(?:0|false)"\s*\/>|<u\s+val="none"\s*\/>/g, "");
+          if (next !== xml) {
+            zip.file(name, next);
+            changed = true;
+          }
+        })
+    );
+    return changed ? await zip.generateAsync({ type: "arraybuffer" }) : null;
+  } catch {
+    return null;
+  }
+}
+
 // 파일 Blob을 읽어 시트별 그리기 모델 목록으로 변환 (xlsx: 서식·그림 포함, 한셀 저장 파일은 접두사 제거 후 재시도, 실패 시 값만)
 // 반환: { sheets, urls: 만든 그림 blob URL 목록 (화면을 닫을 때 해제) }
 async function loadSheets(blob) {
-  const buffer = await blob.arrayBuffer();
+  const original = await blob.arrayBuffer();
+  const buffer = (await dropFalseFontFlags(original)) || original;
   const styled = await readStyledSheets(buffer);
   if (styled) return styled;
   const stripped = await stripSheetTagPrefix(buffer);

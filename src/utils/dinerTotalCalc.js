@@ -362,6 +362,7 @@ const SPECIAL_LAYOUT_IDS = [
   "20250819193630",
   "20250819193610",
   "20260415190758",
+  "20260831133722",
 ];
 
 // 식수현황 화면의 numericCols와 동일
@@ -490,6 +491,17 @@ const getDinerVisibleColumns = (accountId, isDaycareVisible, extraDietCols, acco
       "daycare_lunch", "daycare_diner",
       "daycare_employ_lunch", "daycare_employ_dinner",
       "employ_breakfast", "employ_lunch", "employ_dinner",
+      "total", "note", "breakcancel", "lunchcancel", "dinnercancel",
+    ];
+  }
+
+  // 어르신사랑(원주): 주간보호(어르신/직원) 조·중·석 포함
+  if (accountId === "20260831133722") {
+    return [
+      "breakfast", "lunch", "dinner", "ceremony",
+      "daycare_breakfast", "daycare_lunch", "daycare_diner",
+      "daycare_employ_breakfast", "daycare_employ_lunch", "daycare_employ_dinner",
+      ...employeeMealColumns,
       "total", "note", "breakcancel", "lunchcancel", "dinnercancel",
     ];
   }

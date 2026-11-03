@@ -41,6 +41,7 @@ const SPECIAL_LAYOUT_IDS = [
   "20250819193630",
   "20250819193610",
   "20260415190758",
+  "20260831133722",
 ];
 
 // 🔹 숫자 컬럼 목록
@@ -405,6 +406,48 @@ const getTableStructure = (
         "employ_breakfast",
         "employ_lunch",
         "employ_dinner",
+        "total",
+        "note",
+        "breakcancel",
+        "lunchcancel",
+        "dinnercancel",
+      ],
+    };
+  }
+
+  // 어르신사랑(원주): 요양원 + 주간보호(어르신/직원) 조·중·석 + 직원 조·중·석
+  if (selectedAccountId === "20260831133722") {
+    return {
+      headerRows: [
+        [
+          { label: "구분", rowSpan: 2 },
+          { label: "조식", rowSpan: 2 },
+          { label: "중식", rowSpan: 2 },
+          { label: "석식", rowSpan: 2 },
+          { label: "경관식", rowSpan: 2 },
+          { label: "주간보호(어르신)", colSpan: 3 },
+          { label: "주간보호(직원)", colSpan: 3 },
+          { label: "직원", colSpan: 3 },
+          { label: "계", rowSpan: 2 },
+          { label: "비고", rowSpan: 2 },
+          { label: "조식취소", rowSpan: 2 },
+          { label: "중식취소", rowSpan: 2 },
+          { label: "석식취소", rowSpan: 2 },
+        ],
+        [...employeeMealHeaders, ...employeeMealHeaders, ...employeeMealHeaders],
+      ],
+      visibleColumns: [
+        "breakfast",
+        "lunch",
+        "dinner",
+        "ceremony",
+        "daycare_breakfast",
+        "daycare_lunch",
+        "daycare_diner",
+        "daycare_employ_breakfast",
+        "daycare_employ_lunch",
+        "daycare_employ_dinner",
+        ...employeeMealColumns,
         "total",
         "note",
         "breakcancel",

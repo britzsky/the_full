@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import dayjs from "dayjs";
 import api from "api/api";
 import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
-import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import { buildFileDownloadUrl, isFileDownloadErrorResponse } from "utils/fileDownloadUrl";
 import { compressImageFile } from "utils/HygieneCardBoard";
 
 // 하루 1행 저장 시 쓰는 구분 값 (UNIQUE 키: 거래처+일자+구분)
@@ -93,19 +93,36 @@ const groupWeekRows = (rows, weeks, accountIds = [], accountNames = {}) => {
 // 주차 묶음에 포함된 실제 행 목록 (다운로드 대상)
 const weekRowsOf = (item) => item.week.dates.map((date) => item.dayRows[date]).filter(Boolean);
 
+// 파일이 선택칸 허용 형식(accept: "image/*,.xlsx,application/pdf" 형식)에 맞는지 확인
+// 드래그로 놓거나 선택창에서 "모든 파일"로 고른 파일은 accept가 적용되지 않아 직접 확인
+const matchesAccept = (file, accept) =>
+  String(accept || "")
+    .split(",")
+    .map((rule) => rule.trim().toLowerCase())
+    .some((rule) => {
+      const name = String(file?.name || "").toLowerCase();
+      const type = String(file?.type || "").toLowerCase();
+      if (rule.startsWith(".")) return name.endsWith(rule);
+      if (rule.endsWith("/*")) return type.startsWith(rule.slice(0, -1));
+      return type === rule;
+    });
+
+// 압축 파일 안 폴더·파일명에 쓸 수 없는 문자(\ / : * ? " < > |)를 _로 바꾼 거래처명
+const safeAccountName = (row) => String(row.account_name || row.account_id).replace(/[\\/:*?"<>|]/g, "_");
+
 // 다운로드 파일명 (식단표: 거래처_주시작일_주간식단표, 식판 사진: 거래처_일자_식판사진)
 const buildFileName = (row, kind) => {
   const { path } = fileOf(row, kind);
   const ext = path.includes(".") ? path.split(".").pop() : "file";
   const label = kind === "menu" ? "주간식단표" : "식판사진";
-  return `${row.account_name || row.account_id}_${row.meal_date}_${label}.${ext}`;
+  return `${safeAccountName(row)}_${row.meal_date}_${label}.${ext}`;
 };
 
 // 서버 파일을 Blob으로 받아오는 함수 (ZIP 묶음용, 오류 응답이면 예외)
 const fetchFileBlob = async (path) => {
   const res = await fetch(buildFileDownloadUrl(path), { credentials: "include" });
-  const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-  if (!res.ok || contentType.includes("xml") || contentType.includes("html") || contentType.includes("json")) {
+  // 엑셀(…spreadsheetml.sheet)도 형식명에 xml이 들어가므로 오류 응답 형식만 정확히 걸러냄
+  if (isFileDownloadErrorResponse(res)) {
     throw new Error("파일을 불러오지 못했습니다.");
   }
   return res.blob();
@@ -257,4 +274,6 @@ export {
   weekRowsOf,
   buildFileName,
   fetchFileBlob,
+  matchesAccept,
+  safeAccountName,
 };

@@ -422,7 +422,8 @@ function AccountReceiptTab() {
     const res = await fetch(downloadUrl, { credentials: "include" });
     if (!res.ok) throw new Error(`영수증 파일 요청 실패 (${res.status})`);
     const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-    if (contentType.includes("xml") || contentType.includes("html") || contentType.includes("json")) {
+    // 오류 응답 형식만 거름 (엑셀 형식명 …spreadsheetml.sheet에도 xml이 들어 있어 단순 xml 검사 금지)
+    if (/^(application\/xml|text\/xml|text\/html|application\/json)/.test(contentType)) {
       throw new Error(`파일 대신 오류 응답을 받았습니다. (${contentType || "unknown"})`);
     }
     const blob = await res.blob();

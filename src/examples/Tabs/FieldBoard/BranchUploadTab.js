@@ -35,7 +35,6 @@ import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import { API_BASE_URL } from "config";
-import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { PhotoThumb, useFillViewportHeight } from "utils/HygieneCardBoard";
 import accountLabelSx from "utils/accountLabelSx";
 import PreviewOverlay from "utils/PreviewOverlay";
@@ -53,6 +52,8 @@ import useBranchUploadData, {
   weekRowsOf,
   buildFileName,
   fetchFileBlob,
+  matchesAccept,
+  safeAccountName,
 } from "./branchUploadData";
 // 등록 카드 자료 종류별 아이콘
 const KIND_ICON = { menu: ArticleOutlinedIcon, plate: RestaurantOutlinedIcon };
@@ -272,6 +273,11 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
   const current = file || (!deleted && existing?.path);
   // 카드 안 작은 버튼 스타일 (다운로드·삭제·되돌리기)
   const miniButton = { ...chipStyle(false), height: 24, padding: "0 8px", fontSize: 11 };
+  // 고르거나 끌어다 놓은 파일이 이 칸의 허용 형식이면 선택, 아니면 안내
+  const pick = (picked) => {
+    if (matchesAccept(picked, accept)) onSelect(picked);
+    else Swal.fire("올릴 수 없는 파일입니다.", `${label}에는 ${hint.replace(/^.*?· /, "")}만 올릴 수 있습니다.`, "warning");
+  };
 
   return (
     <div
@@ -285,7 +291,7 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
         e.preventDefault();
         setDragOver(false);
         const dropped = e.dataTransfer.files?.[0];
-        if (dropped) onSelect(dropped);
+        if (dropped) pick(dropped);
       }}
       style={{
         minHeight: compact ? 118 : 168,
@@ -399,7 +405,7 @@ function FileDropCard({ index, kind, file, existing, onSelect, onView, onDownloa
         onChange={(e) => {
           const picked = e.target.files?.[0];
           e.target.value = "";
-          if (picked) onSelect(picked);
+          if (picked) pick(picked);
         }}
       />
     </div>
@@ -749,7 +755,25 @@ function BranchUploadTab({ isHeadOffice }) {
   const handlePickedFile = (e) => {
     const file = e.target.files?.[0];
     const picked = pickTargetRef.current;
-    if (file && picked) saveUpload(picked.target, { [picked.kind]: file });
+    if (!file || !picked) return;
+    const kind = FILE_KINDS.find((k) => k.key === picked.kind);
+    if (!matchesAccept(file, kind.accept)) {
+      Swal.fire("올릴 수 없는 파일입니다.", `${kind.label}에는 ${kind.hint.replace(/^.*?· /, "")}만 올릴 수 있습니다.`, "warning");
+      return;
+    }
+    saveUpload(picked.target, { [picked.kind]: file });
+  };
+
+  // 등록된 파일 1개를 화면 규칙 파일명(거래처_일자_자료명)으로 내려받는 함수
+  // 서버 주소로 바로 받으면 서버가 정한 저장 파일명(UUID_원본명)이 우선 적용되므로 Blob으로 받아 이름을 붙임
+  const downloadOne = async (row, kind) => {
+    try {
+      const url = URL.createObjectURL(await fetchFileBlob(fileOf(row, kind).path));
+      triggerDownload(url, buildFileName(row, kind));
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      Swal.fire("다운로드 실패", "파일을 받지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
+    }
   };
 
   // 등록 모달 열기 (연월은 화면 조회 연월, 주차는 선택 주차 → 오늘이 속한 주차 → 첫 주차 순, 거래처는 현재 선택 거래처)
@@ -949,7 +973,7 @@ function BranchUploadTab({ isHeadOffice }) {
       return;
     }
 
-    showSwalLoading("사진 받는 중...", `0 / ${jobs.length}개 파일`);
+    showSwalLoading("파일 받는 중...", `0 / ${jobs.length}개 파일`);
     const zip = new JSZip();
     let failed = 0;
     let done = 0;
@@ -958,7 +982,7 @@ function BranchUploadTab({ isHeadOffice }) {
       try {
         // 자료 종류별 폴더 (전체 거래처 묶음이면 거래처 폴더 아래에 나눔)
         const kindFolder = `${FILE_KINDS.find((k) => k.key === kind).label.replace(" ", "")}/`;
-        const folder = byAccountFolder ? `${row.account_name || row.account_id}/${kindFolder}` : kindFolder;
+        const folder = byAccountFolder ? `${safeAccountName(row)}/${kindFolder}` : kindFolder;
         // eslint-disable-next-line no-await-in-loop
         zip.file(`${folder}${buildFileName(row, kind)}`, await fetchFileBlob(fileOf(row, kind).path));
       } catch (err) {
@@ -1500,15 +1524,7 @@ function BranchUploadTab({ isHeadOffice }) {
             deleted={!!form.deleteMenu}
             onDelete={isEdit && fileOf(modal.item.menuRow, "menu") ? (on) => setFormValue("deleteMenu", on) : undefined}
             onView={isEdit ? () => openPreview(modal.item.menuRow, "menu") : undefined}
-            onDownload={
-              isEdit
-                ? () =>
-                    triggerDownload(
-                      buildFileDownloadUrl(fileOf(modal.item.menuRow, "menu").path),
-                      buildFileName(modal.item.menuRow, "menu")
-                    )
-                : undefined
-            }
+            onDownload={isEdit ? () => downloadOne(modal.item.menuRow, "menu") : undefined}
           />
 
           {/* 요일별 식판 사진 카드 (월~일 하루 1장) */}
@@ -1531,11 +1547,7 @@ function BranchUploadTab({ isHeadOffice }) {
                   deleted={!!form.deletePlates?.[date]}
                   onDelete={fileOf(row, "plate") ? (on) => setPlateDelete(date, on) : undefined}
                   onView={row ? () => openPreview(row, "plate") : undefined}
-                  onDownload={
-                    row && fileOf(row, "plate")
-                      ? () => triggerDownload(buildFileDownloadUrl(fileOf(row, "plate").path), buildFileName(row, "plate"))
-                      : undefined
-                  }
+                  onDownload={row && fileOf(row, "plate") ? () => downloadOne(row, "plate") : undefined}
                 />
               );
             })}

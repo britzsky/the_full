@@ -3567,11 +3567,11 @@ function TallySheet() {
 
                 const yForRow = isSecond ? prevYear : year;
                 const mForRow = isSecond ? prevMonth : month;
-                // 집계표에서 직접 입력하지 않는 타입 (1008 개인구매: 구매요청 후첨 → 개인구매 관리에서만 입력)
+                // 집계표에서 직접 입력하지 않는 타입 (1008 개인구매: 구매요청 후첨 → 개인구매 관리에서만 입력, 1042 아워홈: API 연동)
                 const rowLocked =
                   !isTotalRow &&
                   (isTypeLocked(yForRow, mForRow, rowType) ||
-                    ["1", "2", "3", "4", "1002", "1003", "1008"].includes(rowType));
+                    ["1", "2", "3", "4", "1002", "1003", "1008", "1042"].includes(rowType));
 
                 // ✅ 포인트 색상 계산(여기서!)
                 const dayNo = isBaseCell ? Number(String(colKey).replace("day_", "")) : null;

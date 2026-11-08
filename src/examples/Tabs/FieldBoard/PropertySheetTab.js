@@ -13,7 +13,6 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import usePropertiessheetData, { parseNumber, formatNumber } from "./propertiessheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
@@ -22,6 +21,7 @@ import ExcelJS from "exceljs";
 import dayjs from "dayjs";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import PreviewOverlay from "utils/PreviewOverlay";
 import accountLabelSx from "utils/accountLabelSx";
 
 const RECEIPT_IMAGE_FIELDS = ["receipt_img", "receipt_img2", "receipt_img3"];
@@ -68,7 +68,9 @@ function PropertySheetTab() {
   const [originalRows, setOriginalRows] = useState([]);
   // 조회 결과를 화면 행 상태로 반영 중인지 표시하는 로딩 상태
   const [rowsHydrating, setRowsHydrating] = useState(true);
-  const [viewImageSrc, setViewImageSrc] = useState(null);
+  // 공용 미리보기 창에 띄울 파일 목록과 현재 보고 있는 위치
+  const [previewFiles, setPreviewFiles] = useState([]);
+  const [previewIndex, setPreviewIndex] = useState(0);
   const [excelDownloading, setExcelDownloading] = useState(false);
   const rowsRef = useRef([]);
 
@@ -357,13 +359,25 @@ function PropertySheetTab() {
     setOriginalRows((prev) => [...prev, { ...newRow }]);
   };
 
+  // 제품사진과 영수증사진을 공용 미리보기 창으로 표시하는 함수
   const handleViewImage = (value) => {
     if (!value) return;
     const imageSrc = resolveImageSource(value);
     if (!imageSrc) return;
-    setViewImageSrc(imageSrc);
+    setPreviewFiles([
+      {
+        url: imageSrc,
+        name: "미리보기",
+        kind: "image",
+        ...(typeof value === "string" ? { path: value } : {}),
+      },
+    ]);
+    setPreviewIndex(0);
   };
-  const handleCloseViewer = () => setViewImageSrc(null);
+  const handleCloseViewer = () => {
+    setPreviewFiles([]);
+    setPreviewIndex(0);
+  };
 
   // ✅ 우클릭 메뉴 열기
   const handleRowContextMenu = (e, rowIndex) => {
@@ -1358,74 +1372,14 @@ function PropertySheetTab() {
         </table>
       </MDBox>
 
-      {/* 이미지 전체보기 오버레이 */}
-      {viewImageSrc && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.7)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 9999,
-          }}
-          onClick={handleCloseViewer}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "relative",
-              maxWidth: "100%",
-              maxHeight: "100%",
-              padding: isMobile ? 8 : 16,
-            }}
-          >
-            <TransformWrapper initialScale={1} minScale={0.5} maxScale={5} centerOnInit>
-              {() => (
-                <>
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 8,
-                      right: 8,
-                      zIndex: 1000,
-                    }}
-                  >
-                    <button
-                      onClick={handleCloseViewer}
-                      style={{
-                        border: "none",
-                        borderRadius: 4,
-                        padding: "4px 8px",
-                        fontSize: isMobile ? 12 : 14,
-                        cursor: "pointer",
-                      }}
-                    >
-                      닫기
-                    </button>
-                  </div>
-
-                  <TransformComponent>
-                    <img
-                      src={encodeURI(viewImageSrc)}
-                      alt="미리보기"
-                      style={{
-                        maxWidth: "95vw",
-                        maxHeight: "90vh",
-                        borderRadius: 8,
-                      }}
-                    />
-                  </TransformComponent>
-                </>
-              )}
-            </TransformWrapper>
-          </div>
-        </div>
-      )}
+      {/* 제품사진과 영수증사진 공용 미리보기 창 */}
+      <PreviewOverlay
+        open={previewFiles.length > 0}
+        files={previewFiles}
+        currentIndex={previewIndex}
+        onChangeIndex={setPreviewIndex}
+        onClose={handleCloseViewer}
+      />
 
       {/* ✅ 우클릭 컨텍스트 메뉴 */}
       {ctxMenu.open && (

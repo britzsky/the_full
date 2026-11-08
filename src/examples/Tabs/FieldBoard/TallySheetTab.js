@@ -37,13 +37,18 @@ import { API_BASE_URL } from "config";
 import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
 import PreviewOverlay from "utils/PreviewOverlay";
+import DailyBudgetChart from "utils/DailyBudgetChart";
 import accountLabelSx from "utils/accountLabelSx";
 
-// 읽기 전용 메모 칸: 클릭(포커스)해도 기본 테두리 유지
+// 읽기 전용 메모 칸: 클릭(포커스)해도 기본 테두리 유지, 입력 커서(깜빡이는 막대·I빔) 미표시
 const READ_ONLY_NOTE_SX = {
   "& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline": {
     borderColor: "#d2d6da",
     borderWidth: 1,
+  },
+  "& .MuiInputBase-input": {
+    cursor: "default",
+    caretColor: "transparent",
   },
 };
 
@@ -2435,6 +2440,18 @@ function TallySheet() {
   const suppliesBudgetForTab = tabValue === 1 ? supplies2Budget : suppliesBudget;
   const suppliesUsedForTab = tabValue === 1 ? supplies2Used : suppliesUsed;
 
+  // 선택 탭(현재월/전월)의 일자별 식자재 사용금액 배열(소모품 type 1002 제외, 예산 그래프용)
+  const dailyUsedForTab = useMemo(() => {
+    const rows = (tabValue === 1
+      ? filterRowsByTypeVisibility(data2Rows, prevYear, prevMonth)
+      : filterRowsByTypeVisibility(dataRows, year, month)
+    ).filter((r) => String(r?.type) !== "1002");
+    const days = tabValue === 1 ? daysInMonthPrev : daysInMonthNow;
+    return Array.from({ length: days }, (_, i) =>
+      rows.reduce((sum, r) => sum + parseNumber(r[`day_${i + 1}`]), 0)
+    );
+  }, [tabValue, dataRows, data2Rows, daysInMonthNow, daysInMonthPrev, selectedAccountId, year, month, prevYear, prevMonth]);
+
   // ✅ 직접 입력은 type=1042만 허용 (1~4는 잠금)
   const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
     const rows = isSecond ? data2Rows : dataRows;
@@ -4083,6 +4100,16 @@ function TallySheet() {
               />
             </Grid>
           </Grid>
+        </Card>
+      </MDBox>
+
+      {/* 일 예산 대비 일자별 식자재 사용금액 그래프 영역 */}
+      <MDBox pb={3}>
+        <Card sx={{ p: 2 }}>
+          <MDTypography variant="h6" mb={1}>
+            {`${String(tabValue === 1 ? prevMonth : month).padStart(2, "0")}월 일 예산 대비 식자재 사용금액`}
+          </MDTypography>
+          <DailyBudgetChart budget={parseNumber(budgetForTab)} dailyUsed={dailyUsedForTab} />
         </Card>
       </MDBox>
 

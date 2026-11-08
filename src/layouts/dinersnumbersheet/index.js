@@ -2004,7 +2004,39 @@ function DinersNumberSheet() {
                                   e.preventDefault();
                                   return;
                                 }
-                                if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+                                if (e.nativeEvent.isComposing) return;
+                                // 방향키로 위·아래·좌·우 셀 이동 (비고 칸은 좌우 방향키를 글자 커서 이동에 사용)
+                                const arrowMove = {
+                                  ArrowUp: [-1, 0],
+                                  ArrowDown: [1, 0],
+                                  ArrowLeft: [0, -1],
+                                  ArrowRight: [0, 1],
+                                }[e.key];
+                                if (arrowMove && !e.shiftKey && !(key === "note" && arrowMove[1] !== 0)) {
+                                  e.preventDefault();
+                                  const [dRow, dCol] = arrowMove;
+                                  const currentCell = e.currentTarget;
+                                  let targetCell = null;
+                                  if (dRow) {
+                                    const targetRow =
+                                      dRow > 0
+                                        ? currentCell.parentElement.nextElementSibling
+                                        : currentCell.parentElement.previousElementSibling;
+                                    // 첫 번째 td는 날짜 열이므로 colIndex + 1 위치가 같은 열
+                                    targetCell = targetRow?.children[colIndex + 1];
+                                  } else {
+                                    // 합계·특식처럼 직접 입력하지 않는 칸은 건너뛰고 다음 입력 칸으로 이동
+                                    const step = (cell) =>
+                                      dCol > 0 ? cell.nextElementSibling : cell.previousElementSibling;
+                                    targetCell = step(currentCell);
+                                    while (targetCell && !targetCell.isContentEditable) {
+                                      targetCell = step(targetCell);
+                                    }
+                                  }
+                                  if (targetCell?.isContentEditable) targetCell.focus();
+                                  return;
+                                }
+                                if (e.key !== "Enter") return;
                                 e.preventDefault();
                                 const nextRow = e.currentTarget.parentElement.nextElementSibling;
                                 // 첫 번째 td는 날짜 열이므로 colIndex + 1 위치가 같은 열

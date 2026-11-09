@@ -438,7 +438,8 @@ export default function HandoverSheetTab() {
           rowGap: isMobile ? 1 : 0,
           position: "sticky",
           zIndex: 10,
-          top: 78,
+          // 상위 FieldBoardTabs 헤더/탭 sticky 영역 아래에 고정 (좁은 화면은 헤더가 높아 88)
+          top: { xs: 88, md: 78 },
           backgroundColor: "#ffffff",
         }}
       >

@@ -1763,9 +1763,9 @@ function DinersNumberSheet() {
                               // 선택된 값을 마우스로 끌어 다른 셀로 옮기거나 떨어뜨리는 동작 차단
                               onDragStart={(e) => e.preventDefault()}
                               onDrop={(e) => e.preventDefault()}
-                              // 비고 외 셀에 붙여넣기·한글 조합으로 들어온 문자 제거
+                              // 비고 외 셀에 붙여넣기·한글 조합으로 들어온 문자 제거 (특식 셀렉트 변경 이벤트는 제외)
                               onInput={(e) => {
-                                if (key === "note" || e.nativeEvent.isComposing) return;
+                                if (isSpecial || key === "note" || e.nativeEvent.isComposing) return;
                                 keepDigitsOnly(e.currentTarget);
                               }}
                               onCompositionEnd={(e) => {

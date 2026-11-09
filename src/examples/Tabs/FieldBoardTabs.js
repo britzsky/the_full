@@ -312,7 +312,8 @@ function FieldBoardTabs() {
         sx={{
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          // 하위 탭의 sticky 버튼·헤더 영역(최대 1200)보다 위, 사이드메뉴(1250)·팝업(1300)보다 아래
+          zIndex: 1210,
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
         }}

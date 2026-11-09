@@ -3726,7 +3726,8 @@ function TallySheet() {
       <MDBox
         sx={{
           position: isMobileOrTablet ? "static" : "sticky",
-          top: isMobileOrTablet ? "auto" : 0,
+          // 상위 FieldBoardTabs 헤더/탭 sticky 영역 아래에 고정
+          top: isMobileOrTablet ? "auto" : { xs: 88, md: 78 },
           zIndex: isMobileOrTablet ? 20 : 1200,
           isolation: "isolate",
           backgroundColor: "#ffffff",

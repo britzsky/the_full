@@ -11,9 +11,6 @@ const fmt = (v) => Math.round(Number(v) || 0).toLocaleString("ko-KR");
 // M/D 형식 날짜 표시
 const md = (d) => dayjs(d).format("M/D");
 
-// [임시] 이번 주 초과 칸 강제 표시 여부 (확인 후 false로 바꾸거나 관련 코드 삭제)
-const WEEK_OVER_PANEL_TEST = true;
-
 // 판정 상태별 주차 머리 색상과 표시 문구
 const STATUS_STYLE = {
   over: { bg: "#d32f2f", label: "초과" },
@@ -32,17 +29,10 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
   const [savingWeek, setSavingWeek] = useState(null);
 
   // 주차별 판정 결과(누적 사용금액, 누적 예산, 상태, 작성 가능 여부)
-  const weeks = useMemo(() => {
-    const list = evaluateBudgetWeeks({ year, month, budget, dailyUsed });
-    // [임시] 화면 확인용: 현장 화면에서 이번 주를 초과·작성 가능으로 강제 표시 (확인 후 이 블록 삭제)
-    if (WEEK_OVER_PANEL_TEST && editable) {
-      const today = dayjs().format("YYYY-MM-DD");
-      return list.map((w) =>
-        today >= w.startDate && today <= w.labelEndDate ? { ...w, status: "over", writable: true } : w
-      );
-    }
-    return list;
-  }, [year, month, budget, dailyUsed, editable]);
+  const weeks = useMemo(
+    () => evaluateBudgetWeeks({ year, month, budget, dailyUsed }),
+    [year, month, budget, dailyUsed]
+  );
 
   // 선택한 거래처·연월의 저장된 사유·계획을 다시 조회하는 함수
   const loadSaved = useCallback(async () => {

@@ -42,10 +42,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { confirmTabLeave } from "utils/unsavedChangesGuard";
-import { fetchPendingWeekOverAlerts, getBudgetWeeks } from "utils/tallyBudgetWeeks";
-
-// [임시] 예산 초과 팝업 화면 확인용 강제 표시 여부 (확인 후 false로 바꾸거나 관련 코드 삭제)
-const WEEK_OVER_POPUP_TEST = true;
+import { fetchPendingWeekOverAlerts } from "utils/tallyBudgetWeeks";
 
 // 현장관리 진입 공지 팝업 이미지 (public/fieldboard-notice.png 파일을 교체해서 사용, 없으면 이미지 영역 숨김)
 const NOTICE_IMAGE_SRC = `${process.env.PUBLIC_URL}/fieldboard-notice.png`;
@@ -190,16 +187,6 @@ function FieldBoardTabs() {
 
   // 현장관리 진입 시 로그인 거래처의 예산 초과 미작성 주차(당월·전월)를 조회
   useEffect(() => {
-    // [임시] 팝업 화면 확인용: 이번 주를 예산 초과로 가정해 강제로 표시 (확인 후 이 블록 삭제)
-    if (WEEK_OVER_POPUP_TEST) {
-      const now = dayjs();
-      const today = now.format("YYYY-MM-DD");
-      const weeks = getBudgetWeeks(now.year(), now.month() + 1);
-      const thisWeek = weeks.find((w) => today >= w.startDate && today <= w.labelEndDate) || weeks[0];
-      setWeekOverAlerts([{ ...thisWeek, year: now.year(), month: now.month() + 1 }]);
-      return undefined;
-    }
-
     let cancelled = false;
     const accountId = localStorage.getItem("account_id") || "";
     fetchPendingWeekOverAlerts(accountId)

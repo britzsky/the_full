@@ -17,24 +17,13 @@ import {
   Autocomplete,
 } from "@mui/material";
 
-import Paper from "@mui/material/Paper";
-import Draggable from "react-draggable";
-
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
-import CloseIcon from "@mui/icons-material/Close";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import ZoomInIcon from "@mui/icons-material/ZoomIn";
-import ZoomOutIcon from "@mui/icons-material/ZoomOut";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
-
-import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
+import PreviewOverlay from "utils/PreviewOverlay";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountPersonPurchaseData from "./data/AccountPersonPurchaseData";
 import useAccountingMonthLock from "utils/useAccountingMonthLock";
@@ -1602,22 +1591,23 @@ function AccountCorporateCardSheet() {
   // saveAllRef에 최신 saveAll 함수 연결 (handleSearchMaster에서 ref로 참조)
   saveAllRef.current = saveAll;
 
-  // ========================= ✅ "윈도우"처럼 이동 가능한 이미지 뷰어 =========================
+  // ========================= 영수증 미리보기 (공용 PreviewOverlay) =========================
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
 
-  const viewerNodeRef = useRef(null);
-
+  // 미리보기 창에 넘길 영수증 파일 목록 (PDF는 pdf, 나머지는 이미지로 표시)
   const imageItems = useMemo(() => {
     return (masterRows || [])
       .filter((r) => !!r?.receipt_image)
       .map((r) => ({
         path: r.receipt_image,
-        src: `${API_BASE_URL}${r.receipt_image}`,
-        title: `${r.use_name || ""} ${toDateInputValue(r.saleDate) || ""}`.trim(),
+        url: `${API_BASE_URL}${r.receipt_image}`,
+        name: `${r.use_name || ""} ${toDateInputValue(r.saleDate) || ""}`.trim(),
+        kind: /\.pdf$/i.test(String(r.receipt_image)) ? "pdf" : "image",
       }));
   }, [masterRows]);
 
+  // 표에서 영수증 보기 버튼을 누르면 해당 영수증 위치로 미리보기 창을 연다
   const handleViewImage = useCallback(
     (path) => {
       if (!path) return;
@@ -1629,44 +1619,6 @@ function AccountCorporateCardSheet() {
   );
 
   const handleCloseViewer = useCallback(() => setViewerOpen(false), []);
-
-  const goPrev = useCallback(() => {
-    setViewerIndex((i) =>
-      imageItems.length ? (i - 1 + imageItems.length) % imageItems.length : 0
-    );
-  }, [imageItems.length]);
-
-  const goNext = useCallback(() => {
-    setViewerIndex((i) => (imageItems.length ? (i + 1) % imageItems.length : 0));
-  }, [imageItems.length]);
-
-  useEffect(() => {
-    if (!viewerOpen) return;
-    if (!imageItems.length) {
-      setViewerIndex(0);
-      return;
-    }
-    if (viewerIndex > imageItems.length - 1) setViewerIndex(imageItems.length - 1);
-  }, [viewerOpen, imageItems.length, viewerIndex]);
-
-  useEffect(() => {
-    if (!viewerOpen) return;
-
-    const onKeyDown = (e) => {
-      const tag = (e.target?.tagName || "").toLowerCase();
-      const isTyping = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
-      if (isTyping) return;
-
-      if (e.key === "Escape") handleCloseViewer();
-      if (e.key === "ArrowLeft") goPrev();
-      if (e.key === "ArrowRight") goNext();
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [viewerOpen, goPrev, goNext, handleCloseViewer]);
-
-  const currentImg = imageItems[viewerIndex];
 
   // ========================= 컬럼 정의 =========================
   const masterColumns = useMemo(
@@ -3052,226 +3004,14 @@ function AccountCorporateCardSheet() {
         </div>
       )}
 
-      {/* ========================= ✅ 떠있는 창 미리보기 ========================= */}
-      {viewerOpen && (
-        <Box sx={{ position: "fixed", inset: 0, zIndex: 2000, pointerEvents: "none" }}>
-          <Draggable
-            nodeRef={viewerNodeRef}
-            handle="#receipt-viewer-titlebar"
-            bounds="parent"
-            cancel={'button, a, input, textarea, select, img, [contenteditable="true"]'}
-          >
-            <Paper
-              ref={viewerNodeRef}
-              sx={{
-                position: "absolute",
-                top: 120,
-                left: 120,
-                m: 0,
-                width: "450px",
-                height: "650px",
-                maxWidth: "95vw",
-                maxHeight: "90vh",
-                borderRadius: 1.2,
-                border: "1px solid rgba(0,0,0,0.25)",
-                boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
-                overflow: "hidden",
-                resize: "both",
-                pointerEvents: "auto",
-                backgroundColor: "#000",
-              }}
-            >
-              <Box
-                id="receipt-viewer-titlebar"
-                sx={{
-                  height: 42,
-                  bgcolor: "#1b1b1b",
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 1,
-                  px: 1,
-                  cursor: "move",
-                  userSelect: "none",
-                }}
-              >
-                <Typography
-                  variant="caption"
-                  sx={{
-                    flex: 1,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    pr: 1,
-                  }}
-                >
-                  {currentImg?.title || "영수증 미리보기"}
-                  {imageItems.length ? `  (${viewerIndex + 1}/${imageItems.length})` : ""}
-                </Typography>
-
-                <Tooltip title="이전(←)">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goPrev();
-                      }}
-                      disabled={imageItems.length <= 1}
-                    >
-                      <ChevronLeftIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="다음(→)">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        goNext();
-                      }}
-                      disabled={imageItems.length <= 1}
-                    >
-                      <ChevronRightIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="새 탭으로 열기">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const src = currentImg?.src;
-                        if (src) window.open(src, "_blank", "noopener,noreferrer");
-                      }}
-                      disabled={!currentImg?.src}
-                    >
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="다운로드">
-                  <span>
-                    <IconButton
-                      size="small"
-                      sx={{ color: "#fff" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const path = currentImg?.path;
-                        if (path) handleDownload(path);
-                      }}
-                      disabled={!currentImg?.path}
-                    >
-                      <DownloadIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-
-                <Tooltip title="닫기(ESC)">
-                  <IconButton
-                    size="small"
-                    sx={{ color: "#fff" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseViewer();
-                    }}
-                  >
-                    <CloseIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-
-              <Box sx={{ height: "calc(100% - 42px)", bgcolor: "#000", position: "relative" }}>
-                {currentImg?.src ? (
-                  <TransformWrapper
-                    initialScale={1}
-                    minScale={0.5}
-                    maxScale={6}
-                    centerOnInit
-                    wheel={{ step: 0.12 }}
-                    doubleClick={{ mode: "zoomIn" }}
-                  >
-                    {({ zoomIn, zoomOut, resetTransform }) => (
-                      <>
-                        <Box
-                          sx={{
-                            position: "absolute",
-                            right: 10,
-                            top: 10,
-                            zIndex: 3,
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: 1,
-                          }}
-                        >
-                          <Tooltip title="확대">
-                            <IconButton
-                              size="small"
-                              onClick={zoomIn}
-                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                            >
-                              <ZoomInIcon sx={{ color: "#fff" }} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="축소">
-                            <IconButton
-                              size="small"
-                              onClick={zoomOut}
-                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                            >
-                              <ZoomOutIcon sx={{ color: "#fff" }} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="리셋">
-                            <IconButton
-                              size="small"
-                              onClick={resetTransform}
-                              sx={{ bgcolor: "rgba(255,255,255,0.15)" }}
-                            >
-                              <RestartAltIcon sx={{ color: "#fff" }} fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </Box>
-
-                        <TransformComponent
-                          wrapperStyle={{ width: "100%", height: "100%" }}
-                          contentStyle={{ width: "100%", height: "100%" }}
-                        >
-                          <Box
-                            sx={{
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <img
-                              src={currentImg.src}
-                              alt="미리보기"
-                              style={{ maxWidth: "95%", maxHeight: "95%", userSelect: "none" }}
-                            />
-                          </Box>
-                        </TransformComponent>
-                      </>
-                    )}
-                  </TransformWrapper>
-                ) : (
-                  <Typography sx={{ color: "#fff", p: 2 }}>이미지가 없습니다.</Typography>
-                )}
-              </Box>
-            </Paper>
-          </Draggable>
-        </Box>
-      )}
+      {/* 영수증 이미지·PDF 미리보기 창 (공용 PreviewOverlay) */}
+      <PreviewOverlay
+        open={viewerOpen}
+        files={imageItems}
+        currentIndex={viewerIndex}
+        onChangeIndex={setViewerIndex}
+        onClose={handleCloseViewer}
+      />
     </DashboardLayout>
   );
 }

@@ -76,6 +76,7 @@ import AccountPersonPurchaseManager from "layouts/accounting/accountpersonpurcha
 // 인사
 import HumanResourceTab_1 from "layouts/humanresource/humanresourcetab_1";
 import Education from "layouts/humanresource/education";
+import ContractManager from "layouts/humanresource/contract";
 import HumanResourceEvaluation from "layouts/humanresource/humanresourcetab_2";
 // 현장
 import TallyManager from "layouts/tallysheet";
@@ -498,6 +499,16 @@ const routes = [
         component: <HumanResourceEvaluation />,
         allowedDepartments: [0, 2, 3, 4, 5, 6, 8, 9],
         allowedPositions: [0, 1, 2, 3],
+        accessMode: "AND",
+      },
+      {
+        type: "collapse",
+        name: "📝 근로계약서",
+        key: "labor_contract",
+        route: "/humanresource/contract",
+        component: <ContractManager />,
+        allowedDepartments: [0, 3, 6, 9], // 🔹 부서권한 (현장관리와 동일)
+        allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
         accessMode: "AND",
       },
       // {

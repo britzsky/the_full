@@ -38,6 +38,8 @@ import ExcelJS from "exceljs";
 import DownloadIcon from "@mui/icons-material/Download";
 import PreviewOverlay from "utils/PreviewOverlay";
 import DailyBudgetChart from "utils/DailyBudgetChart";
+import TallyWeekOverPanel from "utils/TallyWeekOverPanel";
+import { filterTallyRowsByVisibility } from "utils/tallyBudgetWeeks";
 import accountLabelSx from "utils/accountLabelSx";
 
 // 읽기 전용 메모 칸: 클릭(포커스)해도 기본 테두리 유지, 입력 커서(깜빡이는 막대·I빔) 미표시
@@ -169,7 +171,14 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
     return (safeUsed / safeBudget) * 100;
   }, [safeBudget, safeUsed]);
 
+  // 소모품 예산 대비 사용 비율(%)
+  const suppliesRatio = useMemo(() => {
+    if (!safeSuppliesBudget || safeSuppliesBudget <= 0) return 0;
+    return (safeSuppliesUsed / safeSuppliesBudget) * 100;
+  }, [safeSuppliesBudget, safeSuppliesUsed]);
+
   const foodRatioColor = foodRatio >= 100 ? "#f44336" : foodRatio >= 90 ? "#ff9800" : undefined;
+  const suppliesRatioColor = suppliesRatio >= 100 ? "#f44336" : suppliesRatio >= 90 ? "#ff9800" : undefined;
 
   const monthLabel = monthText ?? dayjs().format("MM월");
 
@@ -178,6 +187,7 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
       sx={{
         display: "grid",
         gridTemplateColumns: "repeat(3, 1fr)",
+        flex: 1,
         borderTop: borderTop ? "1px solid #111" : "none",
       }}
     >
@@ -187,12 +197,14 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
           sx={{
             px: 0.5,
             py: 0.5,
+            display: "flex",
+            alignItems: "center",
             borderRight: "1px solid #111",
             "&:last-of-type": { borderRight: "none" },
             bgcolor: it.bg || "#fff",
           }}
         >
-          <Typography sx={{ fontSize: 12, fontWeight: 800, color: it.color || "#444" }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 800, lineHeight: 1.4, color: it.color || "#444" }}>
             {it.label} : {it.value}
           </Typography>
         </Box>
@@ -201,31 +213,38 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
   );
 
   return (
-    <Box sx={{ width: "100%", border: "1px solid #111", borderRadius: 1, overflow: "hidden" }}>
-      {/* 헤더 */}
+    <Box sx={{ width: "100%", display: "flex", border: "1px solid #111", borderRadius: 1, overflow: "hidden" }}>
+      {/* 예산 현황 제목·대상 월 영역(모든 행 높이를 차지하는 왼쪽 칸) */}
       <Box
         sx={{
-          px: 0.5,
-          py: 0.5,
+          px: 1,
           bgcolor: "#288ebe",
-          borderBottom: "1px solid #111",
+          borderRight: "1px solid #111",
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
-          justifyContent: "space-between",
+          justifyContent: "center",
+          flexShrink: 0,
         }}
       >
-        <Typography sx={{ fontSize: 12, fontWeight: 900, color: "#fff" }}>{title}</Typography>
-        <Typography sx={{ fontSize: 12, fontWeight: 700, color: "#fff" }}>{monthLabel}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 900, lineHeight: 1.3, color: "#fff" }}>{title}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 700, lineHeight: 1.3, color: "#fff" }}>{monthLabel}</Typography>
       </Box>
 
-      {/* 식자재 행 */}
-      {renderRow([
-        { label: "식자재 예산", value: formatNumber(safeBudget) },
-        { label: "식자재 사용금액", value: formatNumber(safeUsed) },
-        { label: "예산대비", value: `${foodRatio.toFixed(2)}%`, bg: foodRatioColor, color: foodRatioColor ? "#fff" : "#444" },
-      ])}
+      {/* 식자재·소모품 예산 행 영역 */}
+      <Box sx={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        {renderRow([
+          { label: "식자재 예산", value: formatNumber(safeBudget) },
+          { label: "식자재 사용금액", value: formatNumber(safeUsed) },
+          { label: "예산대비", value: `${foodRatio.toFixed(2)}%`, bg: foodRatioColor, color: foodRatioColor ? "#fff" : "#444" },
+        ])}
 
-      {/* 소모품 예산 행 - 숨김 처리 */}
+        {renderRow([
+          { label: "소모품 예산", value: formatNumber(safeSuppliesBudget) },
+          { label: "소모품 사용금액", value: formatNumber(safeSuppliesUsed) },
+          { label: "예산대비", value: `${suppliesRatio.toFixed(2)}%`, bg: suppliesRatioColor, color: suppliesRatioColor ? "#fff" : "#444" },
+        ], true)}
+      </Box>
     </Box>
   );
 }
@@ -2364,35 +2383,9 @@ function TallySheet() {
     return [...calculatedRows, { name: "총합", ...totals, total: grandTotal }];
   };
 
-  // ----------- ✅ 행(row) type 노출/숨김 규칙 (이 목록만 수정하면 됨) -----------
-  // mode: "onlyMonth"     → 지정된 year/month 에만 노출, 그 외 월은 숨김
-  // mode: "hiddenFromMonth" → 지정된 year/month부터(이후 포함) 숨김, 그 이전은 계속 노출
-  // accountId를 지정하면 해당 거래처에만 규칙이 적용됨 (미지정 시 전체 거래처 공통 적용)
-  const ROW_TYPE_VISIBILITY_RULES = [
-    { mode: "onlyMonth", types: ["1030", "1031"], year: 2026, month: 7 },
-    { mode: "onlyMonth", types: ["1010"], year: 2026, month: 1 },
-    { mode: "hiddenFromMonth", types: ["3", "4"], year: 2026, month: 5, accountId: "20250819193630" }, // 강남(웰스토리)
-  ];
-
-  const filterRowsByTypeVisibility = (rows, targetYear, targetMonth) => {
-    const y = Number(targetYear);
-    const m = Number(targetMonth);
-    const accountId = String(selectedAccountId).trim();
-    return (rows || []).filter((r) => {
-      const t = String(r.type);
-      return ROW_TYPE_VISIBILITY_RULES.every((rule) => {
-        if (!rule.types.includes(t)) return true;
-        if (rule.accountId && rule.accountId !== accountId) return true;
-        if (rule.mode === "onlyMonth") return y === rule.year && m === rule.month;
-        if (rule.mode === "hiddenFromMonth") {
-          const isAfterCutoff = y > rule.year || (y === rule.year && m >= rule.month);
-          return !isAfterCutoff;
-        }
-        return true;
-      });
-    });
-  };
-  // ----------------------------------------------------------------------
+  // 행(row) type 노출/숨김 규칙 적용 (규칙 목록은 utils/tallyBudgetWeeks.js의 ROW_TYPE_VISIBILITY_RULES, 예산 초과 팝업 판정과 공용)
+  const filterRowsByTypeVisibility = (rows, targetYear, targetMonth) =>
+    filterTallyRowsByVisibility(rows, targetYear, targetMonth, selectedAccountId);
 
   const tableData = useMemo(
     () => makeTableData(filterRowsByTypeVisibility(dataRows, year, month), daysInMonthNow),
@@ -3709,6 +3702,15 @@ function TallySheet() {
     </MDBox>
   );
 
+  // 상단 고정 영역의 각 줄(조회 조건 줄, 버튼 줄) 공통 배치 스타일
+  const filterRowSx = {
+    display: "flex",
+    flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
+    justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
+    alignItems: "center",
+    gap: isMobileOrTablet ? 1 : 2,
+  };
+
   // ==============================
   // Part 2 / 2  (Part 1 바로 아래에 이어붙이세요)
   // ==============================
@@ -3732,20 +3734,36 @@ function TallySheet() {
           isolation: "isolate",
           backgroundColor: "#ffffff",
           borderBottom: "1px solid #eee",
+          // 상위 탭 본문 여백(16px) 중 8px을 당겨 상단 여백을 줄임
+          mt: -1,
         }}
       >
         <MDBox
-          pt={1}
+          pt={0}
           pb={1}
           sx={{
             px: 2,
             display: "flex",
-            flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
-            justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
-            alignItems: "center",
+            flexDirection: isMobileOrTablet ? "column" : "row",
+            alignItems: isMobileOrTablet ? "stretch" : "center",
             gap: isMobileOrTablet ? 1 : 2,
           }}
         >
+          {/* 선택 탭(현재월/전월) 기준 식자재 예산 현황 테이블 영역 */}
+          <Box sx={{ flex: 1, minWidth: 0, maxWidth: isMobileOrTablet ? "none" : 760 }}>
+            <BudgetSummaryBar
+              budget={budgetForTab}
+              used={usedForTab}
+              suppliesBudget={suppliesBudgetForTab}
+              suppliesUsed={suppliesUsedForTab}
+              monthText={`${String(tabValue === 1 ? prevMonth : month).padStart(2, "0")}월`}
+            />
+          </Box>
+
+          {/* 조회 조건·작업 버튼 영역(화면 폭 1800px 이상은 한 줄, 그보다 좁으면 조회 조건 아래 버튼 줄) */}
+          <Box sx={{ display: "flex", flexDirection: "column", alignItems: isMobileOrTablet ? "stretch" : "flex-end", gap: 1, flexShrink: 0, ml: isMobileOrTablet ? 0 : "auto", ...(isMobileOrTablet ? {} : { "@media (min-width: 1800px)": { flexDirection: "row", alignItems: "center", gap: 2 } }) }}>
+          {/* 조회 조건 줄 */}
+          <Box sx={filterRowSx}>
           {/* ✅ 범례 + 거래처검색을 한 덩어리로 묶어서 "거래처 검색" 왼쪽에 범례 표시 */}
           <Box
             sx={{
@@ -3862,7 +3880,10 @@ function TallySheet() {
               </option>
             ))}
           </TextField>
+          </Box>
 
+          {/* 작업 버튼 줄 */}
+          <Box sx={filterRowSx}>
           {/* <MDButton
             variant="gradient"
             color="info"
@@ -3929,6 +3950,8 @@ function TallySheet() {
           >
             저장
           </MDButton>
+          </Box>
+          </Box>
         </MDBox>
       </MDBox>
 
@@ -3964,16 +3987,6 @@ function TallySheet() {
                 집계표
               </MDTypography>
 
-              <Box sx={{ width: "65%" }}>
-                <BudgetSummaryBar
-                  budget={budgetForTab}
-                  used={usedForTab}
-                  suppliesBudget={suppliesBudgetForTab}
-                  suppliesUsed={suppliesUsedForTab}
-                  monthText={`${String(tabValue === 1 ? prevMonth : month).padStart(2, "0")}월`}
-                />
-              </Box>
-
               <Tabs
                 value={tabValue}
                 onChange={(_, v) => setTabValue(v)}
@@ -4006,6 +4019,18 @@ function TallySheet() {
               renderTable(table2, original2Rows, handleCellChange, data2Rows, ratioDataPrev, true)}
           </MDBox>
         </Card>
+      </MDBox>
+
+      {/* 주차별 식자재 예산 초과 사유·개선 계획 작성 영역(초과 주차만 작성 기한 내 작성) */}
+      <MDBox pb={3}>
+        <TallyWeekOverPanel
+          accountId={selectedAccountId}
+          year={tabValue === 1 ? prevYear : year}
+          month={tabValue === 1 ? prevMonth : month}
+          budget={parseNumber(budgetForTab)}
+          dailyUsed={dailyUsedForTab}
+          editable
+        />
       </MDBox>
 
       {/* 집계표 메모 영역: 왼쪽 본사 메모(읽기 전용), 오른쪽 현장 메모(편집) */}
@@ -4104,11 +4129,11 @@ function TallySheet() {
         </Card>
       </MDBox>
 
-      {/* 일 예산 대비 일자별 식자재 사용금액 그래프 영역 */}
+      {/* 누적 예산 대비 일자별 식자재 누적 사용금액 그래프 영역 */}
       <MDBox pb={3}>
         <Card sx={{ p: 2 }}>
           <MDTypography variant="h6" mb={1}>
-            {`${String(tabValue === 1 ? prevMonth : month).padStart(2, "0")}월 일 예산 대비 식자재 사용금액`}
+            {`${String(tabValue === 1 ? prevMonth : month).padStart(2, "0")}월 누적 예산 대비 식자재 누적 사용금액`}
           </MDTypography>
           <DailyBudgetChart budget={parseNumber(budgetForTab)} dailyUsed={dailyUsedForTab} />
         </Card>

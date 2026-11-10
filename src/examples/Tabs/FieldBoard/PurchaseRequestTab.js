@@ -791,6 +791,12 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
   // 1차 결재가 끝나고 반려되지 않은 개인구매 문서만 구매일자·영수증 후첨 가능 (이미 최종 결재된 문서 포함)
   const canAttachReceipt = isPersonalPurchaseDetail
     && (docStatus === "4" || (String(mainRow?.tm_sign ?? "") === "4" && docStatus !== "3"));
+  // 후첨 구매일자 선택 범위 - 상신한 달 1일부터 (그 달 말일과 오늘 중 빠른 날)까지
+  const draftMonth = dayjs(mainRow?.draft_dt);
+  const saleDateMin = draftMonth.isValid() ? draftMonth.startOf("month").format("YYYY-MM-DD") : undefined;
+  const saleDateMax = draftMonth.isValid() && draftMonth.endOf("month").isBefore(dayjs())
+    ? draftMonth.endOf("month").format("YYYY-MM-DD")
+    : dayjs().format("YYYY-MM-DD");
   // 후첨 입력 중인 품목별 구매일자·영수증 (key: 품목 idx, value: { saleDate, file, previewUrl })
   const [receiptDraftByIdx, setReceiptDraftByIdx] = useState({});
   const receiptDraftRef = useRef(receiptDraftByIdx);
@@ -972,9 +978,9 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                     // 앞 단계 반려로 이 단계까지 진행되지 못한 경우
                     const isUnreachable = rejectedStageIndex !== -1 && index > rejectedStageIndex;
                     const sign = mainRow?.[stage.signKey];
-                    const statusText = isUnreachable ? "-" : getHistoryStageStatusText(sign);
-                    const reasonLabel = getHistoryStageReasonLabel(sign);
                     const reasonText = String(mainRow?.[stage.commentKey] || "").trim();
+                    const statusText = isUnreachable ? "-" : getHistoryStageStatusText(sign, reasonText);
+                    const reasonLabel = getHistoryStageReasonLabel(sign);
                     return (
                       <tr key={stage.label}>
                         <td style={historyTdCell}>{stage.label}</td>
@@ -991,7 +997,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                           )}
                         </td>
                         <td style={{ ...historyTdCell, textAlign: "left" }}>
-                          {!isUnreachable && (statusText === "반려" || statusText === "결재") ? (
+                          {!isUnreachable && (statusText.includes("반려") || statusText === "결재") ? (
                             <>
                               <MDBox sx={{ fontSize: 11, fontWeight: 800, color: "#5f6b7a", mb: 0.25 }}>
                                 {reasonLabel}
@@ -1046,7 +1052,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                             size="small"
                             value={receiptDraftByIdx[row.idx]?.saleDate || ""}
                             onChange={(e) => updateReceiptDraft(row.idx, { saleDate: e.target.value })}
-                            inputProps={{ max: dayjs().format("YYYY-MM-DD") }}
+                            inputProps={{ min: saleDateMin, max: saleDateMax }}
                             sx={{ width: 140, "& input": { fontSize: 12, py: 0.75 } }}
                           />
                         ) : "-"}
@@ -1255,9 +1261,16 @@ const getDecisionYnBadgeSx = (v) => {
   };
 };
 
+// 개인구매 월말 자동 반려 결재 의견 머리말
+const AUTO_REJECT_PREFIX = "[자동반려]";
+
+// 요청내역 목록 상태 문구 - 월말 자동 반려(auto_reject_yn=Y)는 "자동반려"로 구분한다.
 const getHistoryStatusText = (row) => {
-  if (String(row?.progress_status_text || "").trim()) return row.progress_status_text;
-  if (String(row?.status || "") === "3" || String(row?.tm_sign || "") === "3") return "반려";
+  const isAutoReject = String(row?.auto_reject_yn || "") === "Y";
+  if (String(row?.progress_status_text || "").trim()) {
+    return isAutoReject && row.progress_status_text.includes("반려") ? "자동반려" : row.progress_status_text;
+  }
+  if (String(row?.status || "") === "3" || String(row?.tm_sign || "") === "3") return isAutoReject ? "자동반려" : "반려";
   if (String(row?.status || "") === "4" || String(row?.tm_sign || "") === "4") return "승인완료";
   return "결재대기";
 };
@@ -1270,10 +1283,10 @@ const HISTORY_APPROVAL_STAGES = [
   { label: "최종 결재", userKey: "ceo_user", nameKey: "ceo_user_name", signKey: "ceo_sign", commentKey: "ceo_comment" },
 ];
 
-// 결재 단계 사인값을 상태 문구로 변환 - 반려(3)/결재(4)/검토중(2)/결재대기(그 외)
-const getHistoryStageStatusText = (sign) => {
+// 결재 단계 사인값을 상태 문구로 변환 - 자동반려·반려(3)/결재(4)/검토중(2)/결재대기(그 외)
+const getHistoryStageStatusText = (sign, comment) => {
   const s = String(sign || "");
-  if (s === "3") return "반려";
+  if (s === "3") return String(comment || "").trim().startsWith(AUTO_REJECT_PREFIX) ? "자동반려" : "반려";
   if (s === "4") return "결재";
   if (s === "2") return "검토중";
   return "결재대기";
@@ -1299,6 +1312,10 @@ const getHistoryStatusSx = (status) => {
   if (statusText === "승인완료" || statusText === "결재") {
     color = "#2e7d32";
     backgroundColor = "#e8f5e9";
+  } else if (statusText === "자동반려") {
+    // 월말 자동 반려는 결재자 반려(빨강)와 구분되게 보라 톤
+    color = "#6a1b9a";
+    backgroundColor = "#f3e5f5";
   } else if (statusText.includes("반려")) {
     color = "#c62828";
     backgroundColor = "#ffebee";

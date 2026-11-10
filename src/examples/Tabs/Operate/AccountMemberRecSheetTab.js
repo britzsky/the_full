@@ -922,6 +922,13 @@ function AccountMemberRecSheet() {
         changedRowsWithRid.map(async ({ row, rid }) => {
           const newRow = cleanRow(row);
 
+          // 근로계약서 칸을 이 화면에서 바꿨는지 (N이면 서버가 채용관리·현장 직원관리의 DB 값 유지, 전자계약 서명본 PDF 보호)
+          const original = originalByRid.get(rid);
+          const contractChanged =
+            !original ||
+            (row.employment_contract && typeof row.employment_contract === "object") ||
+            String(row.employment_contract ?? "") !== String(original.employment_contract ?? "");
+
           for (const field of IMAGE_FIELDS) {
             if (newRow[field] && typeof newRow[field] === "object") {
               const uploadedPath = await uploadImage(newRow[field], field, newRow);
@@ -929,7 +936,10 @@ function AccountMemberRecSheet() {
             }
           }
 
-          return { rid, row: { ...newRow, user_id: userId } };
+          return {
+            rid,
+            row: { ...newRow, employment_contract_changed: contractChanged ? "Y" : "N", user_id: userId },
+          };
         })
       );
       const processed = processedWithRid.map((item) => item.row);

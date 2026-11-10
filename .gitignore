@@ -4,6 +4,10 @@
 /node_modules
 .DS_Store
 
+# 로컬 HTTPS 개발용 mkcert 인증서(기기별로 다름, 커밋 금지)
+/certs
+public/rootCA.pem
+
 # testing
 /coverage
 
@@ -32,3 +36,9 @@ AGENTS.md
 .gitignore
 CLAUDE.md
 .claude/settings.local.json
+.claude/settings.json
+.yml
+.log
+.mcp.json
+.claude/settings.json
+public/thefull_logo.png

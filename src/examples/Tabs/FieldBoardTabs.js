@@ -42,6 +42,10 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { confirmTabLeave } from "utils/unsavedChangesGuard";
+import { fetchPendingWeekOverAlerts, getBudgetWeeks } from "utils/tallyBudgetWeeks";
+
+// [임시] 예산 초과 팝업 화면 확인용 강제 표시 여부 (확인 후 false로 바꾸거나 관련 코드 삭제)
+const WEEK_OVER_POPUP_TEST = true;
 
 // 현장관리 진입 공지 팝업 이미지 (public/fieldboard-notice.png 파일을 교체해서 사용, 없으면 이미지 영역 숨김)
 const NOTICE_IMAGE_SRC = `${process.env.PUBLIC_URL}/fieldboard-notice.png`;
@@ -121,6 +125,9 @@ function FieldBoardTabs() {
     () => [{ url: NOTICE_IMAGE_SRC, name: NOTICE_TITLE || "공지", kind: "image" }],
     []
   );
+  // 식자재 예산 초과 후 초과사유·개선계획을 아직 작성하지 않은 주차 목록과 팝업 확인 여부
+  const [weekOverAlerts, setWeekOverAlerts] = useState([]);
+  const [weekOverConfirmed, setWeekOverConfirmed] = useState(false);
   const [tabIndex, setTabIndex] = useState(0);
   const [contentTabIndex, setContentTabIndex] = useState(0);
   const [tabSwitchLoading, setTabSwitchLoading] = useState(false);
@@ -180,6 +187,28 @@ function FieldBoardTabs() {
       cancelled = true;
     };
   }, [noticeOpen]);
+
+  // 현장관리 진입 시 로그인 거래처의 예산 초과 미작성 주차(당월·전월)를 조회
+  useEffect(() => {
+    // [임시] 팝업 화면 확인용: 이번 주를 예산 초과로 가정해 강제로 표시 (확인 후 이 블록 삭제)
+    if (WEEK_OVER_POPUP_TEST) {
+      const now = dayjs();
+      const today = now.format("YYYY-MM-DD");
+      const weeks = getBudgetWeeks(now.year(), now.month() + 1);
+      const thisWeek = weeks.find((w) => today >= w.startDate && today <= w.labelEndDate) || weeks[0];
+      setWeekOverAlerts([{ ...thisWeek, year: now.year(), month: now.month() + 1 }]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const accountId = localStorage.getItem("account_id") || "";
+    fetchPendingWeekOverAlerts(accountId)
+      .then((list) => !cancelled && setWeekOverAlerts(list))
+      .catch((e) => console.error("예산 초과 주차 조회 실패:", e));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // 공지 팝업 닫기:체크했으면 현재 시각을 저장해 24시간 동안 숨긴다.
   const handleNoticeClose = () => {
@@ -578,6 +607,49 @@ function FieldBoardTabs() {
             }}
           >
             닫기
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 식자재 예산 초과 안내 팝업: 확인 버튼으로만 닫히고, 사유·계획을 작성할 때까지 진입 시마다 표시 */}
+      <Dialog
+        open={weekOverAlerts.length > 0 && !weekOverConfirmed && !noticeOpen}
+        disableEscapeKeyDown
+        PaperProps={{ sx: { width: "100%", maxWidth: 480, m: 2, borderRadius: "16px" } }}
+      >
+        <DialogContent sx={{ px: 2.5, pt: 2.5, pb: 1.5 }}>
+          <Box sx={{ fontSize: "1.05rem", fontWeight: 700, color: "#d32f2f", mb: 1.5 }}>
+            ⚠️ 식자재 예산 초과 안내
+          </Box>
+          {/* 미작성 초과 주차별 안내 문구 목록 */}
+          {weekOverAlerts.map((w) => (
+            <Box
+              key={`${w.year}-${w.month}-${w.weekNo}`}
+              sx={{ fontSize: "0.9rem", lineHeight: 1.7, color: "#333", mb: 1, wordBreak: "keep-all" }}
+            >
+              <b>{`${w.month}월 ${w.weekNo}주차(${dayjs(w.startDate).format("M/D")}~${dayjs(w.labelEndDate).format("M/D")})`}</b>
+              {" 식자재 예산이 초과되었습니다."}
+              <br />
+              {"집계표에서 초과사유와 개선계획을 작성해 주세요. "}
+              <span style={noticeRed}>{`(작성기한 ${dayjs(w.deadline).format("M/D")})`}</span>
+            </Box>
+          ))}
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, py: 1.25, borderTop: "1px solid #f2f2f2" }}>
+          <Button
+            variant="contained"
+            onClick={() => setWeekOverConfirmed(true)}
+            sx={{
+              minWidth: 84,
+              borderRadius: "8px",
+              boxShadow: "none",
+              backgroundColor: "#d32f2f",
+              color: "#fff !important",
+              fontWeight: 700,
+              "&:hover": { backgroundColor: "#b71c1c", boxShadow: "none" },
+            }}
+          >
+            확인
           </Button>
         </DialogActions>
       </Dialog>

@@ -196,6 +196,12 @@ function getDepartmentText(row) {
   return deptCode ? toDepartmentLabel(deptCode) : "-";
 }
 
+// 개인구매 월말 자동 반려 문서 여부 (목록: auto_reject_yn, 상세: 결재 의견의 [자동반려] 머리말)
+function isAutoRejected(main) {
+  if (asText(main?.auto_reject_yn) === "Y") return true;
+  return [main?.tm_comment, main?.payer_comment].some((c) => asText(c).startsWith("[자동반려]"));
+}
+
 // 상세(main) 데이터만으로 진행상태 텍스트 계산
 function getProgressStatusText(main, requiredRoles) {
   const tmUser = asText(main?.tm_user);
@@ -208,7 +214,7 @@ function getProgressStatusText(main, requiredRoles) {
   const needPayer = requiredRoles?.needPayer ?? !!payerUser;
   const needCeo = requiredRoles?.needCeo ?? !!ceoUser;
 
-  if (tmSign === "3" || payerSign === "3" || ceoSign === "3") return "반려";
+  if (tmSign === "3" || payerSign === "3" || ceoSign === "3") return isAutoRejected(main) ? "자동반려" : "반려";
   const tmDone = !needTM || !tmUser || tmSign === "4";
   const payerDone = !needPayer || !payerUser || payerSign === "4";
   const ceoDone = !needCeo || !ceoUser || ceoSign === "4";
@@ -319,6 +325,10 @@ function toSecondPrecisionText(value) {
 // - 대기/검토/기타: 회색
 function getStatusTone(text) {
   const value = asText(text);
+  // 월말 자동 반려는 결재자 반려와 구분되게 보라 톤 (현장 구매요청 요청내역과 같은 색)
+  if (value === "자동반려") {
+    return { backgroundColor: "#f3e5f5", color: "#6a1b9a" };
+  }
   if (value.includes("반려")) {
     return { backgroundColor: "#fff2cc", color: "#8a5d00" };
   }
@@ -936,6 +946,11 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     if (!detailMain?.payment_id) return;
     if (!selectedActionSign) {
       Swal.fire({ title: "확인", text: "결재 상태를 선택해주세요.", icon: "warning" });
+      return;
+    }
+    // [자동반려] 머리말은 월말 자동 반려 표시용이라 직접 입력하는 의견에는 쓸 수 없다.
+    if (asText(actionComment).trim().startsWith("[자동반려]")) {
+      Swal.fire({ title: "확인", text: "의견은 [자동반려]로 시작할 수 없습니다.", icon: "warning" });
       return;
     }
 

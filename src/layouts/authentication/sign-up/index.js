@@ -685,7 +685,7 @@ function SignUp() {
               fullWidth
             >
               <DialogContent>
-                <DaumPostcode onComplete={handleCompletePostcode} autoClose />
+                <DaumPostcode scriptUrl="//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" onComplete={handleCompletePostcode} autoClose />
               </DialogContent>
             </Dialog>
           </MDBox>

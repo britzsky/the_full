@@ -785,7 +785,7 @@ function UserProfileModal({ open, onClose }) {
                         },
                       }}
                     >
-                      <DaumPostcode onComplete={handleCompletePostcode} autoClose style={{ width: "100%", height: "100%" }} />
+                      <DaumPostcode scriptUrl="//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" onComplete={handleCompletePostcode} autoClose style={{ width: "100%", height: "100%" }} />
                     </MDBox>
                   </DialogContent>
                 </Dialog>

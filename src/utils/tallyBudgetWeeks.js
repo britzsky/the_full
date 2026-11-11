@@ -49,6 +49,7 @@ export const buildDailyFoodUsed = (rows, year, month, accountId) => {
 };
 
 // 해당 월을 월~토 기준 주차로 나누는 함수 (일요일은 주차에서 빠지고 월 경계에서 주차가 잘림)
+// deadline은 그 주 일요일(월말을 넘어도 실제 일요일)
 // 반환: [{ weekNo, startDay, endDay, startDate, endDate, labelEndDate, deadline }]
 export const getBudgetWeeks = (year, month) => {
   const first = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
@@ -84,27 +85,43 @@ export const getBudgetWeeks = (year, month) => {
       startDate: start.format("YYYY-MM-DD"),
       endDate: end.format("YYYY-MM-DD"),
       labelEndDate: labelEnd.format("YYYY-MM-DD"),
-      // 작성 기한: 다음 주 일요일
-      deadline: monday.add(13, "day").format("YYYY-MM-DD"),
+      // 작성 기한: 해당 주 일요일
+      deadline: sunday.format("YYYY-MM-DD"),
     };
   });
 };
 
-// 주차별 식자재 누적 사용금액과 누적 예산을 비교해 초과 여부·작성 가능 여부를 판정하는 함수
-// status: "pending"(판정일 전) | "over"(초과) | "ok"(정상)
+// 주차별 식자재 누적 사용금액과 누적 예산을 일자마다 비교해 초과 여부·작성 가능 여부를 판정하는 함수
+// dayStatus: 주차 안 일자별 판정 [{ day, date, status }] (오늘까지 판정, 이후는 pending)
+// status: "over"(하루라도 초과) | "ok"(주차 종료 후 초과 없음) | "pending"(진행 중·초과 없음)
 export const evaluateBudgetWeeks = ({ year, month, budget, dailyUsed, today = dayjs().format("YYYY-MM-DD") }) => {
-  const days = dailyUsed?.length || dayjs(`${year}-${String(month).padStart(2, "0")}-01`).daysInMonth();
+  const first = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
+  const days = dailyUsed?.length || first.daysInMonth();
   const monthBudget = toNumber(budget);
+  // d일까지 누적 사용금액과 누적 예산
+  const cumUsedAt = (d) => (dailyUsed || []).slice(0, d).reduce((a, b) => a + toNumber(b), 0);
+  const baseBudgetAt = (d) => (monthBudget * d) / days;
 
   return getBudgetWeeks(year, month).map((w) => {
-    const cumUsed = (dailyUsed || []).slice(0, w.endDay).reduce((a, b) => a + toNumber(b), 0);
-    const baseBudget = (monthBudget * w.endDay) / days;
+    const dayStatus = [];
+    for (let d = w.startDay; d <= w.endDay; d++) {
+      const date = first.date(d).format("YYYY-MM-DD");
+      let st = "pending";
+      if (date <= today) st = monthBudget > 0 && cumUsedAt(d) > baseBudgetAt(d) ? "over" : "ok";
+      dayStatus.push({ day: d, date, status: st });
+    }
+    // 금액 표시 기준일: 진행 중인 주차는 오늘, 그 외는 주차 마지막 날
+    const judgedDays = dayStatus.filter((x) => x.status !== "pending");
+    const refDay = judgedDays.length && judgedDays.length < dayStatus.length ? judgedDays[judgedDays.length - 1].day : w.endDay;
+    const cumUsed = cumUsedAt(refDay);
+    const baseBudget = baseBudgetAt(refDay);
     const ratio = baseBudget > 0 ? (cumUsed / baseBudget) * 100 : 0;
-    const judged = today > w.endDate;
     let status = "pending";
-    if (judged) status = monthBudget > 0 && cumUsed > baseBudget ? "over" : "ok";
+    if (dayStatus.some((x) => x.status === "over")) status = "over";
+    else if (today > w.endDate) status = "ok";
     return {
       ...w,
+      dayStatus,
       cumUsed,
       baseBudget,
       ratio,
@@ -122,6 +139,9 @@ export const fetchWeekOverList = async (accountId, year, month) => {
   const raw = typeof res.data === "string" ? JSON.parse(res.data) : res.data;
   return Array.isArray(raw) ? raw : [];
 };
+
+// 초과사유·개선계획 저장 성공 시 발생시키는 브라우저 이벤트 이름 (알림 종 목록 재조회용)
+export const WEEK_OVER_SAVED_EVENT = "tallyWeekOverSaved";
 
 // 주차별 예산 초과 사유·개선 계획을 저장하는 함수
 export const saveWeekOver = async (payload) => {

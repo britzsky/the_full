@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Badge, Divider, Icon, IconButton, Menu } from "@mui/material";
 import ArrowRightIcon from "@mui/icons-material/ArrowRight";
 import CampaignIcon from "@mui/icons-material/Campaign";
+import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import dayjs from "dayjs";
 
 import api from "api/api";
 import MDBox from "components/MDBox";
@@ -12,7 +14,15 @@ import PropTypes from "prop-types";
 
 // 현장 영양사 전용 구입요청서 승인·반려 알림 버튼
 // notice: 알림 목록 맨 위에 고정으로 보여줄 공지 문구 (숫자 배지에는 포함하지 않음), onOpenNotice: 공지 항목 클릭 시 공지 팝업 열기
-function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest, notice, onOpenNotice }) {
+// weekOverAlerts: 초과사유·개선계획 미작성 예산 초과 주차 목록, onMenuOpen: 메뉴 열 때 목록 재조회, onOpenWeekOver: 항목 클릭 시 예산 초과 안내 팝업 열기
+function FieldBoardPurchaseNotificationButton({
+  onOpenPurchaseRequest,
+  notice,
+  onOpenNotice,
+  weekOverAlerts,
+  onMenuOpen,
+  onOpenWeekOver,
+}) {
   // 화면을 새로고침하지 않고 결재 결과를 갱신하기 위한 알림 조회 주기
   const NOTIFICATION_POLL_MS = 30000;
   // 구입요청서 작성자 기준 알림 조회 및 읽음 처리에 사용하는 로그인 사용자 식별값
@@ -102,6 +112,9 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest, notice, o
     onOpenPurchaseRequest(paymentId);
   };
 
+  // 배지 숫자: 구입요청 결재 알림 + 예산 초과 미작성 주차 수
+  const badgeCount = notifications.length + weekOverAlerts.length;
+
   return (
     <>
       {/* 로그아웃 버튼과 간격을 두고 배치한 알림 개수 배지 및 메뉴 열기 버튼 */}
@@ -111,20 +124,21 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest, notice, o
         onClick={(event) => {
           setAnchorEl(event.currentTarget);
           fetchNotifications();
+          onMenuOpen?.();
         }}
         aria-controls="fieldboard-purchase-notification-menu"
         aria-haspopup="true"
         sx={{ color: "#fff", mr: 1 }}
       >
         <Badge
-          badgeContent={notifications.length}
+          badgeContent={badgeCount}
           color="error"
           max={99}
-          invisible={notifications.length === 0}
+          invisible={badgeCount === 0}
           sx={{
             "& .MuiBadge-badge": {
               transform: "translate(60%, -34%)",
-              ...(notifications.length > 0
+              ...(badgeCount > 0
                 ? {
                   animation: "fieldboardNotificationBlink 1.1s infinite",
                   boxShadow: "0 0 0 0 rgba(255,255,255,0.0)",
@@ -202,6 +216,27 @@ function FieldBoardPurchaseNotificationButton({ onOpenPurchaseRequest, notice, o
         {/* 공지 영역과 구입요청 알림 영역 구분선 */}
         {notice && <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />}
 
+        {/* 식자재 예산 초과 사유·개선 계획 미작성 주차 알림 영역 (작성 전까지 표시) */}
+        {weekOverAlerts.length > 0 && (
+          <MDBox px={2} pt={1} pb={0.5}>
+            <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
+              식자재 예산 초과 사유 및 개선 계획 작성 알림
+            </MDTypography>
+          </MDBox>
+        )}
+        {weekOverAlerts.map((w) => (
+          <NotificationItem
+            key={`weekover-${w.year}-${w.month}-${w.weekNo}`}
+            icon={<WarningAmberIcon sx={{ color: "#d32f2f" }} />}
+            title={`${w.month}월 ${w.weekNo}주차 예산 초과 사유·개선 계획을 작성해 주세요. (작성기한 ${dayjs(w.deadline).format("M/D")})`}
+            onClick={() => {
+              setAnchorEl(null);
+              onOpenWeekOver?.();
+            }}
+          />
+        ))}
+        {weekOverAlerts.length > 0 && <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />}
+
         {/* 구입요청 결재 알림 영역 제목 */}
         <MDBox px={2} pt={1} pb={0.5}>
           <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
@@ -235,11 +270,17 @@ FieldBoardPurchaseNotificationButton.propTypes = {
   onOpenPurchaseRequest: PropTypes.func.isRequired,
   notice: PropTypes.string,
   onOpenNotice: PropTypes.func,
+  weekOverAlerts: PropTypes.arrayOf(PropTypes.object),
+  onMenuOpen: PropTypes.func,
+  onOpenWeekOver: PropTypes.func,
 };
 
 FieldBoardPurchaseNotificationButton.defaultProps = {
   notice: "",
   onOpenNotice: undefined,
+  weekOverAlerts: [],
+  onMenuOpen: undefined,
+  onOpenWeekOver: undefined,
 };
 
 export default FieldBoardPurchaseNotificationButton;

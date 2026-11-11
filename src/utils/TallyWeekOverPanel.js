@@ -4,7 +4,12 @@ import dayjs from "dayjs";
 import { Box, Card, TextField, Typography } from "@mui/material";
 import MDButton from "components/MDButton";
 import Swal from "sweetalert2";
-import { evaluateBudgetWeeks, fetchWeekOverList, saveWeekOver } from "utils/tallyBudgetWeeks";
+import {
+  evaluateBudgetWeeks,
+  fetchWeekOverList,
+  saveWeekOver,
+  WEEK_OVER_SAVED_EVENT,
+} from "utils/tallyBudgetWeeks";
 
 // 금액 천 단위 콤마 표시
 const fmt = (v) => Math.round(Number(v) || 0).toLocaleString("ko-KR");
@@ -19,7 +24,8 @@ const STATUS_STYLE = {
 };
 
 // 주차별(월~토) 식자재 예산 초과 여부와 초과 사유·개선 계획을 달력처럼 한 줄로 보여주는 영역
-// editable=true(현장)이면 초과 주차를 작성 기한(다음 주 일요일)까지 작성, false(본사)이면 읽기 전용
+// 주차 안 하루라도 초과되면 초과 주차가 되어 작성 가능
+// editable=true(현장)이면 초과 주차를 작성 기한(해당 주 일요일)까지 작성, false(본사)이면 읽기 전용
 function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editable }) {
   // 서버에 저장된 주차별 사유·계획 원본
   const [savedRows, setSavedRows] = useState([]);
@@ -96,6 +102,8 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
       });
       if (Number(res.code) === 200) {
         Swal.fire("저장 완료", `${w.weekNo}주차 초과사유·개선계획을 저장했습니다.`, "success");
+        // 현장관리 상단 알림 종의 미작성 주차 목록을 다시 조회하도록 알림
+        window.dispatchEvent(new Event(WEEK_OVER_SAVED_EVENT));
         await loadSaved();
       } else {
         Swal.fire("저장 실패", res.message || "저장에 실패했습니다.", "error");
@@ -154,6 +162,29 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                 <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{st.label}</Typography>
               </Box>
 
+              {/* 일자별 누적 예산 초과 여부 표시 줄(빨강 초과·초록 정상·회색 미판정) */}
+              <Box sx={{ display: "flex", gap: 0.5, px: 1, pt: 0.75 }}>
+                {w.dayStatus.map((x) => (
+                  <Box
+                    key={x.date}
+                    title={`${md(x.date)} ${STATUS_STYLE[x.status].label || "미판정"}`}
+                    sx={{
+                      flex: 1,
+                      py: 0.25,
+                      borderRadius: 0.5,
+                      bgcolor: STATUS_STYLE[x.status].bg,
+                      color: "#fff",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textAlign: "center",
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {`${"일월화수목금토"[dayjs(x.date).day()]} ${dayjs(x.date).date()}`}
+                  </Box>
+                ))}
+              </Box>
+
               {/* 판정일까지 누적 사용금액·누적 예산·비율 영역 */}
               <Box sx={{ px: 1, py: 0.5, borderBottom: "1px solid #eee" }}>
                 <Typography
@@ -166,14 +197,21 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                     textOverflow: "ellipsis",
                   }}
                 >
-                  {`누적 사용 ${fmt(w.cumUsed)} / 누적 예산 ${fmt(w.baseBudget)} / `}
-                  <Box
-                    component="span"
-                    sx={{ fontWeight: 700, color: w.status === "over" ? "#d32f2f" : "#444" }}
+                  {`누적 사용 ${fmt(w.cumUsed)} / 누적 예산 ${fmt(w.baseBudget)}`}
+                </Typography>
+                {/* 판정일 기준 예산대비 비율 및 작성기한(초과 주차만) 줄 */}
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
+                  <Typography
+                    sx={{ fontSize: 11, fontWeight: 700, color: w.status === "over" ? "#d32f2f" : "#444" }}
                   >
                     {`예산대비 ${w.ratio.toFixed(2)}%`}
-                  </Box>
-                </Typography>
+                  </Typography>
+                  {w.status === "over" && (
+                    <Typography sx={{ fontSize: 11, color: w.writable ? "#d32f2f" : "#999", whiteSpace: "nowrap" }}>
+                      {w.writable ? `작성기한 ${md(w.deadline)}` : `작성 마감 (${md(w.deadline)})`}
+                    </Typography>
+                  )}
+                </Box>
               </Box>
 
               {/* 초과사유·개선계획 입력 영역 */}
@@ -204,32 +242,18 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                 />
               </Box>
 
-              {/* 작성 기한 및 저장 버튼 영역(초과 주차만 표시) */}
-              {w.status === "over" && (
-                <Box
-                  sx={{
-                    px: 1,
-                    pb: 1,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 1,
-                  }}
-                >
-                  <Typography sx={{ fontSize: 11, color: w.writable ? "#d32f2f" : "#999" }}>
-                    {w.writable ? `작성기한 ${md(w.deadline)}` : `작성 마감 (${md(w.deadline)})`}
-                  </Typography>
-                  {canEdit && (
-                    <MDButton
-                      variant="gradient"
-                      color="info"
-                      size="small"
-                      disabled={savingWeek === w.weekNo || !isDirty(w.weekNo)}
-                      onClick={() => handleSave(w)}
-                    >
-                      {savingWeek === w.weekNo ? "저장중..." : "저장"}
-                    </MDButton>
-                  )}
+              {/* 저장 버튼 영역(현장에서 작성 기한 내 초과 주차만 표시) */}
+              {canEdit && (
+                <Box sx={{ px: 1, pb: 1, display: "flex", justifyContent: "flex-end" }}>
+                  <MDButton
+                    variant="gradient"
+                    color="info"
+                    size="small"
+                    disabled={savingWeek === w.weekNo || !isDirty(w.weekNo)}
+                    onClick={() => handleSave(w)}
+                  >
+                    {savingWeek === w.weekNo ? "저장중..." : "저장"}
+                  </MDButton>
                 </Box>
               )}
             </Box>

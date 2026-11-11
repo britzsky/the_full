@@ -16,7 +16,8 @@ const TOKEN_GUIDE = [
   ["{{week_work_days}}", "주 근무일수"],
   ["{{start_time}}", "시업 시각"],
   ["{{end_time}}", "종업 시각"],
-  ["{{break_hours}}", "휴게시간"],
+  ["{{break_hours}}", "총 휴게시간"],
+  ["{{break_times}}", "휴게 시간대 1회·2회 (예: 총 {{break_hours}}시간{{break_times}})"],
   ["{{job_name}}", "종사업무"],
   ["{{work_place}}", "취업장소"],
   ["{{probation_months}}", "수습기간(개월)"],
@@ -97,7 +98,9 @@ function ContractTemplateEditor({ clauses, info, corType, onCorTypeChange, previ
   return (
     <>
       {/* 양식 탭 상단: 편집/미리보기 전환, 최종 수정 정보, 되돌리기·조항 추가·저장 버튼 */}
-      <MDBox sx={{ display: "flex", gap: 1, mb: 1.5, alignItems: "center", flexWrap: "wrap" }}>
+      <MDBox
+        sx={{ display: "flex", gap: 1, mb: 1.5, alignItems: "center", flexWrap: "wrap", flexShrink: 0 }}
+      >
         <MDBox sx={switchBoxSx}>
           {[
             ["edit", "조항 편집"],
@@ -176,6 +179,8 @@ function ContractTemplateEditor({ clauses, info, corType, onCorTypeChange, previ
         </MDButton>
       </MDBox>
 
+      {/* 버튼 영역 아래 스크롤 영역 (작성 안내·양식) */}
+      <MDBox sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
       {view === "edit" && (
         <>
           {/* 본문 작성 안내와 값 자리 목록 */}
@@ -218,6 +223,7 @@ function ContractTemplateEditor({ clauses, info, corType, onCorTypeChange, previ
       {view === "preview" && (
         <ContractForm form={previewForm} onChange={() => {}} readOnly clauses={draft} />
       )}
+      </MDBox>
     </>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   Tabs,
   Tab,
@@ -42,7 +42,7 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { confirmTabLeave } from "utils/unsavedChangesGuard";
-import { fetchPendingWeekOverAlerts } from "utils/tallyBudgetWeeks";
+import { fetchPendingWeekOverAlerts, WEEK_OVER_SAVED_EVENT } from "utils/tallyBudgetWeeks";
 
 // 현장관리 진입 공지 팝업 이미지 (public/fieldboard-notice.png 파일을 교체해서 사용, 없으면 이미지 영역 숨김)
 const NOTICE_IMAGE_SRC = `${process.env.PUBLIC_URL}/fieldboard-notice.png`;
@@ -57,6 +57,12 @@ const NOTICE_END_AT = TALLY_CLOSE_AT.valueOf();
 
 // 공지 본문 강조 스타일 (빨간 강조)
 const noticeRed = { color: "#d32f2f", fontWeight: 700 };
+
+// 예산 초과 안내 팝업에 보여주는 초과사유·개선계획 작성 예시 문구
+const WEEK_OVER_REASON_EXAMPLE =
+  "1주차 누적 사용액은 662,295원으로, 누적 예산 624,788원 대비 37,507원 초과했습니다(예산 대비 106.00%). 11/5 발주 시 냉동육과 건식 재고를 확인하지 않아, 2주차에 사용할 물량 일부를 1주차에 미리 구매했습니다.";
+const WEEK_OVER_PLAN_EXAMPLE =
+  "2주차에는 냉동육과 건식 재고를 우선 사용하고, 해당 품목의 발주를 줄여 1주차 초과분 37,507원을 만회하겠습니다. 이후 발주 전 실제 재고와 예정 식수를 확인해 부족한 수량만 주문하겠습니다. 11/14(2주차 마감)까지 누적 사용액을 적정 예산 이내로 맞추겠습니다.";
 
 // 마감 일시 표시 문구 (예: 10월 31일(토) 밤 11시 (23:00))
 const TALLY_CLOSE_LABEL = `${TALLY_CLOSE_AT.month() + 1}월 ${TALLY_CLOSE_AT.date()}일(${"일월화수목금토"[TALLY_CLOSE_AT.day()]
@@ -185,17 +191,20 @@ function FieldBoardTabs() {
     };
   }, [noticeOpen]);
 
-  // 현장관리 진입 시 로그인 거래처의 예산 초과 미작성 주차(당월·전월)를 조회
-  useEffect(() => {
-    let cancelled = false;
+  // 로그인 거래처의 예산 초과 미작성 주차(당월·전월)를 조회하는 함수 (진입 시, 알림 종을 열 때 호출)
+  const loadWeekOverAlerts = useCallback(() => {
     const accountId = localStorage.getItem("account_id") || "";
-    fetchPendingWeekOverAlerts(accountId)
-      .then((list) => !cancelled && setWeekOverAlerts(list))
+    return fetchPendingWeekOverAlerts(accountId)
+      .then(setWeekOverAlerts)
       .catch((e) => console.error("예산 초과 주차 조회 실패:", e));
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  // 진입 시 조회하고, 집계표에서 초과사유·개선계획을 저장하면 바로 다시 조회
+  useEffect(() => {
+    loadWeekOverAlerts();
+    window.addEventListener(WEEK_OVER_SAVED_EVENT, loadWeekOverAlerts);
+    return () => window.removeEventListener(WEEK_OVER_SAVED_EVENT, loadWeekOverAlerts);
+  }, [loadWeekOverAlerts]);
 
   // 공지 팝업 닫기:체크했으면 현재 시각을 저장해 24시간 동안 숨긴다.
   const handleNoticeClose = () => {
@@ -345,6 +354,9 @@ function FieldBoardTabs() {
                 setNoticeHideToday(false);
                 setNoticeOpen(true);
               }}
+              weekOverAlerts={weekOverAlerts}
+              onMenuOpen={loadWeekOverAlerts}
+              onOpenWeekOver={() => setWeekOverConfirmed(false)}
             />
           )}
           onLogout={handleLogout}
@@ -621,6 +633,13 @@ function FieldBoardTabs() {
               <span style={noticeRed}>{`(작성기한 ${dayjs(w.deadline).format("M/D")})`}</span>
             </Box>
           ))}
+          {/* 초과사유·개선계획 작성 예시 영역 */}
+          <Box sx={{ mt: 1.5, p: 1.5, borderRadius: "10px", backgroundColor: "#f7f7f7", fontSize: "0.8rem", lineHeight: 1.65, color: "#555", wordBreak: "keep-all" }}>
+            <Box sx={{ fontWeight: 700, color: "#333" }}>초과사유(예시)</Box>
+            <Box sx={{ mb: 1 }}>{WEEK_OVER_REASON_EXAMPLE}</Box>
+            <Box sx={{ fontWeight: 700, color: "#333" }}>개선계획(예시)</Box>
+            <Box>{WEEK_OVER_PLAN_EXAMPLE}</Box>
+          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 2.5, py: 1.25, borderTop: "1px solid #f2f2f2" }}>
           <Button

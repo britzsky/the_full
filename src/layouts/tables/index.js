@@ -1214,7 +1214,7 @@ function AddAccountModal({ open, onClose }) {
             p: 2,
           }}
         >
-          <DaumPostcode onComplete={handleAddressSelect} />
+          <DaumPostcode scriptUrl="//t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js" onComplete={handleAddressSelect} />
         </Box>
       </Modal>
     </>

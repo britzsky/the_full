@@ -10,7 +10,6 @@ import MDButton from "components/MDButton";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import ContractForm, { formatMoney, PAY_KEYS, sumPay } from "./ContractForm";
-import { useFillViewportHeight } from "utils/HygieneCardBoard";
 import ContractTemplateEditor from "./ContractTemplateEditor";
 import useContractData from "./data/ContractData";
 
@@ -87,6 +86,11 @@ const emptyForm = () => ({
   start_time: "",
   end_time: "",
   break_hours: "",
+  // 휴게 시간대 (HH:MM, 휴게 1회면 2차 칸은 빈 값)
+  break_start1: "",
+  break_end1: "",
+  break_start2: "",
+  break_end2: "",
   ot_hours: "",
   night_hours: "",
   holiday_hours: "",
@@ -118,6 +122,8 @@ const PREVIEW_FORM = {
   start_time: "06:00",
   end_time: "15:00",
   break_hours: "1",
+  break_start1: "12:00",
+  break_end1: "13:00",
   job_name: "조리사",
   base_pay: "2,500,000",
   meal_pay: "200,000",
@@ -245,9 +251,6 @@ function ContractManager() {
   // 현황에서 PDF로 보고 있는 계약서 행과 PDF 화면 주소 (없으면 목록 표시)
   const [viewRow, setViewRow] = useState(null);
   const [viewPdfUrl, setViewPdfUrl] = useState("");
-  // PDF 보기 영역을 화면 맨 아래까지 채우는 높이 (페이지 스크롤 없이 PDF 안에서만 스크롤)
-  // 아래 여백 38px: 카드 안쪽 여백 16px + 카드 아래 끝을 왼쪽 메뉴 바 끝(화면 아래 22px)에 맞춤
-  const [pdfAreaRef, pdfAreaHeight] = useFillViewportHeight(38);
 
   // 거래처·계약서·직원 조회와 저장·삭제 API (data/ContractData.js)
   const {
@@ -621,7 +624,7 @@ function ContractManager() {
         "<br/><br/>저장하면 각 직원이 채움원 앱에서 바로 확인할 수 있습니다." +
         (noRrn.length
           ? `<br/><br/><b style="color:#c0392b">주민등록번호 없음: ${noRrn.join(", ")}</b>` +
-            "<br/>저장 후 계약서를 열어 주민등록번호를 입력해야 앱에서 확인할 수 있습니다."
+          "<br/>저장 후 계약서를 열어 주민등록번호를 입력해야 앱에서 확인할 수 있습니다."
           : ""),
       icon: "question",
       showCancelButton: true,
@@ -758,6 +761,9 @@ function ContractManager() {
   );
 
   // 목록 표 스타일 (지점업로드 표와 같은 톤: 연회색 머리 줄 고정, 세로선 없이 가로 구분선만)
+  // 탭 상단 버튼 영역 (스크롤해도 고정)
+  const toolbarSx = { display: "flex", gap: 1, alignItems: "center", flexWrap: "wrap", flexShrink: 0 };
+
   const tableBoxSx = {
     border: "1px solid #dde5eb",
     borderRadius: "8px",
@@ -815,6 +821,11 @@ function ContractManager() {
         sx={{
           borderRadius: "16px",
           boxShadow: "0px 5px 15px rgba(0,0,0,0.1)",
+          // 화면 높이에 맞춰 탭·버튼 영역은 고정하고 그 아래 내용만 스크롤
+          height: "calc(100vh - 80px)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
           // 한글이 대체 글꼴로 그려져 버튼 글자가 위로 뜨는 것을 1px 내려 세로 가운데로 맞춤 (높이 40px 유지)
           "& .MuiButton-sizeMedium": { paddingTop: "11px", paddingBottom: "9px" },
         }}
@@ -822,9 +833,7 @@ function ContractManager() {
         {/* 상단 고정 영역: 계약서 현황 / 계약서 작성 / 계약서 수정 탭 */}
         <MDBox
           sx={{
-            position: "sticky",
-            top: 0,
-            zIndex: 10,
+            flexShrink: 0,
             backgroundColor: "#ffffff",
             borderBottom: "1px solid #eee",
           }}
@@ -879,13 +888,16 @@ function ContractManager() {
           </Tabs>
         </MDBox>
 
-        {/* 탭 내용 */}
-        <MDBox p={2}>
+        {/* 탭 내용 (탭마다 위쪽 버튼 영역 고정, 그 아래 스크롤 영역) */}
+        <MDBox
+          p={2}
+          sx={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
+        >
           {/* 현황에서 고른 계약서 PDF 보기 (서명 전 계약서만 [수정] 가능) */}
           {tab === "list" && viewRow && (
             <>
               <MDBox
-                sx={{ display: "flex", gap: 1, mb: 1.5, alignItems: "center", flexWrap: "wrap" }}
+                sx={{ ...toolbarSx, mb: 1.5 }}
               >
                 <MDButton
                   variant="gradient"
@@ -946,10 +958,7 @@ function ContractManager() {
                 )}
               </MDBox>
               {/* 계약서 PDF 화면 (서명본 또는 현재 양식으로 만든 PDF) */}
-              <MDBox
-                ref={pdfAreaRef}
-                sx={{ ...tableBoxSx, overflow: "hidden", height: pdfAreaHeight ?? "70vh" }}
-              >
+              <MDBox sx={{ ...tableBoxSx, overflow: "hidden", flex: 1, minHeight: 0 }}>
                 {viewPdfUrl ? (
                   <iframe
                     title="근로계약서"
@@ -970,7 +979,7 @@ function ContractManager() {
             <>
               {/* 계약서 현황 검색 조건 영역 */}
               <MDBox
-                sx={{ display: "flex", gap: 1, mb: 1.5, alignItems: "center", flexWrap: "wrap" }}
+                sx={{ ...toolbarSx, mb: 1.5 }}
               >
                 {/* 거래처 검색 선택 (비우면 전체 거래처) */}
                 <AccountSearch
@@ -1018,8 +1027,8 @@ function ContractManager() {
                 </MDButton>
               </MDBox>
 
-              {/* 계약서 현황 목록 (행 클릭 시 계약서 열기) */}
-              <MDBox sx={tableBoxSx}>
+              {/* 계약서 현황 목록 (행 클릭 시 계약서 열기, 목록만 스크롤) */}
+              <MDBox sx={{ ...tableBoxSx, flex: 1, minHeight: 0 }}>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
                     <tr>
@@ -1127,7 +1136,7 @@ function ContractManager() {
             <>
               {/* 계약서 작성 상단: 왼쪽 목록으로·(새 계약서) 선택칸, 오른쪽 (상세) 계약 정보·상태와 저장 버튼 */}
               <MDBox
-                sx={{ display: "flex", gap: 1, mb: 1.5, alignItems: "center", flexWrap: "wrap" }}
+                sx={{ ...toolbarSx, mb: 1.5 }}
               >
                 <MDButton variant="gradient" color="secondary" onClick={() => setTab("list")}>
                   목록으로
@@ -1235,196 +1244,199 @@ function ContractManager() {
                 )}
               </MDBox>
 
-              {/* 일괄 작성 대상자 선택 영역 (직원/파출 탭, 파출 기준월, 이름 검색, 체크 목록) */}
-              {isBulk && (
-                <MDBox sx={{ border: "1px solid #dfe5ea", borderRadius: "8px", p: 1.5, mb: 1.5 }}>
-                  {/* 대상 목록 보기 조건 */}
-                  <MDBox
-                    sx={{ display: "flex", gap: 1, mb: 1, alignItems: "center", flexWrap: "wrap" }}
-                  >
-                    {/* 직원 / 파출 목록 전환 스위치 (선택된 쪽이 흰 칸으로 올라옴) */}
+              {/* 버튼 영역 아래 스크롤 영역 (일괄 대상자 선택·계약서 양식) */}
+              <MDBox sx={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+                {/* 일괄 작성 대상자 선택 영역 (직원/파출 탭, 파출 기준월, 이름 검색, 체크 목록) */}
+                {isBulk && (
+                  <MDBox sx={{ border: "1px solid #dfe5ea", borderRadius: "8px", p: 1.5, mb: 1.5 }}>
+                    {/* 대상 목록 보기 조건 */}
                     <MDBox
-                      sx={{
-                        display: "inline-flex",
-                        height: 40,
-                        p: "3px",
-                        boxSizing: "border-box",
-                        borderRadius: "8px",
-                        backgroundColor: "#eef1f4",
-                        border: "1px solid #dfe5ea",
-                      }}
+                      sx={{ display: "flex", gap: 1, mb: 1, alignItems: "center", flexWrap: "wrap" }}
                     >
-                      {["직원", "파출"].map((type) => {
-                        const active = bulkTab === type;
-                        return (
-                          <MDBox
-                            key={type}
-                            component="button"
-                            type="button"
-                            onClick={() => setBulkTab(type)}
-                            sx={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              minWidth: 84,
-                              px: 1.5,
-                              pt: "1px",
-                              border: "none",
-                              borderRadius: "6px",
-                              cursor: "pointer",
-                              fontSize: 13,
-                              lineHeight: 1,
-                              fontWeight: active ? "bold" : "normal",
-                              color: active ? "#1687b2" : "#7a8998",
-                              backgroundColor: active ? "#fff" : "transparent",
-                              boxShadow: active ? "0 1px 3px rgba(0,0,0,0.15)" : "none",
-                              transition: "all 0.15s",
-                            }}
-                          >
-                            {type}
-                            <span style={{ marginLeft: 6, fontSize: 12, opacity: 0.8 }}>
-                              {type === "직원" ? memberList.length : latestDispatch.length}
-                            </span>
-                          </MDBox>
-                        );
-                      })}
-                    </MDBox>
-                    <TextField
-                      size="small"
-                      placeholder="이름 검색"
-                      value={bulkSearch}
-                      onChange={(e) => setBulkSearch(e.target.value)}
-                      sx={{ width: 150, ...centerInputSx }}
-                    />
-                    <MDBox sx={{ flex: 1 }} />
-                    {/* 담긴 대상자 수 (여러 요양원이면 요양원별 인원을 마우스 올려 확인) */}
-                    <MDBox
-                      sx={infoChipSx}
-                      title={bulkAccounts.map(([name, count]) => `${name} ${count}명`).join("\n")}
-                    >
-                      <span style={{ color: "#8a97a3", marginRight: 6 }}>선택</span>
-                      <b style={{ color: "#273542" }}>
-                        {bulkCount}명
-                        {bulkAccounts.length > 1 ? ` · 요양원 ${bulkAccounts.length}곳` : ""}
-                      </b>
-                    </MDBox>
-                  </MDBox>
-
-                  {/* 대상자 체크 목록 (기존 계약서가 있으면 상태 표시) */}
-                  <MDBox sx={{ ...tableBoxSx, maxHeight: 280 }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr>
-                          <th style={{ ...thSx, width: 48 }}>
-                            <Checkbox
-                              size="small"
-                              checked={
-                                bulkRows.length > 0 && bulkRows.every((row) => bulkTargets[row.key])
-                              }
-                              indeterminate={
-                                bulkRows.some((row) => bulkTargets[row.key]) &&
-                                !bulkRows.every((row) => bulkTargets[row.key])
-                              }
-                              onChange={(e) => toggleBulkAll(e.target.checked)}
-                              sx={{ p: 0 }}
-                            />
-                          </th>
-                          {[
-                            "성명",
-                            "직책",
-                            "파출업체",
-                            "최근 기준월",
-                            "주민등록번호",
-                            "기존 계약서",
-                          ].map((label) => (
-                            <th key={label} style={thSx}>
-                              {label}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {bulkRows.length === 0 && (
-                          <tr>
-                            <td colSpan={7} style={{ ...tdSx, padding: 16, color: "#7a8998" }}>
-                              {form.account_id
-                                ? "대상자가 없습니다."
-                                : "요양원을 먼저 선택해 주세요."}
-                            </td>
-                          </tr>
-                        )}
-                        {bulkRows.map((row) => {
-                          const status = existingStatus(row);
-                          const color = STATUS_COLORS[status];
+                      {/* 직원 / 파출 목록 전환 스위치 (선택된 쪽이 흰 칸으로 올라옴) */}
+                      <MDBox
+                        sx={{
+                          display: "inline-flex",
+                          height: 40,
+                          p: "3px",
+                          boxSizing: "border-box",
+                          borderRadius: "8px",
+                          backgroundColor: "#eef1f4",
+                          border: "1px solid #dfe5ea",
+                        }}
+                      >
+                        {["직원", "파출"].map((type) => {
+                          const active = bulkTab === type;
                           return (
-                            <tr
-                              key={row.key}
-                              onClick={() => toggleBulkTarget(row)}
-                              style={{
+                            <MDBox
+                              key={type}
+                              component="button"
+                              type="button"
+                              onClick={() => setBulkTab(type)}
+                              sx={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                minWidth: 84,
+                                px: 1.5,
+                                pt: "1px",
+                                border: "none",
+                                borderRadius: "6px",
                                 cursor: "pointer",
-                                backgroundColor: bulkTargets[row.key] ? "#f3f8ff" : "#ffffff",
+                                fontSize: 13,
+                                lineHeight: 1,
+                                fontWeight: active ? "bold" : "normal",
+                                color: active ? "#1687b2" : "#7a8998",
+                                backgroundColor: active ? "#fff" : "transparent",
+                                boxShadow: active ? "0 1px 3px rgba(0,0,0,0.15)" : "none",
+                                transition: "all 0.15s",
                               }}
                             >
-                              <td style={tdSx}>
-                                <Checkbox
-                                  size="small"
-                                  checked={!!bulkTargets[row.key]}
-                                  sx={{ p: 0, pointerEvents: "none" }}
-                                />
+                              {type}
+                              <span style={{ marginLeft: 6, fontSize: 12, opacity: 0.8 }}>
+                                {type === "직원" ? memberList.length : latestDispatch.length}
+                              </span>
+                            </MDBox>
+                          );
+                        })}
+                      </MDBox>
+                      <TextField
+                        size="small"
+                        placeholder="이름 검색"
+                        value={bulkSearch}
+                        onChange={(e) => setBulkSearch(e.target.value)}
+                        sx={{ width: 150, ...centerInputSx }}
+                      />
+                      <MDBox sx={{ flex: 1 }} />
+                      {/* 담긴 대상자 수 (여러 요양원이면 요양원별 인원을 마우스 올려 확인) */}
+                      <MDBox
+                        sx={infoChipSx}
+                        title={bulkAccounts.map(([name, count]) => `${name} ${count}명`).join("\n")}
+                      >
+                        <span style={{ color: "#8a97a3", marginRight: 6 }}>선택</span>
+                        <b style={{ color: "#273542" }}>
+                          {bulkCount}명
+                          {bulkAccounts.length > 1 ? ` · 요양원 ${bulkAccounts.length}곳` : ""}
+                        </b>
+                      </MDBox>
+                    </MDBox>
+
+                    {/* 대상자 체크 목록 (기존 계약서가 있으면 상태 표시) */}
+                    <MDBox sx={{ ...tableBoxSx, maxHeight: 280 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...thSx, width: 48 }}>
+                              <Checkbox
+                                size="small"
+                                checked={
+                                  bulkRows.length > 0 && bulkRows.every((row) => bulkTargets[row.key])
+                                }
+                                indeterminate={
+                                  bulkRows.some((row) => bulkTargets[row.key]) &&
+                                  !bulkRows.every((row) => bulkTargets[row.key])
+                                }
+                                onChange={(e) => toggleBulkAll(e.target.checked)}
+                                sx={{ p: 0 }}
+                              />
+                            </th>
+                            {[
+                              "성명",
+                              "직책",
+                              "파출업체",
+                              "최근 기준월",
+                              "주민등록번호",
+                              "기존 계약서",
+                            ].map((label) => (
+                              <th key={label} style={thSx}>
+                                {label}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {bulkRows.length === 0 && (
+                            <tr>
+                              <td colSpan={7} style={{ ...tdSx, padding: 16, color: "#7a8998" }}>
+                                {form.account_id
+                                  ? "대상자가 없습니다."
+                                  : "요양원을 먼저 선택해 주세요."}
                               </td>
-                              <td style={tdSx}>{row.name}</td>
-                              <td style={tdSx}>{POSITION_LABELS[row.position_type] || "-"}</td>
-                              <td style={tdSx}>{row.dispatch_account || "-"}</td>
-                              <td style={tdSx}>
-                                {row.record_year
-                                  ? `${row.record_year}-${String(row.record_month).padStart(
+                            </tr>
+                          )}
+                          {bulkRows.map((row) => {
+                            const status = existingStatus(row);
+                            const color = STATUS_COLORS[status];
+                            return (
+                              <tr
+                                key={row.key}
+                                onClick={() => toggleBulkTarget(row)}
+                                style={{
+                                  cursor: "pointer",
+                                  backgroundColor: bulkTargets[row.key] ? "#f3f8ff" : "#ffffff",
+                                }}
+                              >
+                                <td style={tdSx}>
+                                  <Checkbox
+                                    size="small"
+                                    checked={!!bulkTargets[row.key]}
+                                    sx={{ p: 0, pointerEvents: "none" }}
+                                  />
+                                </td>
+                                <td style={tdSx}>{row.name}</td>
+                                <td style={tdSx}>{POSITION_LABELS[row.position_type] || "-"}</td>
+                                <td style={tdSx}>{row.dispatch_account || "-"}</td>
+                                <td style={tdSx}>
+                                  {row.record_year
+                                    ? `${row.record_year}-${String(row.record_month).padStart(
                                       2,
                                       "0"
                                     )}`
-                                  : "-"}
-                              </td>
-                              <td
-                                style={{
-                                  ...tdSx,
-                                  color: String(row.rrn || "").trim() ? undefined : "#c0392b",
-                                }}
-                              >
-                                {String(row.rrn || "").trim()
-                                  ? `${String(row.rrn)
+                                    : "-"}
+                                </td>
+                                <td
+                                  style={{
+                                    ...tdSx,
+                                    color: String(row.rrn || "").trim() ? undefined : "#c0392b",
+                                  }}
+                                >
+                                  {String(row.rrn || "").trim()
+                                    ? `${String(row.rrn)
                                       .replace(/[^0-9]/g, "")
                                       .slice(0, 6)}-*******`
-                                  : "없음"}
-                              </td>
-                              <td style={tdSx}>
-                                {status ? (
-                                  <span style={statusBadgeStyle(color)}>{status}</span>
-                                ) : (
-                                  "-"
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                    : "없음"}
+                                </td>
+                                <td style={tdSx}>
+                                  {status ? (
+                                    <span style={statusBadgeStyle(color)}>{status}</span>
+                                  ) : (
+                                    "-"
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </MDBox>
                   </MDBox>
-                </MDBox>
-              )}
-              {isSigned && (
-                <MDBox sx={{ mb: 1, fontSize: 13, color: "#2a7a49" }}>
-                  서명이 완료된 계약서는 수정·삭제할 수 없습니다.
-                </MDBox>
-              )}
+                )}
+                {isSigned && (
+                  <MDBox sx={{ mb: 1, fontSize: 13, color: "#2a7a49" }}>
+                    서명이 완료된 계약서는 수정·삭제할 수 없습니다.
+                  </MDBox>
+                )}
 
-              {/* 근로계약서 양식 (노란 칸: 회사 입력, 파란 칸: 근로자 앱 서명) */}
-              <ContractForm
-                form={form}
-                onChange={handleFormChange}
-                readOnly={isSigned}
-                bulk={isBulk}
-                // 작성 중인 계약서의 구분(직원관리 값)에 맞는 양식 조항
-                clauses={templates[form.cor_type === "2" ? 2 : 1].clauses}
-              />
+                {/* 근로계약서 양식 (노란 칸: 회사 입력, 파란 칸: 근로자 앱 서명) */}
+                <ContractForm
+                  form={form}
+                  onChange={handleFormChange}
+                  readOnly={isSigned}
+                  bulk={isBulk}
+                  // 작성 중인 계약서의 구분(직원관리 값)에 맞는 양식 조항
+                  clauses={templates[form.cor_type === "2" ? 2 : 1].clauses}
+                />
+              </MDBox>
             </>
           )}
 

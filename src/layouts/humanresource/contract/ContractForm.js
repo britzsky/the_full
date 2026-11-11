@@ -97,6 +97,41 @@ export const PAY_KEYS = [
   "holiday_pay",
   "night_pay",
 ];
+// "□ 항목 : 내용" 줄 판별 (항목명에 콜론·값 자리가 없고 12자 이내, 콜론 앞은 띄어쓰기)
+// 서버 ContractHtmlBuilder.LABEL_LINE과 같은 규칙
+const LABEL_LINE = /^\s*□\s*([^:{}]{1,12}?)\s+:\s*(.*)$/;
+
+// 항목명 표시 폭(em): 한글 1, 띄어쓰기 0.3, 영문·숫자 0.55 (한 조항 안 콜론 위치 맞춤용)
+const labelEm = (label) =>
+  [...label].reduce((sum, ch) => sum + (ch === " " ? 0.3 : /[\x21-\x7e]/.test(ch) ? 0.55 : 1), 0);
+
+// 조항 본문에서 가장 긴 항목명 폭 (해당 줄이 없으면 0)
+const clauseLabelEm = (body) =>
+  String(body || "")
+    .split("\n")
+    .reduce((max, line) => {
+      const m = LABEL_LINE.exec(line);
+      return m && !line.includes("{{sign}}") ? Math.max(max, labelEm(m[1])) : max;
+    }, 0);
+
+// 휴게 시간대 합계(시간) 계산 (시작·종료가 모두 있는 구간만, 자정 넘김은 다음 날로 계산, 없으면 null)
+const sumBreakHours = (form) => {
+  const toMin = (t) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(t ?? ""));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+  };
+  let total = 0;
+  let found = false;
+  ["1", "2"].forEach((n) => {
+    const start = toMin(form[`break_start${n}`]);
+    const end = toMin(form[`break_end${n}`]);
+    if (start === null || end === null) return;
+    total += end >= start ? end - start : end + 1440 - start;
+    found = true;
+  });
+  return found ? String(Math.round((total / 60) * 100) / 100) : null;
+};
+
 export const sumPay = (form) =>
   PAY_KEYS.reduce((sum, key) => sum + (Number(String(form[key] ?? "").replace(/,/g, "")) || 0), 0);
 
@@ -139,6 +174,80 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
         textAlign: opts.money ? "right" : "center",
       }}
     />
+  );
+
+  // 휴게 횟수 (1회 / 2회, 2차 시간대가 입력돼 있으면 2회)
+  const breakCount = form.break_count || (form.break_start2 || form.break_end2 ? "2" : "1");
+
+  // 휴게 시간대 입력 변경 (시간대가 바뀌면 총 휴게시간을 자동 계산해 채움, 직접 수정도 가능)
+  const changeBreakTime = (key, value) => {
+    onChange(key, value);
+    const total = sumBreakHours({ ...form, [key]: value });
+    if (total !== null) onChange("break_hours", total);
+  };
+
+  // 휴게 횟수 변경 (1회로 바꾸면 2차 시간대를 비우고 총 휴게시간 다시 계산)
+  const changeBreakCount = (value) => {
+    onChange("break_count", value);
+    if (value === "1") {
+      onChange("break_start2", "");
+      onChange("break_end2", "");
+      const total = sumBreakHours({ ...form, break_start2: "", break_end2: "" });
+      if (total !== null) onChange("break_hours", total);
+    }
+  };
+
+  // 휴게 시각 입력칸 (00:00 형식, 숫자만 입력하면 시·분 사이 콜론 자동 입력)
+  const breakInput = (key) => (
+    <input
+      value={form[key] ?? ""}
+      disabled={readOnly}
+      placeholder="00:00"
+      maxLength={5}
+      inputMode="numeric"
+      onChange={(e) => {
+        const digits = e.target.value.replace(/[^0-9]/g, "").slice(0, 4);
+        changeBreakTime(
+          key,
+          digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits
+        );
+      }}
+      style={{
+        width: 56,
+        height: 24,
+        textAlign: "center",
+        boxSizing: "border-box",
+        backgroundColor: readOnly ? "#f5f5f5" : "#fff9c4",
+        border: "1px solid #d4b800",
+        borderRadius: 2,
+        padding: "0 4px",
+        fontSize: 13,
+        verticalAlign: "middle",
+      }}
+    />
+  );
+
+  // 제3조 휴게 시간대 ({{break_times}} 자리: 횟수 선택 + 1회·2회 시간대 입력칸)
+  const breakTimes = (
+    <>
+      ,{" "}
+      <select
+        value={breakCount}
+        disabled={readOnly}
+        onChange={(e) => changeBreakCount(e.target.value)}
+        style={{ fontSize: 13, padding: "1px 2px", marginRight: 4 }}
+      >
+        <option value="1">1회</option>
+        <option value="2">2회</option>
+      </select>
+      ( {breakInput("break_start1")} ~ {breakInput("break_end1")} )
+      {breakCount === "2" && (
+        <>
+          {" "}
+          , ( {breakInput("break_start2")} ~ {breakInput("break_end2")} )
+        </>
+      )}
+    </>
   );
 
   // 제4조 월평균 연장·야간·휴일근로시간 표 ({{ot_table}} 자리)
@@ -221,6 +330,7 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
         </React.Fragment>
       );
     }
+    if (key === "break_times") return <React.Fragment key={idx}>{breakTimes}</React.Fragment>;
     if (key === "name") return <React.Fragment key={idx}>{form.name}</React.Fragment>;
     if (key === "job_name" && bulk) return <React.Fragment key={idx}>{auto}</React.Fragment>;
     // 일괄 작성 취업장소: 대상자 구분이 섞여 비어 있으면 '직원별 구분' 안내 (직접 입력하면 그 장소로 저장)
@@ -238,24 +348,37 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
   };
 
   // 조항 본문 한 줄 그리기 (표 자리, 서명 자리, □ 줄 들여쓰기)
-  const renderLine = (line) => {
+  // labelWidth: 조항 안 가장 긴 항목명 폭(em), "□ 항목 : 내용" 줄은 항목명을 이 폭에 맞춰 콜론 위치를 정렬
+  const renderLine = (line, labelWidth = 0) => {
     const trimmed = line.trim();
     if (trimmed === "{{ot_table}}") return otTable;
     if (trimmed === "{{pay_table}}") return payTable;
     const hasSign = line.includes("{{sign}}");
-    const parts = line.replace("{{sign}}", "").split(/\{\{(\w+)\}\}/);
+    const labelMatch = !hasSign && labelWidth > 0 ? LABEL_LINE.exec(line) : null;
+    const parts = (labelMatch ? labelMatch[2] : line.replace("{{sign}}", "")).split(
+      /\{\{(\w+)\}\}/
+    );
+    // 본문 값 자리 그리기 (짝수 칸은 문구, 홀수 칸은 {{항목}} 이름)
+    const content = parts.map((part, idx) =>
+      // eslint-disable-next-line react/no-array-index-key
+      idx % 2 === 0 ? <React.Fragment key={idx}>{part}</React.Fragment> : renderToken(part, idx)
+    );
+    // "□ 항목 : 내용" 줄: 항목 칸 폭을 조항 안에서 같게 해 콜론 위치 정렬, 긴 내용은 콜론 뒤에 맞춰 줄바꿈
+    if (labelMatch) {
+      return (
+        <div style={{ display: "flex", alignItems: "baseline" }}>
+          <div style={{ width: `${labelWidth + 1.15}em`, flexShrink: 0, whiteSpace: "pre-wrap" }}>
+            □ {labelMatch[1]}
+          </div>
+          <div style={{ whiteSpace: "nowrap" }}>:&nbsp;</div>
+          <div style={lineStyle}>{content}</div>
+        </div>
+      );
+    }
     return (
       <div style={{ display: "flex", alignItems: "center" }}>
         <div style={trimmed.startsWith("□") ? { ...lineStyle, ...bulletLineStyle } : lineStyle}>
-          {parts.map((part, idx) =>
-            // 짝수 칸은 문구, 홀수 칸은 {{항목}} 이름
-            // eslint-disable-next-line react/no-array-index-key
-            idx % 2 === 0 ? (
-              <React.Fragment key={idx}>{part}</React.Fragment>
-            ) : (
-              renderToken(part, idx)
-            )
-          )}
+          {content}
           {line === "" && "\u00a0"}
         </div>
         {/* 제9조 근로자 성명·서명 자리 (근로자가 앱에서 서명) */}
@@ -351,7 +474,9 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
                     .split("\n")
                     .map((line, i) => (
                       // eslint-disable-next-line react/no-array-index-key
-                      <React.Fragment key={i}>{renderLine(line)}</React.Fragment>
+                      <React.Fragment key={i}>
+                        {renderLine(line, clauseLabelEm(clause.body))}
+                      </React.Fragment>
                     ))}
                 </td>
               </tr>

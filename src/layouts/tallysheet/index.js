@@ -184,7 +184,8 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
     <Box
       sx={{
         display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
+        // 예산·사용금액 칸은 같은 폭, 예산대비 칸은 비율 글자만 들어가는 좁은 폭
+        gridTemplateColumns: "1fr 1fr minmax(120px, max-content)",
         flex: 1,
         borderTop: borderTop ? "1px solid #111" : "none",
       }}
@@ -202,7 +203,7 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
             bgcolor: it.bg || "#fff",
           }}
         >
-          <Typography sx={{ fontSize: 12, fontWeight: 800, lineHeight: 1.4, color: it.color || "#444" }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 800, lineHeight: 1.4, whiteSpace: "nowrap", color: it.color || "#444" }}>
             {it.label} : {it.value}
           </Typography>
         </Box>
@@ -215,7 +216,7 @@ function BudgetSummaryBar({ budget, used, suppliesBudget = 0, suppliesUsed = 0, 
       {/* 예산 현황 제목·대상 월 영역(모든 행 높이를 차지하는 왼쪽 칸) */}
       <Box
         sx={{
-          px: 1,
+          px: 0.5,
           bgcolor: "#288ebe",
           borderRight: "1px solid #111",
           display: "flex",
@@ -3492,15 +3493,14 @@ function TallySheet() {
   ];
 
   // ✅ 거래처 검색 왼쪽에 표시할 범례(동그라미 + 의미)
+  // PC는 날짜오기입·금액오기입을 위아래 2행으로 쌓고 완료는 옆 칸에 표시
   const PointLegend = () => (
     <Box
       sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-        flexWrap: "wrap",
-        rowGap: 0.5,
-        mr: isMobileOrTablet ? 0 : 1,
+        ...(isMobileOrTablet
+          ? { display: "flex", flexWrap: "wrap", alignItems: "center", gap: 1, rowGap: 0.5 }
+          : { display: "grid", gridTemplateRows: "repeat(2, auto)", gridAutoFlow: "column", alignItems: "center", columnGap: 0.5, rowGap: 0.5 }),
+        mr: 0,
         width: isMobileOrTablet ? "100%" : "auto",
         maxWidth: "100%",
         minWidth: 0,
@@ -4112,7 +4112,7 @@ function TallySheet() {
     flexWrap: isMobileOrTablet ? "wrap" : "nowrap",
     justifyContent: isMobileOrTablet ? "flex-start" : "flex-end",
     alignItems: "center",
-    gap: isMobileOrTablet ? 1 : 2,
+    gap: 1,
   };
 
   const filterAndActionArea = (
@@ -4124,13 +4124,13 @@ function TallySheet() {
         display: "flex",
         flexDirection: isMobileOrTablet ? "column" : "row",
         alignItems: isMobileOrTablet ? "stretch" : "center",
-        gap: isMobileOrTablet ? 1 : 2,
+        gap: 1,
         backgroundColor: "#ffffff",
         borderBottom: "1px solid #eee",
       }}
     >
       {/* 선택 탭(현재월/전월) 기준 식자재·소모품 예산 현황 테이블 영역 */}
-      <Box sx={{ flex: 1, minWidth: 0, maxWidth: isMobileOrTablet ? "none" : 760 }}>
+      <Box sx={isMobileOrTablet ? { flex: 1, minWidth: 0 } : { flexShrink: 0 }}>
         <BudgetSummaryBar
           budget={budgetForTab}
           used={usedForTab}
@@ -4140,8 +4140,8 @@ function TallySheet() {
         />
       </Box>
 
-      {/* 조회 조건·작업 버튼 영역(1줄: 범례·거래처·연월, 2줄: 버튼) */}
-      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, flexShrink: 0, ml: isMobileOrTablet ? 0 : "auto" }}>
+      {/* 조회 조건·작업 버튼 영역(PC는 범례·거래처·연월·버튼 한 줄, 모바일은 조회 조건 아래 버튼 줄) */}
+      <Box sx={{ display: "flex", flexDirection: isMobileOrTablet ? "column" : "row", flexWrap: isMobileOrTablet ? "nowrap" : "wrap", justifyContent: "flex-end", alignItems: isMobileOrTablet ? "stretch" : "center", gap: 1, flexShrink: 1, minWidth: 0, ml: isMobileOrTablet ? 0 : "auto" }}>
       {/* 조회 조건 줄 */}
       <Box sx={filterRowSx}>
       {/* ✅ 범례 + 거래처검색을 한 덩어리로 묶어서 "거래처 검색" 왼쪽에 범례 표시 */}
@@ -4257,8 +4257,8 @@ function TallySheet() {
         onClick={handleModalOpen2}
         sx={{
           fontSize: isMobile ? "11px" : "13px",
-          minWidth: isMobile ? 90 : 110,
-          px: isMobile ? 1 : 2,
+          minWidth: 90,
+          px: 1,
         }}
       >
         거래처 등록
@@ -4270,8 +4270,8 @@ function TallySheet() {
         onClick={handleModalOpen}
         sx={{
           fontSize: isMobile ? "11px" : "13px",
-          minWidth: isMobile ? 90 : 110,
-          px: isMobile ? 1 : 2,
+          minWidth: 90,
+          px: 1,
         }}
       >
         거래처 연결
@@ -4283,8 +4283,8 @@ function TallySheet() {
         onClick={handleRefresh}
         sx={{
           fontSize: isMobile ? "11px" : "13px",
-          minWidth: isMobile ? 70 : 90,
-          px: isMobile ? 1 : 2,
+          minWidth: 70,
+          px: 1,
         }}
       >
         새로고침
@@ -4297,8 +4297,8 @@ function TallySheet() {
         onClick={handleExcelDownload}
         sx={{
           fontSize: isMobile ? "11px" : "13px",
-          minWidth: isMobile ? 70 : 90,
-          px: isMobile ? 1 : 2,
+          minWidth: 70,
+          px: 1,
         }}
       >
         엑셀다운로드
@@ -4310,8 +4310,8 @@ function TallySheet() {
         onClick={handleSave}
         sx={{
           fontSize: isMobile ? "11px" : "13px",
-          minWidth: isMobile ? 70 : 90,
-          px: isMobile ? 1 : 2,
+          minWidth: 70,
+          px: 1,
         }}
       >
         저장
@@ -4365,7 +4365,7 @@ function TallySheet() {
         </MDBox>
       )}
 
-      <MDBox pt={3} pb={3}>
+      <MDBox pt={3} pb={1}>
         <Card>
           <MDBox
             mx={0}
@@ -4432,7 +4432,7 @@ function TallySheet() {
       </MDBox>
 
       {/* 주차별 식자재 예산 초과 사유·개선 계획 조회 영역(현장 작성 내용 읽기 전용) */}
-      <MDBox pb={3}>
+      <MDBox pb={1}>
         <TallyWeekOverPanel
           accountId={selectedAccountId}
           year={tabValue === 1 ? prevYear : year}
@@ -4443,7 +4443,7 @@ function TallySheet() {
       </MDBox>
 
       {/* 집계표 메모 영역: 왼쪽 본사 메모(편집), 오른쪽 현장 메모(읽기 전용) */}
-      <MDBox pb={3}>
+      <MDBox pb={1}>
         <Card>
           <Grid container spacing={2} p={2}>
           {/* 본사 메모 입력 영역 */}

@@ -2345,12 +2345,17 @@ function TallySheet() {
   );
 
   // ======================== 컬럼 구성 ========================
-  const buildColumns = useCallback((daysCount) => {
-    const dayColumns = Array.from({ length: daysCount }, (_, i) => ({
-      header: `${i + 1}일`,
-      accessorKey: `day_${i + 1}`,
-      size: 100,
-    }));
+  // 일자 헤더 배경: 출근부와 같이 토요일 연파랑, 일요일 연빨강
+  const buildColumns = useCallback((daysCount, y, m) => {
+    const dayColumns = Array.from({ length: daysCount }, (_, i) => {
+      const dow = dayjs(`${y}-${String(m).padStart(2, "0")}-01`).date(i + 1).day();
+      return {
+        header: `${i + 1}일`,
+        accessorKey: `day_${i + 1}`,
+        size: 100,
+        meta: { headerBg: dow === 0 ? "#ffe5e5" : dow === 6 ? "#ddf0ff" : undefined },
+      };
+    });
 
     return [
       { header: "구분", accessorKey: "name", size: 100 },
@@ -2359,8 +2364,14 @@ function TallySheet() {
     ];
   }, []);
 
-  const columnsNow = useMemo(() => buildColumns(daysInMonthNow), [buildColumns, daysInMonthNow]);
-  const columnsPrev = useMemo(() => buildColumns(daysInMonthPrev), [buildColumns, daysInMonthPrev]);
+  const columnsNow = useMemo(
+    () => buildColumns(daysInMonthNow, year, month),
+    [buildColumns, daysInMonthNow, year, month]
+  );
+  const columnsPrev = useMemo(
+    () => buildColumns(daysInMonthPrev, prevYear, prevMonth),
+    [buildColumns, daysInMonthPrev, prevYear, prevMonth]
+  );
 
   const makeTableData = (rows, daysCount) => {
     if (!rows || rows.length === 0) return [];
@@ -3557,7 +3568,9 @@ function TallySheet() {
           {tableInstance.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
               {hg.headers.map((h) => (
-                <th key={h.id}>{flexRender(h.column.columnDef.header, h.getContext())}</th>
+                <th key={h.id} style={{ backgroundColor: h.column.columnDef.meta?.headerBg }}>
+                  {flexRender(h.column.columnDef.header, h.getContext())}
+                </th>
               ))}
             </tr>
           ))}

@@ -20,9 +20,9 @@ import useElectronicPaymentManageData, {
 
 // TODO: 소모품 고정 결재자/특수 조회 사용자 ID는 운영 정책에 맞춰 변경 가능
 const EXPENDABLE_SPECIAL_USER_ID = "iy1";
-// 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID
-// - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자는 실제 구매완료 여부(구매여부)만 체크한다.
-const FP_BUY_YN_USER_ID = "sh9";
+// 현장 구매요청서(FP) 품목 구매여부(buy_yn) 저장 권한을 갖는 구매진행 담당자 ID 목록
+// - 예산포함여부/구매진행여부는 1차/2차 결재자만 수정하며, 이 사용자들은 실제 구매완료 여부(구매여부)만 체크한다.
+const FP_BUY_YN_USER_IDS = ["sh9", "sy10"];
 // 현장 구매요청서 문서타입 - FP: 온라인구매, FR: 개인구매(1차 결재 후 구매일자·영수증 후첨, 2차 결재 시 집계표 반영)
 // - 두 타입 모두 거래처 매핑 관리자(1차) → 같은 부서 팀장(2차) 결재 흐름을 사용한다.
 const FIELD_PURCHASE_DOC_TYPES = ["FP", "FR"];
@@ -817,7 +817,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
   // 현장 구매요청서(FP) 상세 여부 판정
   const isFieldPurchaseRequestDetail = asText(detailMain?.doc_type).toUpperCase() === "FP";
   // FP 구매여부 저장 담당자 여부(예산포함여부/구매진행여부는 조회만 가능)
-  const isFpBuyYnUser = loginUserId === FP_BUY_YN_USER_ID;
+  const isFpBuyYnUser = FP_BUY_YN_USER_IDS.includes(loginUserId);
   // 소모품 구매 품의서 상세에서는 일반 직원도 구매여부를 볼 수 있도록 컬럼을 항상 노출한다.
   // 현장 구매요청서(FP) 상세에서는 예산포함여부/구매진행여부/구매여부 3개 컬럼을 함께 노출한다.
   const showBuyYnColumn =
@@ -832,7 +832,7 @@ export default function ElectronicPaymentManageTab({ initialPaymentId, initialOp
     asText(detailMain?.ceo_sign) === "3";
   // 구매여부 수정 가능 여부
   // - 소모품 구매 품의서: 소모품 특수 사용자(iy1)
-  // - 현장 구매요청서(FP): 구매진행 담당자(sh9) - 결재 완료 이후에도 실제 구매완료 여부를 계속 체크할 수 있어야 한다.
+  // - 현장 구매요청서(FP): 구매진행 담당자(sh9, sy10) - 결재 완료 이후에도 실제 구매완료 여부를 계속 체크할 수 있어야 한다.
   const canEditBuyYn =
     (isDocKind(detailMain?.doc_type, docTypeList, DOC_KIND.EXPENDABLE) &&
       isExpendableSpecialUser &&

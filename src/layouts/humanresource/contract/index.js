@@ -8,7 +8,7 @@ import Swal from "sweetalert2";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
-import HeaderWithLogout from "components/Common/HeaderWithLogout";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import ContractForm, { formatMoney, PAY_KEYS, sumPay } from "./ContractForm";
 import { useFillViewportHeight } from "utils/HygieneCardBoard";
 import ContractTemplateEditor from "./ContractTemplateEditor";
@@ -809,6 +809,8 @@ function ContractManager() {
 
   return (
     <DashboardLayout>
+      {/* 화면 상단 공통 헤더 (본사 교육 등 다른 메뉴와 같은 상단바) */}
+      <DashboardNavbar title="📝 근로계약서" />
       <Card
         sx={{
           borderRadius: "16px",
@@ -817,7 +819,7 @@ function ContractManager() {
           "& .MuiButton-sizeMedium": { paddingTop: "11px", paddingBottom: "9px" },
         }}
       >
-        {/* 상단 고정 영역: 공통 헤더와 계약서 현황 / 계약서 작성 탭 */}
+        {/* 상단 고정 영역: 계약서 현황 / 계약서 작성 / 계약서 수정 탭 */}
         <MDBox
           sx={{
             position: "sticky",
@@ -827,7 +829,6 @@ function ContractManager() {
             borderBottom: "1px solid #eee",
           }}
         >
-          <HeaderWithLogout showMenuButton title="📝 근로계약서" />
           <Tabs
             value={tabIndex}
             // 탭을 옮기면 각 탭을 기본 상태로 다시 조회 (현황: 목록, 작성: 빈 새 계약서, 양식: 저장된 조항)

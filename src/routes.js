@@ -509,6 +509,9 @@ const routes = [
         component: <ContractManager />,
         allowedDepartments: [0, 3, 6, 9], // 🔹 부서권한 (현장관리와 동일)
         allowedPositions: [0, 1, 2, 3], // 🔹 직책권한
+        allowUserIds: [
+          "db1", // 송다빈 매니저
+        ],
         accessMode: "AND",
       },
       // {

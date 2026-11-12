@@ -586,7 +586,10 @@ function TallySheet() {
     [beginListLoading, selectedAccountId]
   );
 
-  const hook = useTallysheetData(selectedAccountId, year, month);
+  // 이익률 제외 금액으로 보기 체크 상태(켜면 웰스토리·아워홈 칸을 원가로 조회하고 화면 전체가 읽기 전용)
+  const [costView, setCostView] = useState(false);
+
+  const hook = useTallysheetData(selectedAccountId, year, month, costView ? "Y" : "N");
 
   const {
     dataRows,
@@ -782,6 +785,7 @@ function TallySheet() {
     }
   };
 
+  // 거래처·연월·원가 보기 여부가 바뀌면 화면 행과 변경 비교 기준(originalRows)을 비워 새 조회 결과로 다시 잡는다
   useEffect(() => {
     setDataRows?.([]);
     setData2Rows?.([]);
@@ -791,7 +795,7 @@ function TallySheet() {
     // ✅ 현재 선택 월 기준으로 길이 맞춤
     setImages(Array(daysInMonthNow).fill(null));
     setReceiptType(Array(daysInMonthNow).fill("")); // 타입도 같이 맞추는게 안전
-  }, [selectedAccountId, year, month, setDataRows, setData2Rows, daysInMonthNow]);
+  }, [selectedAccountId, year, month, costView, setDataRows, setData2Rows, daysInMonthNow]);
 
   useEffect(() => {
     if ((dataRows || []).length > 0 && originalRows.length === 0) {
@@ -2353,9 +2357,11 @@ function TallySheet() {
     selectOtherRowForInlineEdit(first, rowKey);
   }, [otherListOpen, otherRows, otherSelectedRow]);
 
-  // ✅ 직접 입력은 type=1만 허용
-  // ✅ 직접 입력 허용 타입 (1~4, 1042)
-  const INLINE_EDIT_TYPES = useMemo(() => new Set(["1", "2", "3", "4", "1042"]), []);
+  // 직접 입력 허용 타입: 없음
+  // 웰스토리(1~4)·아워홈(1042)은 API 금액만 쓰고 이 화면에서 수정하지 않음(수정은 개발팀 화면)
+  const INLINE_EDIT_TYPES = useMemo(() => new Set(), []);
+  // 텍스트로만 보여주는 타입(웰스토리 1~4, 아워홈 1042): 셀을 눌러도 입력·모달이 열리지 않음
+  const TEXT_ONLY_TYPES = useMemo(() => new Set(["1", "2", "3", "4", "1042"]), []);
 
   // ======================== ✅ 직접 입력이 아닌 타입별 모달 라우팅 ========================
   const handleSpecialCellClick = useCallback(
@@ -2371,6 +2377,12 @@ function TallySheet() {
       // ✅ type 1~4 는 직접 입력 대상이므로 모달/기타 클릭로직 타지 않게 종료
       if (INLINE_EDIT_TYPES.has(t)) return;
 
+      // 웰스토리·아워홈 줄은 텍스트 전용이라 모달을 열지 않음
+      if (TEXT_ONLY_TYPES.has(t)) return;
+
+      // 이익률 제외 금액으로 보기 중에는 화면 전체가 읽기 전용이라 입력 모달을 열지 않음
+      if (costView) return;
+
       if (t === "1000") {
         handleCorpCardCellClick(rowOriginal, rIdx, colKey, isSecond);
         return;
@@ -2385,6 +2397,8 @@ function TallySheet() {
     },
     [
       INLINE_EDIT_TYPES,
+      TEXT_ONLY_TYPES,
+      costView,
       handleCorpCardCellClick,
       handleCashCellClick,
       handleOtherCellClick,
@@ -2503,8 +2517,8 @@ function TallySheet() {
     );
   }, [tabValue, dataRows, data2Rows, daysInMonthNow, daysInMonthPrev, selectedAccountId, year, month, prevYear, prevMonth]);
 
-  // ✅ 직접 입력은 type=1~4, 1042 허용
-  const handleCellChange = (rowIndex, colKey, value, isSecond = false) => {
+  // 셀 직접 입력 반영(INLINE_EDIT_TYPES에 있는 타입만, 현재는 허용 타입 없음)
+  const handleCellChange =(rowIndex, colKey, value, isSecond = false) => {
     const rows = isSecond ? data2Rows : dataRows;
     const row = rows?.[rowIndex];
     if (!row || row.name === "총합" || colKey === "name" || colKey === "total") return;
@@ -2515,6 +2529,9 @@ function TallySheet() {
 
     // ✅ 추가: input_yn=1이면 입력 차단
     if (isTypeLocked(y, m, String(row.type ?? ""))) return;
+
+    // 이익률 제외 금액으로 보기 중에는 셀 값을 바꾸지 않음(원가가 판가 자리에 저장되는 것 방지)
+    if (costView) return;
 
     if (!INLINE_EDIT_TYPES.has(String(row.type ?? ""))) return;
 
@@ -2598,6 +2615,8 @@ function TallySheet() {
 
   const isSavingRef = useRef(false);
   const handleSave = async () => {
+    // 이익률 제외 금액으로 보기 중에는 저장하지 않음(원가가 판가 자리에 덮어써지는 것 방지)
+    if (costView) return;
     if (isSavingRef.current) return;
     isSavingRef.current = true;
     const getChangedRows = (curr, orig) =>
@@ -2919,7 +2938,7 @@ function TallySheet() {
         const a = document.createElement("a");
         const safeAccountName = currentAccountName.replace(/[\\/:*?"<>|]/g, "_");
         a.href = url;
-        a.download = `집계표_${safeAccountName}_${year}-${String(month).padStart(2, "0")}.xlsx`;
+        a.download = `집계표_${safeAccountName}_${year}-${String(month).padStart(2, "0")}${costView ? "_원가" : ""}.xlsx`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -2943,9 +2962,13 @@ function TallySheet() {
     try {
       // 현재월 / 전월 전체 업장 데이터를 동시에 요청 (2회 API 호출)
       // - /Operate/TallySheetAllList: account_name 오름차순 + budget_grant 포함하여 반환
+      // - 이익률 제외 금액으로 보기가 켜져 있으면 cost_yn=Y로 원가 금액을 받는다
+      const costParam = costView ? { cost_yn: "Y" } : {};
       const [nowRes, prevRes] = await Promise.all([
-        api.get("/Operate/TallySheetAllList", { params: { year, month } }),
-        api.get("/Operate/TallySheetAllList", { params: { year: prevYear, month: prevMonth } }),
+        api.get("/Operate/TallySheetAllList", { params: { year, month, ...costParam } }),
+        api.get("/Operate/TallySheetAllList", {
+          params: { year: prevYear, month: prevMonth, ...costParam },
+        }),
       ]);
 
       const nowAllRows = Array.isArray(nowRes.data) ? nowRes.data : [];
@@ -3093,7 +3116,7 @@ function TallySheet() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `집계표_전체_${year}-${String(month).padStart(2, "0")}.xlsx`;
+      a.download = `집계표_전체_${year}-${String(month).padStart(2, "0")}${costView ? "_원가" : ""}.xlsx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -3121,6 +3144,7 @@ function TallySheet() {
     daysInMonthNow,
     daysInMonthPrev,
     buildTallyExcelSheet,
+    costView,
   ]);
 
   // ======================== 거래처 연결/등록 ========================
@@ -4056,7 +4080,10 @@ function TallySheet() {
                           ? "not-allowed"
                           : canInlineEdit
                             ? "text"
-                            : "pointer",
+                            : // 웰스토리·아워홈 줄과 원가 보기 화면은 눌러도 열리는 것이 없어 기본 커서
+                            TEXT_ONLY_TYPES.has(rowType) || costView
+                              ? "default"
+                              : "pointer",
                       // ✅ 우선순위: 활성셀 > 포인트색 > 활성행 > 기본BG
                       background: mergedBg,
                       outline: isActiveThisCell ? "2px solid rgba(255, 152, 0, 0.9)" : "none",
@@ -4321,6 +4348,8 @@ function TallySheet() {
         variant="gradient"
         color="info"
         onClick={handleSave}
+        // 이익률 제외 금액으로 보기 중에는 저장 불가
+        disabled={costView}
         sx={{
           fontSize: isMobile ? "11px" : "13px",
           minWidth: 70,
@@ -4410,6 +4439,48 @@ function TallySheet() {
                 집계표
               </MDTypography>
 
+              {/* 이익률 제외 금액 체크박스와 현재월/전월 탭 영역 */}
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+              {/* 이익률 제외 금액으로 보기 체크박스(켜면 원가로 다시 조회, 화면은 읽기 전용) */}
+              <Box
+                component="label"
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 0.5,
+                  height: 30,
+                  pl: 0.5,
+                  pr: 1.25,
+                  borderRadius: "15px",
+                  bgcolor: "#fff",
+                  cursor: "pointer",
+                }}
+              >
+                <Checkbox
+                  size="small"
+                  checked={costView}
+                  onChange={(e) => {
+                    beginListLoading();
+                    setCostView(e.target.checked);
+                  }}
+                  sx={{
+                    p: 0.5,
+                    color: "#344767",
+                    "&.Mui-checked": { color: "#344767" },
+                  }}
+                />
+                <Typography
+                  sx={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    lineHeight: 1,
+                    whiteSpace: "nowrap",
+                    color: "#344767",
+                  }}
+                >
+                  이익률 제외 금액으로 보기
+                </Typography>
+              </Box>
               <Tabs
                 value={tabValue}
                 onChange={(_, v) => setTabValue(v)}
@@ -4432,6 +4503,7 @@ function TallySheet() {
                 <Tab label={countMonth ? `현재월 (${countMonth})` : "현재월"} />
                 <Tab label={count2Month ? `전월 (${count2Month})` : "전월"} />
               </Tabs>
+              </Box>
             </Box>
           </MDBox>
 

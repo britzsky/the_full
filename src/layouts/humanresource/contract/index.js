@@ -130,12 +130,22 @@ const PREVIEW_FORM = {
 };
 
 // 조회한 숫자 값을 입력칸 문자열로 변환 (null은 빈칸, 금액은 콤마)
+// 실입사일 전날 (작성일자 기본값, 실입사일이 없거나 형식이 다르면 빈 값)
+const dayBefore = (date) =>
+  /^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))
+    ? dayjs(date).subtract(1, "day").format("YYYY-MM-DD")
+    : "";
+
 const toFormValues = (row) => {
   const next = { ...emptyForm() };
   Object.keys(next).forEach((key) => {
     const value = row[key];
     if (value === null || value === undefined) return;
-    next[key] = PAY_KEYS.includes(key) ? formatMoney(value) : String(value);
+    // 시간·일수 값은 DB 소수 자리(예: 8.000000)의 끝자리 0을 지워 표시
+    if (PAY_KEYS.includes(key)) next[key] = formatMoney(value);
+    else if (/_hours$|^week_work_days$/.test(key))
+      next[key] = String(value).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+    else next[key] = String(value);
   });
   return next;
 };
@@ -148,6 +158,7 @@ const ALL_ACCOUNT_OPTION = { account_id: "", account_name: "전체" };
 function AccountSearch({ accountList, value, onSelect, allOption }) {
   // 검색칸에 입력 중인 글자
   const [input, setInput] = useState("");
+  const [open, setOpen] = useState(false);
   // 선택 목록 (allOption이면 맨 위에 전체 항목)
   const options = useMemo(
     () => (allOption ? [ALL_ACCOUNT_OPTION, ...accountList] : accountList),
@@ -156,8 +167,8 @@ function AccountSearch({ accountList, value, onSelect, allOption }) {
   const selected = options.find((row) => String(row.account_id) === String(value)) || null;
 
   // Enter 입력 시 입력한 글자로 거래처 선택 (정확 일치 우선, 없으면 부분 일치)
-  const selectByInput = () => {
-    const q = input.trim().toLowerCase();
+  const selectByInput = (text) => {
+    const q = text.trim().toLowerCase();
     if (!q) return;
     const found =
       options.find((a) => String(a?.account_name || "").toLowerCase() === q) ||
@@ -166,13 +177,20 @@ function AccountSearch({ accountList, value, onSelect, allOption }) {
           .toLowerCase()
           .includes(q)
       );
-    if (found) onSelect(found.account_id);
+    if (found) {
+      setInput(String(found.account_name));
+      setOpen(false);
+      onSelect(found.account_id);
+    }
   };
 
   return (
     <Autocomplete
       size="small"
       options={options}
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={() => setOpen(false)}
       value={selected}
       onChange={(_, next) => onSelect(next?.account_id || "")}
       disableClearable={allOption}
@@ -183,8 +201,11 @@ function AccountSearch({ accountList, value, onSelect, allOption }) {
         if (e.key === "Enter") {
           e.defaultMuiPrevented = true;
           e.preventDefault();
-          selectByInput();
         }
+      }}
+      // 한글 입력 중 Enter는 keydown이 글자 확정(Process)으로 들어오므로, 키를 뗄 때 선택해 한 번에 검색
+      onKeyUp={(e) => {
+        if (e.key === "Enter") selectByInput(e.target.value || input);
       }}
       getOptionLabel={(opt) => (opt?.account_name ? String(opt.account_name) : "")}
       isOptionEqualToValue={(opt, val) => String(opt?.account_id) === String(val?.account_id)}
@@ -386,6 +407,7 @@ function ContractManager() {
         name: "",
         rrn: "",
         address: "",
+        contract_dt: "",
       }));
       return;
     }
@@ -403,6 +425,9 @@ function ContractManager() {
       name: member.name || "",
       rrn: member.rrn || "",
       address: member.address || "",
+      // 작성일자는 실입사일 전날, 계약 시작일은 실입사일 (실입사일이 없으면 입력값 유지)
+      contract_dt: dayBefore(member.act_join_dt) || prev.contract_dt,
+      contract_start_dt: member.act_join_dt || prev.contract_start_dt,
       start_time: member.start_time || prev.start_time,
       end_time: member.end_time || prev.end_time,
       job_name: POSITION_LABELS[member.position_type] || prev.job_name,
@@ -653,6 +678,9 @@ function ContractManager() {
         name: t.name || "",
         rrn: t.rrn || "",
         address: t.address || "",
+        // 대상자별 작성일자(실입사일 전날)·계약 시작일(실입사일), 실입사일이 없으면 공통 입력값
+        contract_dt: dayBefore(t.act_join_dt) || form.contract_dt,
+        contract_start_dt: t.act_join_dt || form.contract_start_dt,
         job_name: POSITION_LABELS[t.position_type] || "",
       })),
     };

@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useState } from "react";
-import { Box, Grid, Select, MenuItem, Card, TextField, useTheme, useMediaQuery } from "@mui/material";
+import { Box, Grid, Select, MenuItem, Card, TextField, Checkbox, Typography, useTheme, useMediaQuery } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -32,6 +32,9 @@ export default function BudgetTableTab() {
   // ✅ 소모품/이벤트 서브행 펼침 여부
   const [showSubRows, setShowSubRows] = useState(false);
 
+  // 이익률 제외 금액으로 보기 체크 상태(켜면 사용금액·사용비율을 원가 기준으로 다시 조회)
+  const [costView, setCostView] = useState(false);
+
   // ✅ 예산 테이블 데이터 훅 (연/월 기준 전체 조회)
   const {
     budgetTableRows,
@@ -39,7 +42,7 @@ export default function BudgetTableTab() {
     fetchBudgetTableList,
     budgetStandardList,
     mealsNumberList,
-  } = useBudgetTableData(year, month);
+  } = useBudgetTableData(year, month, costView ? "Y" : "N");
 
   // ✅ 데이터 조회 트리거 (연/월 변경 시마다)
   useEffect(() => {
@@ -316,7 +319,7 @@ export default function BudgetTableTab() {
       const blob = new Blob([buffer], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
-      saveAs(blob, `예산관리_${year}년_${month}월.xlsx`);
+      saveAs(blob, `예산관리_${year}년_${month}월${costView ? "_원가" : ""}.xlsx`);
     } catch (e) {
       console.error(e);
       Swal.fire("실패", "엑셀 생성 중 오류가 발생했습니다.", "error");
@@ -448,6 +451,21 @@ export default function BudgetTableTab() {
 
               {/* 🔹 오른쪽: 연 / 월 / 저장 버튼 */}
               <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                {/* 이익률 제외 금액으로 보기 체크박스(켜면 원가 기준으로 다시 조회) */}
+                <Box
+                  component="label"
+                  sx={{ display: "flex", alignItems: "center", gap: 0.5, height: 37, cursor: "pointer" }}
+                >
+                  <Checkbox
+                    size="small"
+                    checked={costView}
+                    onChange={(e) => setCostView(e.target.checked)}
+                    sx={{ p: 0.5 }}
+                  />
+                  <Typography sx={{ fontSize: 12, lineHeight: 1, whiteSpace: "nowrap" }}>
+                    이익률 제외 금액으로 보기
+                  </Typography>
+                </Box>
                 <TextField
                   select
                   size="small"

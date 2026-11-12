@@ -9,6 +9,8 @@ import {
   fetchWeekOverList,
   saveWeekOver,
   WEEK_OVER_SAVED_EVENT,
+  WEEK_OVER_REASON_EXAMPLE,
+  WEEK_OVER_PLAN_EXAMPLE,
 } from "utils/tallyBudgetWeeks";
 
 // 금액 천 단위 콤마 표시
@@ -23,7 +25,7 @@ const STATUS_STYLE = {
   pending: { bg: "#9e9e9e", label: "" },
 };
 
-// 주차별(월~토) 식자재 예산 초과 여부와 초과 사유·개선 계획을 달력처럼 한 줄로 보여주는 영역
+// 주차별(월~일) 식자재 예산 초과 여부와 초과 사유·개선 계획을 달력처럼 한 줄로 보여주는 영역
 // 주차 안 하루라도 초과되면 초과 주차가 되어 작성 가능
 // editable=true(현장)이면 초과 주차를 작성 기한(해당 주 일요일)까지 작성, false(본사)이면 읽기 전용
 function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editable }) {
@@ -34,10 +36,34 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
   // 저장 중인 주차 번호
   const [savingWeek, setSavingWeek] = useState(null);
 
+  const [today, setToday] = useState(() =>
+    new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  );
+
+  // 한국 시각 자정과 화면 복귀 시 예산 기준일을 갱신
+  useEffect(() => {
+    let timer;
+    const refresh = () => {
+      clearTimeout(timer);
+      const date = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      setToday(date);
+      const nextMidnight = Date.parse(`${date}T00:00:00+09:00`) + 24 * 60 * 60 * 1000;
+      timer = setTimeout(refresh, Math.max(1, nextMidnight - Date.now()));
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
   // 주차별 판정 결과(누적 사용금액, 누적 예산, 상태, 작성 가능 여부)
   const weeks = useMemo(
-    () => evaluateBudgetWeeks({ year, month, budget, dailyUsed }),
-    [year, month, budget, dailyUsed]
+    () => evaluateBudgetWeeks({ year, month, budget, dailyUsed, today }),
+    [year, month, budget, dailyUsed, today]
   );
 
   // 선택한 거래처·연월의 저장된 사유·계획을 다시 조회하는 함수
@@ -121,7 +147,7 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
         {`${String(month).padStart(2, "0")}월 식자재 예산 초과 사유 및 개선 계획`}
       </Typography>
 
-      {/* 주차 칸 목록(월~토 기준 1주차~마지막 주차) */}
+      {/* 주차 칸 목록(월~일 기준 1주차~마지막 주차) */}
       <Box
         sx={{
           display: "grid",
@@ -131,8 +157,19 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
       >
         {weeks.map((w) => {
           const st = STATUS_STYLE[w.status];
-          const d = drafts[w.weekNo] || {};
-          const canEdit = editable && w.writable;
+          // 2026년 11월 1주차에 작성 내용이 없는 업장만 작성 예시를 표시
+          const saved = savedRows.find((r) => Number(r.week_no) === w.weekNo);
+          const hasSavedContent =
+            Boolean(String(saved?.over_reason || "").trim()) ||
+            Boolean(String(saved?.fix_plan || "").trim());
+          const isExample =
+            Number(year) === 2026 && Number(month) === 11 && w.weekNo === 1 && !hasSavedContent;
+          const d = isExample
+            ? { over_reason: WEEK_OVER_REASON_EXAMPLE, fix_plan: WEEK_OVER_PLAN_EXAMPLE }
+            : drafts[w.weekNo] || {};
+          const canEdit = editable && w.writable && !isExample;
+          // 토요일에는 일요일 몫까지 포함한 누적 예산 기준일을 표시
+          const recommendedEndDate = w.budgetEndDate;
           return (
             <Box
               key={w.weekNo}
@@ -154,11 +191,21 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: 0.5,
                 }}
               >
                 <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>
                   {`${w.weekNo}주차 (${md(w.startDate)}~${md(w.endDate)})`}
                 </Typography>
+                {today >= w.startDate && (
+                  <Typography
+                    title={`${month}/1부터 ${md(recommendedEndDate)}까지의 누적 권장 사용예산`}
+                    sx={{ fontSize: 11, fontWeight: 700, color: "#fff" }}
+                  >
+                    {`권장 사용예산 ${fmt(w.baseBudget)}원`}
+                  </Typography>
+                )}
                 <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{st.label}</Typography>
               </Box>
 
@@ -167,9 +214,10 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                 {w.dayStatus.map((x) => (
                   <Box
                     key={x.date}
-                    title={`${md(x.date)} ${STATUS_STYLE[x.status].label || "미판정"}`}
+                    title={`${md(x.date)}${x.endDay !== x.day ? `~${md(x.endDate)} (토·일 합산)` : ""} ${STATUS_STYLE[x.status].label || "미판정"}`}
                     sx={{
-                      flex: 1,
+                      flex: x.endDay !== x.day ? 1.5 : 1,
+                      minWidth: 0,
                       py: 0.25,
                       borderRadius: 0.5,
                       bgcolor: STATUS_STYLE[x.status].bg,
@@ -177,10 +225,13 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                       fontSize: 10,
                       fontWeight: 700,
                       textAlign: "center",
+                      whiteSpace: "nowrap",
                       lineHeight: 1.4,
                     }}
                   >
-                    {`${"일월화수목금토"[dayjs(x.date).day()]} ${dayjs(x.date).date()}`}
+                    {x.endDay !== x.day
+                      ? `토·일 ${x.day}~${x.endDay}`
+                      : `${"일월화수목금토"[dayjs(x.date).day()]} ${dayjs(x.date).date()}`}
                   </Box>
                 ))}
               </Box>
@@ -217,7 +268,7 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
               {/* 초과사유·개선계획 입력 영역 */}
               <Box sx={{ p: 1, display: "flex", flexDirection: "column", gap: 1, flex: 1 }}>
                 <TextField
-                  label="초과사유"
+                  label={isExample ? "초과사유(예시)" : "초과사유"}
                   multiline
                   minRows={2}
                   maxRows={6}
@@ -225,11 +276,11 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                   value={d.over_reason || ""}
                   onChange={(e) => handleDraftChange(w.weekNo, "over_reason", e.target.value)}
                   InputProps={{ readOnly: !canEdit }}
-                  disabled={w.status !== "over"}
+                  disabled={!isExample && w.status !== "over"}
                   sx={{ "& textarea": { fontSize: 12 } }}
                 />
                 <TextField
-                  label="개선계획"
+                  label={isExample ? "개선계획(예시)" : "개선계획"}
                   multiline
                   minRows={2}
                   maxRows={6}
@@ -237,7 +288,7 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                   value={d.fix_plan || ""}
                   onChange={(e) => handleDraftChange(w.weekNo, "fix_plan", e.target.value)}
                   InputProps={{ readOnly: !canEdit }}
-                  disabled={w.status !== "over"}
+                  disabled={!isExample && w.status !== "over"}
                   sx={{ "& textarea": { fontSize: 12 } }}
                 />
               </Box>

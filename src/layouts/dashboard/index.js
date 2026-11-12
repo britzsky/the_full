@@ -41,8 +41,14 @@ import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 // import Footer from "examples/Footer";
 import LoadingScreen from "layouts/loading/loadingscreen";
 
-import api from "api/api";
-import useDashBoardData from "layouts/dashboard/data/dashboardData";
+import useDashBoardData, {
+  fetchHeadOfficeEvents,
+  fetchHolidayMap,
+} from "layouts/dashboard/data/dashboardData";
+import {
+  getCompanionNames,
+  getScheduleUserName,
+} from "examples/Tabs/HeadOffice/HeadofficeScheduleSheetData";
 
 function HeaderCard({ title, children, minHeight = 140, onClick }) {
   const clickable = typeof onClick === "function";
@@ -260,6 +266,7 @@ const TYPE_OPTIONS = [
   { value: "5", label: "외근" },
   { value: "6", label: "출장" },
   { value: "7", label: "체크" },
+  { value: "11", label: "방문영업" },
   { value: "8", label: "연차" },
   { value: "9", label: "오전반차" },
   { value: "10", label: "오후반차" },
@@ -325,9 +332,12 @@ function ScheduleLines({ items, emptyText = "일정이 없습니다." }) {
         const displayContent = hasPrefixedContent && (hasAccountInPrefix || !badgeText)
           ? rawContent
           : `${badgeText}${badgeText && strippedContent ? " " : ""}${strippedContent}`.trim();
-        // ✅ 본문 포맷: "[구분-거래처] 내용 / 이름 [직책]"
+        // ✅ 본문 포맷: "[구분-거래처] 내용 / 이름 [직책] (동행+이름, 이름)"
         const positionText = it.position_name ? ` [${it.position_name}]` : "";
-        const scheduleText = `${displayContent}${it.user_name ? ` / ${it.user_name}${positionText}` : ""}`;
+        const userLabel = getScheduleUserName(it.user_id, it.user_name);
+        const companionNames = getCompanionNames(it);
+        const companionText = companionNames.length ? ` (동행+${companionNames.join(", ")})` : "";
+        const scheduleText = `${displayContent}${it.user_name ? ` / ${userLabel}${positionText}` : ""}${companionText}`;
 
         return (
           <MDBox
@@ -372,7 +382,10 @@ ScheduleLines.propTypes = {
     PropTypes.shape({
       department: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
       type: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+      user_id: PropTypes.string,
       user_name: PropTypes.string,
+      user_ids: PropTypes.string,
+      user_names: PropTypes.string,
       content: PropTypes.string,
       position_name: PropTypes.string,
       account_name: PropTypes.string,
@@ -1110,45 +1123,41 @@ SmallBox.defaultProps = {
   onItemContextMenu: undefined,
 };
 
-function MiniCalendar({ todos }) {
+function MiniCalendar({ todos, initialEvents, initialHolidays }) {
   const [cursor, setCursor] = useState(dayjs());
   const [popover, setPopover] = useState({ anchor: null, date: null });
   // ✅ 본사행사(type=2) 목록 상태
-  const [headOfficeEvents, setHeadOfficeEvents] = useState([]);
+  const [headOfficeEvents, setHeadOfficeEvents] = useState(initialEvents);
   // ✅ 공휴일 날짜 Map ("YYYY-MM-DD" → 공휴일명)
-  const [holidayDates, setHolidayDates] = useState(new Map());
+  const [holidayDates, setHolidayDates] = useState(initialHolidays);
 
   // ✅ 달력 월 이동 시 해당 연/월 본사행사 재조회
   const cursorYM = cursor.format("YYYY-MM");
 
+  // 이번 달은 대시보드 로딩 때 받은 데이터를 쓰고, 다른 달은 본사행사·공휴일을 함께 조회해 한 번에 반영
   useEffect(() => {
-    const year = cursor.year();
-    const month = String(cursor.month() + 1).padStart(2, "0");
-    api
-      .get("/HeadOffice/EventList", { params: { year, month } })
-      .then((res) => {
-        // ✅ type=2(본사행사)이고 삭제되지 않은 항목만 필터링
-        const events = (res.data || []).filter(
-          (x) => String(x.type) === "2" && String(x.del_yn || "N") !== "Y"
-        );
-        setHeadOfficeEvents(events);
-      })
-      .catch(() => setHeadOfficeEvents([]));
-  }, [cursorYM]);
+    if (cursorYM === dayjs().format("YYYY-MM")) {
+      setHeadOfficeEvents(initialEvents);
+      setHolidayDates(initialHolidays);
+      return undefined;
+    }
 
-  useEffect(() => {
+    let cancelled = false;
     const year = cursor.year();
     const month = cursor.month() + 1;
-    api
-      .get("/Operate/HolidayList", { params: { year, month } })
-      .then((res) => {
-        const list = Array.isArray(res.data) ? res.data : [];
-        const map = new Map();
-        list.forEach((h) => map.set(String(h.holiday_date), String(h.holiday_name || "공휴일")));
-        setHolidayDates(map);
-      })
-      .catch(() => setHolidayDates(new Map()));
-  }, [cursorYM]);
+    Promise.all([
+      fetchHeadOfficeEvents(year, month).catch(() => []),
+      fetchHolidayMap(year, month).catch(() => new Map()),
+    ]).then(([events, holidays]) => {
+      // 빠르게 월을 넘긴 경우 이전 달 응답이 덮어쓰지 않도록 무시
+      if (cancelled) return;
+      setHeadOfficeEvents(events);
+      setHolidayDates(holidays);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [cursorYM, initialEvents, initialHolidays]);
 
   const start = useMemo(() => cursor.startOf("month").startOf("week"), [cursor]);
   const end = useMemo(() => cursor.endOf("month").endOf("week"), [cursor]);
@@ -1354,8 +1363,12 @@ function MiniCalendar({ todos }) {
   );
 }
 
-MiniCalendar.propTypes = { todos: PropTypes.array };
-MiniCalendar.defaultProps = { todos: [] };
+MiniCalendar.propTypes = {
+  todos: PropTypes.array,
+  initialEvents: PropTypes.array,
+  initialHolidays: PropTypes.instanceOf(Map),
+};
+MiniCalendar.defaultProps = { todos: [], initialEvents: [], initialHolidays: new Map() };
 
 function ContractTableCard({ rows }) {
   return (
@@ -1490,6 +1503,8 @@ function Dashboard() {
     contracts,
     bookmarks,
     todos,
+    calendarEvents,
+    calendarHolidays,
     fetchAll,
     addBookmark,  // 북마크 저장 API (dashboardData에서 관리)
     deleteBookmark,
@@ -1665,30 +1680,30 @@ function Dashboard() {
                     <HeaderCard
                       title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
                       minHeight={170}
-                      onClick={() => navigate("/businessschedule")}
+                      onClick={() => navigate("/headoffice/schedule")}
                     >
                       <ScheduleLines items={salesSchedules} />
                     </HeaderCard>
                   </Grid>
                 ) : (
                   <>
-                    {/* 운영팀 일정: OperateSchedule 로 연결된 라우트 경로로 이동 */}
+                    {/* 운영팀 일정: 급식사업부 일정관리로 이동 */}
                     <Grid item xs={12} md={6}>
                       <HeaderCard
                         title={`운영팀 일정(${dayjs().format("YYYY-MM-DD")})`}
                         minHeight={170}
-                        onClick={() => navigate("/operateschedule")}
+                        onClick={() => navigate("/headoffice/schedule")}
                       >
                         <ScheduleLines items={opsSchedules} />
                       </HeaderCard>
                     </Grid>
 
-                    {/* 영업팀 일정: BusinessSchedule 로 연결된 라우트 경로로 이동 */}
+                    {/* 영업팀 일정: 급식사업부 일정관리로 이동 */}
                     <Grid item xs={12} md={6}>
                       <HeaderCard
                         title={`영업팀 일정(${dayjs().format("YYYY-MM-DD")})`}
                         minHeight={170}
-                        onClick={() => navigate("/businessschedule")}
+                        onClick={() => navigate("/headoffice/schedule")}
                       >
                         <ScheduleLines items={salesSchedules} />
                       </HeaderCard>
@@ -1727,7 +1742,11 @@ function Dashboard() {
                   />
                 </Grid>
                 <Grid item xs={12}>
-                  <MiniCalendar todos={todos} />
+                  <MiniCalendar
+                    todos={todos}
+                    initialEvents={calendarEvents}
+                    initialHolidays={calendarHolidays}
+                  />
                 </Grid>
               </Grid>
             </Grid>

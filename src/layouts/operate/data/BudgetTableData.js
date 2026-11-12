@@ -13,7 +13,8 @@ export const formatNumber = (val) => {
   return Number(val).toLocaleString();
 };
 
-export default function useBudgetTableData(year, month) {
+// costYn: "Y"면 이익률 제외 금액(원가) 기준 사용금액·사용비율로 조회
+export default function useBudgetTableData(year, month, costYn) {
   const [budgetTableRows, setBudgetTableRows] = useState([]);
   const [accountList, setAccountList] = useState([]); // 지금은 안 쓰지만 남겨둠
   const [loading, setLoading] = useState(false);
@@ -30,6 +31,8 @@ export default function useBudgetTableData(year, month) {
         params: {
           year,
           month,
+          // 이익률 제외 금액으로 보기: 사용금액을 원가로 조회
+          ...(costYn === "Y" ? { cost_yn: "Y" } : {}),
         },
       });
 
@@ -44,7 +47,7 @@ export default function useBudgetTableData(year, month) {
     } finally {
       setLoading(false);
     }
-  }, [year, month]);
+  }, [year, month, costYn]);
 
   // ✅ 예산 기준 리스트
   const fetchBudgetStandardList = useCallback(async () => {

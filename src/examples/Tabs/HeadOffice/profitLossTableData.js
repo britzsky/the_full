@@ -13,7 +13,8 @@ export const formatNumber = (val) => {
   return Number(val).toLocaleString();
 };
 
-export default function useProfitLossTableData(year, month, account_id) {
+// saleYn: 이익률 포함 금액(판가)으로 보기 여부. true면 조회에 sale_yn=Y를 붙인다.
+export default function useProfitLossTableData(year, month, account_id, saleYn = false) {
   const [profitLossTableRows, setProfitLossTableRows] = useState([]);
   const [accountList, setAccountList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -32,6 +33,7 @@ export default function useProfitLossTableData(year, month, account_id) {
             account_id: account_id,
             month: normalizedMonth,
             ...(accountIdsParam ? { account_ids: accountIdsParam } : {}),
+            ...(saleYn ? { sale_yn: "Y" } : {}),
           },
         });
 
@@ -47,7 +49,7 @@ export default function useProfitLossTableData(year, month, account_id) {
         setLoading(false);
       }
     },
-    [year, month, account_id]
+    [year, month, account_id, saleYn]
   );
 
   // ✅ 계정 목록 조회 (최초 1회)

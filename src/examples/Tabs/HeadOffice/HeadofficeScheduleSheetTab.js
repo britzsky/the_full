@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -16,6 +16,7 @@ import {
   MenuItem,
   Autocomplete,
   Checkbox,
+  Chip,
   useTheme,
   useMediaQuery,
 } from "@mui/material";
@@ -23,6 +24,8 @@ import {
 import useHeadofficeSchedulesheetData, {
   deptTypeToDepartmentCode,
   deptTypeToTeamCode,
+  SCHEDULE_NAME_OVERRIDE,
+  getScheduleUserName,
 } from "./HeadofficeScheduleSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import "layouts/headoffice/headoffice-schedule-sheet.css";
@@ -112,13 +115,29 @@ const TYPE_OPTIONS_PLANNING = [
   { value: "13", label: "오후반차" },
 ];
 
-// 팀 구분 옵션 (operate / business / catering / development / planning)
+// 팀 구분 옵션 (ceo / accounting / hr / operate / business / catering / development / planning)
+// hidden: true 인 팀은 신규 등록 셀렉트에서 숨김 (기존 일정 라벨 표시는 유지, 다시 쓰려면 hidden만 제거)
 const DEPARTMENT_OPTIONS = [
+  { value: "ceo", label: "대표이사실" },
+  { value: "accounting", label: "회계팀" },
+  { value: "hr", label: "인사팀" },
   { value: "business", label: "영업팀" },
   { value: "operate", label: "운영팀" },
-  { value: "catering", label: "급식사업부" },
+  { value: "catering", label: "급식사업부", hidden: true },
   { value: "development", label: "개발팀" },
   { value: "planning", label: "기획팀" },
+];
+
+// 담당자 검색에 묶어 보여줄 부서 (department 코드 순, hidden: true 는 이미 선택된 경우에만 표시)
+const MEMBER_DEPARTMENTS = [
+  { department: 0, label: "대표이사실" },
+  { department: 2, label: "회계팀" },
+  { department: 3, label: "인사팀" },
+  { department: 4, label: "영업팀" },
+  { department: 5, label: "운영팀" },
+  { department: 6, label: "개발팀" },
+  { department: 8, label: "급식사업부", hidden: true },
+  { department: 9, label: "기획팀" },
 ];
 
 // dept_type에 따른 구분 옵션 반환
@@ -133,6 +152,26 @@ const getTypeOptions = (deptType) => {
 // dept_type / type 값에 따른 캘린더 이벤트 색상 반환
 const getTypeColor = (type, deptType) => {
   const t = String(type);
+
+  // 회계팀·인사팀 — 회색 계열 (구분 옵션은 운영팀과 동일)
+  if (deptType === "accounting" || deptType === "hr") {
+    switch (t) {
+      case "11": return "#1A0841";  // 연차
+      case "12": return "#1A0841";  // 오전반차
+      case "13": return "#1A0841";  // 오후반차
+      default: return deptType === "accounting" ? "#546E7A" : "#78909C";
+    }
+  }
+
+  // 대표 — 갈색 계열 (구분 옵션은 운영팀과 동일)
+  if (deptType === "ceo") {
+    switch (t) {
+      case "11": return "#1A0841";  // 연차
+      case "12": return "#1A0841";  // 오전반차
+      case "13": return "#1A0841";  // 오후반차
+      default: return "#6D4C41";
+    }
+  }
 
   // 영업팀 — 하늘색 계열
   if (deptType === "business") {
@@ -267,14 +306,6 @@ const resolveAccountName = (item, accounts) => {
 const POSITION_LABEL = { 0: "대표", 1: "팀장", 2: "파트장", 3: "매니저" };
 const getPositionLabel = (pos) => POSITION_LABEL[Number(pos)] ?? "직급없음";
 
-// 일정 화면 전용 동명이인 표시 이름 (user_id 기준, name: 실제 이름 / label: 화면 표시 이름)
-const SCHEDULE_NAME_OVERRIDE = {
-  sy7: { name: "이수연", label: "큰수연" },
-  sy8: { name: "이수연", label: "작수연" },
-};
-const getScheduleUserName = (userId, userName) =>
-  SCHEDULE_NAME_OVERRIDE[String(userId ?? "").trim()]?.label || userName;
-
 // 날짜 값을 YYYY-MM-DD 문자열로 정규화
 const normalizeYmd = (value) => {
   const d = dayjs(value);
@@ -305,61 +336,55 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
 
   const loginUserId = localStorage.getItem("user_id");
   const loginUserName = localStorage.getItem("user_name") || "나";
-  // 본인 이름 캐시 (어느 팀이든 목록 로드 시 최초 1회 저장)
-  const loginUserNameRef = useRef(null);
 
   const [selectedType, setSelectedType] = useState("1");
   const [selectedTypes, setSelectedTypes] = useState([]);
-  const [selectedDeptType, setSelectedDeptType] = useState(""); // "operate" | "business" | "catering"
+  const [selectedDeptType, setSelectedDeptType] = useState(""); // "ceo" | "operate" | "business" | ...
+  // 담당자 검색 목록: 팀 구분에 있는 팀 소속 전체 직원 (팀 순서 → 직책 순 정렬, team_label 포함)
   const [memberList, setMemberList] = useState([]);
+  // user_id → 사용자 정보 (팀 목록에 없는 사용자도 칩 이름 표시용으로 보관)
+  const [memberById, setMemberById] = useState(new Map());
   const [selectedMemberIds, setSelectedMemberIds] = useState([]);
 
   const [accountList, setAccountList] = useState([]);
   const [selectedAccounts, setSelectedAccounts] = useState([]);
 
 
-  // team_code로 담당자 목록 조회 (단일 API)
-  const fetchMemberList = async (deptType) => {
-    if (!deptType) return [];
+  // 전체 직원을 한 번 조회해 팀별로 묶은 담당자 검색 목록을 만드는 함수 (화면 진입 시 1회)
+  const fetchAllMembers = async () => {
     try {
-      const teamCode = deptTypeToTeamCode(deptType);
-      const departmentCode = deptTypeToDepartmentCode(deptType);
-      const res = await api.get(MEMBER_LIST_URL, {
-        params: { team_code: teamCode, department: departmentCode },
-        headers: { "Content-Type": "application/json" },
-      });
+      const res = await api.get(MEMBER_LIST_URL, { headers: { "Content-Type": "application/json" } });
       const rows = res.data || [];
-      const hasDepartmentField = rows.some((member) =>
-        member?.department !== undefined || member?.dept_code !== undefined || member?.dept_id !== undefined
-      );
-      if (!departmentCode || !hasDepartmentField) return rows;
-
-      // 선택한 팀에 속한 사용자만 담당자 목록에 표시
-      return rows.filter((member) => {
-        const memberDepartment = member?.department ?? member?.dept_code ?? member?.dept_id ?? "";
-        return String(memberDepartment) === String(departmentCode);
+      const byId = new Map(rows.map((m) => [String(m.user_id), m]));
+      const grouped = [];
+      MEMBER_DEPARTMENTS.forEach((dept) => {
+        rows
+          .filter((m) => String(m?.department ?? "") === String(dept.department))
+          .forEach((m) => grouped.push({ ...m, team_label: dept.label, team_hidden: !!dept.hidden }));
       });
+      // department 순 → 같은 부서 안에서는 직책 순
+      grouped.sort((a, b) => Number(a.department) - Number(b.department) || Number(a.position) - Number(b.position));
+      setMemberById(byId);
+      setMemberList(grouped);
     } catch (error) {
       console.error("담당자 목록 조회 실패:", error);
       Swal.fire("실패", "담당자 목록을 가져오지 못했습니다.", "error");
-      return [];
     }
   };
 
-  // 팀구분 변경 시 이슈구분 초기화, selectedMemberIds는 누적 유지 (cross-team 동행 지원)
-  const handleDeptTypeChange = async (deptType) => {
+  // 담당자 칩에 표시할 이름
+  const getMemberLabel = (userId) => {
+    const m = memberById.get(String(userId));
+    if (m?.user_name) return getScheduleUserName(m.user_id, m.user_name);
+    if (String(userId) === String(loginUserId)) return getScheduleUserName(loginUserId, loginUserName);
+    return String(userId);
+  };
+
+  // 팀구분 변경 시 이슈구분만 초기화 (담당자는 전체 검색이라 팀과 무관하게 유지)
+  const handleDeptTypeChange = (deptType) => {
     setSelectedDeptType(deptType);
     setSelectedType("1");
     setSelectedTypes([]);
-    setMemberList([]);
-    if (!deptType) return;
-    const rows = await fetchMemberList(deptType);
-    setMemberList(rows);
-    // 본인 이름 최초 1회 캐싱
-    if (!loginUserNameRef.current && loginUserId) {
-      const me = rows.find((m) => String(m.user_id) === String(loginUserId));
-      if (me?.user_name) loginUserNameRef.current = getScheduleUserName(me.user_id, me.user_name);
-    }
   };
 
   // 거래처 목록 조회 (최초 1회만 fetch, 이후 캐시 사용)
@@ -393,7 +418,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
   // 연/월 변경 시 일정 재조회
   useEffect(() => { eventList(); }, []);
   useEffect(() => { if (currentYear && currentMonth) eventList(); }, [currentYear, currentMonth]);
-  useEffect(() => { fetchAccountList(); }, []);
+  useEffect(() => { fetchAccountList(); fetchAllMembers(); }, []);
 
   // eventListRows → FullCalendar events 배열로 변환 (취소된 일정 제외, team_code 오름차순 정렬)
   useEffect(() => {
@@ -431,17 +456,27 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     setSelectedType("1");
     setSelectedTypes([]);
     setSelectedDeptType("");
-    setMemberList([]);
     setSelectedMemberIds(loginUserId ? [loginUserId] : []);
     setSelectedAccounts([]);
     setSelectedEvent(null);
   };
 
-  // 신규 일정 모달 열기
+  // 로그인 사용자 department 기준 기본 팀 구분 (숨김 팀이거나 매핑 없는 부서는 빈 값)
+  const getDefaultDeptType = () => {
+    const raw = localStorage.getItem("department");
+    if (raw === null || String(raw).trim() === "") return "";
+    const found = DEPARTMENT_OPTIONS.find(
+      (d) => !d.hidden && deptTypeToDepartmentCode(d.value) === Number(raw)
+    );
+    return found ? found.value : "";
+  };
+
+  // 신규 일정 모달 열기 (팀 구분은 본인 팀으로 기본 선택)
   const openNew = async (start, end) => {
     resetModal();
     setSelectedDate(start);
     setSelectedEndDate(end);
+    handleDeptTypeChange(getDefaultDeptType());
     await fetchAccountList();
     setOpen(true);
   };
@@ -491,11 +526,7 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
     const deptType = clickedEvent.extendedProps?.dept_type || "";
     setSelectedDeptType(deptType);
 
-    const [fetchedAccounts, fetchedMembers] = await Promise.all([
-      fetchAccountList(),
-      fetchMemberList(deptType),
-    ]);
-    setMemberList(fetchedMembers);
+    const fetchedAccounts = await fetchAccountList();
 
     const accId = clickedEvent.extendedProps?.account_id;
     if (accId) {
@@ -789,64 +820,60 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               sx={{ width: isMobile ? "100%" : 140, flexShrink: 0, ...ctrlSx }}
             >
               <MenuItem value=""><em>팀 구분</em></MenuItem>
-              {DEPARTMENT_OPTIONS.map((dept) => (
+              {/* 숨김 팀은 기존 일정 수정으로 이미 선택된 경우에만 표시 */}
+              {DEPARTMENT_OPTIONS.filter((dept) => !dept.hidden || dept.value === selectedDeptType).map((dept) => (
                 <MenuItem key={dept.value} value={dept.value}>{dept.label}</MenuItem>
               ))}
             </Select>
 
-            {/* 담당자 (다중 선택, 최대 5명, 팀 전환 시 선택 누적) */}
-            <Select
+            {/* 담당자 검색 (전 직원 팀별 묶음, 최대 5명, 선택 결과는 아래 칩 줄에 표시) */}
+            <Autocomplete
               multiple
               size="small"
-              value={selectedMemberIds.filter((id) =>
-                memberList.some((m) => String(m.user_id) === String(id))
-              )}
-              onChange={(e) => {
-                const newCurrentIds = Array.isArray(e.target.value) ? e.target.value : [e.target.value];
-                const currentIdSet = new Set(memberList.map((m) => String(m.user_id)));
-                // 다른 팀에서 선택된 ID는 그대로 유지
-                const otherTeamIds = selectedMemberIds.filter((id) => !currentIdSet.has(String(id)));
-                const merged = [...new Set([...otherTeamIds, ...newCurrentIds.map(String)])];
-                // loginUserId는 항상 포함
-                const withLogin =
-                  loginUserId && !merged.includes(String(loginUserId))
-                    ? [String(loginUserId), ...merged.filter((id) => id !== String(loginUserId))]
-                    : merged;
+              options={memberList.filter((m) => !m.team_hidden || selectedMemberIds.includes(String(m.user_id)))}
+              groupBy={(option) => option.team_label}
+              value={memberList.filter((m) => selectedMemberIds.includes(String(m.user_id)))}
+              onChange={(_, newValue) => {
+                const listedIds = new Set(memberList.map((m) => String(m.user_id)));
+                // 검색 목록에 없는 기존 선택 ID(타 부서 등록자 등)는 그대로 유지
+                const unlistedIds = selectedMemberIds.filter((id) => !listedIds.has(String(id)));
+                const merged = [...new Set([...unlistedIds, ...newValue.map((m) => String(m.user_id))])];
+                // loginUserId는 항상 맨 앞에 포함
+                const withLogin = loginUserId
+                  ? [String(loginUserId), ...merged.filter((id) => id !== String(loginUserId))]
+                  : merged;
                 if (withLogin.length <= 5) setSelectedMemberIds(withLogin);
               }}
-              displayEmpty
-              disabled={memberList.length === 0}
-              renderValue={() => {
-                if (memberList.length === 0)
-                  return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
-                const total = selectedMemberIds.length;
-                if (total === 0)
-                  return <span style={{ color: "rgba(0,0,0,0.4)" }}>담당자 선택</span>;
-                // 항상 본인 이름을 앞에 표시 (현재 팀에 없어도 캐시 사용)
-                const meInList = memberList.find((m) => String(m.user_id) === String(loginUserId));
-                const myName = (meInList?.user_name && getScheduleUserName(meInList.user_id, meInList.user_name))
-                  || loginUserNameRef.current || getScheduleUserName(loginUserId, loginUserName);
-                return total > 1 ? `${myName} 외 ${total - 1}명` : myName;
+              getOptionLabel={(option) => getScheduleUserName(option.user_id, option.user_name) || ""}
+              isOptionEqualToValue={(option, value) => String(option.user_id) === String(value.user_id)}
+              getOptionDisabled={(option) =>
+                String(option.user_id) === String(loginUserId)
+                || (!selectedMemberIds.includes(String(option.user_id)) && selectedMemberIds.length >= 5)
+              }
+              renderTags={() => null}
+              disableCloseOnSelect
+              disablePortal
+              noOptionsText="검색 결과가 없습니다."
+              // 목록은 입력칸보다 넓게 펼쳐 이름·직책이 줄바꿈 없이 보이도록 함
+              slotProps={{ popper: { placement: "bottom-start", sx: { minWidth: 260 } } }}
+              renderOption={(props, option, { selected }) => (
+                <li {...props} key={option.user_id}>
+                  <Checkbox size="small" checked={selected} sx={{ mr: 1, p: 0 }} />
+                  <Box component="span" sx={{ whiteSpace: "nowrap" }}>
+                    {getScheduleUserName(option.user_id, option.user_name)} [{getPositionLabel(option.position)}]
+                  </Box>
+                </li>
+              )}
+              sx={{
+                width: isMobile ? "100%" : 170,
+                flexShrink: 0,
+                ...autocompleteBorderSx,
+                "& .MuiOutlinedInput-root": { height: CTRL_HEIGHT, minHeight: CTRL_HEIGHT, paddingTop: "0 !important", paddingBottom: "0 !important" },
               }}
-              sx={{ width: isMobile ? "100%" : 150, flexShrink: 0, ...ctrlSx }}
-            >
-              {memberList.map((member) => {
-                const isLoginUser = String(member.user_id) === String(loginUserId);
-                const isChecked = selectedMemberIds.some((id) => String(id) === String(member.user_id));
-                const isDisabled = isLoginUser || (!isChecked && selectedMemberIds.length >= 5);
-                return (
-                  <MenuItem
-                    key={member.user_id}
-                    value={member.user_id}
-                    disabled={isDisabled}
-                    sx={{ bgcolor: isLoginUser ? "#e0e0e0 !important" : "transparent", "&.Mui-disabled": { opacity: 1 } }}
-                  >
-                    <Checkbox checked={isChecked} size="small" sx={{ p: 0.5, mr: 0.5 }} />
-                    {getScheduleUserName(member.user_id, member.user_name)} [{getPositionLabel(member.position)}]
-                  </MenuItem>
-                );
-              })}
-            </Select>
+              renderInput={(params) => (
+                <TextField {...params} placeholder="담당자 검색" size="small" />
+              )}
+            />
 
             {/* 이슈(구분) - 수정: 단일 Select / 신규: 다중 Autocomplete (최대 3개) */}
             {selectedEvent ? (
@@ -971,6 +998,33 @@ function HeadofficeScheduleSheetTab({ year, month, onYearChange, onMonthChange }
               />
             )}
           </Box>
+
+          {/* 선택된 담당자 칩 영역 (이름 [팀], 본인은 삭제 불가) */}
+          {selectedMemberIds.length > 0 && (
+            <Box sx={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 0.5, mb: 1 }}>
+              <Typography sx={{ fontSize: "0.8rem", fontWeight: 700, color: "#344767", mr: 0.5 }}>담당자</Typography>
+              {selectedMemberIds.map((id) => {
+                const isLoginUser = String(id) === String(loginUserId);
+                const member = memberList.find((m) => String(m.user_id) === String(id));
+                const teamText = member ? ` [${member.team_label}]` : "";
+                return (
+                  <Chip
+                    key={id}
+                    size="small"
+                    label={`${getMemberLabel(id)}${teamText}`}
+                    onDelete={isLoginUser ? undefined : () => setSelectedMemberIds((prev) => prev.filter((x) => String(x) !== String(id)))}
+                    sx={{
+                      height: 24,
+                      fontSize: "0.75rem",
+                      bgcolor: isLoginUser ? "#e0e0e0" : "#e3f2fd",
+                      color: isLoginUser ? "#344767" : "#1565c0",
+                      "& .MuiChip-deleteIcon": { color: "#1565c0", fontSize: "14px" },
+                    }}
+                  />
+                );
+              })}
+            </Box>
+          )}
 
           {/* 내용 입력 */}
           <textarea

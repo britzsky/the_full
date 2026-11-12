@@ -76,8 +76,9 @@ export default function useAccountPurchaseDeadlineDetailData() {
 
     setDetailLoading(true);
     try {
+      // 회계 화면은 이익률을 뺀 원가(_cost) 상세를 본다
       const res = await api.get("/Account/AccountPurchaseDetailList_tmp", {
-        params: filters,
+        params: { ...filters, cost_yn: "Y" },
       });
 
       let list = [];
@@ -122,8 +123,9 @@ export default function useAccountPurchaseDeadlineDetailData() {
   };
 
   const fetchPurchaseDetailRawList = useCallback(async (filters) => {
+    // 회계 화면은 이익률을 뺀 원가(_cost) 상세를 본다
     return api.get("/Account/AccountPurchaseDetailList_tmp", {
-      params: filters,
+      params: { ...filters, cost_yn: "Y" },
     });
   }, []);
 

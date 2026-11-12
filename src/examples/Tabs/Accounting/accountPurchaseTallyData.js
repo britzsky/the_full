@@ -194,6 +194,8 @@ export default function useAccountPurchaseTallyData() {
         type: toParam(filters?.type),
         startDate,
         endDate,
+        // 회계 매입집계는 이익률을 뺀 원가(_cost) 매입으로 합산한다
+        cost_yn: "Y",
       };
 
       const res = await api.get("/Account/AccountPurchaseTallyForTallyTab", { params });
@@ -277,7 +279,7 @@ export default function useAccountPurchaseTallyData() {
           chunk.map((saleId) => {
             if (detailSummaryCache.has(saleId)) return Promise.resolve();
             const req = api
-              .get("/Account/AccountPurchaseDetailList_tmp", { params: { sale_id: saleId } })
+              .get("/Account/AccountPurchaseDetailList_tmp", { params: { sale_id: saleId, cost_yn: "Y" } })
               .then((r) => {
                 const detailList = Array.isArray(r.data) ? r.data : r.data?.rows || r.data?.data || [];
                 return detailList.length > 0 ? summarizeTallyByDetail(detailList) : null;

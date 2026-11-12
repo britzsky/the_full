@@ -58,9 +58,27 @@ const normalizeBookmarkTitle = (title) =>
     .replace(/\s+/g, " ")
     .trim();
 
+// 달력에 표시할 해당 연/월 본사행사(type=2, 미삭제) 목록을 조회하는 함수
+export const fetchHeadOfficeEvents = (year, month) =>
+  api
+    .get("/HeadOffice/EventList", { params: { year, month: String(month).padStart(2, "0") } })
+    .then((res) =>
+      (res.data || []).filter((x) => String(x.type) === "2" && String(x.del_yn || "N") !== "Y")
+    );
+
+// 달력에 표시할 해당 연/월 공휴일을 "YYYY-MM-DD" → 공휴일명 Map으로 조회하는 함수
+export const fetchHolidayMap = (year, month) =>
+  api.get("/Operate/HolidayList", { params: { year, month } }).then((res) => {
+    const list = Array.isArray(res.data) ? res.data : [];
+    const map = new Map();
+    list.forEach((h) => map.set(String(h.holiday_date), String(h.holiday_name || "공휴일")));
+    return map;
+  });
+
 export default function useDashBoardData() {
   const [accountList, setAccountList] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // 첫 진입 시 빈 화면이 먼저 보이지 않도록 조회 완료 전까지 로딩 상태로 시작
+  const [loading, setLoading] = useState(true);
 
   // 상단 4개
   const [notices, setNotices] = useState([]);
@@ -78,6 +96,10 @@ export default function useDashBoardData() {
   // 우측
   const [bookmarks, setBookmarks] = useState([]);
   const [todos, setTodos] = useState([]);
+
+  // 달력 첫 화면(이번 달)의 본사행사·공휴일
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const [calendarHolidays, setCalendarHolidays] = useState(new Map());
 
   // 대시보드 개인 데이터를 조회하고 저장할 때 사용하는 로그인 사용자 ID
   const getLoginUserId = () => String(localStorage.getItem("user_id") || "").trim();
@@ -101,10 +123,13 @@ export default function useDashBoardData() {
           account_name: item.account_name,
         }));
         setAccountList(rows);
+        // 조회할 거래처가 없으면 fetchAll이 호출되지 않으므로 로딩 해제
+        if (!rows.length && !localStorage.getItem("account_id")) setLoading(false);
       })
       .catch((err) => {
         console.error("AccountList 조회 실패:", err);
         setAccountList([]);
+        if (!localStorage.getItem("account_id")) setLoading(false);
       });
   }, []);
 
@@ -148,52 +173,52 @@ export default function useDashBoardData() {
       }))
     );
 
-  // ✅ 여기: 오늘 날짜를 params로 함께 전달
-  // 운영팀(team_code=2) 당일 일정
-  const fetchOpsSchedules = (account_id) => {
+  // 당일 전체 팀 일정에 급식사업부 일정관리의 동행자 정보(user_ids, user_names)를 idx 기준으로 합쳐 조회하는 함수
+  const fetchTodaySchedules = async () => {
     const today = getTodayYmd();
-    return api
-      .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 2 } })
-      .then((res) =>
-        sortSchedulesByAccountAndType(dedupeSchedulesByIdx(
-          (res.data || [])
-            .filter((x) => String(x?.del_yn || "N") !== "Y")
-            .map((x) => ({
-              idx: x.idx ?? null,
-              content: x.content || "",
-              user_name: x.user_name || "",
-              type: x.type || "",
-              position_name: x.position_name || "",
-              account_id: x.account_id || "",
-              account_name: x.account_name || "",
-              department: x.department || "",
-            }))
-        ))
-      );
+    const [todayRes, monthRes] = await Promise.all([
+      api.get("/Business/BusinessScheduleTodayList", { params: { today } }),
+      api
+        .get("/HeadOffice/HeadOfficeScheduleList", {
+          params: { year: today.slice(0, 4), month: today.slice(5, 7) },
+        })
+        .catch(() => ({ data: [] })),
+    ]);
+
+    // idx → 동행자 정보 매핑 (조회 실패 시 동행자 없이 표시)
+    const companionByIdx = new Map();
+    (monthRes.data || []).forEach((x) => {
+      companionByIdx.set(String(x.idx), { user_ids: x.user_ids || "", user_names: x.user_names || "" });
+    });
+
+    return (todayRes.data || [])
+      .filter((x) => String(x?.del_yn || "N") !== "Y")
+      .map((x) => ({
+        idx: x.idx ?? null,
+        team_code: Number(x.team_code),
+        content: x.content || "",
+        user_id: x.user_id || "",
+        user_name: x.user_name || "",
+        user_ids: companionByIdx.get(String(x.idx))?.user_ids || "",
+        user_names: companionByIdx.get(String(x.idx))?.user_names || "",
+        type: x.type || "",
+        position_name: x.position_name || "",
+        account_id: x.account_id || "",
+        account_name: x.account_name || "",
+        // 구분 라벨·색상은 등록자 부서가 아니라 일정의 팀 기준 (영업팀=4, 운영팀=5)
+        department: Number(x.team_code) === 1 ? "4" : "5",
+      }));
   };
 
+  // 당일 일정 중 지정한 팀(team_code)만 골라 중복 제거·정렬
+  const pickTeamSchedules = (rows, teamCode) =>
+    sortSchedulesByAccountAndType(dedupeSchedulesByIdx(rows.filter((x) => x.team_code === teamCode)));
+
+  // 운영팀(team_code=2) 당일 일정
+  const fetchOpsSchedules = (todayPromise) => todayPromise.then((rows) => pickTeamSchedules(rows, 2));
+
   // 영업팀(team_code=1) 당일 일정
-  const fetchSalesSchedules = (account_id) => {
-    const today = getTodayYmd();
-    return api
-      .get("/Business/BusinessScheduleTodayList", { params: { today, team_code: 1 } })
-      .then((res) =>
-        sortSchedulesByAccountAndType(dedupeSchedulesByIdx(
-          (res.data || [])
-            .filter((x) => String(x?.del_yn || "N") !== "Y")
-            .map((x) => ({
-              idx: x.idx ?? null,
-              content: x.content || "",
-              user_name: x.user_name || "",
-              type: x.type || "",
-              position_name: x.position_name || "",
-              account_id: x.account_id || "",
-              account_name: x.account_name || "",
-              department: x.department || "",
-            }))
-        ))
-      );
-  };
+  const fetchSalesSchedules = (todayPromise) => todayPromise.then((rows) => pickTeamSchedules(rows, 1));
 
   const fetchContracts = (account_id) =>
     api.get("/User/ContractEndAccountList", { params: { account_id } }).then((res) =>
@@ -265,16 +290,21 @@ export default function useDashBoardData() {
   const fetchAll = useCallback(async (account_id) => {
     setLoading(true);
 
+    // 운영팀·영업팀 카드가 함께 쓰는 당일 일정 조회 (1회만 호출)
+    const todayPromise = fetchTodaySchedules();
+
     const results = await Promise.allSettled([
       fetchNotices(),
       fetchMeals(account_id),
       fetchEducations(account_id),
       fetchWelfares(account_id),
-      fetchOpsSchedules(account_id),     // ✅ 내부에서 오늘 날짜 포함
-      fetchSalesSchedules(account_id),   // ✅ 내부에서 오늘 날짜 포함
+      fetchOpsSchedules(todayPromise),
+      fetchSalesSchedules(todayPromise),
       fetchContracts(account_id),
       fetchBookmarks(account_id),
       fetchTodos(account_id),
+      fetchHeadOfficeEvents(new Date().getFullYear(), new Date().getMonth() + 1),
+      fetchHolidayMap(new Date().getFullYear(), new Date().getMonth() + 1),
     ]);
 
     const pick = (idx, fallback) => (results[idx].status === "fulfilled" ? results[idx].value : fallback);
@@ -312,6 +342,8 @@ export default function useDashBoardData() {
 
     setBookmarks(pick(7, []));
     setTodos(pick(8, []));
+    setCalendarEvents(pick(9, []));
+    setCalendarHolidays(pick(10, new Map()));
 
     results.forEach((r, i) => {
       if (r.status === "rejected") console.error("Dashboard fetch fail idx:", i, r.reason);
@@ -332,6 +364,8 @@ export default function useDashBoardData() {
     contracts,
     bookmarks,
     todos,
+    calendarEvents,
+    calendarHolidays,
     fetchAll,
     addBookmark,
     deleteBookmark,

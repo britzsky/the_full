@@ -134,6 +134,8 @@ export default function useAccountPurchaseDeadlineData() {
         year:       toParam(filters?.year),
         month:      toParam(filters?.month),
         payType:    toParam(filters?.payType),
+        // 회계 화면은 이익률을 뺀 원가(_cost) 매입을 본다
+        cost_yn:    "Y",
       };
       const res = await api.get("/Account/AccountPurchaseTallyList", {
         params,

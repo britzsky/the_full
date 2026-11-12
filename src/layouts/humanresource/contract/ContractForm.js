@@ -129,7 +129,7 @@ const sumBreakHours = (form) => {
     total += end >= start ? end - start : end + 1440 - start;
     found = true;
   });
-  return found ? String(Math.round((total / 60) * 100) / 100) : null;
+  return found ? String(Math.round((total / 60) * 1e6) / 1e6) : null;
 };
 
 export const sumPay = (form) =>
@@ -165,7 +165,11 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
       placeholder={opts.placeholder || ""}
       onChange={(e) => onChange(key, opts.money ? formatMoney(e.target.value) : e.target.value)}
       style={{
-        width,
+        // 기본 너비보다 값이 길면(소수점 6자리 등) 글자 수만큼 늘어남
+        width:
+          typeof width === "number"
+            ? `max(${width}px, ${String(form[key] ?? "").length + 2}ch)`
+            : width,
         backgroundColor: readOnly ? "#f5f5f5" : "#fff9c4",
         border: "1px solid #d4b800",
         borderRadius: 2,
@@ -214,13 +218,12 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
       }}
       style={{
         width: 56,
-        height: 24,
         textAlign: "center",
         boxSizing: "border-box",
         backgroundColor: readOnly ? "#f5f5f5" : "#fff9c4",
         border: "1px solid #d4b800",
         borderRadius: 2,
-        padding: "0 4px",
+        padding: "2px 4px",
         fontSize: 13,
         verticalAlign: "middle",
       }}
@@ -262,9 +265,9 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
         </tr>
         <tr>
           <th style={subThStyle}>근로시간</th>
-          <td style={subTdStyle}>{input("ot_hours", 80)}</td>
-          <td style={subTdStyle}>{input("night_hours", 80)}</td>
-          <td style={subTdStyle}>{input("holiday_hours", 80)}</td>
+          <td style={subTdStyle}>{input("ot_hours", 100)}</td>
+          <td style={subTdStyle}>{input("night_hours", 100)}</td>
+          <td style={subTdStyle}>{input("holiday_hours", 100)}</td>
         </tr>
       </tbody>
     </table>
@@ -536,11 +539,15 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
               colSpan={5}
               style={{ ...tdStyle, textAlign: "center", fontWeight: "bold", padding: 8 }}
             >
-              {/* 작성일자는 근로자가 앱에서 서명한 날짜로 자동 입력 */}
+              {/* 작성일자: 기본값은 실입사일 전날 (직원 선택 시 자동 입력, 일괄 작성은 대상자별) */}
               작성일자 :{" "}
-              <span style={{ color: "#7b809a", fontWeight: "normal" }}>
-                근로자 서명 시 서명한 날짜로 자동 입력
-              </span>
+              {bulk ? (
+                <span style={{ color: "#1687b2", fontSize: 12, fontWeight: "normal" }}>
+                  대상자별 실입사일 전날로 자동 입력
+                </span>
+              ) : (
+                input("contract_dt", 140, { type: "date" })
+              )}
             </td>
           </tr>
           {/* 甲(회사)·乙(근로자) 서명란을 좌우 반반으로 나눈 영역 */}

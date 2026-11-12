@@ -42,7 +42,12 @@ import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import { clearSharedAuthCookies } from "utils/sharedAuthSession";
 import PreviewOverlay from "utils/PreviewOverlay";
 import { confirmTabLeave } from "utils/unsavedChangesGuard";
-import { fetchPendingWeekOverAlerts, WEEK_OVER_SAVED_EVENT } from "utils/tallyBudgetWeeks";
+import {
+  fetchPendingWeekOverAlerts,
+  WEEK_OVER_SAVED_EVENT,
+  WEEK_OVER_REASON_EXAMPLE,
+  WEEK_OVER_PLAN_EXAMPLE,
+} from "utils/tallyBudgetWeeks";
 
 // 현장관리 진입 공지 팝업 이미지 (public/fieldboard-notice.png 파일을 교체해서 사용, 없으면 이미지 영역 숨김)
 const NOTICE_IMAGE_SRC = `${process.env.PUBLIC_URL}/fieldboard-notice.png`;
@@ -57,12 +62,6 @@ const NOTICE_END_AT = TALLY_CLOSE_AT.valueOf();
 
 // 공지 본문 강조 스타일 (빨간 강조)
 const noticeRed = { color: "#d32f2f", fontWeight: 700 };
-
-// 예산 초과 안내 팝업에 보여주는 초과사유·개선계획 작성 예시 문구
-const WEEK_OVER_REASON_EXAMPLE =
-  "1주차 누적 사용액은 662,295원으로, 누적 예산 624,788원 대비 37,507원 초과했습니다(예산 대비 106.00%). 11/5 발주 시 냉동육과 건식 재고를 확인하지 않아, 2주차에 사용할 물량 일부를 1주차에 미리 구매했습니다.";
-const WEEK_OVER_PLAN_EXAMPLE =
-  "2주차에는 냉동육과 건식 재고를 우선 사용하고, 해당 품목의 발주를 줄여 1주차 초과분 37,507원을 만회하겠습니다. 이후 발주 전 실제 재고와 예정 식수를 확인해 부족한 수량만 주문하겠습니다. 11/14(2주차 마감)까지 누적 사용액을 적정 예산 이내로 맞추겠습니다.";
 
 // 마감 일시 표시 문구 (예: 10월 31일(토) 밤 11시 (23:00))
 const TALLY_CLOSE_LABEL = `${TALLY_CLOSE_AT.month() + 1}월 ${TALLY_CLOSE_AT.date()}일(${"일월화수목금토"[TALLY_CLOSE_AT.day()]
@@ -191,6 +190,30 @@ function FieldBoardTabs() {
     };
   }, [noticeOpen]);
 
+  const [budgetToday, setBudgetToday] = useState(() =>
+    new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  );
+
+  // 한국 시각 자정과 화면 복귀 시 예산 알림 기준일을 갱신
+  useEffect(() => {
+    let timer;
+    const refresh = () => {
+      clearTimeout(timer);
+      const date = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      setBudgetToday(date);
+      const nextMidnight = Date.parse(`${date}T00:00:00+09:00`) + 24 * 60 * 60 * 1000;
+      timer = setTimeout(refresh, Math.max(1, nextMidnight - Date.now()));
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, []);
+
   // 로그인 거래처의 예산 초과 미작성 주차(당월·전월)를 조회하는 함수 (진입 시, 알림 종을 열 때 호출)
   const loadWeekOverAlerts = useCallback(() => {
     const accountId = localStorage.getItem("account_id") || "";
@@ -204,7 +227,7 @@ function FieldBoardTabs() {
     loadWeekOverAlerts();
     window.addEventListener(WEEK_OVER_SAVED_EVENT, loadWeekOverAlerts);
     return () => window.removeEventListener(WEEK_OVER_SAVED_EVENT, loadWeekOverAlerts);
-  }, [loadWeekOverAlerts]);
+  }, [loadWeekOverAlerts, budgetToday]);
 
   // 공지 팝업 닫기:체크했으면 현재 시각을 저장해 24시간 동안 숨긴다.
   const handleNoticeClose = () => {

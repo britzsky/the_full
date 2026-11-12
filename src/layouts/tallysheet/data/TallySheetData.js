@@ -71,7 +71,8 @@ const pickLatestUseRow = (prev, curr) => {
   return curr;
 };
 
-export default function useTallysheetData(account_id, year, month) {
+// costYn: "Y"면 이익률 제외 금액(원가)으로 집계표를 조회
+export default function useTallysheetData(account_id, year, month, costYn) {
   const [dataRows, setDataRows] = useState([]);
   const [data2Rows, setData2Rows] = useState([]);
   const [originalRows, setOriginalRows] = useState([]);
@@ -137,6 +138,8 @@ export default function useTallysheetData(account_id, year, month) {
           if (a) params.account_id = a;
           if (y) params.year = y;
           if (m) params.month = m;
+          // 이익률 제외 금액으로 보기: 웰스토리·아워홈 칸을 원가로 조회
+          if (costYn === "Y") params.cost_yn = "Y";
 
           const res = await api.get("/Operate/TallySheetList", { params });
           const list = res.data || [];
@@ -173,7 +176,7 @@ export default function useTallysheetData(account_id, year, month) {
         }
       });
     },
-    [account_id, year, month, runWithMinLoading]
+    [account_id, year, month, costYn, runWithMinLoading]
   );
 
   // ✅ 지난 달 데이터 조회
@@ -193,6 +196,8 @@ export default function useTallysheetData(account_id, year, month) {
           if (a) params.account_id = a;
           params.year = prevYear;
           params.month = prevMonth;
+          // 이익률 제외 금액으로 보기: 웰스토리·아워홈 칸을 원가로 조회
+          if (costYn === "Y") params.cost_yn = "Y";
 
           const res = await api.get("/Operate/TallySheetList", { params });
           const list = res.data || [];
@@ -229,7 +234,7 @@ export default function useTallysheetData(account_id, year, month) {
         }
       });
     },
-    [account_id, year, month, runWithMinLoading]
+    [account_id, year, month, costYn, runWithMinLoading]
   );
 
   // ✅ 예산(현재월) 조회

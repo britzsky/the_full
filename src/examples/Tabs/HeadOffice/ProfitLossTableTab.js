@@ -1,6 +1,6 @@
 /* eslint-disable react/function-component-definition */
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
-import { Box, Grid, Select, MenuItem, TextField, Autocomplete, Radio, RadioGroup, FormControlLabel } from "@mui/material";
+import { Box, Grid, Select, MenuItem, TextField, Autocomplete, Radio, RadioGroup, FormControlLabel, Checkbox } from "@mui/material";
 import dayjs from "dayjs";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
@@ -23,6 +23,8 @@ export default function ProfitLossTableTab() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [accountInput, setAccountInput] = useState("");
   const [radioFilter, setRadioFilter] = useState("전체");
+  // 이익률 포함 금액(판가)으로 보기 여부. 기본은 원가 보기(해제)
+  const [saleYn, setSaleYn] = useState(false);
   const didSetDefaultAccountRef = useRef(false);
   const tableBoxRef = useRef(null);
   const noteMeasureCanvasRef = useRef(null);
@@ -47,7 +49,7 @@ export default function ProfitLossTableTab() {
 
   // ✅ month까지 전달되도록 수정
   const { profitLossTableRows, accountList, loading, fetchProfitLossTableList, savePersonCostExcel } =
-    useProfitLossTableData(year, queryMonth, selectedAccountId);
+    useProfitLossTableData(year, queryMonth, selectedAccountId, saleYn);
 
   const accountTypeById = useMemo(() => {
     const map = new Map();
@@ -787,6 +789,26 @@ export default function ProfitLossTableTab() {
     }
 
     fetchProfitLossTableList(queryAccountId, queryMonth, year, filterAccountIds);
+  };
+
+  // 이익률 포함 금액으로 보기 체크박스 변경 처리 함수
+  // 값이 바뀌면 조회 훅이 sale_yn을 붙여 다시 조회하므로, 저장하지 않은 입력이 있으면 먼저 확인한다.
+  const handleSaleYnChange = async (e) => {
+    const checked = e.target.checked;
+
+    if (hasUnsavedChanges) {
+      const result = await Swal.fire({
+        title: "변경사항이 있습니다.",
+        text: "보기 기준을 바꾸면 저장되지 않은 변경사항이 사라집니다. 계속할까요?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "계속",
+        cancelButtonText: "취소",
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    setSaleYn(checked);
   };
 
   const getNoteInputWidth = (value) => {
@@ -1592,6 +1614,7 @@ export default function ProfitLossTableTab() {
         year,
         account_id: selectedAccountId,
         month: "",
+        ...(saleYn ? { sale_yn: "Y" } : {}),
       },
     });
 
@@ -1807,6 +1830,11 @@ export default function ProfitLossTableTab() {
     const isAllMonth = String(month) === "ALL";
     const isAllAccount = String(selectedAccountId) === "ALL";
     const accountName = selectedAccount?.account_name || "거래처";
+    // 판가 보기일 때 서버 엑셀 조회에 붙이는 파라미터
+    const saleYnParam = saleYn ? { sale_yn: "Y" } : {};
+    // 판가 보기일 때 파일명 끝에 "_판가"를 붙여 내려받는 함수
+    const downloadExcelBlob = (blob, name) =>
+      downloadBlob(blob, saleYn ? name.replace(/\.xlsx$/, "_판가.xlsx") : name);
 
     try {
       // ✅ 1) 월이 선택된 경우 -> 월 엑셀 우선
@@ -1814,7 +1842,7 @@ export default function ProfitLossTableTab() {
         // ✅ 전체 거래처 + 특정 월
         if (isAllAccount) {
           const res = await excelApi.get("/HeadOffice/ExcelDownMonthProfitLossTableList", {
-            params: { account_id: selectedAccountId, year, month: queryMonth },
+            params: { account_id: selectedAccountId, year, month: queryMonth, ...saleYnParam },
             responseType: "arraybuffer",
             headers: {
               Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1828,7 +1856,7 @@ export default function ProfitLossTableTab() {
             await workbook.xlsx.load(res.data);
             applyCalculationRulesToDownloadedWorkbook(workbook);
             const buffer = await workbook.xlsx.writeBuffer();
-            downloadBlob(
+            downloadExcelBlob(
               new Blob([buffer], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               }),
@@ -1839,7 +1867,7 @@ export default function ProfitLossTableTab() {
 
           if (detected.kind === "xls") {
             const buffer = await convertLegacyXlsWithCalculationRules(res.data);
-            downloadBlob(
+            downloadExcelBlob(
               new Blob([buffer], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               }),
@@ -1880,7 +1908,7 @@ export default function ProfitLossTableTab() {
           const blob = new Blob([buffer], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           });
-          downloadBlob(blob, `${year}-${queryMonth}월(손익표).xlsx`);
+          downloadExcelBlob(blob, `${year}-${queryMonth}월(손익표).xlsx`);
           return;
         }
 
@@ -1902,7 +1930,7 @@ export default function ProfitLossTableTab() {
           type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         });
 
-        downloadBlob(blob, `${year}-${sanitizeFilename(accountName)}-${queryMonth}월.xlsx`);
+        downloadExcelBlob(blob, `${year}-${sanitizeFilename(accountName)}-${queryMonth}월.xlsx`);
         return;
       }
 
@@ -1931,7 +1959,7 @@ export default function ProfitLossTableTab() {
 
         if (mode === "account") {
           const res = await excelApi.get("/HeadOffice/ExcelDownProfitLossTableList", {
-            params: { year, month: queryMonth },
+            params: { year, month: queryMonth, ...saleYnParam },
             responseType: "arraybuffer",
             headers: {
               Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1956,13 +1984,13 @@ export default function ProfitLossTableTab() {
             const blob = new Blob([buffer], {
               type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
-            downloadBlob(blob, `${year}(손익표).xlsx`);
+            downloadExcelBlob(blob, `${year}(손익표).xlsx`);
             return;
           }
 
           if (detected.kind === "xls") {
             const buffer = await convertLegacyXlsWithCalculationRules(res.data);
-            downloadBlob(
+            downloadExcelBlob(
               new Blob([buffer], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               }),
@@ -2010,13 +2038,13 @@ export default function ProfitLossTableTab() {
           const blob = new Blob([buffer], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           });
-          downloadBlob(blob, `${year}(손익표).xlsx`);
+          downloadExcelBlob(blob, `${year}(손익표).xlsx`);
           return;
         }
 
         if (mode === "month") {
           const res = await excelApi.get("/HeadOffice/ExcelDownMonthProfitLossTableList", {
-            params: { account_id: selectedAccountId, year, month: queryMonth },
+            params: { account_id: selectedAccountId, year, month: queryMonth, ...saleYnParam },
             responseType: "arraybuffer",
             headers: {
               Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2032,7 +2060,7 @@ export default function ProfitLossTableTab() {
             applyCalculationRulesToDownloadedWorkbook(workbook);
 
             const buffer = await workbook.xlsx.writeBuffer();
-            downloadBlob(
+            downloadExcelBlob(
               new Blob([buffer], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               }),
@@ -2043,7 +2071,7 @@ export default function ProfitLossTableTab() {
 
           if (detected.kind === "xls") {
             const buffer = await convertLegacyXlsWithCalculationRules(res.data);
-            downloadBlob(
+            downloadExcelBlob(
               new Blob([buffer], {
                 type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               }),
@@ -2083,7 +2111,7 @@ export default function ProfitLossTableTab() {
           const blob = new Blob([buffer], {
             type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           });
-          downloadBlob(blob, `${year}(손익표-월전체).xlsx`);
+          downloadExcelBlob(blob, `${year}(손익표-월전체).xlsx`);
           return;
         }
 
@@ -2107,7 +2135,7 @@ export default function ProfitLossTableTab() {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
 
-      downloadBlob(blob, fileName);
+      downloadExcelBlob(blob, fileName);
     } catch (err) {
       Swal.fire("엑셀 다운로드 실패", err?.message || "오류가 발생했습니다.", "error");
     }
@@ -2402,6 +2430,13 @@ export default function ProfitLossTableTab() {
       <MDBox
         sx={{ display: "flex", justifyContent: "flex-end", gap: 1, flexWrap: "wrap", pt: 0.5, pb: 1, pr: 1 }}
       >
+        {/* 이익률 포함 금액(판가)으로 보기 체크박스 */}
+        <FormControlLabel
+          control={<Checkbox size="small" checked={saleYn} onChange={handleSaleYnChange} />}
+          label="이익률 포함 금액으로 보기"
+          sx={{ mr: 0.5, ml: 0, "& .MuiFormControlLabel-label": { fontSize: "13px", position: "relative", top: "-1px", left: "-9px" } }}
+        />
+
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
           <RadioGroup
             row

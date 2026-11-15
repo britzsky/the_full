@@ -170,6 +170,17 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
           const canEdit = editable && w.writable && !isExample;
           // 토요일에는 일요일 몫까지 포함한 누적 예산 기준일을 표시
           const recommendedEndDate = w.budgetEndDate;
+          // 시작 전 주차는 누적 금액·비율 숫자를 비워 둔다
+          const started = today >= w.startDate;
+          // 누적 권장 사용예산 표시(시작 전 주차는 같은 높이를 유지하도록 빈 칸)
+          const recommendedLabel = (
+            <Typography
+              title={started ? `${month}/1부터 ${md(recommendedEndDate)}까지의 누적 권장 사용예산` : undefined}
+              sx={{ fontSize: 11, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+            >
+              {started ? `권장 사용예산 ${fmt(w.baseBudget)}원` : " "}
+            </Typography>
+          );
           return (
             <Box
               key={w.weekNo}
@@ -181,40 +192,26 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                 flexDirection: "column",
               }}
             >
-              {/* 주차명·기간·판정 상태 머리 영역 */}
-              <Box
-                sx={{
-                  px: 1,
-                  py: 0.5,
-                  bgcolor: st.bg,
-                  color: "#fff",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  flexWrap: "wrap",
-                  gap: 0.5,
-                }}
-              >
-                <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>
-                  {`${w.weekNo}주차 (${md(w.startDate)}~${md(w.endDate)})`}
-                </Typography>
-                {today >= w.startDate && (
-                  <Typography
-                    title={`${month}/1부터 ${md(recommendedEndDate)}까지의 누적 권장 사용예산`}
-                    sx={{ fontSize: 11, fontWeight: 700, color: "#fff" }}
-                  >
-                    {`권장 사용예산 ${fmt(w.baseBudget)}원`}
+              {/* 주차명·기간·판정 상태 머리 영역(현장은 한 줄, 본사는 좌측 메뉴로 폭이 좁아 권장 사용예산을 둘째 줄에 표시) */}
+              <Box sx={{ px: 1, py: 0.5, bgcolor: st.bg, color: "#fff" }}>
+                <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 0.5 }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff", whiteSpace: "nowrap" }}>
+                    {`${w.weekNo}주차 (${md(w.startDate)}~${md(w.endDate)})`}
                   </Typography>
-                )}
-                <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff" }}>{st.label}</Typography>
+                  {editable && recommendedLabel}
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: "#fff", whiteSpace: "nowrap" }}>
+                    {st.label}
+                  </Typography>
+                </Box>
+                {!editable && recommendedLabel}
               </Box>
 
               {/* 일자별 누적 예산 초과 여부 표시 줄(빨강 초과·초록 정상·회색 미판정) */}
-              <Box sx={{ display: "flex", gap: 0.5, px: 1, pt: 0.75 }}>
+              <Box sx={{ display: "flex", gap: 0.25, px: 1, pt: 0.75 }}>
                 {w.dayStatus.map((x) => (
                   <Box
                     key={x.date}
-                    title={`${md(x.date)}${x.endDay !== x.day ? `~${md(x.endDate)} (토·일 합산)` : ""} ${STATUS_STYLE[x.status].label || "미판정"}`}
+                    title={`${md(x.date)}(${"일월화수목금토"[dayjs(x.date).day()]})${x.endDay !== x.day ? `~${md(x.endDate)} (토·일 합산)` : ""} ${STATUS_STYLE[x.status].label || "미판정"}`}
                     sx={{
                       flex: x.endDay !== x.day ? 1.5 : 1,
                       minWidth: 0,
@@ -226,12 +223,17 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                       fontWeight: 700,
                       textAlign: "center",
                       whiteSpace: "nowrap",
+                      overflow: "hidden",
                       lineHeight: 1.4,
+                      // 토·일 합산 칸은 글자가 길어 자간을 좁힘
+                      letterSpacing: x.endDay !== x.day ? "-0.4px" : undefined,
                     }}
                   >
-                    {x.endDay !== x.day
-                      ? `토·일 ${x.day}~${x.endDay}`
-                      : `${"일월화수목금토"[dayjs(x.date).day()]} ${dayjs(x.date).date()}`}
+                    {/* 날짜는 굵게, 요일은 작게 괄호로 표시 (토·일 합산 칸은 15~16(토일)) */}
+                    {x.endDay !== x.day ? `${x.day}~${x.endDay}` : x.day}
+                    <Box component="span" sx={{ fontSize: 9, fontWeight: 400, color: "#fff" }}>
+                      {x.endDay !== x.day ? "(토일)" : `(${"일월화수목금토"[dayjs(x.date).day()]})`}
+                    </Box>
                   </Box>
                 ))}
               </Box>
@@ -239,7 +241,11 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
               {/* 판정일까지 누적 사용금액·누적 예산·비율 영역 */}
               <Box sx={{ px: 1, py: 0.5, borderBottom: "1px solid #eee" }}>
                 <Typography
-                  title={`누적 사용 ${fmt(w.cumUsed)} / 누적 예산 ${fmt(w.baseBudget)} / 예산대비 ${w.ratio.toFixed(2)}%`}
+                  title={
+                    started
+                      ? `누적 사용 ${fmt(w.cumUsed)} / 누적 예산 ${fmt(w.baseBudget)} / 예산대비 ${w.ratio.toFixed(2)}%`
+                      : undefined
+                  }
                   sx={{
                     fontSize: 11,
                     color: "#444",
@@ -248,14 +254,14 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                     textOverflow: "ellipsis",
                   }}
                 >
-                  {`누적 사용 ${fmt(w.cumUsed)} / 누적 예산 ${fmt(w.baseBudget)}`}
+                  {`누적 사용 ${started ? fmt(w.cumUsed) : ""} / 누적 예산 ${started ? fmt(w.baseBudget) : ""}`}
                 </Typography>
                 {/* 판정일 기준 예산대비 비율 및 작성기한(초과 주차만) 줄 */}
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
                   <Typography
                     sx={{ fontSize: 11, fontWeight: 700, color: w.status === "over" ? "#d32f2f" : "#444" }}
                   >
-                    {`예산대비 ${w.ratio.toFixed(2)}%`}
+                    {`예산대비 ${started ? `${w.ratio.toFixed(2)}%` : ""}`}
                   </Typography>
                   {w.status === "over" && (
                     <Typography sx={{ fontSize: 11, color: w.writable ? "#d32f2f" : "#999", whiteSpace: "nowrap" }}>

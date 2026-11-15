@@ -289,6 +289,7 @@ function ContractManager() {
     fetchContractDetail,
     saveContract,
     resendContractPush,
+    issueContractWebLink,
     deleteContract,
     downloadContractPdf,
     fetchContractViewPdf,
@@ -731,6 +732,42 @@ function ContractManager() {
     }
   };
 
+  // 현황 목록에서 링크 버튼을 눌렀을 때 웹 서명 링크를 발급하고, 문자에 붙여 넣을 안내 문구를 복사하는 함수
+  // (앱 설치가 어려운 파출 인원용, 아직 쓸 수 있는 링크가 있으면 같은 링크가 다시 나옴)
+  const handleCopySignLink = async (row) => {
+    try {
+      const result = await issueContractWebLink(row.contract_id);
+      if (String(result?.code) !== "200" || !result.url) {
+        Swal.fire("발급 실패", result?.message || "링크를 만들지 못했습니다.", "error");
+        return;
+      }
+      const until = result.expire_dt ? dayjs(result.expire_dt).format("M/D") : "";
+      const text =
+        `[더채움] ${row.name}님 근로계약서 서명 요청입니다.\n` +
+        `아래 링크에서 주민번호 앞 6자리 확인 후 서명해 주세요.${until ? ` (${until}까지)` : ""}\n` +
+        result.url;
+      // 클립보드 복사 (https가 아니면 막힐 수 있어, 실패해도 아래 창에서 직접 복사 가능)
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch (copyErr) {
+        copied = false;
+      }
+      Swal.fire({
+        title: copied ? "문구 복사 완료" : "아래 문구를 복사해 주세요",
+        html:
+          `<textarea readonly style="width:100%;height:110px;font-size:13px;padding:8px;box-sizing:border-box">` +
+          `${text.replace(/</g, "&lt;")}</textarea>` +
+          `<div style="font-size:13px;color:#666;margin-top:6px">문자에 붙여 넣어 ${row.name}님에게 보내 주세요.</div>`,
+        icon: copied ? "success" : "info",
+      });
+    } catch (err) {
+      console.error("ContractWebLink 실패:", err);
+      Swal.fire("오류", "링크 발급 중 오류가 발생했습니다.", "error");
+    }
+  };
+
   // 계약서 보기 화면에서 서명 전 계약서 회수 처리 (삭제 처리되어 근로자 앱 목록·배지·알림 대상에서 빠짐)
   const handleRecall = async (row) => {
     const confirm = await Swal.fire({
@@ -1134,6 +1171,21 @@ function ContractManager() {
                                 }}
                               >
                                 알림
+                              </MDButton>
+                            )}
+                            {/* 앱이 없는 근로자에게 문자로 보낼 웹 서명 링크 복사 (서명 전 건) */}
+                            {row.status !== "서명완료" && (
+                              <MDButton
+                                size="small"
+                                variant="outlined"
+                                color="dark"
+                                sx={{ ml: 0.5, minWidth: 0, pt: "2px", pb: 0, px: 1 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopySignLink(row);
+                                }}
+                              >
+                                링크
                               </MDButton>
                             )}
                             {row.status === "서명완료" && (

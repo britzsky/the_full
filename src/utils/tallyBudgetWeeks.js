@@ -96,7 +96,7 @@ export const getBudgetWeeks = (year, month) => {
 
 // 주차별 식자재 누적 사용금액과 누적 예산을 일자마다 비교해 초과 여부·작성 가능 여부를 판정하는 함수
 // dayStatus: 토·일을 한 칸으로 묶은 일자별 판정 (토요일부터 일요일 예산까지 적용)
-// status: "over"(하루라도 초과) | "ok"(주차 종료 후 초과 없음) | "pending"(진행 중·초과 없음)
+// status: "over"(마지막 판정일 누적 103% 이상) | "ok"(주차 종료 후 예산 이내) | "pending"(진행 중·예산 이내)
 export const evaluateBudgetWeeks = ({ year, month, budget, dailyUsed, today = dayjs().format("YYYY-MM-DD") }) => {
   const first = dayjs(`${year}-${String(month).padStart(2, "0")}-01`);
   const days = dailyUsed?.length || first.daysInMonth();
@@ -127,8 +127,9 @@ export const evaluateBudgetWeeks = ({ year, month, budget, dailyUsed, today = da
     const cumUsed = cumUsedAt(lastJudged ? lastJudged.usedDay : w.endDay);
     const baseBudget = baseBudgetAt(refDay);
     const ratio = baseBudget > 0 ? (cumUsed / baseBudget) * 100 : 0;
+    // 매일 마지막 판정일의 누적 비율로 판단 (중간에 넘었어도 지금 예산 안이면 초과 아님)
     let status = "pending";
-    if (dayStatus.some((x) => x.status === "over")) status = "over";
+    if (lastJudged?.status === "over") status = "over";
     else if (today > w.endDate) status = "ok";
     return {
       ...w,

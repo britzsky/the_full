@@ -96,6 +96,18 @@ export default function useContractData() {
     return res.data;
   };
 
+  // 서명 전 계약서의 웹 서명 링크를 발급받는 함수 (응답 token·expire_dt에 링크 주소 url을 붙여 반환)
+  // 링크 주소: API 주소(운영 /api) 뒤에 /sign/열쇠
+  const issueContractWebLink = async (contractId) => {
+    const res = await api.post("/Operate/ContractWebLink", { contract_id: contractId });
+    const data = res.data || {};
+    if (data.token) {
+      const apiBase = String(api.defaults.baseURL || "").replace(/\/$/, "");
+      data.url = new URL(`${apiBase}/sign/${data.token}`, window.location.origin).href;
+    }
+    return data;
+  };
+
   // 계약서를 삭제 처리하는 함수 (서명 전 계약서만)
   const deleteContract = async (payload) => {
     const res = await api.post("/Operate/ContractDelete", payload);
@@ -165,6 +177,7 @@ export default function useContractData() {
     fetchContractDetail,
     saveContract,
     resendContractPush,
+    issueContractWebLink,
     deleteContract,
     downloadContractPdf,
     fetchContractViewPdf,

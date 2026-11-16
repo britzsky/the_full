@@ -934,6 +934,7 @@ function AccountPurchaseDeadlineTab() {
       { header: "금액", accessorKey: "amount", size: 120 },
       { header: "과세구분", accessorKey: "taxType", size: 110 },
       { header: "상품구분", accessorKey: "itemType", size: 110 },
+      { header: "예산미포함", accessorKey: "budget_yn", size: 80 },
     ],
     []
   );
@@ -1355,6 +1356,7 @@ function AccountPurchaseDeadlineTab() {
       "amount",
       "taxType",
       "itemType",
+      "budget_yn",
       "note",
     ],
     []
@@ -1562,6 +1564,7 @@ function AccountPurchaseDeadlineTab() {
       // ✅ 기본값(선택)
       taxType: "",
       itemType: "",
+      budget_yn: "N",
 
       receipt_image: master?.receipt_image || "",
       note: "",
@@ -1804,6 +1807,8 @@ function AccountPurchaseDeadlineTab() {
       const calcMasterTotalsForSave = (list) => {
         let total = 0, tax = 0, vat = 0, taxFree = 0;
         (list || []).forEach((r) => {
+          // 예산미포함(Y) 품목은 상단 합계에서 제외
+          if (String(r?.budget_yn ?? "N") === "Y") return;
           const amt = toNumForSave(r?.amount);
           const taxType = String(r?.taxType ?? "");
           const autoVat = taxType === "1" ? Math.floor(amt / 11) : 0;
@@ -2656,6 +2661,8 @@ function AccountPurchaseDeadlineTab() {
       let taxFree = 0;
 
       (list || []).forEach((r) => {
+        // 예산미포함(Y) 품목은 상단 합계에서 제외
+        if (String(r?.budget_yn ?? "N") === "Y") return;
         const amt = toNum(r?.amount);
         const taxType = String(r?.taxType ?? "");
         const autoVat = computeVat(amt, taxType);
@@ -2835,28 +2842,28 @@ function AccountPurchaseDeadlineTab() {
               gap: 1,
             }}
           >
-          <TextField
-            select
-            label="타입"
-            size="small"
-            name="type"
-            onChange={handleFilterChange}
-            sx={{ minWidth: isMobile ? 100 : 120 }}
-            SelectProps={{ native: true }}
-            value={filters.type}
-            disabled={typeLoading}
-          >
-            <option value="0">전체</option>
-            {typeOptions
-              .filter((o) => !EXCLUDED_TYPE_FILTER_VALUES.has(String(o?.value ?? "")))
-              .map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-          </TextField>
+            <TextField
+              select
+              label="타입"
+              size="small"
+              name="type"
+              onChange={handleFilterChange}
+              sx={{ minWidth: isMobile ? 100 : 120 }}
+              SelectProps={{ native: true }}
+              value={filters.type}
+              disabled={typeLoading}
+            >
+              <option value="0">전체</option>
+              {typeOptions
+                .filter((o) => !EXCLUDED_TYPE_FILTER_VALUES.has(String(o?.value ?? "")))
+                .map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+            </TextField>
 
-          {/* 조회구분 필터 (임시 비활성화)
+            {/* 조회구분 필터 (임시 비활성화)
           <TextField
             select
             label="조회구분"
@@ -2873,150 +2880,150 @@ function AccountPurchaseDeadlineTab() {
           </TextField>
           */}
 
-          <Select
-            size="small"
-            value={filters.year}
-            onChange={(e) => {
-              const next = { ...latestFiltersRef.current, year: e.target.value };
-              latestFiltersRef.current = next;
-              setFilters(next);
-            }}
-            sx={{ minWidth: 110, height: 40 }}
-          >
-            {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
-              <MenuItem key={y} value={String(y)}>
-                {y}년
-              </MenuItem>
-            ))}
-          </Select>
+            <Select
+              size="small"
+              value={filters.year}
+              onChange={(e) => {
+                const next = { ...latestFiltersRef.current, year: e.target.value };
+                latestFiltersRef.current = next;
+                setFilters(next);
+              }}
+              sx={{ minWidth: 110, height: 40 }}
+            >
+              {Array.from({ length: 10 }, (_, i) => now.getFullYear() - 5 + i).map((y) => (
+                <MenuItem key={y} value={String(y)}>
+                  {y}년
+                </MenuItem>
+              ))}
+            </Select>
 
-          <Select
-            size="small"
-            value={filters.month}
-            onChange={(e) => {
-              const next = { ...latestFiltersRef.current, month: e.target.value };
-              latestFiltersRef.current = next;
-              setFilters(next);
-            }}
-            sx={{ minWidth: 90, height: 40 }}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-              <MenuItem key={m} value={String(m)}>
-                {m}월
-              </MenuItem>
-            ))}
-          </Select>
+            <Select
+              size="small"
+              value={filters.month}
+              onChange={(e) => {
+                const next = { ...latestFiltersRef.current, month: e.target.value };
+                latestFiltersRef.current = next;
+                setFilters(next);
+              }}
+              sx={{ minWidth: 90, height: 40 }}
+            >
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <MenuItem key={m} value={String(m)}>
+                  {m}월
+                </MenuItem>
+              ))}
+            </Select>
 
-          {/* ✅ 거래처: 검색 가능한 Autocomplete */}
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 200 }}
-            options={accountOptions}
-            value={selectedAccountOption}
-            onChange={handleAccountChange}
-            onInputChange={(_, newValue, reason) => {
-              if (reason === "clear") {
-                return;
-              }
-              accountInputRef.current = newValue || "";
-            }}
-            getOptionLabel={(opt) => opt?.label ?? ""}
-            isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
-            filterOptions={(options, state) => {
-              const q = (state.inputValue ?? "").trim().toLowerCase();
-              if (!q) return options;
-              return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
-            }}
-            renderOption={(optionProps, option) => (
-              <li
-                {...optionProps}
-                key={option?.value}
-                style={{
-                  ...(optionProps.style || {}),
-                  color: String(option?.del_yn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
-                }}
-              >
-                {option?.label ?? ""}
-              </li>
+            {/* ✅ 거래처: 검색 가능한 Autocomplete */}
+            <Autocomplete
+              size="small"
+              sx={{ minWidth: 200 }}
+              options={accountOptions}
+              value={selectedAccountOption}
+              onChange={handleAccountChange}
+              onInputChange={(_, newValue, reason) => {
+                if (reason === "clear") {
+                  return;
+                }
+                accountInputRef.current = newValue || "";
+              }}
+              getOptionLabel={(opt) => opt?.label ?? ""}
+              isOptionEqualToValue={(opt, val) => opt?.value === val?.value}
+              filterOptions={(options, state) => {
+                const q = (state.inputValue ?? "").trim().toLowerCase();
+                if (!q) return options;
+                return options.filter((o) => (o.label ?? "").toLowerCase().includes(q));
+              }}
+              renderOption={(optionProps, option) => (
+                <li
+                  {...optionProps}
+                  key={option?.value}
+                  style={{
+                    ...(optionProps.style || {}),
+                    color: String(option?.del_yn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
+                  }}
+                >
+                  {option?.label ?? ""}
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="거래처 검색"
+                  placeholder="거래처명을 입력"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      selectAccountByInput(e.currentTarget.value);
+                    }
+                  }}
+                  sx={{
+                    "& .MuiInputBase-root": { height: 45, fontSize: 12 },
+                    "& .MuiInputLabel-root": { fontSize: 12 },
+                    "& input": {
+                      padding: "0 8px",
+                      color: String(selectedAccountDelYn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
+                    },
+                  }}
+                />
+              )}
+            />
+
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={handleSearch}
+              sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
+            >
+              조회
+            </MDButton>
+
+            <MDButton
+              variant="gradient"
+              color="info"
+              disabled={isDeletedAccount || isLocked}
+              onClick={handleSave}
+              sx={{
+                minWidth: isMobile ? 90 : 100,
+                fontSize: isMobile ? "11px" : "13px",
+                cursor: isDeletedAccount || isLocked ? "not-allowed" : "pointer",
+                "&.Mui-disabled": {
+                  cursor: "not-allowed",
+                  pointerEvents: "auto",
+                },
+              }}
+            >
+              저장
+            </MDButton>
+
+            {canOverride && isAutoLocked && (
+              <Box sx={{ width: 140, flexShrink: 0, display: "flex" }}>
+                <MDButton
+                  fullWidth
+                  disabled={overrideLoading}
+                  onClick={toggleOverride}
+                  sx={{
+                    fontSize: isMobile ? "11px" : "13px",
+                    backgroundColor: isOverride ? "#9e9e9e" : "#ff9800",
+                    color: "#fff",
+                    "&:hover": { backgroundColor: isOverride ? "#757575" : "#f57c00" },
+                  }}
+                >
+                  {overrideLoading ? "처리중..." : isOverride ? "수정권한 해제" : "수정권한 부여"}
+                </MDButton>
+              </Box>
             )}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="거래처 검색"
-                placeholder="거래처명을 입력"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    selectAccountByInput(e.currentTarget.value);
-                  }
-                }}
-                sx={{
-                  "& .MuiInputBase-root": { height: 45, fontSize: 12 },
-                  "& .MuiInputLabel-root": { fontSize: 12 },
-                  "& input": {
-                    padding: "0 8px",
-                    color: String(selectedAccountDelYn ?? "N").toUpperCase() === "Y" ? "#d32f2f" : "inherit",
-                  },
-                }}
-              />
-            )}
-          />
 
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={handleSearch}
-            sx={{ minWidth: isMobile ? 90 : 100, fontSize: isMobile ? "11px" : "13px" }}
-          >
-            조회
-          </MDButton>
+            <MDButton
+              variant="gradient"
+              color="info"
+              onClick={downloadPurchaseDataExcel}
+              sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "11px" : "13px" }}
+            >
+              엑셀다운로드
+            </MDButton>
 
-          <MDButton
-            variant="gradient"
-            color="info"
-            disabled={isDeletedAccount || isLocked}
-            onClick={handleSave}
-            sx={{
-              minWidth: isMobile ? 90 : 100,
-              fontSize: isMobile ? "11px" : "13px",
-              cursor: isDeletedAccount || isLocked ? "not-allowed" : "pointer",
-              "&.Mui-disabled": {
-                cursor: "not-allowed",
-                pointerEvents: "auto",
-              },
-            }}
-          >
-            저장
-          </MDButton>
-
-          {canOverride && isAutoLocked && (
-            <Box sx={{ width: 140, flexShrink: 0, display: "flex" }}>
-              <MDButton
-                fullWidth
-                disabled={overrideLoading}
-                onClick={toggleOverride}
-                sx={{
-                  fontSize: isMobile ? "11px" : "13px",
-                  backgroundColor: isOverride ? "#9e9e9e" : "#ff9800",
-                  color: "#fff",
-                  "&:hover": { backgroundColor: isOverride ? "#757575" : "#f57c00" },
-                }}
-              >
-                {overrideLoading ? "처리중..." : isOverride ? "수정권한 해제" : "수정권한 부여"}
-              </MDButton>
-            </Box>
-          )}
-
-          <MDButton
-            variant="gradient"
-            color="info"
-            onClick={downloadPurchaseDataExcel}
-            sx={{ minWidth: isMobile ? 90 : 110, fontSize: isMobile ? "11px" : "13px" }}
-          >
-            엑셀다운로드
-          </MDButton>
-
-          {/* 추후 메뉴 복원 시 주석 해제
+            {/* 추후 메뉴 복원 시 주석 해제
           <Menu anchorEl={excelAnchorEl} open={excelMenuOpen} onClose={handleExcelMenuClose}>
             <MenuItem onClick={() => handleExcelDownload("purchaseData")}>거래처 자료 입력</MenuItem>
             <MenuItem onClick={() => handleExcelDownload("taxInvoice")}>세금계산서</MenuItem>
@@ -3025,13 +3032,13 @@ function AccountPurchaseDeadlineTab() {
           </Menu>
           */}
 
-          <MDButton
-            variant="gradient"
-            color="info"
-            sx={{ minWidth: isMobile ? 70 : 90, fontSize: isMobile ? "11px" : "13px" }}
-          >
-            인쇄
-          </MDButton>
+            <MDButton
+              variant="gradient"
+              color="info"
+              sx={{ minWidth: isMobile ? 70 : 90, fontSize: isMobile ? "11px" : "13px" }}
+            >
+              인쇄
+            </MDButton>
           </Box>
 
           {isAutoLocked && (
@@ -3070,19 +3077,19 @@ function AccountPurchaseDeadlineTab() {
           <MDBox
             ref={masterWrapRef}
             onKeyDown={isLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
-          onMouseDown={isLocked ? (e) => {
-            const t = e.target;
-            if (
-              t.tagName === "INPUT" ||
-              t.tagName === "TEXTAREA" ||
-              t.tagName === "SELECT" ||
-              t.isContentEditable ||
-              t.closest(".MuiSelect-root") ||
-              t.closest(".MuiInputBase-root")
-            ) {
-              e.preventDefault();
-            }
-          } : undefined}
+            onMouseDown={isLocked ? (e) => {
+              const t = e.target;
+              if (
+                t.tagName === "INPUT" ||
+                t.tagName === "TEXTAREA" ||
+                t.tagName === "SELECT" ||
+                t.isContentEditable ||
+                t.closest(".MuiSelect-root") ||
+                t.closest(".MuiInputBase-root")
+              ) {
+                e.preventDefault();
+              }
+            } : undefined}
             sx={{
               ...tableSx,
               flex: 1,
@@ -3096,7 +3103,7 @@ function AccountPurchaseDeadlineTab() {
               }),
             }}
           >
-                    <table key={`master-${masterTableKey}`}>
+            <table key={`master-${masterTableKey}`}>
               <thead>
                 <tr>
                   {masterColumns.map((col) => (
@@ -3583,29 +3590,29 @@ function AccountPurchaseDeadlineTab() {
             <MDBox
               ref={detailWrapRef}
               onKeyDown={isLocked ? (e) => { e.preventDefault(); e.stopPropagation(); } : undefined}
-          onMouseDown={isLocked ? (e) => {
-            const t = e.target;
-            if (
-              t.tagName === "INPUT" ||
-              t.tagName === "TEXTAREA" ||
-              t.tagName === "SELECT" ||
-              t.isContentEditable ||
-              t.closest(".MuiSelect-root") ||
-              t.closest(".MuiInputBase-root")
-            ) {
-              e.preventDefault();
-            }
-          } : undefined}
+              onMouseDown={isLocked ? (e) => {
+                const t = e.target;
+                if (
+                  t.tagName === "INPUT" ||
+                  t.tagName === "TEXTAREA" ||
+                  t.tagName === "SELECT" ||
+                  t.isContentEditable ||
+                  t.closest(".MuiSelect-root") ||
+                  t.closest(".MuiInputBase-root")
+                ) {
+                  e.preventDefault();
+                }
+              } : undefined}
               sx={{
-              ...detailTableSx,
-              position: "relative",
-              ...(isLocked && {
-                "& input, & textarea, & .MuiSelect-select, & .MuiInputBase-root, & .MuiCheckbox-root": {
-                  pointerEvents: "none",
-                  cursor: "default",
-                },
-              }),
-            }}>
+                ...detailTableSx,
+                position: "relative",
+                ...(isLocked && {
+                  "& input, & textarea, & .MuiSelect-select, & .MuiInputBase-root, & .MuiCheckbox-root": {
+                    pointerEvents: "none",
+                    cursor: "default",
+                  },
+                }),
+              }}>
               <table key={`detail-${selectedSaleId || "none"}-${detailTableKey}`}>
                 <thead>
                   <tr>
@@ -3929,6 +3936,24 @@ function AccountPurchaseDeadlineTab() {
                                 </MenuItem>
                               ))}
                             </Select>
+                          </td>
+
+                          {/* 예산미포함 체크 영역: 체크하면 상단 합계·집계표·예산·손익표에서 빠지고 저장 버튼으로 반영 */}
+                          <td style={fixedColStyle(80)}>
+                            <input
+                              type="checkbox"
+                              checked={String(r.budget_yn ?? "N") === "Y"}
+                              disabled={isDeletedAccount}
+                              style={{
+                                ...nativeCheckboxCenterStyle,
+                                cursor: isDeletedAccount ? "not-allowed" : "pointer",
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                setDetailCell(i, "budget_yn", e.target.checked ? "Y" : "N");
+                              }}
+                            />
                           </td>
                         </tr>
                       );

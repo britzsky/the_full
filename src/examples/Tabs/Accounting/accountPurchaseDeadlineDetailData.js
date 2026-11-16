@@ -104,6 +104,8 @@ export default function useAccountPurchaseDeadlineDetailData() {
 
           taxType: item.taxType ?? "",
           itemType: item.itemType ?? "",
+          // 예산미포함 여부(Y: 상단 합계·집계표·예산·손익표 제외)
+          budget_yn: item.budget_yn ?? "N",
           receipt_image: item.receipt_image || "",
           note: item.note || "",
         };

@@ -81,6 +81,8 @@ const summarizeTallyByDetail = (detailRows) => {
 
     // itemtype: 1=식재료, 2=소모품, 3=경관식
     if (itemType !== "1" && itemType !== "2" && itemType !== "3") return;
+    // 예산미포함(Y) 품목은 매입집계에서 제외
+    if (String(item?.budget_yn ?? "N").toUpperCase() === "Y") return;
 
     const amountRaw = pickField(item, ["amount", "total_amount", "totalAmount"]);
     const taxRaw = pickField(item, ["tax", "tax_amount", "supply", "supply_amount"]);

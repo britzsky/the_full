@@ -348,6 +348,8 @@ export default function App() {
   const localWebPosition = localStorage.getItem("web_position");
   const isAuthed = !!localUserId && !!localSessionId;
   const isAuthPath = pathname.startsWith("/authentication/");
+  // 로그아웃 처리 중 화면(세션 정리 후 로그인으로 이동)
+  const isLogoutPath = pathname.toLowerCase() === "/logout";
 
   // 현장(department == 7)은 fieldboard 경로만 허용
   const isFieldboardUser = isAuthed && department == 7 && !isAuthPath;
@@ -547,7 +549,7 @@ export default function App() {
     <CacheProvider value={rtlCache}>
       <ThemeProvider theme={darkMode ? themeDarkRTL : themeRTL}>
         <CssBaseline />
-        {layout === "dashboard" && isAuthed && deptCode !== 7 && (
+        {layout === "dashboard" && isAuthed && !isAuthPath && !isLogoutPath && deptCode !== 7 && (
           <>
             <Sidenav
               color={sidenavColor}
@@ -568,7 +570,7 @@ export default function App() {
   ) : (
     <ThemeProvider theme={darkMode ? themeDark : theme}>
       <CssBaseline />
-      {layout === "dashboard" && isAuthed && deptCode !== 7 && (
+      {layout === "dashboard" && isAuthed && !isAuthPath && !isLogoutPath && deptCode !== 7 && (
         <>
           <Sidenav
             color={sidenavColor}

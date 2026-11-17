@@ -202,7 +202,7 @@ function ExpendableDetailModalContent({
     window.open(finalUrl, "_blank", "noopener,noreferrer");
   }, []);
 
-  const extraColumnCount = (showBuyYnColumn ? 1 : 0) + (showFpColumns ? 2 : 0) + (showAttachments ? 1 : 0);
+  const extraColumnCount = (showBuyYnColumn ? 1 : 0) + (showFpColumns ? 2 : 0) + (showAttachments ? 2 : 0);
 
   // 개인구매(FR) 품목별 영수증 썸네일 카드
   // - 결재 후 후첨된 영수증(receipt_image)이 우선, 없으면 이전 방식 첨부(n번째 첨부 = n번째 품목)
@@ -241,7 +241,7 @@ function ExpendableDetailModalContent({
             style={{
               width: "100%",
               borderCollapse: "collapse",
-              minWidth: 640 + (showBuyYnColumn ? 86 : 0) + (showFpColumns ? 184 : 0) + (showAttachments ? 96 : 0),
+              minWidth: 640 + (showBuyYnColumn ? 86 : 0) + (showFpColumns ? 184 : 0) + (showAttachments ? 186 : 0),
               tableLayout: "fixed",
             }}
           >
@@ -253,6 +253,7 @@ function ExpendableDetailModalContent({
               <col style={{ width: "14%" }} />
               <col style={{ width: "11%" }} />
               {showAttachments && <col style={{ width: 96 }} />}
+              {showAttachments && <col style={{ width: 90 }} />}
               <col style={{ width: "28%" }} />
               <col style={{ width: "14%" }} />
               {showFpColumns && <col style={{ width: 92 }} />}
@@ -268,6 +269,7 @@ function ExpendableDetailModalContent({
                 <th style={th2Cell}>사용처/용도</th>
                 <th style={th2Cell}>결제 업체명</th>
                 {showAttachments && <th style={th2Cell}>구매일자</th>}
+                {showAttachments && <th style={th2Cell}>구매자</th>}
                 <th style={th2Cell}>{showAttachments ? "영수증" : "링크"}</th>
                 <th style={th2Cell}>비고</th>
                 {showFpColumns && <th style={th2Cell}>예산포함여부</th>}
@@ -304,6 +306,8 @@ function ExpendableDetailModalContent({
                       <td style={td2CellWrap}>{asText(it.use_name) || "-"}</td>
                       {/* 개인구매 품목에 후첨된 구매일자 */}
                       {showAttachments && <td style={td2CellCenter}>{asText(it.saleDate) || "-"}</td>}
+                      {/* 개인구매 품목에 후첨된 구매자 (기안자와 다를 수 있음) */}
+                      {showAttachments && <td style={td2CellWrap}>{asText(it.buyer) || "-"}</td>}
                       <td style={{ ...td2CellLink, maxWidth: 220 }}>
                         {/* 개인구매는 링크 대신 해당 품목의 영수증 썸네일 표시 */}
                         {showAttachments ? (

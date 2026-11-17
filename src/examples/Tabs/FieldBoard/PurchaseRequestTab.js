@@ -797,7 +797,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
   const saleDateMax = draftMonth.isValid() && draftMonth.endOf("month").isBefore(dayjs())
     ? draftMonth.endOf("month").format("YYYY-MM-DD")
     : dayjs().format("YYYY-MM-DD");
-  // 후첨 입력 중인 품목별 구매일자·영수증 (key: 품목 idx, value: { saleDate, file, previewUrl })
+  // 후첨 입력 중인 품목별 구매일자·구매자·영수증 (key: 품목 idx, value: { saleDate, buyer, file, previewUrl })
   const [receiptDraftByIdx, setReceiptDraftByIdx] = useState({});
   const receiptDraftRef = useRef(receiptDraftByIdx);
   useEffect(() => { receiptDraftRef.current = receiptDraftByIdx; }, [receiptDraftByIdx]);
@@ -854,13 +854,17 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
     .map((row, index) => ({ row, no: index + 1 }))
     .filter(({ row }) => !getHistoryItemValue(row, "sale_id"));
 
-  // 후첨 안 된 품목 전체의 구매일자·영수증을 한 번에 저장한다. 저장 후에는 수정할 수 없고 2차 결재 시 개인구매 관리에 반영된다.
-  // - 하나라도 구매일자/영수증이 빠져 있으면 몇 번 품목에 무엇이 없는지 안내하고 저장하지 않는다.
+  // 후첨 안 된 품목 전체의 구매일자·구매자·영수증을 한 번에 저장한다. 저장 후에는 수정할 수 없고 2차 결재 시 개인구매 관리에 반영된다.
+  // - 하나라도 구매일자/구매자/영수증이 빠져 있으면 몇 번 품목에 무엇이 없는지 안내하고 저장하지 않는다.
   const handleSaveAllReceipts = async () => {
     const missingLines = pendingReceiptRows
       .map(({ row, no }) => {
         const draft = receiptDraftByIdx[row.idx] || {};
-        const missing = [!draft.saleDate && "구매일자", !draft.file && "영수증"].filter(Boolean);
+        const missing = [
+          !draft.saleDate && "구매일자",
+          !String(draft.buyer || "").trim() && "구매자",
+          !draft.file && "영수증",
+        ].filter(Boolean);
         return missing.length ? `${no}번 품목: ${missing.join(", ")} 없음` : "";
       })
       .filter(Boolean);
@@ -873,9 +877,15 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
       title: "저장하시겠습니까?",
       html:
         '<div style="color:#d32f2f;font-weight:800;font-size:16px;margin-bottom:6px">저장하면 수정할 수 없습니다.</div>' +
-        "<div>구매일자와 영수증을 다시 확인해 주세요.</div>" +
+        "<div>구매일자, 구매자, 영수증을 다시 확인해 주세요.</div>" +
         pendingReceiptRows
-          .map(({ row, no }) => `<div>${no}번 품목 구매일자(<b>${receiptDraftByIdx[row.idx].saleDate}</b>)</div>`)
+          .map(({ row, no }) => {
+            const draft = receiptDraftByIdx[row.idx];
+            // 직접 입력한 구매자명이 HTML로 해석되지 않도록 특수문자를 바꿔서 표시
+            const buyerText = String(draft.buyer).trim()
+              .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            return `<div>${no}번 품목 구매일자(<b>${draft.saleDate}</b>) 구매자(<b>${buyerText}</b>)</div>`;
+          })
           .join(""),
       icon: "warning",
       showCancelButton: true,
@@ -893,6 +903,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
         rows: pendingReceiptRows.map(({ row }) => ({
           itemIdx: row.idx,
           saleDate: receiptDraftByIdx[row.idx].saleDate,
+          buyer: String(receiptDraftByIdx[row.idx].buyer).trim(),
           file: receiptDraftByIdx[row.idx].file,
         })),
       });
@@ -906,7 +917,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
         });
         return;
       }
-      await Swal.fire({ title: "완료", text: "구매일자와 영수증이 저장되었습니다.", icon: "success" });
+      await Swal.fire({ title: "완료", text: "구매일자, 구매자, 영수증이 저장되었습니다.", icon: "success" });
       onReload();
     } catch (e) {
       Swal.fire({
@@ -1022,7 +1033,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                 <tr>
                   {[
                     "No", "품목명", "수량", "금액(원)", "사용처/용도", "결제 업체명",
-                    ...(isPersonalPurchaseDetail ? ["구매일자"] : []),
+                    ...(isPersonalPurchaseDetail ? ["구매일자", "구매자"] : []),
                     isPersonalPurchaseDetail ? "영수증" : "구매링크", "비고",
                     ...(isPersonalPurchaseDetail ? ["반영"] : ["예산포함여부", "구매진행여부", "구매여부"]),
                   ].map((label) => (
@@ -1054,6 +1065,23 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                             onChange={(e) => updateReceiptDraft(row.idx, { saleDate: e.target.value })}
                             inputProps={{ min: saleDateMin, max: saleDateMax }}
                             sx={{ width: 140, "& input": { fontSize: 12, py: 0.75 } }}
+                          />
+                        ) : "-"}
+                      </td>
+                    )}
+                    {/* 개인구매 구매자 - 기안자와 다를 수 있어 후첨 때 직접 입력, 저장 후에는 읽기 전용 */}
+                    {isPersonalPurchaseDetail && (
+                      <td style={historyTdCell}>
+                        {getHistoryItemValue(row, "sale_id") ? (
+                          getHistoryItemValue(row, "buyer") || "-"
+                        ) : canAttachReceipt ? (
+                          <TextField
+                            size="small"
+                            placeholder="구매자"
+                            value={receiptDraftByIdx[row.idx]?.buyer || ""}
+                            onChange={(e) => updateReceiptDraft(row.idx, { buyer: e.target.value })}
+                            inputProps={{ maxLength: 100 }}
+                            sx={{ width: 110, "& input": { fontSize: 12, py: 0.75 } }}
                           />
                         ) : "-"}
                       </td>

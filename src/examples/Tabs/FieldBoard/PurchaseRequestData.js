@@ -184,8 +184,8 @@ export default function usePurchaseRequestData() {
     };
   }, []);
 
-  // 개인구매 품목들의 구매일자·영수증을 일괄 후첨 저장한다. 하나라도 실패하면 서버에서 전체 취소된다.
-  // - rows: [{ itemIdx, saleDate, file }] (같은 순서로 item_idx/saleDate/files 배열 전송)
+  // 개인구매 품목들의 구매일자·구매자·영수증을 일괄 후첨 저장한다. 하나라도 실패하면 서버에서 전체 취소된다.
+  // - rows: [{ itemIdx, saleDate, buyer, file }] (같은 순서로 item_idx/saleDate/buyer/files 배열 전송)
   // - 응답 code 200: 성공, 그 외: message 안내
   const savePersonPurchaseReceipt = useCallback(async ({ paymentId, rows }) => {
     const formData = new FormData();
@@ -194,6 +194,7 @@ export default function usePurchaseRequestData() {
     (rows || []).forEach((row) => {
       formData.append("item_idx", row.itemIdx);
       formData.append("saleDate", row.saleDate);
+      formData.append("buyer", row.buyer);
       formData.append("files", row.file);
     });
     const res = await api.post(PERSON_PURCHASE_RECEIPT_SAVE_API, formData, {

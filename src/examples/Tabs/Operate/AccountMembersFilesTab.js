@@ -16,22 +16,33 @@ import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import PreviewOverlay from "utils/PreviewOverlay";
 
-// ✅ 문서종류 고정 4종 — 회원 1명당 이 순서대로 세로 행이 생김(면허증/보건증/위생교육/보수교육)
+// ✅ 문서종류 고정 목록 — 회원 1명당 이 순서대로 세로 행이 생김
+//    영양사: 영양사 면허증/조리사 면허증/보건증/위생교육/보수교육, 그 외: 면허증/보건증/위생교육
+//    dietitianLabel은 영양사 행에서만 쓰는 표시명
 const DOC_TYPES = [
-  { value: "1", label: "면허증" },
+  { value: "1", label: "면허증", dietitianLabel: "영양사 면허증" },
+  { value: "5", label: "조리사 면허증" },
   { value: "2", label: "보건증" },
   { value: "3", label: "위생교육" },
   { value: "4", label: "보수교육" },
 ];
 
-// ✅ 직급별 문서종류 적용 여부 — 보수교육은 영양사만 해당
-const isDocTypeApplicable = (position, typeValue) => typeValue !== "4" || position === "영양사";
+// ✅ 영양사 전용 문서종류 — 조리사 면허증(5), 보수교육(4)
+const DIETITIAN_ONLY_TYPES = ["4", "5"];
+
+// ✅ 직급별 문서종류 적용 여부
+const isDocTypeApplicable = (position, typeValue) =>
+  !DIETITIAN_ONLY_TYPES.includes(typeValue) || position === "영양사";
+
+// ✅ 직급에 맞는 문서종류 표시명
+const getDocTypeLabel = (position, t) =>
+  position === "영양사" && t.dietitianLabel ? t.dietitianLabel : t.label;
 
 // ✅ 문서 빈 값(업로드 전 상태)
 const emptyDoc = () => ({ doc_id: "", file_path: "", issue_dt: "", expiry_dt: "", note: "" });
 
 // ✅ 컬럼 폭(%) — 헤더 테이블/본문 테이블 두 개를 분리해서 그리므로, colgroup으로 두 테이블 폭을 강제로 맞춘다
-const COLUMN_WIDTHS = ["10%", "10%", "9%", "14%", "14%", "11%", "32%"];
+const COLUMN_WIDTHS = ["10%", "8%", "11%", "14%", "14%", "11%", "32%"];
 
 // ✅ 페이지당 회원 수 — 회원 단위로 페이징(문서종류별로 3~4행을 쓰기 때문)
 const MEMBERS_PER_PAGE = 4;
@@ -548,7 +559,9 @@ function AccountMembersFilesTab() {
                       {isFirstType && <div style={groupOverlaySx}>{row.position}</div>}
                     </td>
 
-                    <td style={{ width: 70, color: "black" }}>{t.label}</td>
+                    <td style={{ width: 70, color: "black", whiteSpace: "nowrap" }}>
+                      {getDocTypeLabel(row.position, t)}
+                    </td>
 
                     <td
                       style={{

@@ -71,13 +71,15 @@ export default function ProfitLossTableTab() {
     return [allOption, ...normalized];
   }, [accountList, accountTypeById]);
 
+  // 도소매업장
   const DOSOMAE_ACCOUNT_IDS = new Set([
-    "20260126093618",
-    "20260126093730",
-    "20260126093808",
-    "20260127025350",
-    "20260127025437",
-    "20260127025657",
+    "20260126093618", // 남동효
+    "20260126093730", // 계양효
+    "20260126093808", // 효은
+    "20260127025350", // 초도
+    "20260127025437", // 해피
+    "20260127025657", // 더힐
+    "20260831171325", // 부평휴실버케어
   ]);
 
   const filteredAccountOptions = useMemo(() => {

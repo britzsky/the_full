@@ -5,7 +5,7 @@ const FULL_UNMASK_DEPARTMENT_SET = new Set(["0", "3", "6"]);
 // 마스킹 해제 권한 직책 코드(대표/팀장)
 const FULL_UNMASK_POSITION_SET = new Set(["0", "1"]);
 // 마스킹 해제 권한 사용자 ID
-const FULL_UNMASK_USER_ID_SET = new Set(["db1", "si1"]);
+const FULL_UNMASK_USER_ID_SET = new Set(["db1", "si1", "yj1"]);
 
 // 저장소/서버 값의 공백을 제거해 코드 비교용 문자열로 통일
 const toCode = (value) => String(value ?? "").trim();

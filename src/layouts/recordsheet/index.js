@@ -869,12 +869,15 @@ function RecordSheet() {
   const loginDepartmentCode = safeTrim(localStorage.getItem("department"), "");
   const canUseBulkExcelAndPay =
     ["0", "1"].includes(loginPositionCode) || ["3", "6"].includes(loginDepartmentCode);
+  // ✅ "전체 거래처 엑셀" 버튼만 추가로 허용할 사용자 ID
+  const canUseAllAccountExcel =
+    canUseBulkExcelAndPay || safeTrim(localStorage.getItem("user_id"), "") === "yj1";
   // ✅ 파출이력 조회 버튼 전체 노출
   const canViewDispatchHistory = true;
 
-  // ✅ "유틸 출근부" 버튼 노출 권한: department 6, 또는 user_id가 si1/db1인 경우만
+  // ✅ "유틸 출근부" 버튼 노출 권한: department 6, 또는 user_id가 si1/db1/yj1인 경우만
   const loginUserId = safeTrim(localStorage.getItem("user_id"), "");
-  const canUseUtilRecord = loginDepartmentCode === "6" || ["si1", "db1"].includes(loginUserId);
+  const canUseUtilRecord = loginDepartmentCode === "6" || ["si1", "db1", "yj1"].includes(loginUserId);
   // ✅ "통합 출근부" 버튼 노출 권한: department 6, 또는 user_id가 iy1인 경우만
   const canUseIntegrationRecord = loginDepartmentCode === "6" || loginUserId === "iy1";
 
@@ -4298,6 +4301,7 @@ function RecordSheet() {
             note: item.note ?? item.memo ?? "",
             phone: item.phone ?? "",
             dispatch_account: item.dispatch_account ?? "",
+            position_type: item.position_type ?? "",
             del_yn: item.del_yn ?? del_yn ?? "N",
             dispatch_id: item.dispatch_id ?? item.id,
           })
@@ -4741,6 +4745,14 @@ function RecordSheet() {
             }}
           >
             <td>{formatDispatchImportCellValue("name", row?.name)}</td>
+            {/* 파출 등록 시 선택한 직책 (4: 조리사, 5: 조리원) */}
+            <td>
+              {String(row?.position_type ?? "").trim() === "4"
+                ? "조리사"
+                : String(row?.position_type ?? "").trim() === "5"
+                  ? "조리원"
+                  : ""}
+            </td>
             <td>{formatDispatchImportCellValue("phone", row?.phone)}</td>
             <td>{formatDispatchImportCellValue("rrn", row?.rrn)}</td>
             <td>{formatDispatchImportCellValue("account_number", row?.account_number)}</td>
@@ -4839,6 +4851,7 @@ function RecordSheet() {
         fd.append("total", row.total ?? "");
         fd.append("salary", row.salary ?? "");
         fd.append("phone", row.phone ?? "");
+        fd.append("position_type", row.position_type ?? "");
         fd.append("record_year", String(year));
         fd.append("record_month", String(month));
 
@@ -4930,6 +4943,7 @@ function RecordSheet() {
         fd.append("total", r.total || "");
         fd.append("salary", r.salary ?? "");
         fd.append("del_yn", r.del_yn ?? "N");
+        fd.append("position_type", r.position_type ?? "");
         fd.append("record_year", String(year));
         fd.append("record_month", String(month));
 
@@ -5533,6 +5547,20 @@ function RecordSheet() {
         },
       },
       {
+        // 파출 등록 시 선택한 직책 표시 (4: 조리사, 5: 조리원)
+        header: "직책",
+        accessorKey: "position_type",
+        size: "2%",
+        cell: ({ getValue }) => {
+          const pt = String(getValue() ?? "").trim();
+          return (
+            <span style={{ fontSize: "0.75rem" }}>
+              {pt === "4" ? "조리사" : pt === "5" ? "조리원" : ""}
+            </span>
+          );
+        },
+      },
+      {
         header: "연락처",
         accessorKey: "phone",
         size: "3%",
@@ -6103,7 +6131,7 @@ function RecordSheet() {
           출퇴근 일괄 적용
         </MDButton>
 
-        {canUseBulkExcelAndPay && (
+        {canUseAllAccountExcel && (
           <MDButton
             variant="gradient"
             color="dark"
@@ -6909,6 +6937,7 @@ function RecordSheet() {
               <thead>
                 <tr>
                   <th>이름</th>
+                  <th>직책</th>
                   <th>연락처</th>
                   <th>주민등록번호</th>
                   <th>계좌번호</th>
@@ -6919,7 +6948,7 @@ function RecordSheet() {
               <tbody onMouseDown={handleDispatchImportRowMouseDown}>
                 {dispatchImportRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       {dispatchImportLoading ? "조회중입니다." : "조회된 인원이 없습니다."}
                     </td>
                   </tr>

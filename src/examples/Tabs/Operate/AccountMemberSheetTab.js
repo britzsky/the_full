@@ -1597,12 +1597,24 @@ function AccountMemberSheet() {
       const accId = String(accountIdParam ?? dispatchAccountId ?? "");
       if (!accId) return [];
 
-      const res = await api.get("/Operate/AccountMemberAllList", {
-        params: { account_id: accId, del_yn: "N" },
-      });
+      const [res, recRes] = await Promise.all([
+        api.get("/Operate/AccountMemberAllList", {
+          params: { account_id: accId, del_yn: "N" },
+        }),
+        // 채용관리에서 진행중(use_yn='D')인 인원 목록
+        api.get("/Operate/AccountRecMemberList", {
+          params: { account_id: accId, use_yn: "D" },
+        }),
+      ]);
 
       const list = res?.data?.data ?? res?.data ?? [];
-      return Array.isArray(list) ? list : [];
+      const recList = recRes?.data?.data ?? recRes?.data ?? [];
+      const memberIds = new Set((Array.isArray(list) ? list : []).map((r) => String(r.member_id ?? "")));
+      // 직원 목록에 없는 채용 진행중 인원만 뒤에 붙임 (rec_yn: 화면 표시용 구분값)
+      const recRows = (Array.isArray(recList) ? recList : [])
+        .filter((r) => !memberIds.has(String(r.member_id ?? "")))
+        .map((r) => ({ ...r, rec_yn: "Y" }));
+      return [...(Array.isArray(list) ? list : []), ...recRows];
     },
     [dispatchAccountId]
   );
@@ -3808,7 +3820,13 @@ function AccountMemberSheet() {
                             backgroundColor: selected ? "rgba(30,136,229,0.10)" : "#fff",
                           }}
                         >
-                          <td style={{ fontWeight: selected ? 700 : 400 }}>{r.name ?? ""}</td>
+                          <td style={{ fontWeight: selected ? 700 : 400 }}>
+                            {r.name ?? ""}
+                            {/* 채용관리 진행중 인원 표시 */}
+                            {r.rec_yn === "Y" && (
+                              <span style={{ color: "#e65100", marginLeft: 4 }}>(채용중)</span>
+                            )}
+                          </td>
                           <td style={{ fontWeight: selected ? 700 : 400 }}>{posLabel}</td>
                         </tr>
                       );

@@ -198,6 +198,8 @@ function AccountMemberRecSheet() {
 
   // ✅ 스냅샷 갱신 트리거 (재조회/저장 성공 시 올려줌)
   const [snapshotTick, setSnapshotTick] = useState(0);
+  // 업장명/근무형태 칸 중 지금 편집 중인 셀 키(rid|colKey). 이 셀만 실제 선택 컨트롤을 그림
+  const [activeLazyCell, setActiveLazyCell] = useState("");
 
   // 첨부파일 미리보기 오버레이 상태
   const [previewFiles, setPreviewFiles] = useState([]);
@@ -1430,8 +1432,28 @@ function AccountMemberRecSheet() {
                         }
                       >
                         {isSelect ? (
-                          colKey === "idx" ? (
+                          colKey === "idx" && activeLazyCell !== `${rid}|idx` ? (
+                            // 근무형태 표시 영역: 클릭하면 검색 선택창으로 바뀜
+                            <div
+                              onClick={() => setActiveLazyCell(`${rid}|idx`)}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                minHeight: 24,
+                                cursor: "pointer",
+                                color: isChanged ? "#d32f2f" : "inherit",
+                                fontWeight: isChanged ? 600 : 400,
+                              }}
+                            >
+                              <span>{workSystemOptionMap.get(String(currentValue ?? ""))?.label ?? ""}</span>
+                              <span style={{ fontSize: 10, opacity: 0.6 }}>▼</span>
+                            </div>
+                          ) : colKey === "idx" ? (
                             <Autocomplete
+                              openOnFocus
+                              onClose={() => setActiveLazyCell("")}
+                              onBlur={() => setActiveLazyCell("")}
                               size="small"
                               options={workSystemOptions}
                               value={(() => {
@@ -1444,6 +1466,7 @@ function AccountMemberRecSheet() {
                               renderInput={(params) => (
                                 <TextField
                                   {...params}
+                                  autoFocus
                                   variant="standard"
                                   placeholder="검색"
                                   InputProps={{ ...params.InputProps, disableUnderline: true }}
@@ -1477,6 +1500,18 @@ function AccountMemberRecSheet() {
                             <select
                               value={currentValue ?? ""}
                               onChange={(e) => handleCellChange(e.target.value)}
+                              // 업장명은 거래처 목록이 길어서 펼칠 때만 전체 옵션을 그림
+                              onMouseDown={
+                                colKey === "account_id"
+                                  ? () => setActiveLazyCell(`${rid}|account_id`)
+                                  : undefined
+                              }
+                              onFocus={
+                                colKey === "account_id"
+                                  ? () => setActiveLazyCell(`${rid}|account_id`)
+                                  : undefined
+                              }
+                              onBlur={colKey === "account_id" ? () => setActiveLazyCell("") : undefined}
                               className={isChanged ? "edited-cell" : ""}
                               style={{
                                 width: "100%",
@@ -1492,9 +1527,16 @@ function AccountMemberRecSheet() {
                                   </option>
                                 ))}
                               {colKey === "account_id" &&
-                                accountSelectOptions.map((acc) => (
-                                  <option key={acc.value} value={acc.value}>
-                                    {acc.label}
+                                (activeLazyCell === `${rid}|account_id` ? (
+                                  accountSelectOptions.map((acc) => (
+                                    <option key={acc.value} value={acc.value}>
+                                      {acc.label}
+                                    </option>
+                                  ))
+                                ) : (
+                                  // 펼치기 전에는 현재 선택된 업장 옵션 하나만 그림
+                                  <option value={currentValue ?? ""}>
+                                    {currentValue ? getAccountName(currentValue) : ""}
                                   </option>
                                 ))}
                               {colKey === "use_yn" &&

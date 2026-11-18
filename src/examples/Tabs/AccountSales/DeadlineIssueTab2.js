@@ -23,8 +23,8 @@ import MDTypography from "components/MDTypography";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import useDeadlineIssueTab2Data from "./deadlineIssueTab2Data";
 
-// 이슈/해결방안/비고 멀티라인 최대 노출 줄 수
-const ISSUE_NOTE_MAX_ROWS = 10;
+// 이슈/해결방안/비고 멀티라인 최대 노출 줄 수(8줄 × 16px + 상하 여백 12px = MULTILINE_CELL_MAX_HEIGHT)
+const ISSUE_NOTE_MAX_ROWS = 8;
 // 좌/우 패널 공통 높이(화면 하단까지 사용)
 const CONTENT_HEIGHT = "calc(100vh - 220px)";
 // 모바일/태블릿 가로모드에서만 좌/우 패널을 조금 더 길게 사용
@@ -263,9 +263,10 @@ export default function DeadlineIssueTab2() {
     "& .MuiInputBase-inputMultiline": {
       padding: "6px 8px",
       fontSize: CONTROL_FONT_SIZE,
-      lineHeight: 1.35,
+      // 줄 높이를 정수로 고정해 자동 높이 계산 오차로 스크롤바가 깜빡이지 않게 함
+      lineHeight: "16px",
       maxHeight: MULTILINE_CELL_MAX_HEIGHT,
-      overflowY: "auto !important",
+      // 최대 줄 수 초과 시 스크롤 표시는 MUI 자동 높이 계산이 직접 관리
     },
   };
 

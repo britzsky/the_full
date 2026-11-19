@@ -7,7 +7,8 @@ import IconButton from "@mui/material/IconButton";
 import DownloadIcon from "@mui/icons-material/Download";
 import ImageSearchIcon from "@mui/icons-material/ImageSearch";
 
-import DatePicker from "react-datepicker";
+import DatePicker, { registerLocale } from "react-datepicker";
+import ko from "date-fns/locale/ko";
 import {
   Grid,
   Box,
@@ -36,6 +37,9 @@ import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { showSwalLoading } from "utils/swalLoading";
+
+// 계약기간·인상시점 달력을 한국어(월·요일 한글)로 표시
+registerLocale("ko", ko);
 
 // =========================
 // ✅ 계약기간 직접입력 유틸
@@ -72,6 +76,41 @@ function tryParseYMD(ymd) {
   return dt;
 }
 
+// 연도별로 저장되는 식단가 항목
+// (1일 식단가, 1식 단가, 간식가, 직원 식단가, 인상전 단가, 인상시점, 생계비, 추가 식단가 1~5 이름·가격)
+const EXTRA_DIET_YEAR_KEYS = [1, 2, 3, 4, 5].flatMap((i) => [
+  `extra_diet${i}_name`,
+  `extra_diet${i}_price`,
+]);
+const DIET_YEAR_KEYS = [
+  "diet_price",
+  "elderly",
+  "snack",
+  "employ",
+  "before_diet_price",
+  "after_dt",
+  "basic_price",
+  ...EXTRA_DIET_YEAR_KEYS,
+];
+
+// 연도별 식단가 중 숫자 항목 (빈값은 NULL로 저장)
+const DIET_YEAR_NUMERIC_KEYS = [
+  "diet_price",
+  "elderly",
+  "snack",
+  "before_diet_price",
+  "basic_price",
+  ...[1, 2, 3, 4, 5].map((i) => `extra_diet${i}_price`),
+];
+
+// 행 데이터에서 연도별 식단가 항목만 뽑는 함수
+function pickDietYearFields(row) {
+  return DIET_YEAR_KEYS.reduce((acc, key) => {
+    acc[key] = row?.[key] ?? null;
+    return acc;
+  }, {});
+}
+
 // ✅ DatePicker 커스텀 인풋 (컴포넌트 밖에 두어야 포커스 안날아감)
 const DatePickerTextInput = forwardRef(function DatePickerTextInput(
   { value, onClick, onChange, placeholder, inputColor = "black" },
@@ -88,9 +127,11 @@ const DatePickerTextInput = forwardRef(function DatePickerTextInput(
         flex: 1,
         fontSize: "13px",
         "& input": {
-          padding: "4px 4px",
+          // 한글 대체 글꼴 때문에 숫자가 위로 뜨는 것을 1px 내려 세로 가운데로 맞춤
+          padding: "5px 4px 3px",
           height: "20px",
           color: inputColor,
+          textAlign: "center",
         },
       }}
     />
@@ -177,6 +218,20 @@ const responsiveTableLayoutSx = {
       minWidth: "0 !important",
       fontSize: "inherit !important",
     },
+  },
+};
+
+// 식단가 표(요양원·학교·산업체 공통)의 연도 선택·인상시점 달력 크기 규칙
+const dietYearTableSx = {
+  // 인상시점 달력 입력칸 폭 (날짜 10자리에 맞춘 고정 폭)
+  "& td .react-datepicker__input-container .MuiFormControl-root": {
+    width: "110px",
+  },
+  // 식단가 연도 선택은 반응형 표 규칙(select 100% 폭)에서 제외하고 내용 크기로 표시
+  "& select.diet-year-select": {
+    width: "auto !important",
+    minWidth: "0 !important",
+    fontSize: "13px !important",
   },
 };
 
@@ -878,6 +933,136 @@ function AccountInfoSheet() {
     setExtraDiet(extras);
   }, [basicInfo, priceRows, etcRows, managerRows, eventRows, businessImgRows]);
 
+  // 연도별 식단가를 쓰는 거래처 유형 (요양원·학교·산업체). 그 외 유형은 기존처럼 priceData로만 저장
+  const usesDietYear =
+    [1, 4, 5].includes(Number(formData.account_type)) ||
+    formData.account_type === "학교" ||
+    formData.account_type === "산업체";
+
+  // 식단가 표에서 선택한 연도와 그 연도의 연도별 식단가 항목(편집값/원본값)
+  const currentYear = new Date().getFullYear();
+  const [dietYear, setDietYear] = useState(currentYear);
+  const [dietYearRow, setDietYearRow] = useState({});
+  const [originalDietYearRow, setOriginalDietYearRow] = useState({});
+  // 연도 조회 요청 순번 (늦게 도착한 이전 요청 응답을 무시하기 위함)
+  const dietYearRequestSeq = useRef(0);
+  // 선택 연도의 이력 조회 실패 여부 (실패한 연도는 빈값이 저장되지 않도록 저장을 막음)
+  const [dietYearLoadFailed, setDietYearLoadFailed] = useState(false);
+
+  // 연도별 식단가 항목이 불러온 값에서 바뀌었는지 여부
+  const isDietYearDirty = DIET_YEAR_KEYS.some(
+    (key) => String(dietYearRow[key] ?? "") !== String(originalDietYearRow[key] ?? "")
+  );
+
+  // 선택 연도의 식단가를 불러오는 함수
+  // 올해는 현재 단가(currentSource: tb_account_info 기준 행), 다른 연도는 연도별 이력의 최신 행(없으면 빈값)
+  const fetchDietYearPrice = async (year, currentSource) => {
+    if (!activeId) return;
+    dietYearRequestSeq.current += 1;
+    const seq = dietYearRequestSeq.current;
+    let source = {};
+    let failed = false;
+    if (Number(year) === currentYear) {
+      source = currentSource || {};
+    } else {
+      try {
+        const res = await api.get("/Account/AccountDietPriceYearList", {
+          params: { account_id: activeId, price_year: year },
+        });
+        source = res.data?.[0] || {};
+      } catch (e) {
+        console.error("연도별 식단가 조회 실패:", e);
+        failed = true;
+      }
+    }
+    if (seq !== dietYearRequestSeq.current) return;
+    const row = pickDietYearFields(source);
+    setDietYearRow(row);
+    setOriginalDietYearRow(row);
+    setDietYearLoadFailed(failed);
+  };
+
+  // 거래처(요양원/주간보호 탭 포함) 데이터가 새로 조회되면 올해 식단가로 다시 맞춘다
+  useEffect(() => {
+    setDietYear(currentYear);
+    fetchDietYearPrice(currentYear, priceRows[0]);
+  }, [priceRows]);
+
+  // 식단가 연도 선택 변경 처리 (저장하지 않은 수정이 있으면 먼저 확인)
+  const handleDietYearChange = async (year) => {
+    if (isDietYearDirty) {
+      const result = await Swal.fire({
+        title: "연도 변경",
+        text: "저장하지 않은 식단가 수정이 있습니다. 연도를 바꿀까요?",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        confirmButtonText: "변경",
+        cancelButtonText: "취소",
+      });
+      if (!result.isConfirmed) return;
+    }
+    setDietYear(year);
+    // 올해로 돌아올 때는 마지막으로 저장된 현재 단가(priceData)를 기준으로 표시
+    fetchDietYearPrice(year, priceData[0]);
+  };
+
+  // 식단가 표 제목 옆 적용 연도 선택 박스 (올해-3년 ~ 올해+1년)
+  const renderDietYearSelect = () => (
+    <select
+      className="diet-year-select"
+      value={dietYear}
+      onChange={(e) => handleDietYearChange(Number(e.target.value))}
+      style={{
+        fontSize: "13px",
+        marginLeft: "6px",
+        // 기본 화살표 대신 직접 그린 화살표를 써서 글자와 화살표의 좌우 여백을 같게 맞춤
+        appearance: "none",
+        WebkitAppearance: "none",
+        background: `#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' stroke='%23333' stroke-width='1.6' fill='none'/></svg>") no-repeat right 10px center`,
+        padding: "5px 26px 3px 10px",
+        border: "1px solid #767676",
+        borderRadius: "3px",
+        verticalAlign: "middle",
+        cursor: "pointer",
+      }}
+    >
+      {Array.from({ length: 5 }, (_, i) => currentYear - 3 + i).map((y) => (
+        <option key={y} value={y}>
+          {y}년
+        </option>
+      ))}
+    </select>
+  );
+
+  // 식단가 표 인상시점 입력 (달력 선택 + YYYY-MM-DD 직접입력, 선택 연도 값에 반영)
+  const renderAfterDtPicker = (val, isChanged) => {
+    const setAfterDt = (ymd) => {
+      if (isDeletedAccount) return;
+      setDietYearRow((prev) => ({ ...prev, after_dt: ymd }));
+    };
+    return (
+      <DatePicker
+        selected={tryParseYMD(val)}
+        value={val}
+        dateFormat="yyyy-MM-dd"
+        locale="ko"
+        dateFormatCalendar="yyyy년 M월"
+        placeholderText="YYYY-MM-DD"
+        disabled={isDeletedAccount}
+        portalId="accountinfo-datepicker-portal"
+        customInput={
+          <DatePickerTextInput placeholder="YYYY-MM-DD" inputColor={isChanged ? "red" : "black"} />
+        }
+        onChange={(date) => setAfterDt(date ? formatDateObj(date) : "")}
+        onChangeRaw={(e) => {
+          if (!e?.target || e.target.value === undefined) return;
+          setAfterDt(formatYMDInput(e.target.value));
+        }}
+      />
+    );
+  };
+
   // 값 변경 핸들러
   const handleChange = (field, value) => {
     if (isDeletedAccount) return;
@@ -1246,17 +1431,28 @@ function AccountInfoSheet() {
           "& th": { backgroundColor: "#f0f0f0" },
           "& .edited-cell": { color: "#d32f2f", fontWeight: 500 },
           ...responsiveTableLayoutSx,
+          ...dietYearTableSx,
         }}
       >
         <table>
           <thead>
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
-                {hg.headers.map((header) => (
-                  <th key={header.id} colSpan={header.colSpan}>
-                    {flexRender(header.column.columnDef.header, header.getContext())}
-                  </th>
-                ))}
+                {hg.headers.map((header) => {
+                  // 연도별 식단가를 쓰는 거래처(학교·산업체)의 "식단가" 그룹 제목 옆에는 적용 연도 선택을 표시
+                  const isDietGroupHeader =
+                    usesDietYear &&
+                    tableType === "price" &&
+                    !header.isPlaceholder &&
+                    header.column.columns.length > 0 &&
+                    header.column.columnDef.header === "식단가";
+                  return (
+                    <th key={header.id} colSpan={header.colSpan}>
+                      {flexRender(header.column.columnDef.header, header.getContext())}
+                      {isDietGroupHeader && <> {renderDietYearSelect()}</>}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
@@ -1268,8 +1464,18 @@ function AccountInfoSheet() {
                   const colKey = cell.column.columnDef.accessorKey;
                   const isNumeric = numericCols.includes(colKey);
 
-                  const currentValue = dataState[rowIndex]?.[colKey] ?? "";
-                  const originalValue = getOriginal(rowIndex, colKey);
+                  // 식단가 표의 연도별 식단가 항목은 선택 연도 값으로 표시·수정
+                  const isYearKey =
+                    usesDietYear &&
+                    tableType === "price" &&
+                    rowIndex === 0 &&
+                    DIET_YEAR_KEYS.includes(colKey);
+
+                  const currentValue =
+                    (isYearKey ? dietYearRow[colKey] : dataState[rowIndex]?.[colKey]) ?? "";
+                  const originalValue = isYearKey
+                    ? originalDietYearRow[colKey]
+                    : getOriginal(rowIndex, colKey);
 
                   const parseVal = (val) => {
                     if (isNumeric) return Number(String(val).replace(/,/g, "")) || 0;
@@ -1277,6 +1483,15 @@ function AccountInfoSheet() {
                   };
 
                   const changed = parseVal(currentValue) !== parseVal(originalValue);
+
+                  // 인상시점: 달력 선택 + 직접입력(YYYY-MM-DD)
+                  if (isYearKey && colKey === "after_dt") {
+                    return (
+                      <td key={`${cell.id}-${dietYear}`} style={{ padding: "3px", minWidth: "100px" }}>
+                        {renderAfterDtPicker(currentValue, changed)}
+                      </td>
+                    );
+                  }
 
                   // ✅ select 컬럼들
                   const isSelectNumber = [
@@ -1293,7 +1508,7 @@ function AccountInfoSheet() {
 
                   return (
                     <td
-                      key={cell.id}
+                      key={isYearKey ? `${cell.id}-${dietYear}` : cell.id}
                       contentEditable={!isDeletedAccount && !nonEditableCols.includes(colKey)}
                       suppressContentEditableWarning
                       style={{
@@ -1323,6 +1538,11 @@ function AccountInfoSheet() {
                         if (isNumeric) {
                           newValue = newValue === "" ? null : Number(newValue.replace(/,/g, ""));
                           e.currentTarget.innerText = newValue != null ? formatNumber(newValue) : "";
+                        }
+
+                        if (isYearKey) {
+                          setDietYearRow((prev) => ({ ...prev, [colKey]: newValue }));
+                          return;
                         }
 
                         const updatedRows = dataState.map((r, idx) =>
@@ -1407,7 +1627,7 @@ function AccountInfoSheet() {
         { header: "간식가", key: "snack", isNumeric: true },
         { header: "직원 식단가", key: "employ", isNumeric: false },
         { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
-        { header: "인상시점", key: "after_dt", isNumeric: false },
+        { header: "인상시점", key: "after_dt", isNumeric: false, isDate: true },
         { header: "생계비", key: "basic_price", isNumeric: true },
       ];
     } else {
@@ -1418,7 +1638,7 @@ function AccountInfoSheet() {
         { header: "간식가", key: "snack", isNumeric: true },
         { header: "직원 식단가", key: "employ", isNumeric: false },
         { header: "인상전 단가", key: "before_diet_price", isNumeric: true },
-        { header: "인상시점", key: "after_dt", isNumeric: false },
+        { header: "인상시점", key: "after_dt", isNumeric: false, isDate: true },
         { header: "생계비", key: "basic_price", isNumeric: true },
       ];
     }
@@ -1490,6 +1710,11 @@ function AccountInfoSheet() {
         val = val === "" ? null : Number(val.replace(/,/g, ""));
         e.currentTarget.innerText = val != null ? formatNumber(val) : "";
       }
+      // 연도별 식단가 항목은 선택 연도 값에, 나머지(추가 식단가·식수인원)는 기존 priceData에 반영
+      if (DIET_YEAR_KEYS.includes(key)) {
+        setDietYearRow((prev) => ({ ...prev, [key]: val }));
+        return;
+      }
       setPriceData((prev) =>
         prev.map((r, i) => (i === rowIndex ? { ...r, [key]: val } : r))
       );
@@ -1509,13 +1734,18 @@ function AccountInfoSheet() {
           },
           "& th": { backgroundColor: "#f0f0f0" },
           ...responsiveTableLayoutSx,
+          ...dietYearTableSx,
         }}
       >
         <table>
           <thead>
             {/* 그룹 헤더 */}
             <tr>
-              <th colSpan={dietCols.length}>식단가</th>
+              {/* 식단가 제목 및 적용 연도 선택 영역 */}
+              <th colSpan={dietCols.length}>
+                식단가{" "}
+                {renderDietYearSelect()}
+              </th>
               <th colSpan={waterColSpan}>식수인원</th>
             </tr>
             {/* 식단가 컬럼명 및 식수인원 그룹명 */}
@@ -1548,14 +1778,29 @@ function AccountInfoSheet() {
               return (
                 <tr key={rowIndex}>
                   {dietCols.map((col) => {
-                    const val = row[col.key] ?? "";
+                    // 연도별 식단가 항목은 선택 연도 값으로 표시하고 변경 여부도 그 원본과 비교
+                    const isYearKey = rowIndex === 0 && DIET_YEAR_KEYS.includes(col.key);
+                    const val = (isYearKey ? dietYearRow[col.key] : row[col.key]) ?? "";
+                    const isChanged = isYearKey
+                      ? normalizeVal(val) !== normalizeVal(originalDietYearRow[col.key])
+                      : isChangedKey(col.key);
+
+                    // 인상시점: 달력 선택 + 직접입력(YYYY-MM-DD)
+                    if (col.isDate) {
+                      return (
+                        <td key={`${col.key}-${dietYear}`} style={{ minWidth: "100px" }}>
+                          {renderAfterDtPicker(val, isChanged)}
+                        </td>
+                      );
+                    }
+
                     return (
                       <td
-                        key={col.key}
+                        key={isYearKey ? `${col.key}-${dietYear}` : col.key}
                         contentEditable={!isDeletedAccount}
                         suppressContentEditableWarning
                         style={{
-                          color: isChangedKey(col.key) ? "red" : "black",
+                          color: isChanged ? "red" : "black",
                           backgroundColor: isDeletedAccount ? "#f8f8f8" : "transparent",
                         }}
                         onBlur={(e) => handleCellBlur(e, rowIndex, col.key, col.isNumeric)}
@@ -1907,13 +2152,45 @@ function AccountInfoSheet() {
       }
     }
 
+    // 인상시점은 빈값이거나 올바른 YYYY-MM-DD 날짜여야 저장
+    const afterDt = String(dietYearRow.after_dt ?? "");
+    if (afterDt && !tryParseYMD(afterDt)) {
+      Swal.fire({
+        title: "입력 오류",
+        text: "인상시점은 YYYY-MM-DD 형식의 날짜로 입력해 주세요.",
+        icon: "warning",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+      return;
+    }
+
+    // 이력 조회에 실패한 과거·미래 연도를 수정했다면 빈값 기준으로 저장되지 않도록 막음
+    const isCurrentYearSelected = dietYear === currentYear;
+    if (usesDietYear && !isCurrentYearSelected && dietYearLoadFailed && isDietYearDirty) {
+      Swal.fire({
+        title: "저장 불가",
+        text: `${dietYear}년 식단가를 불러오지 못했습니다. 연도를 다시 선택한 뒤 수정해 주세요.`,
+        icon: "warning",
+        confirmButtonColor: "#d33",
+        confirmButtonText: "확인",
+      });
+      return;
+    }
+
     const user_id = localStorage.getItem("user_id") || "";
 
     // ✅ formData에 user_id + activeId 주입 (주간보호 탭이면 daycare_id로 저장)
     const _formData = { ...formData, user_id, account_id: activeId || formData.account_id };
 
+    // 선택 연도가 올해면 연도별 식단가를 현재 단가(tb_account_info)에도 함께 반영
+    const isCurrentDietYear = usesDietYear && isCurrentYearSelected;
+    const mergedPriceData = isCurrentDietYear
+      ? (priceData || []).map((r, i) => (i === 0 ? { ...r, ...dietYearRow } : r))
+      : priceData || [];
+
     // ✅ 각 테이블 row에 user_id 주입 (배열이면 map으로)
-    const _priceData = (priceData || []).map((r) => ({ ...r, user_id }));
+    const _priceData = mergedPriceData.map((r) => ({ ...r, user_id }));
     const _etcData = (etcData || []).map((r) => ({ ...r, user_id }));
     const _managerData = (managerData || []).map((r) => ({ ...r, user_id }));
     const _eventData = (eventData || []).map((r) => ({ ...r, user_id }));
@@ -1926,11 +2203,31 @@ function AccountInfoSheet() {
       eventData: _eventData,
     };
 
+    // 식단가 표에서 선택한 연도의 연도별 식단가 항목 (연도별 이력 테이블 저장용)
+    // 올해는 항상, 다른 연도는 식단가를 수정했을 때만 보냄 (보기만 한 연도에 빈 이력이 생기지 않도록)
+    if (usesDietYear && (isCurrentYearSelected || isDietYearDirty)) {
+      const dietYearData = { price_year: String(dietYear), ...dietYearRow };
+      // 추가 식단가 이름은 화면에 보이는 식단가 추가 설정값을 기준으로 저장
+      extraDiet.forEach((item, index) => {
+        dietYearData[`extra_diet${index + 1}_name`] = item.name || null;
+      });
+      // 숫자 항목의 빈값·문자는 NULL 또는 숫자로 정리 (INT 컬럼 저장용)
+      DIET_YEAR_NUMERIC_KEYS.forEach((key) => {
+        const v = dietYearData[key];
+        const n = v === null || v === undefined || v === "" ? null : Number(String(v).replace(/,/g, ""));
+        dietYearData[key] = Number.isFinite(n) ? n : null;
+      });
+      payload.dietYearData = dietYearData;
+    }
+
     showSwalLoading();
 
     try {
       const res = await api.post("/Account/AccountInfoSave", payload);
       if (res.data.code === 200) {
+        // 저장된 식단가(올해면 현재 단가 포함)는 알림 확인 여부와 관계없이 바로 화면 기준값으로 반영
+        setPriceData(mergedPriceData);
+        setOriginalDietYearRow({ ...dietYearRow });
         Swal.fire({
           title: "저장",
           text: "저장되었습니다.",
@@ -1940,7 +2237,7 @@ function AccountInfoSheet() {
         }).then(async (result) => {
           if (result.isConfirmed) {
             setOriginalBasic(formData);
-            setOriginalPrice([...priceData]);
+            setOriginalPrice([...mergedPriceData]);
             setOriginalEtc([...etcData]);
             setOriginalManager([...managerData]);
             setOriginalEvent([...eventData]);
@@ -2509,6 +2806,9 @@ function AccountInfoSheet() {
                     selected={startDate}
                     value={contractStartText}
                     dateFormat="yyyy-MM-dd"
+                    locale="ko"
+                    dateFormatCalendar="yyyy년 M월"
+                    portalId="accountinfo-datepicker-portal"
                     placeholderText="YYYY-MM-DD"
                     disabled={isDeletedAccount}
                     customInput={
@@ -2550,6 +2850,9 @@ function AccountInfoSheet() {
                     selected={endDate}
                     value={contractEndText}
                     dateFormat="yyyy-MM-dd"
+                    locale="ko"
+                    dateFormatCalendar="yyyy년 M월"
+                    portalId="accountinfo-datepicker-portal"
                     placeholderText="YYYY-MM-DD"
                     disabled={isDeletedAccount}
                     customInput={

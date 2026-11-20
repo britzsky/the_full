@@ -384,6 +384,9 @@ const routes = [
         allowedDepartments: [0, 2, 6, 9], // 🔹 부서권한
         // allowUserIds: [""], //
         accessMode: "OR",
+        allowUserIds: [
+          "nr1", // 지나리 매니저
+        ],
       },
       {
         type: "collapse",
@@ -441,6 +444,9 @@ const routes = [
         allowedDepartments: [0, 2, 5, 6, 9], // 부서권한
         // allowUserIds: [""], 
         accessMode: "OR",
+        allowUserIds: [
+          "nr1", // 지나리 매니저
+        ],
       },
     ],
   },

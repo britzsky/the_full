@@ -35,7 +35,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import { useNavigate, useParams } from "react-router-dom";
 import { API_BASE_URL } from "config";
-import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import { buildFileDownloadUrl, resolveDownloadFileName } from "utils/fileDownloadUrl";
 import { showSwalLoading } from "utils/swalLoading";
 
 // 계약기간·인상시점 달력을 한국어(월·요일 한글)로 표시
@@ -619,7 +619,7 @@ function AccountInfoSheet() {
         a.href = url;
         a.target = "_blank";
         a.rel = "noopener noreferrer";
-        a.download = it.file.name || filenameBase;
+        a.download = resolveDownloadFileName(it.file.name || filenameBase, { contentType: it.file.type });
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);

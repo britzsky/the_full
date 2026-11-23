@@ -20,6 +20,7 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import logo from "assets/images/the-full-logo4.png";
 import useEvaluationData from "./EvaluationManageTabData";
 
@@ -741,7 +742,7 @@ export default function EvaluationManageTab({ onEditRequest, initialEvalIdx, onI
                                           </MDBox>
                                         )}
                                       </MDBox>
-                                      <IconButton size="small" component="a" href={rfUrl} download target="_blank" rel="noopener noreferrer" sx={{ ...iconBtnSx, width: 24, height: 24 }}>
+                                      <IconButton size="small" component="a" href={buildFileDownloadUrl(rf.image_path)} download target="_blank" rel="noopener noreferrer" sx={{ ...iconBtnSx, width: 24, height: 24 }}>
                                         <Download size={13} />
                                       </IconButton>
                                     </MDBox>

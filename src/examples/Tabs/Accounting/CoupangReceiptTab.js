@@ -30,6 +30,7 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { resolveDownloadFileName } from "utils/fileDownloadUrl";
 import Swal from "sweetalert2";
 import api from "api/api";
 import PropTypes from "prop-types";
@@ -745,7 +746,10 @@ function CoupangReceiptTab() {
     for (const result of results) {
       if (result.status === "fulfilled") {
         const { item, blob } = result.value;
-        const fileName = getUniqueDownloadFileName(item.file.name, usedFileNameMap);
+        const fileName = getUniqueDownloadFileName(
+          resolveDownloadFileName(item.file.name, { contentType: item.file.type }),
+          usedFileNameMap
+        );
         zip.file(fileName, blob);
         addedCount += 1;
       } else {

@@ -10,6 +10,7 @@ import api from "api/api";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { Download, Trash2 } from "lucide-react"; // 🔹 아이콘
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { sortAccountRows } from "utils/accountSort";
 
 // 🔹 데이터 훅 import
@@ -250,7 +251,7 @@ export default function DeadlineFilesTab() {
                                   size="small"
                                   color="success"
                                   component="a"
-                                  href={`${API_BASE_URL}${value}`}
+                                  href={buildFileDownloadUrl(value)}
                                   download
                                   target="_blank"
                                   rel="noopener noreferrer"

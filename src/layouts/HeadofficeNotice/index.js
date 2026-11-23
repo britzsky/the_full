@@ -16,6 +16,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 // ── 내부 훅 및 유틸리티 임포트 ───────────────────────────────
 import useHeadofficeNoticeData from "./data/HeadofficeNoticeData";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { toHeadOfficeDocumentViewUrl } from "utils/headOfficeDocumentImageUtils";
 import logo from "assets/images/the-full-logo4.png";
 
@@ -710,7 +711,7 @@ function HeadofficeNotice() {
                             </a>
                           )}
 
-                          <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", mr: 1, "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
+                          <IconButton size="small" component="a" href={buildFileDownloadUrl(f.image_path)} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", mr: 1, "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
                             <Download size={17} />
                           </IconButton>
                         </MDBox>
@@ -957,7 +958,7 @@ function HeadofficeNotice() {
                           )}
 
                           <MDBox sx={{ display: "inline-flex", alignItems: "center", gap: "4px", mr: 1 }}>
-                            <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
+                            <IconButton size="small" component="a" href={buildFileDownloadUrl(f.image_path)} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
                               <Download size={17} />
                             </IconButton>
                             <IconButton size="small" color={isDeleted ? "warning" : "error"} onClick={() => handleToggleDeleteFile(Number(f.image_order))} sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #e2b4b4", backgroundColor: isDeleted ? "#fff4e5" : "#fff1f1", "&:hover": { backgroundColor: isDeleted ? "#ffe8c2" : "#ffe3e3" } }}>

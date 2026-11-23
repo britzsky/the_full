@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import dayjs from "dayjs";
 import api from "api/api";
 import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
-import { buildFileDownloadUrl, isFileDownloadErrorResponse } from "utils/fileDownloadUrl";
+import { buildFileDownloadUrl, fetchDownloadFile, resolveDownloadFileName } from "utils/fileDownloadUrl";
 import { compressImageFile } from "utils/HygieneCardBoard";
 
 // 하루 1행 저장 시 쓰는 구분 값 (UNIQUE 키: 거래처+일자+구분)
@@ -111,22 +111,19 @@ const matchesAccept = (file, accept) =>
 const safeAccountName = (row) => String(row.account_name || row.account_id).replace(/[\\/:*?"<>|]/g, "_");
 
 // 다운로드 파일명 (식단표: 거래처_주시작일_주간식단표, 식판 사진: 거래처_일자_식판사진)
-const buildFileName = (row, kind) => {
-  const { path } = fileOf(row, kind);
-  const ext = path.includes(".") ? path.split(".").pop() : "file";
+const buildFileName = (row, kind, file) => {
+  const { path, name } = fileOf(row, kind);
   const label = kind === "menu" ? "주간식단표" : "식판사진";
-  return `${safeAccountName(row)}_${row.meal_date}_${label}.${ext}`;
+  // 업로드할 때 사진 형식이 바뀔 수 있어 원본 이름보다 저장된 파일의 형식을 우선한다.
+  return resolveDownloadFileName(`${safeAccountName(row)}_${row.meal_date}_${label}`, {
+    path,
+    originalName: name,
+    ...file,
+  });
 };
 
-// 서버 파일을 Blob으로 받아오는 함수 (ZIP 묶음용, 오류 응답이면 예외)
-const fetchFileBlob = async (path) => {
-  const res = await fetch(buildFileDownloadUrl(path), { credentials: "include" });
-  // 엑셀(…spreadsheetml.sheet)도 형식명에 xml이 들어가므로 오류 응답 형식만 정확히 걸러냄
-  if (isFileDownloadErrorResponse(res)) {
-    throw new Error("파일을 불러오지 못했습니다.");
-  }
-  return res.blob();
-};
+// 개별 다운로드와 ZIP에 사용할 원본 파일과 응답 정보를 조회한다.
+const fetchBranchDownloadFile = (path) => fetchDownloadFile(buildFileDownloadUrl(path));
 
 // isHeadOffice: 본사 메뉴 화면 여부 (전체 거래처 목록 사용)
 export default function useBranchUploadData(isHeadOffice) {
@@ -273,7 +270,7 @@ export {
   groupWeekRows,
   weekRowsOf,
   buildFileName,
-  fetchFileBlob,
+  fetchBranchDownloadFile,
   matchesAccept,
   safeAccountName,
 };

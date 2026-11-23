@@ -51,7 +51,7 @@ import useBranchUploadData, {
   groupWeekRows,
   weekRowsOf,
   buildFileName,
-  fetchFileBlob,
+  fetchBranchDownloadFile,
   matchesAccept,
   safeAccountName,
 } from "./branchUploadData";
@@ -768,8 +768,9 @@ function BranchUploadTab({ isHeadOffice }) {
   // 서버 주소로 바로 받으면 서버가 정한 저장 파일명(UUID_원본명)이 우선 적용되므로 Blob으로 받아 이름을 붙임
   const downloadOne = async (row, kind) => {
     try {
-      const url = URL.createObjectURL(await fetchFileBlob(fileOf(row, kind).path));
-      triggerDownload(url, buildFileName(row, kind));
+      const file = await fetchBranchDownloadFile(fileOf(row, kind).path);
+      const url = URL.createObjectURL(file.blob);
+      triggerDownload(url, buildFileName(row, kind, file));
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       Swal.fire("다운로드 실패", "파일을 받지 못했습니다. 잠시 후 다시 시도해 주세요.", "error");
@@ -984,7 +985,8 @@ function BranchUploadTab({ isHeadOffice }) {
         const kindFolder = `${FILE_KINDS.find((k) => k.key === kind).label.replace(" ", "")}/`;
         const folder = byAccountFolder ? `${safeAccountName(row)}/${kindFolder}` : kindFolder;
         // eslint-disable-next-line no-await-in-loop
-        zip.file(`${folder}${buildFileName(row, kind)}`, await fetchFileBlob(fileOf(row, kind).path));
+        const file = await fetchBranchDownloadFile(fileOf(row, kind).path);
+        zip.file(`${folder}${buildFileName(row, kind, file)}`, file.blob);
       } catch (err) {
         failed += 1;
       }

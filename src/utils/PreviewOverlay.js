@@ -7,7 +7,7 @@ import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import * as XLSX from "xlsx";
 import MDBox from "components/MDBox";
 import api from "api/api";
-import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
+import { buildFileDownloadUrl, resolveDownloadFileName } from "utils/fileDownloadUrl";
 import ExcelStyledSheet, { stripSheetTagPrefix } from "utils/ExcelStyledSheet";
 
 // 파일 종류별 미리보기 창 비율을 계산한다.
@@ -97,11 +97,11 @@ function buildPdfViewerUrl(url) {
   return `${baseUrl}#page=1&view=FitH&pagemode=none&navpanes=0&toolbar=1`;
 }
 
-// 파일 미리보기 blob 로드 공통 함수
+// 미리보기 원본과 다운로드에 필요한 파일명 헤더를 조회한다.
 // - AccountMemberSheetTab과 동일하게 axios blob 요청을 우선 사용한다.
 // - 304/캐시 문제로 본문이 비면 cache bust URL로 한 번 더 재요청한다.
 // - 마지막에는 fetch fallback으로 환경별 차이를 흡수한다.
-async function fetchPreviewBlob(url) {
+async function fetchPreviewFile(url) {
   const targetUrl = String(url ?? "").trim();
   if (!targetUrl) throw new Error("미리보기 URL이 비어있습니다.");
 
@@ -126,7 +126,7 @@ async function fetchPreviewBlob(url) {
       const localResponse = await fetch(candidateUrl);
       if (!localResponse.ok) continue;
       const localBlob = await localResponse.blob();
-      if (localBlob.size > 0) return localBlob;
+      if (localBlob.size > 0) return { blob: localBlob, contentType: localBlob.type };
       continue;
     }
 
@@ -140,7 +140,11 @@ async function fetchPreviewBlob(url) {
       });
       const responseBlob = response?.data;
       if (responseBlob instanceof Blob && responseBlob.size > 0) {
-        return responseBlob;
+        return {
+          blob: responseBlob,
+          contentType: responseBlob.type,
+          contentDisposition: response.headers?.["content-disposition"],
+        };
       }
     } catch {
       // 다음 fallback(fetch)으로 진행
@@ -153,12 +157,24 @@ async function fetchPreviewBlob(url) {
       });
       if (!withCredentials.ok) continue;
       const fallbackBlob = await withCredentials.blob();
-      if (fallbackBlob.size > 0) return fallbackBlob;
+      if (fallbackBlob.size > 0) {
+        return {
+          blob: fallbackBlob,
+          contentType: fallbackBlob.type,
+          contentDisposition: withCredentials.headers.get("content-disposition"),
+        };
+      }
     } catch {
       // 다음 candidateUrl로 진행
     }
   }
   throw new Error("미리보기 파일을 불러오지 못했습니다.");
+}
+
+// 미리보기 화면 표시용으로 파일 본문(Blob)만 필요한 곳에서 쓰는 함수
+async function fetchPreviewBlob(url) {
+  const { blob } = await fetchPreviewFile(url);
+  return blob;
 }
 
 // 공통 첨부파일 미리보기 오버레이
@@ -773,34 +789,28 @@ function PreviewOverlay({
               e.stopPropagation();
               if (!currentPreviewUrl) return;
 
-              const triggerBlobDownload = (blobUrl) => {
-                const link = document.createElement("a");
-                link.href = blobUrl;
-                link.download = currentFile?.name || "preview";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              };
-
-              if (/^blob:/i.test(currentPreviewUrl)) {
-                triggerBlobDownload(currentPreviewUrl);
-                return;
-              }
-
-              const originalPath = resolveOriginalDownloadPath(currentFile, currentPreviewUrl);
+              const originalPath = resolveOriginalDownloadPath(currentFile, currentFileViewUrl);
+              const existingBlobUrl = /^blob:/i.test(currentPreviewUrl);
               // 서버 프록시(/image/...) 경로가 확인되면 기존 다운로드 전용 API를 사용한다.
-              if (String(originalPath).includes("/image/")) {
+              if (!existingBlobUrl && originalPath.includes("/image/")) {
                 window.open(buildFileDownloadUrl(originalPath), "_blank", "noopener,noreferrer");
                 return;
               }
 
-              // S3 등 외부 URL은 Content-Disposition이 없어 새 탭으로 열려버리므로
-              // blob으로 직접 받아 강제 다운로드시킨다. 실패하면 새 탭 열기로 폴백.
+              // 미리보기 파일은 Blob과 응답의 형식 정보를 사용해 저장한다.
               try {
-                const fileBlob = await fetchPreviewBlob(currentPreviewUrl);
-                const blobUrl = URL.createObjectURL(fileBlob);
-                triggerBlobDownload(blobUrl);
-                URL.revokeObjectURL(blobUrl);
+                const file = await fetchPreviewFile(currentPreviewUrl);
+                const blobUrl = existingBlobUrl ? currentPreviewUrl : URL.createObjectURL(file.blob);
+                const link = document.createElement("a");
+                link.href = blobUrl;
+                link.download = resolveDownloadFileName(currentFile?.name, {
+                  path: originalPath || currentFileViewUrl,
+                  ...file,
+                });
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                if (!existingBlobUrl) window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
               } catch {
                 window.open(currentPreviewUrl, "_blank", "noopener,noreferrer");
               }

@@ -16,6 +16,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 // ── 내부 훅 및 유틸리티 임포트 ───────────────────────────────
 import useEducationData from "./data/EducationData";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { toHeadOfficeDocumentViewUrl } from "utils/headOfficeDocumentImageUtils";
 import logo from "assets/images/the-full-logo4.png";
 
@@ -604,7 +605,7 @@ function Education() {
                             </a>
                           )}
                           {/* 다운로드 버튼 */}
-                          <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", mr: 1, "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
+                          <IconButton size="small" component="a" href={buildFileDownloadUrl(f.image_path)} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", mr: 1, "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
                             <Download size={17} />
                           </IconButton>
                         </MDBox>
@@ -783,7 +784,7 @@ function Education() {
                             </a>
                           )}
                           <MDBox sx={{ display: "inline-flex", alignItems: "center", gap: "4px", mr: 1 }}>
-                            <IconButton size="small" component="a" href={fileUrl} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
+                            <IconButton size="small" component="a" href={buildFileDownloadUrl(f.image_path)} download target="_blank" rel="noopener noreferrer" sx={{ width: 30, height: 30, borderRadius: "8px", border: "1px solid #c7d2e6", backgroundColor: "#f5f8ff", color: "#1f4e79", "&:hover": { backgroundColor: "#eaf2ff", borderColor: "#95afd6" } }}>
                               <Download size={17} />
                             </IconButton>
                             {/* 삭제 예약/복원 토글 */}

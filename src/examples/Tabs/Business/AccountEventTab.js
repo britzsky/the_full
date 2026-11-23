@@ -25,6 +25,7 @@ import LoadingScreen from "layouts/loading/loadingscreen";
 import { Download, Trash2, Plus, RotateCcw } from "lucide-react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "config";
+import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountEventData from "./accountEventData";
 
 export default function AccountEventTab() {
@@ -795,7 +796,7 @@ export default function AccountEventTab() {
                                     size="small"
                                     color="success"
                                     component="a"
-                                    href={`${API_BASE_URL}${img.image_path}`}
+                                    href={buildFileDownloadUrl(img.image_path)}
                                     download
                                     target="_blank"
                                     rel="noopener noreferrer"

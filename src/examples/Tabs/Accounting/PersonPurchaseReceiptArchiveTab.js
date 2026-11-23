@@ -28,7 +28,12 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import PreviewOverlay from "utils/PreviewOverlay";
-import { API_BASE_URL } from "config";
+import {
+  buildFileDownloadUrl,
+  fetchDownloadFile,
+  getDownloadFileExtension,
+  resolveDownloadFileName,
+} from "utils/fileDownloadUrl";
 import { fetchAccountListByName } from "api/accountQueryApi";
 import usePersonPurchaseReceiptArchiveData, {
   buildCorpCardFilePreviewUrl,
@@ -62,19 +67,6 @@ const SELECT_SX = {
 // 요양원 그룹 구분용 색상(순환 적용)
 const ACCOUNT_GROUP_COLORS = ["#4f7ef8", "#1abc9c", "#f87c4f", "#8b5cf6", "#e74c3c", "#0891b2"];
 const FALLBACK_COLOR = "#9ca3af";
-
-const buildFileDownloadUrl = (path) => {
-  const rawPath = String(path || "").trim();
-  const imageIndex = rawPath.indexOf("/image/");
-  if (imageIndex < 0) return "";
-  const encodedPath = rawPath
-    .slice(imageIndex)
-    .split("/")
-    .map((segment) => (segment ? encodeURIComponent(segment) : ""))
-    .join("/");
-  const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
-  return `${apiBase}/download${encodedPath}`;
-};
 
 const sanitizeFileName = (name) =>
   String(name || "receipt").replace(/[\\/:*?"<>|]/g, "_").trim() || "receipt";
@@ -213,18 +205,8 @@ function PersonPurchaseReceiptArchiveTab() {
     setViewerOpen(true);
   };
 
-  const fetchBlob = async (item) => {
-    const downloadUrl = buildFileDownloadUrl(item.receipt_image);
-    if (!downloadUrl) throw new Error("영수증 파일 경로가 없습니다.");
-    const res = await fetch(downloadUrl, { credentials: "include" });
-    if (!res.ok) throw new Error("영수증 파일을 불러오지 못했습니다.");
-    const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-    // 오류 응답 형식만 거름 (엑셀 형식명 …spreadsheetml.sheet에도 xml이 들어 있어 단순 xml 검사 금지)
-    if (/^(application\/xml|text\/xml|text\/html|application\/json)/.test(contentType)) {
-      throw new Error(`파일 대신 오류 응답을 받았습니다. (${contentType || "unknown"})`);
-    }
-    return res.blob();
-  };
+  // 다운로드 API에서 영수증 원본과 파일명 헤더를 받아오는 함수
+  const fetchReceiptFile = (item) => fetchDownloadFile(buildFileDownloadUrl(item.receipt_image));
 
   const canChooseDownloadPath = () => Boolean(window.isSecureContext && window.showSaveFilePicker);
 
@@ -242,11 +224,12 @@ function PersonPurchaseReceiptArchiveTab() {
     if (!item?.previewUrl) return;
     const fileName = buildReceiptFileName(item);
 
-    if (!canChooseDownloadPath()) {
+    // 저장 위치 선택을 지원하지 않거나 확장자가 빠진 영수증은 응답에서 파일명을 복원해 브라우저 다운로드로 저장한다.
+    if (!canChooseDownloadPath() || !getDownloadFileExtension(fileName)) {
       try {
-        const blob = await fetchBlob(item);
-        const objectUrl = URL.createObjectURL(blob);
-        triggerBrowserDownload(objectUrl, fileName);
+        const file = await fetchReceiptFile(item);
+        const objectUrl = URL.createObjectURL(file.blob);
+        triggerBrowserDownload(objectUrl, resolveDownloadFileName(fileName, { path: item.receipt_image, ...file }));
         setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
       } catch {
         const downloadUrl = buildFileDownloadUrl(item.receipt_image);
@@ -266,16 +249,16 @@ function PersonPurchaseReceiptArchiveTab() {
     }
 
     try {
-      const blob = await fetchBlob(item);
+      const { blob } = await fetchReceiptFile(item);
       const writable = await fileHandle.createWritable();
       await writable.write(blob);
       await writable.close();
     } catch (error) {
       console.error("파일 저장 실패:", error);
       try {
-        const blob = await fetchBlob(item);
-        const objectUrl = URL.createObjectURL(blob);
-        triggerBrowserDownload(objectUrl, fileName);
+        const file = await fetchReceiptFile(item);
+        const objectUrl = URL.createObjectURL(file.blob);
+        triggerBrowserDownload(objectUrl, resolveDownloadFileName(fileName, { path: item.receipt_image, ...file }));
         setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
       } catch {
         const downloadUrl = buildFileDownloadUrl(item.receipt_image);
@@ -342,10 +325,10 @@ function PersonPurchaseReceiptArchiveTab() {
       const chunk = downloadableItems.slice(i, i + CONCURRENCY);
       const chunkResults = await Promise.allSettled(
         chunk.map(async (item) => {
-          const blob = await fetchBlob(item);
+          const file = await fetchReceiptFile(item);
           done += 1;
           advanceDisplay();
-          return { item, blob };
+          return { item, file };
         })
       );
       results.push(...chunkResults);
@@ -361,9 +344,12 @@ function PersonPurchaseReceiptArchiveTab() {
 
     for (const result of results) {
       if (result.status === "fulfilled") {
-        const { item, blob } = result.value;
-        const fileName = getUniqueFileName(buildReceiptFileName(item), usedMap);
-        zip.file(fileName, blob);
+        const { item, file } = result.value;
+        const fileName = getUniqueFileName(
+          resolveDownloadFileName(buildReceiptFileName(item), { path: item.receipt_image, ...file }),
+          usedMap
+        );
+        zip.file(fileName, file.blob);
         addedCount += 1;
       } else {
         console.warn("영수증 이미지 추가 실패 (건너뜀):", result.reason);

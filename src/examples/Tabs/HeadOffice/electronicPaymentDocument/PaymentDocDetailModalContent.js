@@ -8,6 +8,7 @@ import {
   getHeadOfficeDocumentPreviewKind,
 } from "utils/headOfficeDocumentImageUtils";
 import PreviewOverlay from "utils/PreviewOverlay";
+import { buildFileDownloadUrl, fetchDownloadFile, resolveDownloadFileName } from "utils/fileDownloadUrl";
 // 작성 화면과 동일한 행 높이 기준
 const ROW_H = 42;
 const PAYMENT_TYPE = Object.freeze({
@@ -192,21 +193,6 @@ function PaymentDocDetailModalContent({
     },
     [asText, viewerUserId]
   );
-  const toDownloadFileUrl = useCallback(
-    (file) => {
-      const rawPath = asText(file?.image_path);
-      const imageIndex = rawPath.indexOf("/image/");
-      if (imageIndex < 0) return "";
-      const encodedPath = rawPath
-        .slice(imageIndex)
-        .split("/")
-        .map((segment) => (segment ? encodeURIComponent(segment) : ""))
-        .join("/");
-      const apiBase = String(API_BASE_URL || "").replace(/\/$/, "");
-      return `${apiBase}/download${encodedPath}`;
-    },
-    [asText]
-  );
   // 서버 첨부파일을 미리보기 목록으로 변환한다. (이미지/PDF/엑셀)
   const detailFilePreviewList = useMemo(
     () =>
@@ -240,39 +226,34 @@ function PaymentDocDetailModalContent({
     },
     [detailFilePreviewList]
   );
+  // 첨부파일을 Blob으로 받아 확장자를 복원한 이름으로 저장하고, 실패하면 다운로드 API 주소로 직접 연다.
   const handleDownloadFile = useCallback(async (file) => {
-    const fileUrl = toDownloadFileUrl(file);
+    const path = asText(file?.image_path);
+    const fileUrl = buildFileDownloadUrl(path);
     if (!fileUrl) return;
 
-    const fallbackPath = asText(file?.image_path);
-    const filename = asText(file?.image_name) || fallbackPath.split("/").pop() || "download";
+    const name = asText(file?.image_name);
 
     try {
-      const res = await fetch(fileUrl, { credentials: "include" });
-      if (!res.ok) throw new Error(`첨부파일 요청 실패 (${res.status})`);
-      const contentType = String(res.headers.get("content-type") || "").toLowerCase();
-      // 오류 응답 형식만 거름 (엑셀 형식명 …spreadsheetml.sheet에도 xml이 들어 있어 단순 xml 검사 금지)
-      if (/^(application\/xml|text\/xml|text\/html|application\/json)/.test(contentType)) {
-        throw new Error(`파일 대신 오류 응답을 받았습니다. (${contentType || "unknown"})`);
-      }
-      const blobUrl = URL.createObjectURL(await res.blob());
+      const downloadFile = await fetchDownloadFile(fileUrl);
+      const blobUrl = URL.createObjectURL(downloadFile.blob);
       const a = document.createElement("a");
       a.href = blobUrl;
-      a.download = filename;
+      a.download = resolveDownloadFileName(name, { path, ...downloadFile });
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 0);
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
     } catch (err) {
       console.error("전자결재 첨부파일 다운로드 실패:", err);
       const a = document.createElement("a");
       a.href = fileUrl;
-      a.download = filename;
+      a.download = resolveDownloadFileName(name, { path });
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     }
-  }, [asText, toDownloadFileUrl]);
+  }, [asText]);
   const handleAttachmentPreview = useCallback((file) => {
     const previewKind = getHeadOfficeDocumentPreviewKind({
       image_name: file?.image_name,

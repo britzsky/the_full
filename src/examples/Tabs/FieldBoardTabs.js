@@ -21,6 +21,8 @@ import { X, ZoomIn, ChevronDown } from "lucide-react";
 import MDBox from "components/MDBox";
 import { useNavigate } from "react-router-dom";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import api from "api/api";
+import { getHygienePendingSummary } from "utils/HygieneCardBoard";
 import dayjs from "dayjs";
 
 import RecordSheetTab from "./FieldBoard/RecordSheetTab";
@@ -145,6 +147,59 @@ function FieldBoardTabs() {
     paymentId: "",
     token: 0,
   });
+
+  const [hygienePending, setHygienePending] = useState(0);
+  // 위생점검 화면 안에서는 저장 후 재조회 결과를 받고, 다른 탭에서는 진입·창 복귀 시 갱신합니다.
+  useEffect(() => {
+    const accountId = localStorage.getItem("account_id");
+    if (!accountId || accountId === "null" || contentTabIndex === 1) return undefined;
+    let generation = 0;
+    const refresh = async () => {
+      const request = ++generation;
+      try {
+        const { data } = await api.get("/Operate/HygieneList", { params: { account_id: accountId, include_inspections: "Y" } });
+        if (request === generation) setHygienePending(getHygienePendingSummary(data || []).count);
+      } catch (error) {
+        console.error("위생 미조치 건수 조회 실패:", error);
+      }
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => {
+      generation += 1;
+      window.removeEventListener("focus", refresh);
+    };
+  }, [contentTabIndex]);
+  // 위생 미조치 건수 배지(raised: 상단 탭에서는 제목 오른쪽 위로 올려 붙이고, 메뉴 안에서는 글자 줄 가운데)
+  const renderHygieneBadge = (raised) =>
+    hygienePending > 0 && (
+      <Box
+        component="span"
+        aria-label={`위생 미조치 ${hygienePending}건`}
+        sx={{
+          ml: raised ? "-1px" : 0.75,
+          px: "5px",
+          minWidth: 18,
+          height: 18,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          alignSelf: raised ? "flex-start" : "center",
+          transform: raised ? "translateY(-3px)" : "none",
+          borderRadius: "9px",
+          bgcolor: "#d84315",
+          color: "#fff",
+          boxShadow: raised ? "0 0 0 2px #f7f7f7" : "none",
+          fontSize: 11,
+          lineHeight: 1,
+          fontWeight: 800,
+          letterSpacing: "-0.2px",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {hygienePending > 99 ? "99+" : hygienePending}
+      </Box>
+    );
 
   // 탭 변경 (현재 탭 화면에 미저장 변경이 있으면 저장 후 이동 / 취소 후 이동 / 취소 확인)
   const handleTabChange = async (_, newValue) => {
@@ -323,7 +378,7 @@ function FieldBoardTabs() {
 
   const tabComponents = [
     <HandoverSheetTab key="handover" />,
-    <HygieneSheetTab key="hygiene" />,
+    <HygieneSheetTab key="hygiene" onPendingCount={setHygienePending} />,
     <PropertySheetTab key="property" />,
     // <MenuManagementTab key="menu-management" />,
     <AccountMembersFilesTab key="account-files" />,
@@ -410,6 +465,7 @@ function FieldBoardTabs() {
                 label={
                   <Box display="flex" alignItems="center" gap={0.5}>
                     <span>{label}</span>
+                    {group.children?.includes(1) && renderHygieneBadge(true)}
                     {isGroup && <ChevronDown size={14} />}
                   </Box>
                 }
@@ -476,6 +532,7 @@ function FieldBoardTabs() {
                     }}
                   >
                     {tabLabels[index]}
+                    {index === 1 && renderHygieneBadge(false)}
                   </MenuItem>
                 ))}
               </MenuList>

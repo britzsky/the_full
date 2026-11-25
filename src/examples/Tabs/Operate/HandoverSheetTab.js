@@ -10,6 +10,7 @@ import api from "api/api";
 import Swal from "sweetalert2";
 import XlsxPopulate from "xlsx-populate/browser/xlsx-populate";
 import FileSaver from "file-saver";
+import { getKoreanDateLabel } from "components/KoreanDateInput";
 
 export default function HandoverSheetTab() {
   const [form, setForm] = useState({});
@@ -171,6 +172,7 @@ export default function HandoverSheetTab() {
         onChange={handleChange(key)}
         inputProps={{
           ...(opts.inputProps || {}),
+          "data-date-label": opts.type === "date" ? getKoreanDateLabel(form[key]) : undefined,
           style: {
             ...(opts.inputProps?.style || {}),
             color,

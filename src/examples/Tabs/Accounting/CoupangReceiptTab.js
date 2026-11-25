@@ -35,6 +35,7 @@ import Swal from "sweetalert2";
 import api from "api/api";
 import PropTypes from "prop-types";
 import { useCoupangAccountList, useHeadOfficeCardList } from "./CoupangReceiptTabData";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // =====================================================================
 // 상수 정의
@@ -1046,9 +1047,8 @@ function CoupangReceiptTab() {
           </Box>
 
           {/* 날짜 선택 */}
-          <TextField
+          <KoreanDateField
             label="날짜 지정"
-            type="date"
             size="small"
             fullWidth
             value={retryDate}

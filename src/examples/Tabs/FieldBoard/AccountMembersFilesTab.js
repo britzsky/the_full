@@ -14,6 +14,7 @@ import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import PreviewOverlay from "utils/PreviewOverlay";
 import accountLabelSx from "utils/accountLabelSx";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 // ✅ 문서종류 고정 목록 — 회원 1명당 이 순서대로 세로 행이 생김
 //    영양사: 영양사 면허증/조리사 면허증/보건증/위생교육/보수교육, 그 외: 면허증/보건증/위생교육
@@ -50,6 +51,8 @@ const COLUMN_WIDTHS = ["10%", "8%", "11%", "14%", "14%", "11%", "32%"];
 //    잘려 보일 수 있어서다. 페이지마다 실제 행 수는 조금씩 달라도 회원 단위는 항상 온전함
 //    — 4명이면 최대 16행 정도라 카드 스크롤 없이 한 화면에 다 보임
 const MEMBERS_PER_PAGE = 4;
+// 표 스크롤 박스 아래에 남겨둘 높이(px) — 페이징 줄 + 카드·레이아웃 아래 여백
+const SCROLL_BOX_BOTTOM_RESERVE = 80;
 
 function AccountMembersFilesTab() {
   const { membersFilesListRows, accountList, loading, fetcMembersFilesList } =
@@ -430,11 +433,32 @@ function AccountMembersFilesTab() {
     },
   };
 
+  // 표 스크롤 박스의 페이지 내 시작 위치(px) — 이 값으로 박스 높이를 창 높이에 맞춰 바깥 스크롤을 없앰
+  const scrollBoxRef = useRef(null);
+  const [scrollBoxTop, setScrollBoxTop] = useState(null);
+
+  // 창 크기 변경·로딩 완료 시 스크롤 박스 시작 위치를 다시 재는 효과
+  useEffect(() => {
+    const measure = () => {
+      if (!scrollBoxRef.current) return;
+      setScrollBoxTop(scrollBoxRef.current.getBoundingClientRect().top + window.scrollY);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [loading, isMobile]);
+
   // ✅ 헤더+본문을 한 스크롤 박스 안에 같이 둬서, 스크롤바가 헤더 옆까지 이어지게 함
+  //    PC는 창 높이 - 박스 시작 위치 - 아래 페이징·여백(SCROLL_BOX_BOTTOM_RESERVE)만큼만 차지
+  const pcScrollBoxMaxHeight =
+    scrollBoxTop === null
+      ? "75vh"
+      : `calc(100vh - ${Math.round(scrollBoxTop) + SCROLL_BOX_BOTTOM_RESERVE}px)`;
   const scrollBoxSx = {
     ...sharedCellSx,
     flex: 1,
-    maxHeight: isMobile ? "55vh" : "75vh",
+    boxSizing: "border-box",
+    maxHeight: isMobile ? "55vh" : pcScrollBoxMaxHeight,
     overflowX: "auto",
     overflowY: "auto",
     WebkitOverflowScrolling: "touch",
@@ -536,7 +560,7 @@ function AccountMembersFilesTab() {
       </MDBox>
 
       {/* 헤더+본문을 한 스크롤 박스 안에 같이 둬서 스크롤바가 헤더 옆까지 이어지게 함 */}
-      <MDBox pt={1} pb={3} sx={scrollBoxSx}>
+      <MDBox ref={scrollBoxRef} mt={1} pb={3} sx={scrollBoxSx}>
         {/* 헤더 — 이 박스 안에서 div(sticky)로 고정, 테이블 셀에는 sticky를 안 줌 */}
         <MDBox sx={stickyHeaderWrapSx}>
           <table>
@@ -629,8 +653,7 @@ function AccountMembersFilesTab() {
                         ...getCellStyle(rowIndex, t.value, "issue_dt", doc.issue_dt),
                       }}
                     >
-                      <input
-                        type="date"
+                      <KoreanDateInput
                         value={String(doc.issue_dt || "")}
                         onChange={(e) =>
                           handleDocFieldChange(rowIndex, t.value, "issue_dt", e.target.value)
@@ -648,8 +671,7 @@ function AccountMembersFilesTab() {
                         ...getCellStyle(rowIndex, t.value, "expiry_dt", doc.expiry_dt),
                       }}
                     >
-                      <input
-                        type="date"
+                      <KoreanDateInput
                         value={String(doc.expiry_dt || "")}
                         onChange={(e) =>
                           handleDocFieldChange(rowIndex, t.value, "expiry_dt", e.target.value)

@@ -11,6 +11,7 @@ import useAccountAnnualLeaveData from "./accountAnnualLeaveData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 function AccountAnnualLeaveTab() {
   const theme = useTheme();
@@ -784,8 +785,7 @@ function AccountAnnualLeaveTab() {
                             }
                             return (
                               <td key={col.accessorKey} style={{ ...style, textAlign: "center" }}>
-                                <input
-                                  type="date"
+                                <KoreanDateInput
                                   value={rawValue}
                                   onChange={(e) => handleDetailCellChange(actualIdx, "ledger_dt", e.target.value)}
                                   style={{

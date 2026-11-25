@@ -29,6 +29,7 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 // 🔹 데이터 훅 import
 import useDeadlineBalanceData, { parseNumber, formatNumber } from "./deadlineBalanceData";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 export default function DeadlineBalanceTab() {
   const today = dayjs();
@@ -2402,8 +2403,7 @@ export default function DeadlineBalanceTab() {
             {depositEditModal.field === "input_dt" ? "입금일자 수정" : "비고 수정"}
           </MDTypography>
           {depositEditModal.field === "input_dt" ? (
-            <TextField
-              type="date"
+            <KoreanDateField
               fullWidth
               size="small"
               value={depositEditModal.value}
@@ -2760,10 +2760,9 @@ export default function DeadlineBalanceTab() {
           />
 
           <Box display="flex" gap={1} mb={2} flexDirection={isMobile ? "column" : "row"}>
-            <TextField
+            <KoreanDateField
               margin="dense"
               label="입금일자"
-              type="date"
               name="input_dt"
               value={depositForm.input_dt}
               onChange={handleDepositChange}

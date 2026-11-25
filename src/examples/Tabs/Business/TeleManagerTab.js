@@ -13,6 +13,7 @@ import useTeleManagerData from "./teleManagerData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import Swal from "sweetalert2";
 import api from "api/api";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 function TeleManagerTab() {
   dayjs.extend(isSameOrAfter);
@@ -698,8 +699,7 @@ function TeleManagerTab() {
                         }}
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <input
-                          type="date"
+                        <KoreanDateInput
                           value={toDateInputValue(row.end_dt)}
                           disabled={isContractDone}
                           onChange={(e) => handleInputChange(row._rowId, "end_dt", e.target.value)}

@@ -21,6 +21,7 @@ import MDTypography from "components/MDTypography";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import { formatNumber } from "./accountMappingPurchaseData";
 import useReserveFundData, { RESERVE_TYPES, START_YEAR, START_MONTH } from "./reserveFundData";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // 적립 비율(월 사용금액 대비)
 const RESERVE_RATE = 0.04;
@@ -755,9 +756,8 @@ export default function ReserveFundTab() {
                   </MenuItem>
                 ))}
               </TextField>
-              <TextField
+              <KoreanDateField
                 label="사용일자"
-                type="date"
                 size="small"
                 value={form.use_date}
                 onChange={(e) => setForm((p) => ({ ...p, use_date: e.target.value }))}

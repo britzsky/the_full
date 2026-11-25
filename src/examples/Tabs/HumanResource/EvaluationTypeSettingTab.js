@@ -7,6 +7,7 @@ import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import useEvaluationTypeSettingData from "./EvaluationTypeSettingTabData";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 // 평가문서 기본 입력값
 const emptyForm = {
@@ -250,8 +251,7 @@ export default function EvaluationTypeSettingTab() {
 
           <MDBox sx={{ mb: 1 }}>
             <label style={labelSx}>평가기간 시작일</label>
-            <input
-              type="date"
+            <KoreanDateInput
               value={form.start_time}
               onChange={(e) => handleChange("start_time", e.target.value)}
               style={inputSx}
@@ -259,8 +259,7 @@ export default function EvaluationTypeSettingTab() {
           </MDBox>
           <MDBox sx={{ mb: 1 }}>
             <label style={labelSx}>평가기간 종료일</label>
-            <input
-              type="date"
+            <KoreanDateInput
               value={form.end_time}
               onChange={(e) => handleChange("end_time", e.target.value)}
               style={inputSx}

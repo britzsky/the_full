@@ -109,12 +109,14 @@ export default function useHygienesheetData(year, month) {
           account_id,
           year: yearParam,
           month: normalizedMonth,
+          include_inspections: "Y",
         },
       });
 
       const rows = (res.data || []).map((item) => ({
         account_id: item.account_id,
         idx: item.idx,
+        inspection_yn: item.inspection_yn,
         // 위생점검 카테고리 key (웹에서 등록한 기존 행은 빈 값)
         category_key: item.category_key || "",
         problem_image: item.problem_image,

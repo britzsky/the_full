@@ -30,6 +30,7 @@ import Swal from "sweetalert2";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useCorporateCardData from "./data/CorporateCardData";
+import { KoreanDateField } from "components/KoreanDateInput";
 // -------------------------------------------------------------
 // 회계 - 본사 법인카드 시트
 // -------------------------------------------------------------
@@ -2721,8 +2722,7 @@ function CorporateCardSheet() {
                       const dateVal = toDateInputValue(rawVal);
                       return (
                         <td key={key} style={fixedColStyle(c.size)}>
-                          <TextField
-                            type="date"
+                          <KoreanDateField
                             size="small"
                             fullWidth
                             value={dateVal}

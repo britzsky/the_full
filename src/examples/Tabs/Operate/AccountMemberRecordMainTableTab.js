@@ -20,6 +20,7 @@ import MenuItem from "@mui/material/MenuItem";
 
 import useAccountMemberRecordMainTableData from "./AccountMemberRecordMainTableData";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 function AccountMemberRecordMainTableTab() {
   // 요일 표시명과 데이터 필드 키 매핑
@@ -1653,8 +1654,7 @@ function AccountMemberRecordMainTableTab() {
                         </td>
                         <td title={formatPhone(item?.phone)}>{formatPhone(item?.phone)}</td>
                         <td>
-                          <input
-                            type="date"
+                          <KoreanDateInput
                             value={callDtValue}
                             onClick={(e) => e.currentTarget.showPicker?.()}
                             onChange={(e) =>

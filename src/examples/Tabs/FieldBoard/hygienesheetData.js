@@ -1,5 +1,5 @@
 /* eslint-disable react/function-component-definition */
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import api from "api/api";
 import { fetchFieldBoardAccountList } from "utils/fieldBoardAccountFilter";
 
@@ -94,17 +94,20 @@ export default function useHygienesheetData() {
     }
   }, []);
 
-  // 차량 정비 이력 조회
+  // 거래처를 바꾼 뒤 도착한 이전 조회 결과는 반영하지 않습니다.
+  const listRequest = useRef(0);
   const fetcHygieneList = async (account_id) => {
+    const request = ++listRequest.current;
     setLoading(true);
     try {
       const res = await api.get("/Operate/HygieneList", {
-        params: { account_id: account_id },
+        params: { account_id, include_inspections: "Y" },
       });
 
       const rows = (res.data || []).map((item) => ({
         account_id: item.account_id,
         idx: item.idx,
+        inspection_yn: item.inspection_yn,
         // 위생점검 카테고리 key (웹에서 등록한 기존 행은 빈 값)
         category_key: item.category_key || "",
         problem_image: item.problem_image,
@@ -117,12 +120,12 @@ export default function useHygienesheetData() {
         del_yn: item.del_yn,
       }));
 
-      setHygieneListRows(rows.map((row) => ({ ...row })));
+      if (request === listRequest.current) setHygieneListRows(rows);
     } catch (err) {
-      console.error("차량 정보 조회 실패:", err);
-      setHygieneListRows([]);
+      console.error("위생점검 조회 실패:", err);
+      if (request === listRequest.current) setHygieneListRows([]);
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
   };
 

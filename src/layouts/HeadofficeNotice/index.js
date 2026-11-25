@@ -19,6 +19,7 @@ import PreviewOverlay from "utils/PreviewOverlay";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { toHeadOfficeDocumentViewUrl } from "utils/headOfficeDocumentImageUtils";
 import logo from "assets/images/the-full-logo4.png";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // ── 환경 변수 및 파일 제한 상수 ──────────────────────────────
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:8080";
@@ -847,8 +848,7 @@ function HeadofficeNotice() {
                     <td style={thCell}>게시 유효일</td>
                     <td style={writeTdCell} colSpan={3}>
                       <MDBox sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
-                        <TextField
-                          type="date"
+                        <KoreanDateField
                           size="small"
                           value={formExpireDt}
                           onChange={(e) => setFormExpireDt(e.target.value)}

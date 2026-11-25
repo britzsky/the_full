@@ -27,6 +27,7 @@ import ReceiptThumbnail, {
   toSavedReceiptCards,
 } from "../HeadOffice/electronicPaymentDocument/ReceiptThumbnail";
 import usePurchaseRequestData, { FP_DOC_TYPE, FR_DOC_TYPE } from "./PurchaseRequestData";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // 구매요청서 구분 선택 옵션 (doc_type 코드 → 구분 문구 / 문서 제목)
 const PURCHASE_TYPE_OPTIONS = [
@@ -1058,8 +1059,7 @@ function PurchaseRequestHistoryDetail({ detail, loading, onSaveReceipt, onReload
                         {getHistoryItemValue(row, "sale_id") ? (
                           getHistoryItemValue(row, "saleDate") || "-"
                         ) : canAttachReceipt ? (
-                          <TextField
-                            type="date"
+                          <KoreanDateField
                             size="small"
                             value={receiptDraftByIdx[row.idx]?.saleDate || ""}
                             onChange={(e) => updateReceiptDraft(row.idx, { saleDate: e.target.value })}

@@ -6,6 +6,7 @@ import { TextField, useTheme, useMediaQuery, Autocomplete, Select, MenuItem } fr
 import useHygienesheetData, { sortHygieneRows } from "./hygienesheetData";
 import HygieneCardBoard, {
   compressImageFile,
+  getHygieneSaveError,
   HygieneCategoryChips,
   HygieneSummaryStatus,
   useFillViewportHeight,
@@ -58,7 +59,7 @@ function HygieneSheetTab() {
 
   // 상세 화면 카테고리 key (null: 전체 요약 화면, "": 구분 없음)
   const [selectedCategoryKey, setSelectedCategoryKey] = useState(null);
-  // 전체 요약 화면 상태 필터 (전체 / 조치 필요 / 완료 / 미점검)
+  // 전체 요약 화면 상태 필터 (전체 / 조치 필요 / 완료 / 점검완료 / 미점검)
   const [statusFilter, setStatusFilter] = useState("전체");
   // 카테고리 편집 창 열림 여부, 카테고리 저장 중 여부
   const [isEditingCategories, setIsEditingCategories] = useState(false);
@@ -265,11 +266,12 @@ function HygieneSheetTab() {
   };
 
   // 상세 화면에서 선택한 카테고리로 항목(행) 추가
-  const handleAddRow = (categoryKey) => {
+  const handleAddRow = (categoryKey, inspection = false) => {
     const newRow = {
       account_id: selectedAccountId,
       category_key: categoryKey || "",
       reg_dt: "",
+      ...(inspection && { inspection_yn: "Y", inspection_month: `${year}-${String(month).padStart(2, "0")}` }),
       problem_note: "",
       mod_dt: "",
       clean_note: "",
@@ -321,9 +323,10 @@ function HygieneSheetTab() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      if (res.data.code === 200) {
+      if (res.data.code === 200 && res.data.image_path?.trim()) {
         return res.data.image_path;
       }
+      throw new Error("업로드된 사진 경로를 확인할 수 없습니다.");
     } catch (err) {
       Swal.fire({
         title: "실패",
@@ -372,22 +375,12 @@ function HygieneSheetTab() {
     if (!result.isConfirmed) return;
 
     try {
-      const deleteRow = { ...row };
-
-      // ✅ 삭제 플래그
-      deleteRow.del_yn = "Y";
-      // 삭제한 사용자 아이디
-      deleteRow.mod_user_id = localStorage.getItem("user_id") || "";
-
-      // ✅ account_id 보정
-      deleteRow.account_id = selectedAccountId || row.account_id;
-
-      // ✅ 이미지가 File 객체면 삭제 저장에선 불필요하니 제거
-      imageCols.forEach((f) => {
-        if (deleteRow[f] && typeof deleteRow[f] === "object") delete deleteRow[f];
-      });
-
-      // ✅ 삭제는 단건이라도 배열로 전송(백엔드가 리스트 처리하는 패턴과 동일하게)
+      const deleteRow = {
+        idx: row.idx,
+        account_id: selectedAccountId || row.account_id,
+        del_yn: "Y",
+        mod_user_id: localStorage.getItem("user_id") || "",
+      };
       const response = await api.post("/Operate/HygieneSave", [deleteRow], {
         headers: { "Content-Type": "application/json" },
       });
@@ -500,7 +493,12 @@ function HygieneSheetTab() {
   const savingRef = useRef(false);
 
   // 저장 (성공 시 true 반환, 미저장 확인 모달의 저장 후 이동에서도 사용)
+  const saveError = getHygieneSaveError(rows, originalRows);
   const handleSave = async () => {
+    if (saveError) {
+      await Swal.fire({ title: "입력 확인", text: saveError, icon: "info" });
+      return false;
+    }
     if (savingRef.current) return false;
     savingRef.current = true;
     // 사진 업로드~저장 완료까지 로딩 창 표시 (저장 결과 알림이 뜨면 그 창으로 교체됨)
@@ -518,7 +516,6 @@ function HygieneSheetTab() {
       const modifiedRows = await Promise.all(
         rows.map(async (row, index) => {
           const original = originalRows[index] || {};
-          let updatedRow = { ...row };
 
           // ✅ 변경 감지: 공통 비교 로직 사용 + 신규행
           const isChanged =
@@ -534,6 +531,15 @@ function HygieneSheetTab() {
           const isSideChanged = (keys) => keys.some((key) => !isSameValue(key, original[key], row[key]));
           const beforeChanged = row.isNew || isSideChanged(["problem_image", "problem_note"]);
           const afterChanged = isSideChanged(["clean_image", "clean_note"]);
+
+          const updatedRow = row.isNew ? { ...row } : { idx: row.idx };
+          if (!row.isNew) {
+            for (const key of ["reg_dt", "mod_dt", "note", "category_key"]) {
+              if (isSideChanged([key])) updatedRow[key] = row[key];
+            }
+            if (beforeChanged) Object.assign(updatedRow, { problem_image: row.problem_image, problem_note: row.problem_note });
+            if (afterChanged) Object.assign(updatedRow, { clean_image: row.clean_image, clean_note: row.clean_note });
+          }
 
           // 바뀐 쪽만 사용자 갱신 (등록일자·조치일자는 화면에서 직접 입력)
           if (beforeChanged) updatedRow.reg_user_id = loginUserId;
@@ -574,7 +580,8 @@ function HygieneSheetTab() {
         return false;
       }
 
-      const response = await api.post("/Operate/HygieneSave", payload, {
+      const endpoint = payload.some((row) => row.inspection_yn === "Y") ? "/Operate/HygieneInspectionSave" : "/Operate/HygieneSave";
+      const response = await api.post(endpoint, payload, {
         headers: { "Content-Type": "application/json" },
       });
 
@@ -746,17 +753,21 @@ function HygieneSheetTab() {
           />
         )}
 
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleSave}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 80 : 100,
-          }}
-        >
-          저장
-        </MDButton>
+        {saveError && <MDBox role="status" sx={{ color: "#8c3f15", fontSize: 14 }}>{saveError}</MDBox>}
+        {selectedCategoryKey !== null && (
+          <MDButton
+            variant="gradient"
+            color="info"
+            disabled={Boolean(saveError)}
+            onClick={handleSave}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 80 : 100,
+            }}
+          >
+            저장
+          </MDButton>
+        )}
       </MDBox>
 
       {/* 위생점검 카드 화면 (전체 요약 카드 → 카테고리 상세 조치 전·후 항목 카드), 화면 맨 아래까지 채우고 영역 안에서만 스크롤 */}
@@ -780,6 +791,8 @@ function HygieneSheetTab() {
           isRowChanged={isRowChanged}
           onCellChange={handleCellChange}
           onAddRow={handleAddRow}
+          onMarkInspected={selectedAccountId && year === currentYear && Number(month) === Number(currentMonth) && ["1", "2"].includes(localStorage.getItem("user_type"))
+            ? (key) => handleAddRow(key, true) : undefined}
           onDeleteRow={handleDeleteRow}
           onViewImage={handleViewImage}
           onDownload={handleDownload}

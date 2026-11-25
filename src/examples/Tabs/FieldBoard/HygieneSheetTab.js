@@ -1,11 +1,16 @@
 ﻿// src/layouts/hygiene/HygieneSheetTab.js
 import React, { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import dayjs from "dayjs";
+import { ChevronRight, X } from "lucide-react";
+import PropTypes from "prop-types";
 import MDBox from "components/MDBox";
 import MDButton from "components/MDButton";
-import { TextField, useTheme, useMediaQuery, Autocomplete } from "@mui/material";
+import { Box, ButtonBase, Dialog, DialogTitle, DialogContent, IconButton, MenuItem, Select, TextField, useTheme, useMediaQuery, Autocomplete } from "@mui/material";
 import useHygienesheetData, { sortHygieneRows } from "./hygienesheetData";
 import HygieneCardBoard, {
   compressImageFile,
+  getHygieneSaveError,
+  getHygienePendingSummary,
   HygieneCategoryChips,
   HygieneSummaryStatus,
   useFillViewportHeight,
@@ -21,7 +26,12 @@ import accountLabelSx from "utils/accountLabelSx";
 import { askUnsavedChanges, setTabLeaveGuard } from "utils/unsavedChangesGuard";
 import useDetailBackGuard from "utils/useDetailBackGuard";
 
-function HygieneSheetTab() {
+const monthLabel = (key) => key ? key.replace("-", "년 ") + "월" : "등록일 미기록 · 전체 기간";
+
+function HygieneSheetTab({ onPendingCount }) {
+  const currentMonth = dayjs().format("YYYY-MM");
+  const [monthListOpen, setMonthListOpen] = useState(false);
+  const [month, setMonth] = useState(currentMonth);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
 
@@ -52,14 +62,41 @@ function HygieneSheetTab() {
 
   // 상세 화면 카테고리 key (null: 전체 요약 화면, "": 구분 없음)
   const [selectedCategoryKey, setSelectedCategoryKey] = useState(null);
-  // 전체 요약 화면 상태 필터 (전체 / 조치 필요 / 완료 / 미점검)
+  // 전체 요약 화면 상태 필터 (전체 / 조치 필요 / 완료 / 점검완료 / 미점검)
   const [statusFilter, setStatusFilter] = useState("전체");
 
   // 등록일자 → 구분 → 등록 순서로 정렬한 행 (카테고리 구분은 카드 화면에서 처리)
-  const filteredHygieneRows = useMemo(
-    () => sortHygieneRows(hygieneListRows || [], categoryList),
-    [hygieneListRows, categoryList]
+  const accountRows = useMemo(
+    () => hygieneListRows.filter((row) => String(row.account_id) === String(selectedAccountId)),
+    [hygieneListRows, selectedAccountId]
   );
+  const pending = useMemo(() => getHygienePendingSummary(accountRows), [accountRows]);
+  useEffect(() => {
+    if (localAccountId && !loading) onPendingCount?.(pending.count);
+  }, [pending.count, loading, localAccountId, onPendingCount]);
+
+  const filteredHygieneRows = useMemo(() => {
+    const visible = month ? accountRows.filter((row) => row.reg_dt?.startsWith(month)) : accountRows;
+    return sortHygieneRows(visible, categoryList);
+  }, [accountRows, categoryList, month]);
+
+  // 연도 선택 목록: 이 거래처 점검 기록이 있는 연도 + 올해(최신순)
+  const yearOptions = useMemo(() => {
+    const years = new Set([currentMonth.slice(0, 4)]);
+    accountRows.forEach((row) => row.reg_dt && years.add(row.reg_dt.slice(0, 4)));
+    return [...years].sort((a, b) => b.localeCompare(a));
+  }, [accountRows, currentMonth]);
+  // 선택한 점검 연도·월("" 이면 전체 기간)
+  const filterYear = month.slice(0, 4);
+  const filterMonth = month.slice(5, 7);
+
+  const changeMonth = async (nextMonth, filter) => {
+    if (!(await leaveCheckRef.current())) return;
+    setMonthListOpen(false);
+    setMonth(nextMonth);
+    setStatusFilter(filter);
+    setSelectedCategoryKey(null);
+  };
 
   // ✅ localStorage account_id 기준으로 거래처 리스트 필터링
   const filteredAccountList = useMemo(() => {
@@ -275,9 +312,10 @@ function HygieneSheetTab() {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
-      if (res.data.code === 200) {
+      if (res.data.code === 200 && res.data.image_path?.trim()) {
         return res.data.image_path;
       }
+      throw new Error("업로드된 사진 경로를 확인할 수 없습니다.");
     } catch (err) {
       Swal.fire({
         title: "실패",
@@ -326,22 +364,12 @@ function HygieneSheetTab() {
     if (!result.isConfirmed) return;
 
     try {
-      const deleteRow = { ...row };
-
-      // ✅ 삭제 플래그
-      deleteRow.del_yn = "Y";
-      // 삭제한 사용자 아이디
-      deleteRow.mod_user_id = localStorage.getItem("user_id") || "";
-
-      // ✅ account_id 보정
-      deleteRow.account_id = selectedAccountId || row.account_id;
-
-      // ✅ 이미지가 File 객체면 삭제 저장에선 불필요하니 제거
-      imageCols.forEach((f) => {
-        if (deleteRow[f] && typeof deleteRow[f] === "object") delete deleteRow[f];
-      });
-
-      // ✅ 삭제는 단건이라도 배열로 전송(백엔드가 리스트 처리하는 패턴과 동일하게)
+      const deleteRow = {
+        idx: row.idx,
+        account_id: selectedAccountId || row.account_id,
+        del_yn: "Y",
+        mod_user_id: localStorage.getItem("user_id") || "",
+      };
       const response = await api.post("/Operate/HygieneSave", [deleteRow], {
         headers: { "Content-Type": "application/json" },
       });
@@ -410,7 +438,12 @@ function HygieneSheetTab() {
   const savingRef = useRef(false);
 
   // 저장 (성공 시 true 반환, 미저장 확인 모달의 저장 후 이동에서도 사용)
+  const saveError = getHygieneSaveError(rows, originalRows);
   const handleSave = async () => {
+    if (saveError) {
+      await Swal.fire({ title: "입력 확인", text: saveError, icon: "info" });
+      return false;
+    }
     if (savingRef.current) return false;
     savingRef.current = true;
     // 사진 업로드~저장 완료까지 로딩 창 표시 (저장 결과 알림이 뜨면 그 창으로 교체됨)
@@ -428,7 +461,6 @@ function HygieneSheetTab() {
       const modifiedRows = await Promise.all(
         rows.map(async (row, index) => {
           const original = originalRows[index] || {};
-          let updatedRow = { ...row };
 
           // ✅ 변경 감지: 공통 비교 로직 사용 + 신규행
           const isChanged =
@@ -444,6 +476,15 @@ function HygieneSheetTab() {
           const isSideChanged = (keys) => keys.some((key) => !isSameValue(key, original[key], row[key]));
           const beforeChanged = row.isNew || isSideChanged(["problem_image", "problem_note"]);
           const afterChanged = isSideChanged(["clean_image", "clean_note"]);
+
+          const updatedRow = row.isNew ? { ...row } : { idx: row.idx };
+          if (!row.isNew) {
+            for (const key of ["reg_dt", "mod_dt", "note", "category_key"]) {
+              if (isSideChanged([key])) updatedRow[key] = row[key];
+            }
+            if (beforeChanged) Object.assign(updatedRow, { problem_image: row.problem_image, problem_note: row.problem_note });
+            if (afterChanged) Object.assign(updatedRow, { clean_image: row.clean_image, clean_note: row.clean_note });
+          }
 
           // 바뀐 쪽만 사용자 갱신 (등록일자·조치일자는 화면에서 직접 입력)
           if (beforeChanged) updatedRow.reg_user_id = loginUserId;
@@ -558,7 +599,7 @@ function HygieneSheetTab() {
           justifyContent: isMobile ? "space-between" : "flex-end",
           alignItems: "center",
           gap: isMobile ? 1 : 2,
-          flexWrap: isMobile ? "wrap" : "nowrap",
+          flexWrap: "wrap",
           position: "sticky",
           zIndex: 10,
           // 상위 FieldBoardTabs 헤더/탭 sticky 영역 아래에 고정 (좁은 화면은 헤더가 높아 88)
@@ -567,7 +608,63 @@ function HygieneSheetTab() {
         }}
       >
         {/* 전체 점검 현황 (요약·상세 화면 모두 상단 고정 표시) */}
-        <HygieneSummaryStatus rows={rows} isMobile={isMobile} />
+        <Box sx={{ display: "flex", gap: 1, mr: "auto", maxWidth: "100%", alignItems: "stretch" }}>
+          <HygieneSummaryStatus rows={rows} isMobile={isMobile} />
+          {selectedCategoryKey === null && pending.count > 0 && (
+            <>
+              <ButtonBase
+                aria-haspopup={pending.months.length > 1 ? "dialog" : undefined}
+                onClick={() => {
+                  if (pending.months.length === 1) changeMonth(pending.months[0][0], "조치필요");
+                  else setMonthListOpen(true);
+                }}
+                sx={{
+                  minHeight: 40, px: { xs: 1, md: 1.5 }, gap: 0.75, alignSelf: "stretch",
+                  bgcolor: "#fff6e9", color: "#753f15", border: "1px solid #eac398", borderRadius: "10px",
+                  "&:hover": { bgcolor: "#ffefd9" },
+                  "&.Mui-focusVisible": { outline: "2px solid #935319", outlineOffset: 2 },
+                }}>
+                <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.75,
+                  flexDirection: { xs: "column", sm: "row" }, whiteSpace: "nowrap", fontSize: 14, fontWeight: 600, lineHeight: 1.25 }}>
+                  누적 미조치 사항
+                  <strong style={{ fontSize: 16, fontVariantNumeric: "tabular-nums" }}>{pending.count}건</strong>
+                </Box>
+                <ChevronRight size={15} aria-hidden="true" />
+              </ButtonBase>
+              <Dialog open={monthListOpen} onClose={() => setMonthListOpen(false)} fullWidth maxWidth="xs"
+                aria-labelledby="hygiene-month-list-title">
+                <DialogTitle id="hygiene-month-list-title"
+                  sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  월별 미조치 내역
+                  <IconButton size="small" aria-label="닫기" onClick={() => setMonthListOpen(false)}>
+                    <X size={20} />
+                  </IconButton>
+                </DialogTitle>
+                <DialogContent sx={{ pt: "8px !important" }}>
+                  <Box sx={{ border: "1px solid #e2e8f0", borderRadius: 2, overflow: "hidden" }}>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", px: 2, py: 1,
+                      bgcolor: "#f8fafc", color: "#475569", fontSize: 13, fontWeight: 600 }}>
+                      <span>점검 연월</span><span>미조치 건수</span>
+                    </Box>
+                    {pending.months.map(([key, count]) => (
+                      <ButtonBase key={key} onClick={() => changeMonth(key, "조치필요")}
+                        sx={{ width: "100%", minHeight: 48, px: 2, gap: 1, justifyContent: "space-between",
+                          borderTop: "1px solid #e2e8f0", bgcolor: "#fff", color: "#344767", fontSize: 15,
+                          "&:hover, &.Mui-focusVisible": { bgcolor: "#eef5ff" },
+                          "&.Mui-focusVisible": { outline: "2px solid #1a73e8", outlineOffset: -2 } }}>
+                        <span>{monthLabel(key)}</span>
+                        <Box component="span" sx={{ display: "inline-flex", alignItems: "center", gap: 1,
+                          color: "#245d9c", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                          {count}건 <ChevronRight size={16} aria-hidden="true" />
+                        </Box>
+                      </ButtonBase>
+                    ))}
+                  </Box>
+                </DialogContent>
+              </Dialog>
+            </>
+          )}
+        </Box>
 
         {/* 상세 화면 전체로 이동 버튼과 카테고리 칩 (연·월·거래처 필터 왼쪽, 상단 고정) */}
         <HygieneCategoryChips
@@ -578,6 +675,25 @@ function HygieneSheetTab() {
           isMobile={isMobile}
         />
 
+        {/* 점검 연도·월 필터(연도에서 전체를 고르면 전체 기간) */}
+        <Select size="small" displayEmpty value={filterYear}
+          inputProps={{ "aria-label": "점검 연도" }}
+          MenuProps={{ PaperProps: { sx: { "& .MuiMenuItem-root": { fontSize: 16 } } } }}
+          sx={{ minWidth: 110, height: 40, "&& .MuiSelect-select": { fontSize: 16 } }}
+          onChange={(event) => changeMonth(event.target.value ? `${event.target.value}-${filterMonth || currentMonth.slice(5, 7)}` : "", "전체")}>
+          <MenuItem value="">전체</MenuItem>
+          {yearOptions.map((y) => <MenuItem key={y} value={y}>{y}년</MenuItem>)}
+        </Select>
+        <Select size="small" displayEmpty value={filterMonth} disabled={!filterYear}
+          inputProps={{ "aria-label": "점검 월" }}
+          MenuProps={{ PaperProps: { sx: { "& .MuiMenuItem-root": { fontSize: 16 } } } }}
+          sx={{ minWidth: 90, height: 40, "&& .MuiSelect-select": { fontSize: 16 } }}
+          onChange={(event) => changeMonth(`${filterYear}-${event.target.value}`, "전체")}>
+          {!filterYear && <MenuItem value="">전체</MenuItem>}
+          {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((m) => (
+            <MenuItem key={m} value={m}>{Number(m)}월</MenuItem>
+          ))}
+        </Select>
         {(filteredAccountList || []).length > 0 && (
           <Autocomplete
             size="small"
@@ -626,17 +742,21 @@ function HygieneSheetTab() {
           />
         )}
 
-        <MDButton
-          variant="gradient"
-          color="info"
-          onClick={handleSave}
-          sx={{
-            fontSize: isMobile ? "11px" : "13px",
-            minWidth: isMobile ? 80 : 100,
-          }}
-        >
-          저장
-        </MDButton>
+        {saveError && <MDBox role="status" sx={{ color: "#8c3f15", fontSize: 14 }}>{saveError}</MDBox>}
+        {selectedCategoryKey !== null && (
+          <MDButton
+            variant="gradient"
+            color="info"
+            disabled={Boolean(saveError)}
+            onClick={handleSave}
+            sx={{
+              fontSize: isMobile ? "11px" : "13px",
+              minWidth: isMobile ? 80 : 100,
+            }}
+          >
+            저장
+          </MDButton>
+        )}
       </MDBox>
 
       {/* 위생점검 카드 화면 (전체 요약 카드 → 카테고리 상세 조치 전·후 항목 카드), 화면 맨 아래까지 채우고 영역 안에서만 스크롤 */}
@@ -680,5 +800,7 @@ function HygieneSheetTab() {
     </>
   );
 }
+
+HygieneSheetTab.propTypes = { onPendingCount: PropTypes.func };
 
 export default HygieneSheetTab;

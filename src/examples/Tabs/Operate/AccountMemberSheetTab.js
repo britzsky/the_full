@@ -29,6 +29,7 @@ import {
   getHeadOfficeDocumentPreviewKind,
   isHeadOfficeDocumentSupportedFile,
 } from "utils/headOfficeDocumentImageUtils";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 const normalizeMemberFilePath = (value) => {
   const path = String(value ?? "").trim();
@@ -2809,8 +2810,7 @@ function AccountMemberSheet() {
                           </select>
 
                           {getInsuranceStatus(currentValue) === "Y" && (
-                            <input
-                              type="date"
+                            <KoreanDateInput
                               value={formatDateForInput(currentValue)}
                               onChange={(e) => handleCellChange(e.target.value)}
                               className={isChanged ? "edited-cell" : ""}
@@ -3036,8 +3036,7 @@ function AccountMemberSheet() {
                               gap: 4,
                             }}
                           >
-                            <input
-                              type="date"
+                            <KoreanDateInput
                               value={formatDateForInput(currentValue)}
                               onChange={(e) => handleCellChange(e.target.value)}
                               className={isChanged ? "edited-cell" : ""}
@@ -3049,8 +3048,7 @@ function AccountMemberSheet() {
                             )}
                           </div>
                         ) : (
-                          <input
-                            type="date"
+                          <KoreanDateInput
                             value={formatDateForInput(currentValue)}
                             onChange={(e) => handleCellChange(e.target.value)}
                             className={isChanged ? "edited-cell" : ""}
@@ -3957,8 +3955,7 @@ function AccountMemberSheet() {
 
                           {/* ✅ 파견일자: 달력 선택 */}
                           <td className={isNewDispatchRow || changedDispatchDate ? "edited-cell" : ""}>
-                            <input
-                              type="date"
+                            <KoreanDateInput
                               value={r.record_date ?? ""}
                               onChange={(e) =>
                                 handleDispatchRowChange(i, "record_date", e.target.value)

@@ -1,0 +1,24 @@
+/* 날짜를 편집할 때는 브라우저 기본 입력을 표시하고, 평소에는 한글 요일을 붙여 표시합니다. */
+@supports selector(input::-webkit-datetime-edit) and selector(input::-webkit-calendar-picker-indicator) {
+  input[type="date"][data-date-label] {
+    min-inline-size: calc(11ch + 2.25em);
+  }
+
+  input[type="date"][data-date-label]:not(:focus:not([readonly])) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  input[type="date"][data-date-label]:not(:focus:not([readonly]))::before {
+    content: attr(data-date-label);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  input[type="date"][data-date-label]:not(:focus:not([readonly]))::-webkit-datetime-edit {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+}

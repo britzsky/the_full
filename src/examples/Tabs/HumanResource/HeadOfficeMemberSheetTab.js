@@ -11,6 +11,7 @@ import useHeadOfficeMembersheetData, {
   formatNumber,
 } from "./headOfficeMemberSheetData";
 import LoadingScreen from "layouts/loading/loadingscreen";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 function HeadOfficeMemberSheetTab() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -370,8 +371,7 @@ function HeadOfficeMemberSheetTab() {
                             ))}
                         </select>
                       ) : isDate ? (
-                        <input
-                          type="date"
+                        <KoreanDateInput
                           value={formatDateForInput(currentValue)}
                           onChange={(e) => handleCellChange(e.target.value)}
                           className={isChanged ? "edited-cell" : ""}

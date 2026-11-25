@@ -27,6 +27,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountEventData from "./accountEventData";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 export default function AccountEventTab() {
   const theme = useTheme();
@@ -705,8 +706,7 @@ export default function AccountEventTab() {
 
                       {/* 행사일자 */}
                       <td>
-                        <input
-                          type="date"
+                        <KoreanDateInput
                           value={formatDateForInput(row.event_dt)}
                           onChange={(e) =>
                             handleEventFieldChange(index, "event_dt", e.target.value)

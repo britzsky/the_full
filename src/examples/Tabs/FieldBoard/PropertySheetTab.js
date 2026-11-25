@@ -23,6 +23,7 @@ import { API_BASE_URL } from "config";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import PreviewOverlay from "utils/PreviewOverlay";
 import accountLabelSx from "utils/accountLabelSx";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 const RECEIPT_IMAGE_FIELDS = ["receipt_img", "receipt_img2", "receipt_img3"];
 const RECEIPT_IMAGE_MAX_COUNT = RECEIPT_IMAGE_FIELDS.length;
@@ -1084,8 +1085,7 @@ function PropertySheetTab() {
                   if (key === "purchase_dt")
                     return (
                       <td key={key} style={{ width: col.size }}>
-                        <input
-                          type="date"
+                        <KoreanDateInput
                           value={value}
                           onChange={(e) => handleCellChange(rowIndex, key, e.target.value)}
                           style={{

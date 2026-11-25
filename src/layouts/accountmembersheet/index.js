@@ -14,6 +14,7 @@ import useAccountMembersheetData, {
 } from "./data/AccountMemberSheetData";
 import HeaderWithLogout from "components/Common/HeaderWithLogout";
 import LoadingScreen from "../loading/loadingscreen";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 function AccountMemberSheet() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -518,8 +519,7 @@ function AccountMemberSheet() {
                             ))}
                         </select>
                       ) : isDate ? (
-                        <input
-                          type="date"
+                        <KoreanDateInput
                           value={formatDateForInput(currentValue)}
                           onChange={(e) => handleCellChange(e.target.value)}
                           className={isChanged ? "edited-cell" : ""}

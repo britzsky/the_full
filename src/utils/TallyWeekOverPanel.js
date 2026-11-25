@@ -239,7 +239,11 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
               </Box>
 
               {/* 판정일까지 누적 사용금액·누적 예산·비율 영역 */}
-              <Box sx={{ px: 1, py: 0.5, borderBottom: "1px solid #eee" }}>
+              <Box sx={{
+                px: 1, py: 0.5, borderBottom: "1px solid #eee", display: "grid",
+                gridTemplateColumns: canEdit ? "minmax(0, 1fr) auto" : "minmax(0, 1fr)",
+                columnGap: 0.5,
+              }}>
                 <Typography
                   title={
                     started
@@ -264,17 +268,35 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                     {`예산대비 ${started ? `${w.ratio.toFixed(2)}%` : ""}`}
                   </Typography>
                   {w.status === "over" && (
-                    <Typography sx={{ fontSize: 11, color: w.writable ? "#d32f2f" : "#999", whiteSpace: "nowrap" }}>
-                      {w.writable ? `작성기한 ${md(w.deadline)}` : `작성 마감 (${md(w.deadline)})`}
-                    </Typography>
+                      <Typography sx={{ fontSize: 11, color: w.writable ? "#d32f2f" : "#999", whiteSpace: "nowrap" }}>
+                        {w.writable ? `작성기한 ${md(w.deadline)}` : `작성 마감 (${md(w.deadline)})`}
+                      </Typography>
                   )}
                 </Box>
+                {canEdit && (
+                        <MDButton
+                          variant="gradient"
+                          color="info"
+                          size="small"
+                          sx={{ gridColumn: 2, gridRow: "1 / 3", minWidth: "auto", minHeight: 0, px: 1.5, py: 0, my: "2px" }}
+                          disabled={savingWeek === w.weekNo || !isDirty(w.weekNo)}
+                          onClick={() => handleSave(w)}
+                        >
+                          {savingWeek === w.weekNo ? "저장중..." : "저장"}
+                        </MDButton>
+                )}
               </Box>
 
               {/* 초과사유·개선계획 입력 영역 */}
-              <Box sx={{ p: 1, display: "flex", flexDirection: "column", gap: 1, flex: 1 }}>
+              <Box sx={{
+                p: 1, display: "flex", flexDirection: "column", gap: 1, flex: 1,
+                "& .MuiInputLabel-root": { position: "static", transform: "none", fontSize: 11, mb: 0.5 },
+                "& .MuiOutlinedInput-notchedOutline legend": { display: "none" },
+                "& .MuiOutlinedInput-notchedOutline": { top: 0 },
+              }}>
                 <TextField
                   label={isExample ? "초과사유(예시)" : "초과사유"}
+                  InputLabelProps={{ shrink: true }}
                   multiline
                   minRows={2}
                   maxRows={6}
@@ -287,6 +309,7 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                 />
                 <TextField
                   label={isExample ? "개선계획(예시)" : "개선계획"}
+                  InputLabelProps={{ shrink: true }}
                   multiline
                   minRows={2}
                   maxRows={6}
@@ -299,20 +322,6 @@ function TallyWeekOverPanel({ accountId, year, month, budget, dailyUsed, editabl
                 />
               </Box>
 
-              {/* 저장 버튼 영역(현장에서 작성 기한 내 초과 주차만 표시) */}
-              {canEdit && (
-                <Box sx={{ px: 1, pb: 1, display: "flex", justifyContent: "flex-end" }}>
-                  <MDButton
-                    variant="gradient"
-                    color="info"
-                    size="small"
-                    disabled={savingWeek === w.weekNo || !isDirty(w.weekNo)}
-                    onClick={() => handleSave(w)}
-                  >
-                    {savingWeek === w.weekNo ? "저장중..." : "저장"}
-                  </MDButton>
-                </Box>
-              )}
             </Box>
           );
         })}

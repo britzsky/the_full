@@ -27,6 +27,7 @@ import PreviewOverlay from "utils/PreviewOverlay";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import useAccountPersonPurchaseData from "./data/AccountPersonPurchaseData";
 import useAccountingMonthLock from "utils/useAccountingMonthLock";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // ========================= 상수/유틸 =========================
 const DEFAULT_CARD_BRAND = "";
@@ -2104,8 +2105,7 @@ function AccountCorporateCardSheet() {
                       const dateVal = toDateInputValue(rawVal);
                       return (
                         <td key={key} style={fixedColStyle(c.size)}>
-                          <TextField
-                            type="date"
+                          <KoreanDateField
                             size="small"
                             fullWidth
                             value={dateVal}

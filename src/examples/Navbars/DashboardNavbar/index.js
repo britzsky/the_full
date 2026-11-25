@@ -77,11 +77,12 @@ const resolveTheFullWebBaseUrl = () => {
   }
 
   // 그 외에는 같은 호스트의 로컬 공개 웹 포트를 사용한다.
+  // ERP가 HTTPS면 공개 웹도 HTTPS(npm run dev:https)여야 같은 호스트의 Secure 쿠키를 함께 쓸 수 있다.
   if (hostname) {
-    return `${protocol}//${hostname}:8081`;
+    return `${protocol}//${hostname}:8181`;
   }
 
-  return "http://localhost:8081";
+  return "http://localhost:8181";
 };
 
 function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMini }) {
@@ -128,6 +129,8 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const canViewPromotionAlert = webPosition === "P" || webPosition === "A";
   const canViewInquiryAlert = webPosition === "I" || webPosition === "A";
   const shouldAlwaysShowInquirySection = canViewInquiryAlert;
+  // 설문 관리는 홈페이지 /survey/manage 권한(S/A)과 같은 기준으로 보여준다
+  const canViewSurveyManage = webPosition === "S" || webPosition === "A";
 
   // 관리자 여부 체크 (사용자 승인 권한: 개발팀(6) + 팀장(1)만)
   const isAdmin = (() => {
@@ -160,11 +163,10 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const electronicPaymentNotifCount = electronicPaymentNotifications.length;
   const evaluationNotifCount = evaluationNotifications.length;
   const currentMonthText = `${new Date().getMonth() + 1}월`;
-  const inquiryMenuSectionTitle = inquiryPendingCount > 0 ? "문의 답변 대기" : "문의 목록";
   const inquiryMenuItemTitle =
-    inquiryPendingCount > 0 ? `문의 답변 대기 목록 (${inquiryPendingCount})` : "문의 목록";
-  const promotionMenuSectionTitle = "홍보 게시글";
+    inquiryPendingCount > 0 ? `문의 답변 대기 목록 (${inquiryPendingCount})` : "문의 답변 목록";
   const promotionMenuItemTitle = "홍보 게시글 이동";
+  const surveyMenuItemTitle = "설문 관리 이동";
 
   // ------------------ 승인대기 목록 표시에 필요한 유틸 ------------------
   const DEPT_MAP = {
@@ -352,6 +354,14 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
     openTheFullWebWithSession({
       bridgePath: "/promotion/session",
       redirectPath: "/promotion",
+    });
+  };
+
+  // 설문 관리 화면으로 이동할 때도 공개 웹 도메인에 세션 쿠키를 먼저 심는다(브리지는 경로 공용).
+  const openSurveyManagePage = () => {
+    openTheFullWebWithSession({
+      bridgePath: "/promotion/session",
+      redirectPath: "/survey/manage",
     });
   };
 
@@ -1119,14 +1129,15 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
   const renderMenu = () => {
     const showPromotionSection = canViewPromotionAlert;
     const showInquirySection = canViewInquiryAlert && (shouldAlwaysShowInquirySection || inquiryPendingCount > 0);
+    const showSurveySection = canViewSurveyManage;
+    const showHomepageSection = showInquirySection || showPromotionSection || showSurveySection;
     const showElectronicPaymentSection = electronicPaymentNotifCount > 0;
     const showEvaluationSection = evaluationNotifCount > 0;
     const showApprovalSection = isAdmin && pendingCount > 0;
     const showBirthdaySection = birthdayMemberCount > 0;
     const showContractSection = notifications.length > 0;
     const hasAnyMenuItems =
-      showPromotionSection ||
-      showInquirySection ||
+      showHomepageSection ||
       showElectronicPaymentSection ||
       showEvaluationSection ||
       showApprovalSection ||
@@ -1154,30 +1165,71 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
           "& .MuiBackdrop-root": { backgroundColor: "transparent" },
         }}
       >
-        {showInquirySection && (
+        {/* 더채움 홈페이지 알림 영역(문의 답변·홍보 게시글·설문 관리 이동) */}
+        {showHomepageSection && (
           <>
             <MDBox px={2} pt={1} pb={0.5}>
               <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
-                {inquiryMenuSectionTitle}
+                더채움 홈페이지
               </MDTypography>
             </MDBox>
 
-            <MDBox
-              sx={{
-                cursor: "pointer",
-                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
-                borderRadius: "10px",
-              }}
-              onClick={async () => {
-                handleCloseMenu();
-                await openInquiryPendingDialog();
-              }}
-            >
-              <NotificationItem
-                icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
-                title={inquiryMenuItemTitle}
-              />
-            </MDBox>
+            {showInquirySection && (
+              <MDBox
+                sx={{
+                  cursor: "pointer",
+                  "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                  borderRadius: "10px",
+                }}
+                onClick={async () => {
+                  handleCloseMenu();
+                  await openInquiryPendingDialog();
+                }}
+              >
+                <NotificationItem
+                  icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                  title={inquiryMenuItemTitle}
+                />
+              </MDBox>
+            )}
+
+            {showPromotionSection && (
+              <MDBox
+                sx={{
+                  cursor: "pointer",
+                  "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                  borderRadius: "10px",
+                }}
+                onClick={() => {
+                  handleCloseMenu();
+                  openPromotionBoardPage();
+                }}
+              >
+                <NotificationItem
+                  icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                  title={promotionMenuItemTitle}
+                />
+              </MDBox>
+            )}
+
+            {showSurveySection && (
+              <MDBox
+                sx={{
+                  cursor: "pointer",
+                  "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
+                  borderRadius: "10px",
+                }}
+                onClick={() => {
+                  handleCloseMenu();
+                  openSurveyManagePage();
+                }}
+              >
+                <NotificationItem
+                  icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
+                  title={surveyMenuItemTitle}
+                />
+              </MDBox>
+            )}
 
             <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
           </>
@@ -1263,35 +1315,6 @@ function DashboardNavbar({ absolute, light, isMini, title, showMenuButtonWhenMin
               <NotificationItem
                 icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
                 title={`사용자 승인 대기 목록 (${pendingCount})`}
-              />
-            </MDBox>
-
-            <Divider sx={{ mx: 2, my: 0.8, opacity: 0.7 }} />
-          </>
-        )}
-
-        {showPromotionSection && (
-          <>
-            <MDBox px={2} pt={1} pb={0.5}>
-              <MDTypography variant="button" fontSize="0.72rem" sx={{ fontWeight: 700, color: "text.primary" }}>
-                {promotionMenuSectionTitle}
-              </MDTypography>
-            </MDBox>
-
-            <MDBox
-              sx={{
-                cursor: "pointer",
-                "&:hover": { backgroundColor: "rgba(0,0,0,0.04)" },
-                borderRadius: "10px",
-              }}
-              onClick={() => {
-                handleCloseMenu();
-                openPromotionBoardPage();
-              }}
-            >
-              <NotificationItem
-                icon={<ArrowRightIcon sx={{ color: "#fff" }} />}
-                title={promotionMenuItemTitle}
               />
             </MDBox>
 

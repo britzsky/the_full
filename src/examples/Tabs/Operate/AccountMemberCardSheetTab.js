@@ -25,6 +25,7 @@ import {
   getHeadOfficeDocumentPreviewKind,
   isHeadOfficeDocumentSupportedFile,
 } from "utils/headOfficeDocumentImageUtils";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 // 인사 -> 채용관리 -> 현장 직원목록
 function AccountMemberSheet() {
@@ -1555,8 +1556,7 @@ function AccountMemberSheet() {
                           </select>
 
                           {getInsuranceStatus(currentValue) === "Y" && (
-                            <input
-                              type="date"
+                            <KoreanDateInput
                               value={formatDateForInput(currentValue)}
                               onChange={(e) => handleCellChange(e.target.value)}
                               className={isChanged ? "edited-cell" : ""}
@@ -1741,8 +1741,7 @@ function AccountMemberSheet() {
                           </select>
                         )
                       ) : isDate ? (
-                        <input
-                          type="date"
+                        <KoreanDateInput
                           value={formatDateForInput(currentValue)}
                           onChange={(e) => handleCellChange(e.target.value)}
                           className={isChanged ? "edited-cell" : ""}

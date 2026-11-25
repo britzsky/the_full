@@ -11,14 +11,16 @@ import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import FactCheckOutlinedIcon from "@mui/icons-material/FactCheckOutlined";
 import MDButton from "components/MDButton";
 import { API_BASE_URL } from "config";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // 상태 필터 탭 목록
-const FILTER_TABS = ["전체", "조치 필요", "완료", "미점검"];
+const FILTER_TABS = ["전체", "조치필요", "조치완료", "점검완료", "미점검"];
 
 // 점검 상태별 배지 배경색과 글자색 (앱과 동일)
 const STATUS_TONE = {
-  완료: { bg: "#eaf7ef", fg: "#2a7a49" },
-  "조치 필요": { bg: "#fff3e6", fg: "#a55d1d" },
+  조치완료: { bg: "#eaf7ef", fg: "#2a7a49" },
+  "조치필요": { bg: "#fff3e6", fg: "#a55d1d" },
+  점검완료: { bg: "#eaf5fa", fg: "#16749a" },
   미점검: { bg: "#f0f3f5", fg: "#667584" },
 };
 
@@ -51,6 +53,24 @@ const NEED_ACTION_BORDER = { borderColor: "#f0a35c", boxShadow: "0 0 0 1px #f0a3
 // 줄 안에 같이 놓이는 작은 버튼 공통 높이 (칩·셀렉트와 세로 가운데 맞춤)
 const buttonSx = { height: 32, minHeight: 32, py: 0, lineHeight: 1, fontSize: 12 };
 
+// 점검완료 표시와 삭제 행을 제외하고 신규 항목 또는 편집한 쪽의 사진·메모를 검사합니다.
+export function getHygieneSaveError(rows, originals) {
+  for (const [index, row] of rows.entries()) {
+    if (row.inspection_yn === "Y" || row.del_yn === "Y") continue;
+    const original = originals[index] || {};
+    const changed = (key) => (row[key] ?? "") !== (original[key] ?? "");
+    if ((row.isNew || changed("problem_image") || changed("problem_note")) &&
+        !(row.problem_image && row.problem_note?.trim())) {
+      return "조치 전 사진과 전달 메모를 모두 입력해 주세요.";
+    }
+    if ((row.isNew || changed("clean_image") || changed("clean_note")) &&
+        Boolean(row.clean_image) !== Boolean(row.clean_note?.trim())) {
+      return "조치 후 사진과 조치 메모를 모두 입력해 주세요.";
+    }
+  }
+  return "";
+}
+
 // 항목 조치 완료 여부 (조치 사진과 조치 내용이 모두 있는 경우)
 // 구분 없음(카테고리 없는 기존 웹 등록 행)은 조치 사진 없이 조치 내용만 있어도 처리된 것으로 판단
 const isItemDone = (row) => {
@@ -59,15 +79,33 @@ const isItemDone = (row) => {
   return Boolean(row.clean_image && hasActionNote);
 };
 
-// 카테고리 점검 상태 (항목 없음: 미점검, 모든 항목 조치 완료: 완료, 그 외: 조치 필요)
-const getStatus = (items) => {
-  if (items.length === 0) return "미점검";
-  return items.every(({ row }) => isItemDone(row)) ? "완료" : "조치 필요";
+// 현장 탭 배지와 월별 안내는 저장된 조치 항목을 같은 완료 기준으로 집계합니다.
+export function getHygienePendingSummary(rows, today = new Date()) {
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+  const byMonth = new Map();
+  let count = 0;
+  for (const row of rows) {
+    if (row.del_yn === "Y" || row.inspection_yn === "Y" || isItemDone(row)) continue;
+    const month = (row.reg_dt || "").slice(0, 7);
+    if (month > currentMonth) continue;
+    byMonth.set(month, (byMonth.get(month) || 0) + 1);
+    count += 1;
+  }
+  return { count, months: [...byMonth].sort(([a], [b]) => a.localeCompare(b)) };
+}
+
+// 조치 항목이 없으면 본사의 월별 점검 기록으로 상태를 판정합니다.
+const getStatus = (items, inspected) => {
+  if (items.length === 0) return inspected ? "점검완료" : "미점검";
+  return items.every(({ row }) => isItemDone(row)) ? "조치완료" : "조치필요";
 };
+
+// 전체 요약 카드 정렬 순서 (숫자가 작을수록 위)
+const STATUS_ORDER = { "조치필요": 0, 미점검: 1, 조치완료: 2, 점검완료: 3 };
 
 // 요약 카드 상태 배지 문구 (조치 필요는 남은 건수 함께 표시)
 const getStatusLabel = (items, status) =>
-  status === "조치 필요" ? `조치 필요 ${items.filter(({ row }) => !isItemDone(row)).length}건` : status;
+  status === "조치필요" ? `조치 필요 ${items.filter(({ row }) => !isItemDone(row)).length}건` : status;
 
 // 조치 전·후 사진이 있는 항목 수
 // 구분 없음(카테고리 없는 기존 웹 등록 행)은 사진 또는 내용(전: 전달 내용, 후: 조치 내용)이 있으면 셈
@@ -85,9 +123,14 @@ const getPhotoCounts = (items) => {
 // categories: 사용 중 카테고리 + 숨김·삭제·구분 없음이라도 기록이 있는 카테고리
 const groupRowsByCategory = (rows, categoryList) => {
   const itemsByKey = {};
+  const inspectedKeys = new Set();
   (rows || []).forEach((row, rowIndex) => {
     const key = row.category_key || "";
     if (!itemsByKey[key]) itemsByKey[key] = [];
+    if (row.inspection_yn === "Y") {
+      inspectedKeys.add(key);
+      return;
+    }
     itemsByKey[key].push({ row, rowIndex });
   });
 
@@ -97,7 +140,7 @@ const groupRowsByCategory = (rows, categoryList) => {
     .filter((key) => !knownKeys.has(key))
     .forEach((key) => categories.push({ category_key: key, category_name: key || "구분 없음" }));
 
-  return { itemsByKey, categories };
+  return { itemsByKey, categories, inspectedKeys };
 };
 
 // 둥근 상태 배지
@@ -107,11 +150,12 @@ function Badge({ label, bg, fg }) {
       style={{
         display: "inline-flex",
         alignItems: "center",
-        borderRadius: 999,
-        padding: "3px 9px",
+        borderRadius: 6,
+        padding: "3px 8px",
         fontSize: 12,
-        fontWeight: 500,
-        lineHeight: 1.2,
+        fontWeight: 600,
+        fontVariantNumeric: "tabular-nums",
+        lineHeight: 1.3,
         whiteSpace: "nowrap",
         backgroundColor: bg,
         color: fg,
@@ -263,8 +307,7 @@ function ItemSide({ side, row, rowIndex, locked = false, onCellChange, onViewIma
       <span style={{ fontSize: 13, fontWeight: 700, color: "#344767" }}>{isBefore ? "조치 전" : "조치 후"}</span>
 
       {/* 등록일자 / 조치일자 입력 */}
-      <TextField
-        type="date"
+      <KoreanDateField
         size="small"
         label={isBefore ? "등록일자" : "조치일자"}
         value={row[dateKey] || ""}
@@ -375,6 +418,7 @@ function HygieneCardBoard({
   isRowChanged,
   onCellChange,
   onAddRow,
+  onMarkInspected,
   onDeleteRow,
   onViewImage,
   onDownload,
@@ -385,13 +429,21 @@ function HygieneCardBoard({
   savedRows = [],
 }) {
   // 카테고리별 항목 목록과 화면 표시 카테고리
-  const { itemsByKey, categories } = useMemo(() => groupRowsByCategory(rows, categoryList), [rows, categoryList]);
+  const { itemsByKey, categories, inspectedKeys } = useMemo(() => groupRowsByCategory(rows, categoryList), [rows, categoryList]);
 
   // 카테고리별 점검 상태
   const statusMap = useMemo(
-    () => Object.fromEntries(categories.map((c) => [c.category_key, getStatus(itemsByKey[c.category_key] || [])])),
-    [categories, itemsByKey]
+    () => Object.fromEntries(categories.map((c) => [c.category_key, getStatus(itemsByKey[c.category_key] || [], inspectedKeys.has(c.category_key))])),
+    [categories, itemsByKey, inspectedKeys]
   );
+
+  const savedItem = ({ row, rowIndex }) => savedRows[rowIndex] || row;
+  const isActionFilter = isFieldMode && (statusFilter === "조치필요" || statusFilter === "조치완료");
+  const displayItems = (key) => {
+    const items = itemsByKey[key] || [];
+    if (!isActionFilter) return items;
+    return items.filter((item) => isItemDone(savedItem(item)) === (statusFilter === "조치완료"));
+  };
 
   // 상세 화면 카테고리 (null이면 전체 요약 화면)
   const selectedCategory = selectedKey === null ? null : categories.find((c) => c.category_key === selectedKey) || null;
@@ -405,15 +457,21 @@ function HygieneCardBoard({
 
   // 카테고리 상세 화면
   if (selectedCategory) {
-    const categoryItems = itemsByKey[selectedCategory.category_key] || [];
-    // 현장 화면: 조치 안 된 항목 먼저, 그다음 등록일자 오름차순 (행은 이미 등록일자 순이라 안정 정렬로 유지)
-    // 조치 여부는 마지막 저장 상태로 판단해 입력 중에 카드 순서가 바뀌지 않게 함
-    const items = isFieldMode
-      ? [...categoryItems].sort(
-          ({ row: a, rowIndex: ai }, { row: b, rowIndex: bi }) =>
-            Number(isItemDone(savedRows[ai] || a)) - Number(isItemDone(savedRows[bi] || b))
-        )
-      : categoryItems;
+    const categoryItems = displayItems(selectedKey);
+    const items = isFieldMode ? [...categoryItems].sort((a, b) => {
+      const first = savedItem(a);
+      const second = savedItem(b);
+      const done = isItemDone(first);
+      return Number(done) - Number(isItemDone(second)) || (done
+        ? String(second.mod_dt || second.reg_dt || "").localeCompare(first.mod_dt || first.reg_dt || "")
+        : String(first.reg_dt || "").localeCompare(second.reg_dt || ""));
+    }) : categoryItems;
+    const actionMonths = new Set((itemsByKey[selectedKey] || []).map(({ row }) => (row.reg_dt || "").slice(0, 7)));
+    const inspectionDates = isFieldMode && (statusFilter === "전체" || statusFilter === "점검완료")
+      ? rows.filter((row) => row.inspection_yn === "Y" && (row.category_key || "") === selectedKey &&
+          !actionMonths.has((row.reg_dt || "").slice(0, 7))).map((row) => row.reg_dt).filter(Boolean).sort().reverse()
+      : [];
+    const detailStatus = isActionFilter && items.length ? statusFilter : statusMap[selectedKey];
     const counts = getPhotoCounts(items);
     const remaining = items.filter(({ row }) => !isItemDone(row)).length;
     const description = selectedCategory.description || "";
@@ -436,12 +494,18 @@ function HygieneCardBoard({
               조치 전 {counts.before}건 · 조치 후 {counts.after}건{remaining > 0 ? ` (${remaining}건 남음)` : ""}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 13, color: "#7b809a" }}>누적 {items.length}건</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontSize: 13, color: "#7b809a" }}>조치 항목 {items.length}건</span>
             <Badge
-              label={statusMap[selectedCategory.category_key]}
-              {...STATUS_TONE[statusMap[selectedCategory.category_key]]}
+              label={detailStatus}
+              {...STATUS_TONE[detailStatus]}
             />
+            {isFieldMode && statusFilter !== "전체" && (
+              <MDButton size="small" variant="outlined" color="info" onClick={() => onStatusFilter("전체")}>전체 내역 보기</MDButton>
+            )}
+            {onMarkInspected && selectedKey && statusMap[selectedKey] === "미점검" && (
+              <MDButton size="small" color="info" onClick={() => onMarkInspected(selectedKey)}>점검완료 처리</MDButton>
+            )}
           </div>
         </div>
 
@@ -483,10 +547,13 @@ function HygieneCardBoard({
         )}
 
         {/* 조치 전·후 항목 카드 목록 (한 항목 = 위생관리 한 행), 항목이 없으면 안내 박스 */}
-        {items.length === 0 ? (
+        {inspectionDates.map((date, index) => (
+          <div key={date + index} style={{ ...cardStyle, padding: 10 }}>{date} · 점검완료 · 추가 조치 사항 없음</div>
+        ))}
+        {items.length === 0 && inspectionDates.length > 0 ? null : items.length === 0 ? (
           <div style={{ ...cardStyle, padding: 20, textAlign: "center", fontSize: 13, color: "#7b809a" }}>
-            {isFieldMode
-              ? "등록된 항목이 없습니다. 본사에서 점검 항목을 등록하면 조치 후 사진을 추가할 수 있습니다."
+            {statusMap[selectedKey] === "점검완료" ? "점검을 마쳤으며 등록된 조치 항목이 없습니다." : isFieldMode
+              ? isActionFilter ? "해당 상태의 조치 항목이 없습니다." : "등록된 항목이 없습니다. 본사에서 점검 항목을 등록하면 조치 후 사진을 추가할 수 있습니다."
               : "등록된 항목이 없습니다. 아래 항목 추가를 눌러 등록해 주세요."}
           </div>
         ) : (
@@ -534,7 +601,7 @@ function HygieneCardBoard({
                     >
                       {index + 1}
                     </span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#344767" }}>항목 {index + 1}</span>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#344767" }}>항목 {index + 1}{isFieldMode && row.reg_dt ? " · " + row.reg_dt : ""}</span>
                     {changed && <Badge label="수정됨" bg="#fdecea" fg="#d32f2f" />}
                     <span style={{ flex: 1 }} />
                     {/* 항목 구분(카테고리) 변경·삭제 (현장 화면은 미표시) */}
@@ -623,9 +690,15 @@ function HygieneCardBoard({
   }
 
   // 전체 요약 화면 표시 카드 (메인 표시 카테고리 + 상태 필터)
-  const visibleCategories = categories.filter(
-    (c) => c.main_yn !== "N" && (statusFilter === "전체" || statusMap[c.category_key] === statusFilter)
-  );
+  // 상태 우선순위(조치 필요 → 미점검 → 완료 → 점검완료)로 정렬하고, 같은 상태끼리는 카테고리 설정 순서 유지
+  const visibleCategories = categories
+    .filter((c) => {
+      const key = c.category_key;
+      if (c.main_yn === "N" && !(isFieldMode && itemsByKey[key])) return false;
+      if (isActionFilter) return displayItems(key).length > 0;
+      return statusFilter === "전체" || statusMap[key] === statusFilter;
+    })
+    .sort((a, b) => (STATUS_ORDER[statusMap[a.category_key]] ?? 9) - (STATUS_ORDER[statusMap[b.category_key]] ?? 9));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingBottom: 24 }}>
@@ -668,9 +741,9 @@ function HygieneCardBoard({
           }}
         >
           {visibleCategories.map((c) => {
-            const items = itemsByKey[c.category_key] || [];
+            const items = displayItems(c.category_key);
             const counts = getPhotoCounts(items);
-            const status = statusMap[c.category_key];
+            const status = isActionFilter ? statusFilter : statusMap[c.category_key];
 
             return (
               // 카테고리 요약 카드 (조치 필요 카테고리는 주황 테두리)
@@ -679,8 +752,8 @@ function HygieneCardBoard({
                 onClick={() => onSelectKey(c.category_key)}
                 style={{
                   ...cardStyle,
-                  ...(status === "조치 필요" ? NEED_ACTION_BORDER : {}),
-                  padding: 12,
+                  ...(status === "조치필요" ? NEED_ACTION_BORDER : {}),
+                  padding: "10px 12px",
                   display: "flex",
                   flexDirection: "column",
                   gap: 6,
@@ -718,8 +791,7 @@ function HygieneCardBoard({
                 </div>
                 {/* 조치 전/후 사진 건수 배지와 점검 상태 배지 */}
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <Badge label={`전 ${counts.before}`} bg="#f2f5f7" fg="#667584" />
-                  <Badge label={`후 ${counts.after}`} bg="#eef6f1" fg="#3e7652" />
+                  <span style={{ color: "#586675", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>전 {counts.before} · 후 {counts.after}</span>
                   <span style={{ flex: 1 }} />
                   {c.status_yn !== "N" && <Badge label={getStatusLabel(items, status)} {...STATUS_TONE[status]} />}
                 </div>
@@ -754,7 +826,7 @@ function HygieneCardBoard({
                       }}
                     >
                       <AssignmentOutlinedIcon sx={{ fontSize: 22, color: "#b8c3cc" }} />
-                      <span>등록된 점검 항목이 없습니다</span>
+                      <span>{status === "점검완료" ? "점검완료 · 추가 조치 사항 없음" : "등록된 점검 항목이 없습니다"}</span>
                       {!isFieldMode && <span style={{ color: ACCENT }}>눌러서 항목 추가</span>}
                     </div>
                   )}
@@ -777,7 +849,7 @@ function HygieneCardBoard({
                               height: 6,
                               borderRadius: 999,
                               flexShrink: 0,
-                              backgroundColor: done ? STATUS_TONE["완료"].fg : "#f0a35c",
+                              backgroundColor: done ? STATUS_TONE["조치완료"].fg : "#f0a35c",
                             }}
                           />
                           <span
@@ -795,10 +867,10 @@ function HygieneCardBoard({
                           <span
                             style={{
                               flexShrink: 0,
-                              color: done ? STATUS_TONE["완료"].fg : STATUS_TONE["조치 필요"].fg,
+                              color: done ? STATUS_TONE["조치완료"].fg : STATUS_TONE["조치필요"].fg,
                             }}
                           >
-                            {done ? "완료" : "조치 대기"}
+                            {done ? "조치완료" : "조치 대기"}
                           </span>
                         </div>
                       );
@@ -823,7 +895,7 @@ function HygieneCardBoard({
 // 진행률 = 전체 항목 중 조치 완료 비율
 export function HygieneSummaryStatus({ rows, isMobile }) {
   const summary = useMemo(() => {
-    const items = rows || [];
+    const items = (rows || []).filter((row) => row.inspection_yn !== "Y");
     const doneCount = items.filter((row) => isItemDone(row)).length;
     return {
       doneCount,
@@ -834,8 +906,8 @@ export function HygieneSummaryStatus({ rows, isMobile }) {
 
   // 상태별 건수 표시 목록 (색 점 + 이름 + 건수)
   const statusItems = [
-    { label: "완료", count: summary.doneCount },
-    { label: "조치 필요", count: summary.pendingCount },
+    { label: "조치완료", count: summary.doneCount },
+    { label: "조치필요", count: summary.pendingCount },
   ];
 
   return (
@@ -844,7 +916,8 @@ export function HygieneSummaryStatus({ rows, isMobile }) {
       style={{
         flex: isMobile ? "1 1 100%" : "0 0 auto",
         marginRight: isMobile ? 0 : "auto",
-        height: 40,
+        minHeight: 40,
+        flexWrap: "wrap",
         boxSizing: "border-box",
         padding: "0 14px 0 6px",
         display: "flex",
@@ -853,8 +926,8 @@ export function HygieneSummaryStatus({ rows, isMobile }) {
         whiteSpace: "nowrap",
         lineHeight: 1,
         border: "1px solid #d6e6fb",
-        borderRadius: 999,
-        background: "linear-gradient(90deg, #eef5ff 0%, #f8fbff 100%)",
+        borderRadius: 10,
+        backgroundColor: "#f7f9fc",
       }}
     >
       {/* 진행률 원형 표시 (바깥 원 테두리가 진행률만큼 채워짐) */}
@@ -903,13 +976,12 @@ export function HygieneSummaryStatus({ rows, isMobile }) {
             padding: "0 10px",
             boxSizing: "border-box",
             fontSize: 12,
-            borderRadius: 999,
-            border: `1px solid ${STATUS_TONE[label].fg}33`,
-            backgroundColor: "#ffffff",
+            borderRadius: 6,
+            backgroundColor: STATUS_TONE[label].bg,
+            fontVariantNumeric: "tabular-nums",
           }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: STATUS_TONE[label].fg }} />
-          <span style={{ color: "#667584" }}>{label}</span>
+          <span style={{ color: STATUS_TONE[label].fg }}>{label}</span>
           <b style={{ color: STATUS_TONE[label].fg }}>{count}건</b>
         </span>
       ))}

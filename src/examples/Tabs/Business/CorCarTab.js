@@ -30,6 +30,7 @@ import PreviewOverlay from "utils/PreviewOverlay";
 import { buildFileDownloadUrl } from "utils/fileDownloadUrl";
 import { askUnsavedChanges, setTabLeaveGuard } from "utils/unsavedChangesGuard";
 import useDetailBackGuard from "utils/useDetailBackGuard";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 
 // 변경 여부를 비교하는 기록 입력 항목
@@ -780,8 +781,7 @@ function CorCarTabStyled({ embedded = false }) {
 
         {/* 기록일자·주행거리 입력 (저장된 기록의 날짜는 사진 연결 기준이라 수정 불가) */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <TextField
-            type="date"
+          <KoreanDateField
             size="small"
             label="기록일자"
             value={row.service_dt || ""}

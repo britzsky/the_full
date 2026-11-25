@@ -46,6 +46,7 @@ import {
   shouldMaskSensitiveField,
 } from "utils/maskingUtils";
 import { getDinerColumnAverages } from "utils/dinerTotalCalc";
+import { KoreanDateField } from "components/KoreanDateInput";
 
 // 근무 타입별 배경색
 const typeColors = {
@@ -7544,16 +7545,14 @@ function RecordSheet() {
           </MDTypography>
 
           <Box mt={2} display="flex" gap={1}>
-            <TextField
-              type="date"
+            <KoreanDateField
               fullWidth
               label="시작일"
               InputLabelProps={{ shrink: true }}
               value={excelRange.start}
               onChange={(e) => setExcelRange((prev) => ({ ...prev, start: e.target.value }))}
             />
-            <TextField
-              type="date"
+            <KoreanDateField
               fullWidth
               label="종료일"
               InputLabelProps={{ shrink: true }}
@@ -7599,16 +7598,14 @@ function RecordSheet() {
           </MDTypography>
 
           <Box mt={2} display="flex" gap={1}>
-            <TextField
-              type="date"
+            <KoreanDateField
               fullWidth
               label="시작일"
               InputLabelProps={{ shrink: true }}
               value={payRange.start}
               onChange={(e) => setPayRange((prev) => ({ ...prev, start: e.target.value }))}
             />
-            <TextField
-              type="date"
+            <KoreanDateField
               fullWidth
               label="종료일"
               InputLabelProps={{ shrink: true }}

@@ -55,6 +55,7 @@ import useBranchUploadData, {
   matchesAccept,
   safeAccountName,
 } from "./branchUploadData";
+import { KoreanDateField } from "components/KoreanDateInput";
 // 등록 카드 자료 종류별 아이콘
 const KIND_ICON = { menu: ArticleOutlinedIcon, plate: RestaurantOutlinedIcon };
 
@@ -1623,8 +1624,7 @@ function BranchUploadTab({ isHeadOffice }) {
           />
           {/* 다운로드 기간 (시작일 ~ 종료일, 달을 넘겨도 선택 가능, 식단표는 기간에 걸친 주의 것 포함) */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-            <TextField
-              type="date"
+            <KoreanDateField
               size="small"
               label="시작일"
               value={scopeDialog.startDate}
@@ -1634,8 +1634,7 @@ function BranchUploadTab({ isHeadOffice }) {
               sx={{ flex: 1, ...inputBoxSx, ...accountLabelSx }}
             />
             <span style={{ color: SUB }}>~</span>
-            <TextField
-              type="date"
+            <KoreanDateField
               size="small"
               label="종료일"
               value={scopeDialog.endDate}

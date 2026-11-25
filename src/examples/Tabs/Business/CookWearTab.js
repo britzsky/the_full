@@ -10,6 +10,7 @@ import useCookWearManagerData, { parseNumber } from "./cookWearData";
 import LoadingScreen from "layouts/loading/loadingscreen";
 import api from "api/api";
 import Swal from "sweetalert2";
+import { KoreanDateInput } from "components/KoreanDateInput";
 
 // 조리복 사이즈 선택지에 표시할 라벨을 변환하는 함수
 const getCookWearSizeLabel = (label) => {
@@ -23,6 +24,8 @@ const getCookWearSizeLabel = (label) => {
 
   return sizeLabelMap[normalizedLabel] || label;
 };
+
+const getMinColumnWidth = (key) => (key === "new_qty" || key === "out_qty" ? 50 : 60);
 
 function CookWearTabStyled() {
   const theme = useTheme();
@@ -179,6 +182,9 @@ function CookWearTabStyled() {
       border: "none",
       background: "transparent",
       outline: "none",
+    },
+    "& input[type='date'][data-date-label]::before": {
+      wordSpacing: "-0.12em",
     },
   };
 
@@ -348,17 +354,12 @@ function CookWearTabStyled() {
     }
   };
 
-  // ✅ 폭 규칙 적용:
-  // - qty(갯수/숫자) : 80
-  // - select(사이즈/거래처) : 110
-  // - note(비고) : 200
-  // - date(일자) : 120 (요청 없어서 유지)
   const columns1 = useMemo(
     () => [
       { header: "사이즈", accessorKey: "type", type: "selectItem", size: 110 },
       { header: "현재고", accessorKey: "current_qty", size: 80 },
-      { header: "주문갯수", accessorKey: "new_qty", size: 80 },
-      { header: "분출갯수", accessorKey: "out_qty", size: 80 },
+      { header: "주문갯수", accessorKey: "new_qty", size: 50 },
+      { header: "분출갯수", accessorKey: "out_qty", size: 50 },
       { header: "현재갯수", accessorKey: "remain_qty", size: 80 },
       { header: "이전재고", accessorKey: "before_qty", size: 80 },
     ],
@@ -368,9 +369,9 @@ function CookWearTabStyled() {
   const columns2 = useMemo(
     () => [
       { header: "사이즈", accessorKey: "type", type: "selectItem", size: 110 },
-      { header: "출고일자", accessorKey: "out_dt", type: "date", size: 100 },
-      { header: "분출갯수", accessorKey: "out_qty", type: "text", size: 70 },
-      { header: "거래처", accessorKey: "account_id", type: "selectAccount", size: 140 },
+      { header: "출고일자", accessorKey: "out_dt", type: "date", size: 140 },
+      { header: "분출갯수", accessorKey: "out_qty", type: "text", size: 60 },
+      { header: "거래처", accessorKey: "account_id", type: "selectAccount", size: 150 },
     ],
     []
   );
@@ -378,8 +379,8 @@ function CookWearTabStyled() {
   const columns3 = useMemo(
     () => [
       { header: "사이즈", accessorKey: "type", type: "selectItem", size: 110 },
-      { header: "입고일자", accessorKey: "new_dt", type: "date", size: 120 },
-      { header: "주문갯수", accessorKey: "new_qty", size: 80 },
+      { header: "입고일자", accessorKey: "new_dt", type: "date", size: 140 },
+      { header: "주문갯수", accessorKey: "new_qty", size: 60 },
       { header: "비고", accessorKey: "note", type: "note", size: 200 },
     ],
     []
@@ -388,32 +389,10 @@ function CookWearTabStyled() {
   // =========================================================
   // ✅ 컬럼 리사이즈(드래그) 기능
   // =========================================================
-  const buildInitWidths = (cols, fallback = 80) =>
-    cols.reduce((acc, c) => {
-      acc[c.accessorKey] = Math.max(60, Number(c.size ?? fallback));
-      return acc;
-    }, {});
-
-  const [colWidths1, setColWidths1] = useState(() => buildInitWidths(columns1, 80));
-  const [colWidths2, setColWidths2] = useState(() => buildInitWidths(columns2, 80));
-  const [colWidths3, setColWidths3] = useState(() => buildInitWidths(columns3, 80));
-
-  // columns가 바뀌는 경우(확장 대비) 누락된 키만 보강
-  useEffect(() => {
-    setColWidths1((prev) => ({ ...buildInitWidths(columns1, 80), ...prev }));
-  }, [columns1]);
-  useEffect(() => {
-    setColWidths2((prev) => ({
-      ...buildInitWidths(columns2, 80),
-      ...prev,
-      out_dt: 100,
-      out_qty: 70,
-      account_id: 140,
-    }));
-  }, [columns2]);
-  useEffect(() => {
-    setColWidths3((prev) => ({ ...buildInitWidths(columns3, 80), ...prev }));
-  }, [columns3]);
+  // 드래그로 조절한 열의 너비를 표별로 저장합니다.
+  const [colWidths1, setColWidths1] = useState({});
+  const [colWidths2, setColWidths2] = useState({});
+  const [colWidths3, setColWidths3] = useState({});
 
   const resizingRef = useRef({
     tableId: null,
@@ -428,7 +407,7 @@ function CookWearTabStyled() {
     return setColWidths3;
   };
 
-  const onResizeMouseDown = (e, tableId, accessorKey, currentWidths) => {
+  const onResizeMouseDown = (e, tableId, accessorKey, currentWidth) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -436,7 +415,7 @@ function CookWearTabStyled() {
       tableId,
       key: accessorKey,
       startX: e.clientX,
-      startWidth: Number(currentWidths?.[accessorKey] ?? 120),
+      startWidth: currentWidth,
     };
 
     const handleMove = (ev) => {
@@ -444,7 +423,7 @@ function CookWearTabStyled() {
       if (!tId || !key) return;
 
       const diff = ev.clientX - startX;
-      const nextWidth = Math.max(60, startWidth + diff);
+      const nextWidth = Math.max(getMinColumnWidth(key), startWidth + diff);
 
       const setter = getWidthSetterByTable(tId);
       setter((prev) => ({ ...prev, [key]: nextWidth }));
@@ -473,6 +452,9 @@ function CookWearTabStyled() {
     readOnly = false
   ) => {
     const styleFn = (rowIndex, key, value) => getCellStyle(originalRows)(rowIndex, key, value);
+
+    const getColumnWidth = (col) =>
+      colWidths[col.accessorKey] ?? Math.max(getMinColumnWidth(col.accessorKey), col.size ?? 80);
 
     const getTypeLabel = (typeValue) => {
       const found = sizeOptions.find((o) => String(o.value) === String(typeValue));
@@ -508,45 +490,31 @@ function CookWearTabStyled() {
                 <thead>
                   <tr>
                     {columns.map((col) => {
-                      const w = colWidths?.[col.accessorKey] ?? col.size ?? 120;
+                      const w = getColumnWidth(col);
 
                       return (
                         <th
                           key={col.accessorKey}
-                          style={{
-                            width: w,
-                            paddingRight: 10, // 리사이저 공간
-                          }}
+                          style={{ width: w, paddingInline: w < 60 ? 0 : undefined }}
                         >
-                          <div
-                            style={{
-                              position: "relative",
-                              width: "100%",
-                              height: "100%",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                            }}
-                          >
-                            <span>{col.header}</span>
+                          <span>{col.header}</span>
 
-                            {/* ✅ 리사이즈 핸들 */}
-                            <div
-                              role="presentation"
-                              onMouseDown={(e) =>
-                                onResizeMouseDown(e, tableId, col.accessorKey, colWidths)
-                              }
-                              style={{
-                                position: "absolute",
-                                right: -3,
-                                top: 0,
-                                height: "100%",
-                                width: 6,
-                                cursor: "col-resize",
-                                zIndex: 5,
-                              }}
-                            />
-                          </div>
+                          {/* 열 너비를 조절하는 손잡이 */}
+                          <div
+                            role="presentation"
+                            onMouseDown={(e) =>
+                              onResizeMouseDown(e, tableId, col.accessorKey, w)
+                            }
+                            style={{
+                              position: "absolute",
+                              right: 0,
+                              top: 0,
+                              height: "100%",
+                              width: 6,
+                              cursor: "col-resize",
+                              zIndex: 5,
+                            }}
+                          />
                         </th>
                       );
                     })}
@@ -558,18 +526,18 @@ function CookWearTabStyled() {
                     <tr key={rowIndex}>
                       {columns.map((col) => {
                         const value = row[col.accessorKey] || "";
-                        const w = colWidths?.[col.accessorKey] ?? col.size ?? 120;
+                        const w = getColumnWidth(col);
 
                         if (col.type === "date") {
                           return (
                             <td key={col.accessorKey} style={{ width: w }}>
-                              <input
-                                type="date"
+                              <KoreanDateInput
                                 value={value}
                                 disabled={readOnly}
                                 style={{
                                   ...styleFn(rowIndex, col.accessorKey, value),
                                   width: "100%",
+                                  fontFamily: "inherit",
                                 }}
                                 onChange={(e) =>
                                   handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)
@@ -685,6 +653,9 @@ function CookWearTabStyled() {
                                 style={{
                                   ...styleFn(rowIndex, col.accessorKey, value),
                                   width: "100%",
+                                  minWidth: 0,
+                                  boxSizing: "border-box",
+                                  textAlign: "center",
                                 }}
                                 onChange={(e) =>
                                   handleCellChange(setRows)(rowIndex, col.accessorKey, e.target.value)

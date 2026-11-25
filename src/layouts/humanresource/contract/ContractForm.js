@@ -6,6 +6,7 @@ import { IconButton, InputBase } from "@mui/material";
 import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
 import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import { getKoreanDateLabel } from "components/KoreanDateInput";
 
 // 양식 표 테두리·제목칸 스타일 (엑셀 회색 제목칸, 검은 테두리)
 const tableSx = {
@@ -162,6 +163,7 @@ function ContractForm({ form, onChange, readOnly, bulk, clauses, onClausesChange
       value={form[key] ?? ""}
       disabled={readOnly}
       type={opts.type || "text"}
+      data-date-label={opts.type === "date" ? getKoreanDateLabel(form[key]) : undefined}
       placeholder={opts.placeholder || ""}
       onChange={(e) => onChange(key, opts.money ? formatMoney(e.target.value) : e.target.value)}
       style={{
